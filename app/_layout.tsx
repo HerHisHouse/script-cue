@@ -1,0 +1,55 @@
+import 'react-native-gesture-handler';
+import { Stack, useRouter, useSegments } from 'expo-router';
+import React, { useEffect } from 'react';
+import { LogBox } from 'react-native';
+import { AuthProvider, useAuth } from '@/contexts/AuthContext';
+import { ThemeProvider } from '@/contexts/ThemeContext';
+import { GestureHandlerRootView } from 'react-native-gesture-handler';
+
+function AppRoot() {
+  const { user, loading } = useAuth();
+  const segments = useSegments();
+  const router = useRouter();
+
+  // Oculta WARNs de desarrollo conocidos: deprecación de expo-av y aviso de Reanimated
+  LogBox.ignoreLogs([
+    // Reanimated: uso de `.value` en estilos inline (interno de librerías)
+    "It looks like you might be using shared value's .value inside reanimated inline style",
+    // Expo AV: aviso de deprecación hasta migrar a expo-audio/expo-video
+    '[expo-av]: Expo AV has been deprecated',
+  ]);
+
+  useEffect(() => {
+    if (!loading) {
+      const inAuthGroup = segments[0] === 'auth';
+      if (!user && !inAuthGroup) {
+        router.replace('/auth');
+      }
+    }
+  }, [user, loading, segments, router]);
+
+  return (
+    <Stack>
+      <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+      <Stack.Screen name="auth" options={{ headerShown: false }} />
+      <Stack.Screen name="scan-script" options={{ headerShown: false }} />
+      <Stack.Screen name="import-script" options={{ headerShown: false }} />
+      <Stack.Screen name="scripts/[id]/index" options={{ headerShown: false }} />
+      <Stack.Screen name="scripts/[id]/characters" options={{ title: 'Personajes' }} />
+      <Stack.Screen name="scripts/[id]/record" options={{ title: 'Grabar' }} />
+      <Stack.Screen name="scripts/[id]/study" options={{ headerShown: false }} />
+    </Stack>
+  );
+}
+
+export default function RootLayout() {
+  return (
+    <GestureHandlerRootView style={{ flex: 1 }}>
+      <ThemeProvider>
+        <AuthProvider>
+          <AppRoot />
+        </AuthProvider>
+      </ThemeProvider>
+    </GestureHandlerRootView>
+  );
+}
