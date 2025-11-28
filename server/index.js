@@ -81,7 +81,11 @@ app.post('/merge', async (req, res) => {
             ffmpeg()
                 .input(listFile)
                 .inputOptions(['-f concat', '-safe 0'])
-                .outputOptions(['-c:a aac', '-b:a 128k'])
+                // Force re-encode to ensure compatibility between mp3 and m4a
+                .audioCodec('aac')
+                .audioBitrate('128k')
+                .audioChannels(1)
+                .audioFrequency(44100)
                 .output(outputFile)
                 .on('start', (cmd) => {
                     console.log('[FFmpeg] Command:', cmd);
