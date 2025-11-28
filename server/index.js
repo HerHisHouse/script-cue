@@ -76,18 +76,22 @@ app.post('/merge', async (req, res) => {
 
 
 
-        // Create concat list file for FFmpeg
-        const listContent = downloadedFiles.map(f => `file '${f}'`).join('\n');
-        await fs.promises.writeFile(listFile, listContent);
-
-        console.log('[Merge] Starting FFmpeg merge...');
-
-        // Run FFmpeg
+        // Run FFmpeg with concat filter (more robust for mixed formats)
         await new Promise((resolve, reject) => {
-            ffmpeg()
-                .input(listFile)
-                .inputOptions(['-f concat', '-safe 0'])
-                // Force re-encode to ensure compatibility between mp3 and m4a
+            const command = ffmpeg();
+
+            // Add all inputs
+            downloadedFiles.forEach(file => {
+                command.input(file);
+            });
+
+            // Construct complex filter for concatenation
+            // [0:a][1:a][2:a]concat=n=3:v=0:a=1[outa]
+            const inputLabels = downloadedFiles.map((_, i) => `[${i}:a]`).join('');
+
+            command
+                .complexFilter(`${inputLabels}concat=n=${downloadedFiles.length}:v=0:a=1[outa]`)
+                .map('[outa]')
                 .audioCodec('aac')
                 .audioBitrate('128k')
                 .audioChannels(1)
