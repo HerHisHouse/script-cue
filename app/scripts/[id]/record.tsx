@@ -132,26 +132,17 @@ export default function RecordModeScreen() {
       const localInfo = await FileSystem.getInfoAsync(localPath);
       const sizeBytes = localInfo.exists ? (localInfo.size ?? 0) : 0;
 
-      let storagePath = `${user!.id}/${localBaseName}`; // ruta en bucket para Storage
-
-      if (!settings.useLocalOnly) {
-        // Subir a Supabase Storage leyendo desde la ruta local definitiva
-        const base64 = await FileSystem.readAsStringAsync(localPath, {
-          encoding: FileSystem.EncodingType.Base64,
+      let storagePath = `testuser/${localBaseName}`; // ruta en bucket para Storage
+      const base64 = await FileSystem.readAsStringAsync(localPath, {
+        encoding: FileSystem.EncodingType.Base64,
+      });
+      const { error: uploadError } = await supabase.storage
+        .from('recordings')
+        .upload(storagePath, decode(base64), {
+          contentType: 'audio/m4a',
+          upsert: false,
         });
-
-        const { error: uploadError } = await supabase.storage
-          .from('recordings')
-          .upload(storagePath, decode(base64), {
-            contentType: 'audio/m4a',
-            upsert: false,
-          });
-
-        if (uploadError) throw uploadError;
-      } else {
-        // Modo sólo local: marcamos la ruta como local/<filename>
-        storagePath = `local/${localBaseName}`;
-      }
+      if (uploadError) throw uploadError;
 
       const { error: dbError } = await supabase.from('recordings').insert({
         user_id: user!.id,

@@ -10,7 +10,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, useLocalSearchParams, Link } from 'expo-router';
-import { ArrowLeft, Play, Users, Trash2, Brain, Car, Clapperboard, UserCog, ChevronDown } from 'lucide-react-native';
+import { ArrowLeft, Play, Users, Trash2, Brain, Car, Clapperboard, UserCog, User, ArrowLeftRight } from 'lucide-react-native';
 import { supabase } from '@/utils/supabase';
 import { Script, Character } from '@/types/database';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
@@ -19,6 +19,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { deleteScript } from '@/utils/scripts';
 import { getSettings, setSettings } from '@/utils/appSettings';
 import * as Speech from 'expo-speech';
+import { FixedFooter, FixedFooterSpacer } from '@/components/FixedFooter';
 
 export default function ScriptDetailScreen() {
   const router = useRouter();
@@ -39,7 +40,8 @@ export default function ScriptDetailScreen() {
   const [systemVoiceId, setSystemVoiceId] = useState<string | undefined>(undefined);
   const [langDropdownOpen, setLangDropdownOpen] = useState<boolean>(false);
   const [voiceDropdownOpen, setVoiceDropdownOpen] = useState<boolean>(false);
-  
+  const [perCharacterVoices, setPerCharacterVoices] = useState<Record<string, { provider?: string; systemVoiceId?: string }>>({});
+
 
   const loadData = React.useCallback(async () => {
     try {
@@ -94,7 +96,12 @@ export default function ScriptDetailScreen() {
         setTtsProvider(s.ttsProvider || 'openai');
         setSystemLang(s.systemTtsLanguage || 'es-ES');
         setSystemVoiceId(s.systemTtsVoiceId);
-      } catch {}
+        // Cargar voces por personaje para este guion desde ajustes
+        try {
+          const map = (s as any)?.characterVoicesByScript?.[String(id)] || {};
+          setPerCharacterVoices(map);
+        } catch { }
+      } catch { }
     })();
   }, []);
 
@@ -103,7 +110,7 @@ export default function ScriptDetailScreen() {
       try {
         const voices = await Speech.getAvailableVoicesAsync();
         setAvailableVoices(voices || []);
-      } catch {}
+      } catch { }
     })();
   }, []);
 
@@ -119,6 +126,10 @@ export default function ScriptDetailScreen() {
     return [...prioritized, ...rest];
   }
 
+  function goToCharacterConfig() {
+    router.push(`/import-script?scriptId=${id}&openConfig=1`);
+  }
+
   function voicesForLanguage(lang: string): any[] {
     return (availableVoices || []).filter((v) => v?.language === lang);
   }
@@ -127,7 +138,24 @@ export default function ScriptDetailScreen() {
     return (characters || []).find((c) => c.is_user_character);
   }
 
-  
+  function getCharacterVoiceText(c: Character): string {
+    try {
+      const nameKey = (c?.name || '').toUpperCase();
+      const entry = perCharacterVoices[nameKey];
+      if (!entry) return '-';
+      const provider = (entry.provider || 'system') as string;
+      const providerLabel = provider === 'system' ? 'Sistema' : provider.charAt(0).toUpperCase() + provider.slice(1);
+      let voiceName = '';
+      if (provider === 'system' && entry.systemVoiceId) {
+        const v = (availableVoices || []).find((vv: any) => vv?.identifier === entry.systemVoiceId || vv?.voiceURI === entry.systemVoiceId || vv?.name === entry.systemVoiceId);
+        voiceName = (v?.name as string) || (entry.systemVoiceId as string) || '';
+      }
+      return voiceName ? `${providerLabel} / ${voiceName}` : providerLabel;
+    } catch {
+      return '-';
+    }
+  }
+
 
   // Suscripción en tiempo real a cambios en personajes para mantener el conteo actualizado
   useEffect(() => {
@@ -216,35 +244,63 @@ export default function ScriptDetailScreen() {
       />
 
       <ScrollView style={styles.content} contentContainerStyle={styles.contentContainer}>
-        {/* Tarjeta unificada de resumen (dos filas minimalistas) */}
-        <View style={[styles.summaryCard, { backgroundColor: colors.surface, borderColor: colors.border }]}> 
-          {/* Fila superior: claqueta + título del guion */}
-          <View style={styles.summaryTopRow}>
-            <View style={[styles.summaryBadgeLarge, { backgroundColor: colors.input }]}> 
-              <Clapperboard size={24} color={colors.text} />
+        {/* Banner 1: Nombre del guión */}
+        <View style={[styles.infoCard, { backgroundColor: colors.surface }]}>
+          <View style={styles.bannerRow}>
+            <View style={[styles.summaryBadgeSmall, { backgroundColor: colors.input }]}>
+              <Clapperboard size={18} color={colors.text} />
             </View>
-            <Text style={[styles.summaryTitle, { color: colors.text }]} numberOfLines={1}>
-              {script?.title || '-'}
-            </Text>
-          </View>
-
-          {/* Fila inferior: icono verde + dos columnas (nº personajes, tu personaje) */}
-          <View style={styles.summaryBottomRow}>
-            <View style={styles.summaryBadgeSmall}>
-              <Users size={20} color="#10B981" />
-            </View>
-            <View style={styles.summaryColumns}>
-              <View style={styles.summaryColumn}>
-                <Text style={[styles.summaryColumnLabel, { color: colors.textSecondary }]}>Personajes</Text>
-                <Text style={[styles.summaryColumnValue, { color: colors.text }]} numberOfLines={1}>{characterCountDisplay}</Text>
-              </View>
-              <View style={styles.summaryColumn}>
-                <Text style={[styles.summaryColumnLabel, { color: colors.textSecondary }]}>Tu personaje</Text>
-                <Text style={[styles.summaryColumnValue, { color: colors.text }]} numberOfLines={1}>{userCharacter?.name || '-'}</Text>
-              </View>
+            <View style={{ flex: 1 }}>
+              <Text style={[styles.infoLabel, { color: colors.textSecondary }]}>Nombre del guión</Text>
+              <Text style={[styles.infoValue, { color: colors.text }]} numberOfLines={1}>{script?.title || '-'}</Text>
             </View>
           </View>
         </View>
+
+        {/* Banner 2: Número de personajes */}
+        <View style={[styles.infoCard, { backgroundColor: colors.surface }]}>
+          <View style={styles.bannerRow}>
+            <View style={[styles.summaryBadgeSmall, { backgroundColor: colors.input }]}>
+              <Users size={18} color={colors.text} />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={[styles.infoLabel, { color: colors.textSecondary }]}>Número de personajes</Text>
+              <Text style={[styles.infoValue, { color: colors.text }]} numberOfLines={1}>{characterCountDisplay}</Text>
+            </View>
+          </View>
+        </View>
+
+        {/* Banner 3: Tu personaje */}
+        <View style={[styles.infoCard, { backgroundColor: colors.surface }]}>
+          <View style={styles.bannerRow}>
+            <View style={[styles.summaryBadgeSmall, { backgroundColor: colors.input }]}>
+              <User size={18} color={colors.text} />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={[styles.infoLabel, { color: colors.textSecondary }]}>Tu personaje</Text>
+              <Text style={[styles.infoValue, { color: colors.text }]} numberOfLines={1}>{userCharacter?.name || '-'}</Text>
+            </View>
+          </View>
+        </View>
+
+        {/* Banner agrupado: Resto de personajes y sus voces */}
+        {((characters || []).filter((c) => !c.is_user_character).length > 0) && (
+          <View style={[styles.infoCard, { backgroundColor: colors.surface }]}>
+            <View style={styles.bannerRow}>
+              <View style={[styles.summaryBadgeSmall, { backgroundColor: colors.input }]}>
+                <Users size={18} color={colors.text} />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={[styles.infoLabel, { color: colors.textSecondary }]}>Resto de personajes</Text>
+                {(characters || []).filter((c) => !c.is_user_character).map((c) => (
+                  <Text key={c.id} style={{ color: colors.text, fontSize: 13, marginTop: 4 }} numberOfLines={1}>
+                    {(c.name || '-')} · {getCharacterVoiceText(c)}
+                  </Text>
+                ))}
+              </View>
+            </View>
+          </View>
+        )}
 
         {charactersLoadError && (
           <Text style={{ color: colors.error, marginTop: 4, marginBottom: 8, fontSize: 12 }}>
@@ -252,184 +308,13 @@ export default function ScriptDetailScreen() {
           </Text>
         )}
 
-        {/* Menú de Operador de voces */}
-        <View style={[styles.voiceSection, { backgroundColor: colors.surface, borderColor: colors.border }]}> 
-          <Text style={[styles.voiceSectionTitle, { color: colors.textSecondary }]}>Operador de voces</Text>
-          <Text style={[styles.hintText, { color: colors.textSecondary }]}>La configuración avanzada de voces (idioma, voz, velocidad y tono) está en <Text style={[styles.hintLink, { color: colors.primary }]} onPress={() => router.push('/settings')}>Ajustes</Text>.</Text>
-          <View style={styles.voiceProviderRow}>
-            {/* OpenAI */}
-            <TouchableOpacity
-              style={[styles.voiceProviderOption, ttsProvider === 'openai' && { backgroundColor: colors.input }]}
-              onPress={async () => {
-                try {
-                  setTtsProvider('openai');
-                  await setSettings({ ttsProvider: 'openai' });
-                  Alert.alert('Preferencia actualizada', 'Proveedor de TTS: OpenAI');
-                } catch (e: any) {
-                  Alert.alert('Error', e?.message || 'No se pudo actualizar la preferencia');
-                }
-              }}
-            >
-              <Text style={[styles.voiceProviderText, { color: ttsProvider === 'openai' ? colors.primary : colors.text }]}>
-                OpenAI
-              </Text>
-            </TouchableOpacity>
+        {/* Aviso: solo enlace a Configuración de personajes */}
+        <Text style={[styles.hintText, { color: colors.textSecondary, marginBottom: 16 }]}>
+          Modificar personajes y voces: abre
+          <Text style={[styles.hintLink, { color: colors.primary }]} onPress={goToCharacterConfig}>Configuración de personajes</Text>.
+        </Text>
 
-            {/* ElevenLabs */}
-            <TouchableOpacity
-              style={[styles.voiceProviderOption, ttsProvider === 'elevenlabs' && { backgroundColor: colors.input }]}
-              onPress={async () => {
-                try {
-                  setTtsProvider('elevenlabs');
-                  await setSettings({ ttsProvider: 'elevenlabs' });
-                  Alert.alert('Preferencia actualizada', 'Proveedor de TTS: ElevenLabs');
-                } catch (e: any) {
-                  Alert.alert('Error', e?.message || 'No se pudo actualizar la preferencia');
-                }
-              }}
-            >
-              <Text style={[styles.voiceProviderText, { color: ttsProvider === 'elevenlabs' ? colors.primary : colors.text }]}>ElevenLabs</Text>
-            </TouchableOpacity>
 
-            {/* Google (fallback) */}
-            <TouchableOpacity
-              style={[styles.voiceProviderOption, ttsProvider === 'google' && { backgroundColor: colors.input }]}
-              onPress={async () => {
-                try {
-                  setTtsProvider('google');
-                  await setSettings({ ttsProvider: 'google' });
-                  Alert.alert('Preferencia actualizada', 'Proveedor de TTS: Google (fallback)');
-                } catch (e: any) {
-                  Alert.alert('Error', e?.message || 'No se pudo actualizar la preferencia');
-                }
-              }}
-            >
-              <Text style={[styles.voiceProviderText, { color: ttsProvider === 'google' ? colors.primary : colors.text }]}>Google</Text>
-            </TouchableOpacity>
-
-            {/* Sistema (offline) */}
-            <TouchableOpacity
-              style={[styles.voiceProviderOption, ttsProvider === 'system' && { backgroundColor: colors.input }]}
-              onPress={async () => {
-                try {
-                  setTtsProvider('system');
-                  await setSettings({ ttsProvider: 'system' });
-                  Alert.alert('Preferencia actualizada', 'Proveedor de TTS: Sistema (offline)');
-                } catch (e: any) {
-                  Alert.alert('Error', e?.message || 'No se pudo actualizar la preferencia');
-                }
-              }}
-            >
-              <Text style={[styles.voiceProviderText, { color: ttsProvider === 'system' ? colors.primary : colors.text }]}>Sistema (offline)</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-
-        {/* Voz del sistema si se elige proveedor 'system' */}
-        {ttsProvider === 'system' && (
-          <View style={styles.systemVoiceSection}>
-            <Text style={[styles.systemVoiceTitle, { color: colors.textSecondary }]}>Voz del sistema</Text>
-            <Text style={[styles.hintText, { color: colors.textSecondary }]}>Selecciona idioma y voz aquí. Para velocidad y tono, usa <Text style={[styles.hintLink, { color: colors.primary }]} onPress={() => router.push('/settings')}>Ajustes</Text>.</Text>
-
-            {/* Dropdown de idioma */}
-            <View style={[styles.dropdown, { borderColor: colors.border, backgroundColor: colors.surface }]}> 
-              <TouchableOpacity 
-                style={[styles.dropdownButton, { borderColor: colors.border, backgroundColor: colors.input }]}
-                onPress={() => setLangDropdownOpen(!langDropdownOpen)}
-              >
-                <Text style={[styles.dropdownButtonText, { color: colors.text }]}> 
-                  {uniqueLanguages().length > 0 ? systemLang : 'Sin voces del sistema'} 
-                </Text> 
-                <ChevronDown 
-                  size={16} 
-                  color={colors.textSecondary} 
-                  style={{ transform: [{ rotate: langDropdownOpen ? '180deg' : '0deg' }] }} 
-                /> 
-              </TouchableOpacity>
-              {langDropdownOpen && (
-                <View style={[styles.dropdownList, { borderColor: colors.border, backgroundColor: colors.surface }]}> 
-                  {uniqueLanguages().length === 0 ? ( 
-                    <Text style={[styles.dropdownItemText, { color: colors.textSecondary }]}>No se encontraron voces del sistema.</Text> 
-                  ) : ( 
-                    uniqueLanguages().map((lang) => ( 
-                      <TouchableOpacity 
-                        key={lang} 
-                        style={[styles.dropdownItem, systemLang === lang && { backgroundColor: colors.input }]} 
-                        onPress={async () => { 
-                          try { 
-                            setSystemLang(lang); 
-                            await setSettings({ systemTtsLanguage: lang }); 
-                            setLangDropdownOpen(false); 
-                            // Resetear voz si no corresponde al idioma 
-                            const voices = voicesForLanguage(lang); 
-                            if (!voices.find((v) => v?.identifier === systemVoiceId)) { 
-                              const first = voices[0]?.identifier; 
-                              setSystemVoiceId(first); 
-                              await setSettings({ systemTtsVoiceId: first }); 
-                            } 
-                          } catch {} 
-                        }}
-                      > 
-                        <Text style={[styles.dropdownItemText, { color: systemLang === lang ? colors.primary : colors.text }]}>{lang}</Text> 
-                      </TouchableOpacity> 
-                    )) 
-                  )} 
-                </View> 
-              )} 
-            </View>
-
-            {/* Dropdown de voz */}
-            <View style={[styles.dropdown, { borderColor: colors.border, backgroundColor: colors.surface }]}> 
-              <TouchableOpacity 
-                style={[styles.dropdownButton, { borderColor: colors.border, backgroundColor: colors.input }]} 
-                onPress={() => setVoiceDropdownOpen(!voiceDropdownOpen)} 
-              > 
-                <Text style={[styles.dropdownButtonText, { color: colors.text }]}>  
-                  {(() => { 
-                    const current = (voicesForLanguage(systemLang) || []).find((v) => v.identifier === systemVoiceId); 
-                    return current ? `${current.name}` : 'Selecciona una voz'; 
-                  })()} 
-                </Text> 
-                <ChevronDown 
-                  size={16} 
-                  color={colors.textSecondary} 
-                  style={{ transform: [{ rotate: voiceDropdownOpen ? '180deg' : '0deg' }] }} 
-                /> 
-              </TouchableOpacity> 
-              {voiceDropdownOpen && ( 
-                <View style={[styles.dropdownList, { borderColor: colors.border, backgroundColor: colors.surface }]}> 
-                  {voicesForLanguage(systemLang).length === 0 ? ( 
-                    <Text style={[styles.dropdownItemText, { color: colors.textSecondary }]}>No hay voces disponibles para {systemLang}.</Text> 
-                  ) : ( 
-                    voicesForLanguage(systemLang).map((v) => ( 
-                      <TouchableOpacity 
-                        key={v.identifier} 
-                        style={[styles.dropdownItem, systemVoiceId === v.identifier && { backgroundColor: colors.input }]} 
-                        onPress={async () => { 
-                          try { 
-                            setSystemVoiceId(v.identifier); 
-                            await setSettings({ systemTtsVoiceId: v.identifier }); 
-                            setVoiceDropdownOpen(false); 
-                            Alert.alert('Preferencia actualizada', `Voz seleccionada: ${v.name}`); 
-                          } catch {} 
-                        }} 
-                      > 
-                        <Text style={[styles.dropdownItemText, { color: systemVoiceId === v.identifier ? colors.primary : colors.text }]}> 
-                          {v.name} 
-                        </Text> 
-                        {v.identifier ? ( 
-                          <Text style={[styles.dropdownItemSubText, { color: colors.textSecondary }]}> 
-                            {v.identifier} 
-                          </Text> 
-                        ) : null} 
-                      </TouchableOpacity> 
-                    )) 
-                  )} 
-                </View> 
-              )} 
-            </View>
-          </View>
-        )}
 
 
         <View style={[styles.actionsRow, { marginTop: 'auto' }]}>
@@ -440,6 +325,14 @@ export default function ScriptDetailScreen() {
             >
               <Play size={24} color="#FFFFFF" />
               <Text style={styles.actionText}>Modo Estudio</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[styles.actionButton, { backgroundColor: '#10B981' }]}
+              onPress={() => router.push(`/scripts/${id}/studio-v2`)}
+            >
+              <Play size={24} color="#FFFFFF" />
+              <Text style={styles.actionText}>Modo Estudio 1.0</Text>
             </TouchableOpacity>
 
             <TouchableOpacity
@@ -476,18 +369,20 @@ export default function ScriptDetailScreen() {
               <Text style={styles.actionText}>Modo Casting</Text>
             </TouchableOpacity>
 
+            {/* Redirigir a Configuración de personajes en Importar Guión */
+            }
             <TouchableOpacity
-              style={[styles.actionButton, styles.actionButtonTwoLine]}
-              onPress={() => router.push(`/scripts/${id}/characters`)}
+              style={[styles.actionButton, styles.actionButtonOutline, { borderColor: colors.border }]}
+              onPress={goToCharacterConfig}
             >
-              <Users size={24} color="#FFFFFF" />
-              <Text style={[styles.actionText, styles.actionTextSmall, styles.actionTextTwoLine, { textAlign: 'center' }]}>
-                {'Cambiar\nPersonaje'}
-              </Text>
+              <ArrowLeftRight size={20} color={colors.text} />
+              <Text style={[styles.actionText, styles.actionTextOutline, { color: colors.text }]}>Cambia personaje</Text>
             </TouchableOpacity>
           </View>
         </View>
+        <FixedFooterSpacer />
       </ScrollView>
+      <FixedFooter activeKey={'index'} />
     </SafeAreaView>
   );
 }
@@ -537,8 +432,8 @@ const styles = StyleSheet.create({
   },
   infoCard: {
     borderRadius: 12,
-    padding: 20,
-    marginBottom: 16,
+    padding: 12,
+    marginBottom: 12,
     alignItems: 'center',
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
@@ -547,13 +442,19 @@ const styles = StyleSheet.create({
     elevation: 2,
   },
   infoLabel: {
-    fontSize: 14,
+    fontSize: 12,
     fontWeight: '500',
     marginBottom: 8,
   },
   infoValue: {
-    fontSize: 32,
+    fontSize: 16,
     fontWeight: '700',
+  },
+  bannerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    width: '100%',
   },
   characterCard: {
     flexDirection: 'row',
@@ -753,6 +654,7 @@ const styles = StyleSheet.create({
     paddingVertical: 16,
     paddingHorizontal: 16,
     gap: 8,
+    height: 56,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.1,
@@ -760,8 +662,10 @@ const styles = StyleSheet.create({
     elevation: 3,
   },
   actionButtonTwoLine: {
-    // Reducir padding para compensar dos líneas y mantener altura cercana
-    paddingVertical: 10,
+    // Mantener misma altura que los otros botones; no ajustar padding
+  },
+  actionButtonLeft: {
+    justifyContent: 'flex-start',
   },
   actionButtonOutline: {
     backgroundColor: 'transparent',

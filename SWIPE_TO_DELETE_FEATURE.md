@@ -1,7 +1,7 @@
 # Swipe-to-Delete Feature Documentation
 
 ## Overview
-This document describes the swipe-to-delete functionality implemented for imported scripts in the ReplicaStudio app.
+This document describes the swipe-to-delete functionality implemented for imported scripts in the Script Cue app.
 
 ## User Experience
 

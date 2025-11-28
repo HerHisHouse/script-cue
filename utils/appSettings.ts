@@ -14,8 +14,10 @@ export type AppSettings = {
   systemTtsPitchWeb?: number; // 0.5–2.0 (normal 1.0)
   systemTtsRateIOS?: number; // 0.1–2.0
   systemTtsPitchIOS?: number; // 0.5–2.0
+
   systemTtsRateAndroid?: number; // 0.1–1.5
   systemTtsPitchAndroid?: number; // 0.5–2.0
+  rotationEnabled?: boolean;
 };
 
 const SETTINGS_KEY = 'rs.app.settings.v1';
@@ -32,8 +34,10 @@ const DEFAULTS: AppSettings = {
   systemTtsPitchWeb: 1.0,
   systemTtsRateIOS: 1.0,
   systemTtsPitchIOS: 1.0,
+
   systemTtsRateAndroid: 1.0,
   systemTtsPitchAndroid: 1.0,
+  rotationEnabled: false,
 };
 
 export async function getSettings(): Promise<AppSettings> {

@@ -1,0 +1,11 @@
+services:
+  - type: web
+    name: script-cue-merge-server
+    env: node
+    buildCommand: cd server && npm install
+    startCommand: node server/index.js
+    envVars:
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_SERVICE_KEY
+        sync: false

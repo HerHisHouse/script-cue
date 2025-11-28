@@ -1,6 +1,6 @@
-# ReplicaStudio MVP
+# Script Cue MVP
 
-ReplicaStudio es una aplicación móvil y web que permite a actores practicar sus guiones con respuestas de voz AI. Los actores pueden importar guiones en PDF, seleccionar su personaje y practicar escenas con voces AI respondiendo como los otros personajes.
+Script Cue es una aplicación móvil y web que permite a actores practicar sus guiones con respuestas de voz AI. Los actores pueden importar guiones en PDF, seleccionar su personaje y practicar escenas con voces AI respondiendo como los otros personajes.
 
 ## Características Principales
 

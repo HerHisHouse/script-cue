@@ -13,12 +13,13 @@ import {
 export type ScreenHeaderProps = {
   title: string;
   childrenBelowTitle?: React.ReactNode;
+  leftAction?: React.ReactNode;
   rightActions?: React.ReactNode;
   onLayout?: ViewProps['onLayout'];
   style?: any;
 };
 
-export function ScreenHeader({ title, childrenBelowTitle, rightActions, onLayout, style }: ScreenHeaderProps) {
+export function ScreenHeader({ title, childrenBelowTitle, leftAction, rightActions, onLayout, style }: ScreenHeaderProps) {
   const { colors } = useTheme();
 
   return (
@@ -26,9 +27,12 @@ export function ScreenHeader({ title, childrenBelowTitle, rightActions, onLayout
       style={[styles.header, { backgroundColor: colors.surface, borderBottomColor: colors.border }, style]}
       onLayout={onLayout}
     >
-      <View style={styles.leftCol}>
-        <Text style={[styles.title, { color: colors.text }]}>{title}</Text>
-        {childrenBelowTitle}
+      <View style={styles.leftContainer}>
+        {leftAction && <View style={styles.leftAction}>{leftAction}</View>}
+        <View style={styles.leftCol}>
+          <Text style={[styles.title, { color: colors.text }]}>{title}</Text>
+          {childrenBelowTitle}
+        </View>
       </View>
       <View style={styles.rightRow}>{rightActions}</View>
     </View>
@@ -44,6 +48,14 @@ const styles = StyleSheet.create({
     paddingVertical: HEADER_VERTICAL_PADDING,
     borderBottomWidth: 1,
     minHeight: HEADER_MIN_HEIGHT,
+  },
+  leftContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  leftAction: {
+    marginRight: 4,
   },
   leftCol: {
     flexDirection: 'column',

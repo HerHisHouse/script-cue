@@ -1,48 +1,77 @@
+// --- Definiciones de Tipos Básicos ---
 export type VoiceGender = 'male' | 'female' | 'neutral';
 export type VoicePreset = 'natural' | 'warm' | 'deep' | 'authoritative' | 'soft' | 'energetic';
-export type ScriptStatus = 'processing' | 'ready' | 'error';
+export type ScriptStatus = 'processing' | 'ready' | 'error' | string | null; // Hacemos string genérico
 export type PracticeMode = 'studio' | 'car' | 'memory';
 
+// --- Interfaces Simplificadas (Alineadas con configuracion-db.md) ---
+
+// ** PERFIL CORREGIDO **
+// Refleja las columnas (id, username, full_name) que creamos en la tabla 'profiles'
 export interface Profile {
   id: string;
-  email: string;
-  full_name?: string;
-  created_at: string;
-  updated_at: string;
+  username: string | null;  // <-- AÑADIDO (coincide con la DB)
+  full_name: string | null; // <-- AÑADIDO (coincide con la DB)
 }
 
+// ** SCRIPT SIMPLIFICADO **
+// Refleja las columnas (id, user_id, title, pdf_path, status) de la tabla 'scripts'
 export interface Script {
   id: string;
   user_id: string;
   title: string;
-  pdf_url?: string;
-  parsed_text?: string;
-  metadata: Record<string, any>;
+  pdf_path: string | null; // <-- CORREGIDO (antes pdf_url)
   status: ScriptStatus;
-  created_at: string;
-  updated_at: string;
+  project_id?: string | null; // <-- AÑADIDO
+  created_at?: string; // Opcional
 }
 
+// ** PROJECT NUEVO **
+export interface Project {
+  id: string;
+  user_id: string;
+  name: string;
+  parent_id: string | null;
+  created_at: string;
+  updated_at?: string;
+}
+
+// ** CHARACTER SIMPLIFICADO **
+// Refleja las columnas (id, script_id, name, gender, color, is_user_character) de la tabla 'characters'
 export interface Character {
   id: string;
   script_id: string;
-  name: string;
+  name: string | null;
   is_user_character: boolean;
-  voice_gender: VoiceGender;
-  voice_preset: VoicePreset;
-  color: string;
-  line_count: number;
-  occurrence_percentage: number;
-  created_at: string;
-  updated_at: string;
+  voice_gender: VoiceGender | null;
+  color: string | null;
+  // Omitimos campos que aún no hemos añadido a la DB para evitar errores
+  // voice_preset: VoicePreset;
+  // line_count: number;
+  // occurrence_percentage: number;
+  created_at?: string; // Opcional
 }
+
+// ** DIALOGUE SIMPLIFICADO **
+// Refleja las columnas (id, script_id, character_id, line_text, line_number) de la tabla 'dialogues'
+export interface Dialogue {
+  id: string;
+  script_id: string;
+  character_id: string | null;
+  line_text: string | null;
+  line_number: number | null;
+  created_at?: string; // Opcional
+}
+
+// --- Interfaces de la Plantilla Original (Las mantenemos para no romper otras partes) ---
+// (No hemos creado estas tablas aún, pero dejamos los tipos definidos)
 
 export interface Scene {
   id: string;
   script_id: string;
   scene_number: number;
   heading?: string;
-  content: DialogueContent[];
+  content: DialogueContent[]; // Esto lo usa la Edge Function
   order_index: number;
   created_at: string;
 }
@@ -51,16 +80,6 @@ export interface DialogueContent {
   characterName: string;
   text: string;
   prosodyHints?: ProsodyHints;
-}
-
-export interface Dialogue {
-  id: string;
-  scene_id: string;
-  character_id?: string;
-  text: string;
-  order_index: number;
-  prosody_hints: ProsodyHints;
-  created_at: string;
 }
 
 export interface ProsodyHints {
@@ -89,12 +108,14 @@ export interface Recording {
   session_id?: string;
   user_id: string;
   script_id: string;
+  project_id?: string | null;
   audio_url: string;
   duration_seconds: number;
   file_size_bytes: number;
   title?: string;
   notes?: string;
   hidden?: boolean;
+  type?: 'audio' | 'video';
   created_at: string;
 }
 
@@ -110,37 +131,47 @@ export interface TTSCache {
   expires_at: string;
 }
 
+// --- Tipo Principal de Base de Datos (ACTUALIZADO) ---
+// Refleja las interfaces simplificadas que SÍ tenemos en la DB
 export interface Database {
   public: {
     Tables: {
       profiles: {
-        Row: Profile;
-        Insert: Omit<Profile, 'created_at' | 'updated_at'>;
-        Update: Partial<Omit<Profile, 'id' | 'created_at' | 'updated_at'>>;
+        Row: Profile; // <-- Usa el tipo Profile corregido
+        Insert: Omit<Profile, 'id'>; // Simplificado
+        Update: Partial<Profile>;
         Relationships: [];
       };
       scripts: {
-        Row: Script;
-        Insert: Omit<Script, 'id' | 'created_at' | 'updated_at'>;
-        Update: Partial<Omit<Script, 'id' | 'user_id' | 'created_at' | 'updated_at'>>;
+        Row: Script; // <-- Usa el tipo Script simplificado
+        Insert: Omit<Script, 'id' | 'created_at'>;
+        Update: Partial<Script>;
+        Relationships: [];
+      };
+      projects: {
+        Row: Project;
+        Insert: Omit<Project, 'id' | 'created_at' | 'updated_at'>;
+        Update: Partial<Project>;
         Relationships: [];
       };
       characters: {
-        Row: Character;
-        Insert: Omit<Character, 'id' | 'created_at' | 'updated_at'>;
-        Update: Partial<Omit<Character, 'id' | 'script_id' | 'created_at' | 'updated_at'>>;
+        Row: Character; // <-- Usa el tipo Character simplificado
+        Insert: Omit<Character, 'id' | 'created_at'>;
+        Update: Partial<Character>;
         Relationships: [];
       };
+      dialogues: {
+        Row: Dialogue; // <-- Usa el tipo Dialogue simplificado
+        Insert: Omit<Dialogue, 'id' | 'created_at'>;
+        Update: Partial<Dialogue>;
+        Relationships: [];
+      };
+      // Dejamos el resto de tablas como estaban en tu plantilla
+      // para no romper código que aún no hemos revisado
       scenes: {
         Row: Scene;
         Insert: Omit<Scene, 'id' | 'created_at'>;
         Update: Partial<Omit<Scene, 'id' | 'script_id' | 'created_at'>>;
-        Relationships: [];
-      };
-      dialogues: {
-        Row: Dialogue;
-        Insert: Omit<Dialogue, 'id' | 'created_at'>;
-        Update: Partial<Omit<Dialogue, 'id' | 'scene_id' | 'created_at'>>;
         Relationships: [];
       };
       practice_sessions: {

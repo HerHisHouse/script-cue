@@ -102,7 +102,7 @@ export default function AuthScreen() {
             <View style={[styles.logoContainer, { backgroundColor: isDark ? '#0B1220' : colors.input }]}>
               <Mic size={48} color={colors.primary} />
             </View>
-            <Text style={[styles.title, { color: colors.text }]}>ReplicaStudio</Text>
+            <Text style={[styles.title, { color: colors.text }]}>Script Cue</Text>
             <Text style={[styles.subtitle, { color: colors.textSecondary }]}>Practica tus guiones con IA</Text>
           </View>
 

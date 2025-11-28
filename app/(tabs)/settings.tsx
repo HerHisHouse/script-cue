@@ -10,6 +10,7 @@ import { ConfirmDialog } from '@/components/ConfirmDialog';
 import appConfig from '../../app.json';
 import { getSettings, setSettings } from '@/utils/appSettings';
 import * as Speech from 'expo-speech';
+import * as ScreenOrientation from 'expo-screen-orientation';
 
 export default function SettingsScreen() {
   const router = useRouter();
@@ -26,6 +27,7 @@ export default function SettingsScreen() {
   const [platformTarget, setPlatformTarget] = useState<'web' | 'ios' | 'android'>(Platform.OS as any);
   const [rateValue, setRateValue] = useState<number>(1.0);
   const [pitchValue, setPitchValue] = useState<number>(1.0);
+  const [rotationEnabled, setRotationEnabled] = useState(false);
 
   useEffect(() => {
     (async () => {
@@ -39,7 +41,8 @@ export default function SettingsScreen() {
         const { rate, pitch } = getRatePitchForPlatform(s, platformTarget);
         setRateValue(rate);
         setPitchValue(pitch);
-      } catch {}
+        setRotationEnabled(!!s.rotationEnabled);
+      } catch { }
     })();
   }, []);
 
@@ -48,7 +51,7 @@ export default function SettingsScreen() {
       try {
         const voices = await Speech.getAvailableVoicesAsync();
         setAvailableVoices(voices || []);
-      } catch {}
+      } catch { }
     })();
   }, []);
 
@@ -96,7 +99,7 @@ export default function SettingsScreen() {
         voice: systemVoiceId,
         rate: rateValue,
         pitch: pitchValue,
-        onDone: () => {},
+        onDone: () => { },
       });
     } catch (e: any) {
       Alert.alert('Error', e?.message || 'No se pudo reproducir la frase de ejemplo');
@@ -111,7 +114,7 @@ export default function SettingsScreen() {
     return localPart || 'Usuario';
   }, [profile?.full_name, user?.email]);
 
-  const appName = 'ReplicaStudio';
+  const appName = 'Script Cue';
   const appVersion = `v${appConfig?.expo?.version ?? '1.0.0'}`;
 
   async function confirmSignOut() {
@@ -136,6 +139,22 @@ export default function SettingsScreen() {
       );
     } catch (e: any) {
       Alert.alert('Error', e?.message || 'No se pudo actualizar la preferencia');
+    }
+  }
+
+  async function toggleRotation() {
+    try {
+      const next = !rotationEnabled;
+      setRotationEnabled(next);
+      await setSettings({ rotationEnabled: next });
+      if (next) {
+        await ScreenOrientation.unlockAsync();
+      } else {
+        await ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.PORTRAIT_UP);
+      }
+    } catch (e: any) {
+      Alert.alert('Error', e?.message || 'No se pudo actualizar la rotación');
+      setRotationEnabled(!rotationEnabled); // Revertir en caso de error
     }
   }
 
@@ -166,6 +185,19 @@ export default function SettingsScreen() {
                 {displayName}
               </Text>
               <Text style={[styles.profileEmail, { color: colors.textSecondary }]}>{user?.email}</Text>
+            </View>
+          </View>
+        </View>
+
+        <View style={styles.section}>
+          <Text style={[styles.sectionTitle, { color: colors.textSecondary }]}>General</Text>
+          <View style={[styles.storageCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+            <View style={styles.storageRow}>
+              <View style={{ flex: 1 }}>
+                <Text style={[styles.storageTitle, { color: colors.text }]}>Rotación de pantalla</Text>
+                <Text style={[styles.storageDesc, { color: colors.textSecondary }]}>Permitir que la pantalla gire al rotar el dispositivo.</Text>
+              </View>
+              <Switch value={rotationEnabled} onValueChange={toggleRotation} />
             </View>
           </View>
         </View>
@@ -317,7 +349,7 @@ export default function SettingsScreen() {
                               setSystemVoiceId(first);
                               await setSettings({ systemTtsVoiceId: first });
                             }
-                          } catch {}
+                          } catch { }
                         }}
                       >
                         <Text style={[styles.dropdownItemText, { color: systemLang === lang ? colors.primary : colors.text }]}>{lang}</Text>
@@ -362,7 +394,7 @@ export default function SettingsScreen() {
                             await setSettings({ systemTtsVoiceId: v.identifier });
                             setVoiceDropdownOpen(false);
                             Alert.alert('Preferencia actualizada', `Voz seleccionada: ${v.name}`);
-                          } catch {}
+                          } catch { }
                         }}
                       >
                         <Text style={[styles.dropdownItemText, { color: systemVoiceId === v.identifier ? colors.primary : colors.text }]}>
@@ -381,7 +413,7 @@ export default function SettingsScreen() {
             </View>
 
             {/* Rate/Pitch por plataforma */}
-            <View style={[styles.ratePitchCard, { borderColor: colors.border, backgroundColor: colors.surface }]}> 
+            <View style={[styles.ratePitchCard, { borderColor: colors.border, backgroundColor: colors.surface }]}>
               <Text style={[styles.ratePitchTitle, { color: colors.textSecondary }]}>Rate/Pitch por plataforma</Text>
               <View style={styles.segmented}>
                 {(['web', 'ios', 'android'] as const).map((p) => (
@@ -395,7 +427,7 @@ export default function SettingsScreen() {
                         const { rate, pitch } = getRatePitchForPlatform(s, p);
                         setRateValue(rate);
                         setPitchValue(pitch);
-                      } catch {}
+                      } catch { }
                     }}
                   >
                     <Text style={[styles.segmentedText, { color: platformTarget === p ? colors.primary : colors.textSecondary }]}>

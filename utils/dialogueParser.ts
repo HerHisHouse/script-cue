@@ -37,7 +37,7 @@ export function extractDialogue(
     for (const contentItem of scene.content) {
       const target = normalizeName(contentItem.characterName);
       const character = characters.find(
-        (c) => normalizeName(c.name) === target
+        (c) => normalizeName(c.name || '') === target
       );
 
       if (contentItem.text) {
@@ -46,7 +46,7 @@ export function extractDialogue(
         if (cleanText.trim().length > 0) {
           // Fallback: si no existe el personaje en BD, igual mostramos la línea
           const fallbackId = `unknown-${contentItem.characterName}`;
-          dialogueLines.push({
+          const newItem = {
             id: `${scene.id}-${orderIndex}`,
             characterId: character ? character.id : fallbackId,
             characterName: character ? character.name : contentItem.characterName,
@@ -54,11 +54,19 @@ export function extractDialogue(
             cleanText: cleanText,
             color: character ? character.color : '#6B7280',
             voiceGender: character ? character.voice_gender : 'neutral',
-            voicePreset: character ? character.voice_preset : 'natural',
+            voicePreset: 'natural', // Usar valor por defecto ya que voice_preset no existe en el tipo Character
             isUserCharacter: character ? character.is_user_character : false,
             orderIndex: orderIndex++,
             sceneId: scene.id,
-          });
+          } as DialogueLine;
+          const last = dialogueLines[dialogueLines.length - 1];
+          if (last && last.sceneId === newItem.sceneId && normalizeName(last.characterName) === normalizeName(newItem.characterName)) {
+            const mergedText = `${last.text} ${newItem.text}`.replace(/\s+/g, ' ').trim();
+            const mergedClean = `${last.cleanText} ${newItem.cleanText}`.replace(/\s+/g, ' ').trim();
+            dialogueLines[dialogueLines.length - 1] = { ...last, text: mergedText, cleanText: mergedClean };
+          } else {
+            dialogueLines.push(newItem);
+          }
         }
       }
     }

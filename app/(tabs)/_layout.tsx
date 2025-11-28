@@ -24,19 +24,22 @@ export default function TabLayout() {
           borderTopWidth: 1,
           borderTopColor: colors.border,
           // Altura ajustada para no reducir la viewarea en iOS
-          height: baseHeight + bottomInset,
-          // Padding inferior igual al inset para iOS; menor en Android
-          paddingBottom: bottomInset,
-          // Padding superior moderado para centrado visual
-          paddingTop: Platform.OS === 'ios' ? 6 : 8,
+          height: baseHeight + bottomInset + 10, // Increased height for labels
+          paddingBottom: bottomInset + 4,
+          paddingTop: 8,
         },
-        // Eleva visualmente los ítems 24px en Android manteniendo la alineación horizontal
         tabBarItemStyle: {
-          marginTop: -verticalLift,
+          marginTop: Platform.OS === 'android' ? 0 : 4, // Adjusted for better centering
         },
+        tabBarLabelStyle: {
+          fontSize: 11,
+          fontWeight: '500',
+          marginTop: 2,
+        },
+        tabBarShowLabel: true,
       }}>
       <Tabs.Screen
-        name="projects"
+        name="index"
         options={{
           title: 'Mis proyectos',
           tabBarIcon: ({ size, color }) => (
@@ -45,7 +48,7 @@ export default function TabLayout() {
         }}
       />
       <Tabs.Screen
-        name="index"
+        name="scripts"
         options={{
           title: 'Mis Guiones',
           tabBarIcon: ({ size, color }) => (

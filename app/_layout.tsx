@@ -5,6 +5,8 @@ import { LogBox } from 'react-native';
 import { AuthProvider, useAuth } from '@/contexts/AuthContext';
 import { ThemeProvider } from '@/contexts/ThemeContext';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
+import * as ScreenOrientation from 'expo-screen-orientation';
+import { getSettings } from '@/utils/appSettings';
 
 function AppRoot() {
   const { user, loading } = useAuth();
@@ -28,6 +30,22 @@ function AppRoot() {
     }
   }, [user, loading, segments, router]);
 
+  // Inicializar orientación global
+  useEffect(() => {
+    (async () => {
+      try {
+        const s = await getSettings();
+        if (s.rotationEnabled) {
+          await ScreenOrientation.unlockAsync();
+        } else {
+          await ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.PORTRAIT_UP);
+        }
+      } catch (e) {
+        console.error('Error setting initial orientation:', e);
+      }
+    })();
+  }, []);
+
   return (
     <Stack>
       <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
@@ -35,16 +53,16 @@ function AppRoot() {
       <Stack.Screen name="scan-script" options={{ headerShown: false }} />
       <Stack.Screen name="import-script" options={{ headerShown: false }} />
       <Stack.Screen name="scripts/[id]/index" options={{ headerShown: false }} />
-      <Stack.Screen name="scripts/[id]/characters" options={{ title: 'Personajes' }} />
       <Stack.Screen name="scripts/[id]/record" options={{ title: 'Grabar' }} />
       <Stack.Screen name="scripts/[id]/study" options={{ headerShown: false }} />
+      <Stack.Screen name="scripts/[id]/memory" options={{ headerShown: false }} />
     </Stack>
   );
 }
 
 export default function RootLayout() {
   return (
-    <GestureHandlerRootView style={{ flex: 1 }}>
+    <GestureHandlerRootView style={{ flex: 1, backgroundColor: '#000000' }}>
       <ThemeProvider>
         <AuthProvider>
           <AppRoot />

@@ -205,6 +205,7 @@ export default function ScanScriptScreen() {
         throw new Error('Error al procesar el texto');
       }
 
+      // Ir directamente a la configuración de personajes tras el escaneo
       router.replace(`/scripts/${scriptData.id}`);
     } catch (error: any) {
       console.error('Error processing scanned images:', error);

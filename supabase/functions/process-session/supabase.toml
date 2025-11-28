@@ -1,0 +1,3 @@
+[functions."process-session"]
+verify_jwt = true
+runtime = "nodejs18"

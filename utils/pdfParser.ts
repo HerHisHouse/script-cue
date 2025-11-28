@@ -11,8 +11,10 @@ export interface ParsedScript {
   rawText: string;
 }
 
-const CHARACTER_NAME_REGEX = /^([A-ZÑÁÉÍÓÚ0-9 \-]{2,30})$/;
+const CHARACTER_NAME_REGEX = /^([A-ZÑÁÉÍÓÚ0-9 \-]{2,30})(?:\s*\([^)]*\))?$/;
 const SCENE_HEADING_REGEX = /^(INT\.|EXT\.|INT\/EXT\.|INTERIOR|EXTERIOR)/i;
+const SCENE_NUMBER_REGEX = /^\s*\d+(\.|-|:)\s*$/i;
+const PARENTHETICAL_REGEX = /^\s*\([\s\S]*\)\s*$/;
 
 const SCENE_KEYWORDS = ['INT.', 'EXT.', 'INT/EXT.', 'INTERIOR', 'EXTERIOR'];
 
@@ -26,6 +28,7 @@ export function parseScreenplay(text: string): ParsedScript {
   let orderIndex = 0;
   let lastCharacterName: string | null = null;
   let currentDialogueText: string | null = null;
+  let dialogueIndent: number | null = null;
 
   const colorPalette = [
     '#3B82F6', '#10B981', '#F59E0B', '#EF4444', '#8B5CF6',
@@ -40,6 +43,7 @@ export function parseScreenplay(text: string): ParsedScript {
     const rawLine = lines[i];
     const line = rawLine; // sin trim para evitar pérdida de formato dentro de diálogos
     const trimmed = (rawLine || '').trim();
+    const leadingSpaces = (rawLine || '').match(/^ */)![0].length;
 
     // Línea vacía: si estamos dentro de un diálogo, preservamos como salto de línea
     if (!trimmed) {
@@ -83,6 +87,8 @@ export function parseScreenplay(text: string): ParsedScript {
         order_index: orderIndex++,
       };
       lastCharacterName = null;
+      currentDialogueText = null;
+      dialogueIndent = null;
       continue;
     }
 
@@ -99,7 +105,7 @@ export function parseScreenplay(text: string): ParsedScript {
       trimmed.toUpperCase().includes(keyword)
     );
 
-    if (isSceneKeyword) {
+    if (isSceneKeyword || SCENE_NUMBER_REGEX.test(trimmed)) {
       continue;
     }
 
@@ -121,10 +127,12 @@ export function parseScreenplay(text: string): ParsedScript {
         const charDataPrev = characters.get(lastCharacterName);
         if (charDataPrev) charDataPrev.count++;
         currentDialogueText = null;
+        dialogueIndent = null;
       }
 
       const characterName = trimmed;
       lastCharacterName = characterName;
+      dialogueIndent = null;
 
       if (!characters.has(characterName)) {
         characters.set(characterName, {
@@ -137,10 +145,43 @@ export function parseScreenplay(text: string): ParsedScript {
     }
 
     if (lastCharacterName && trimmed.length > 0) {
-      // Acumular el texto de diálogo del mismo personaje para evitar división por tarjetas
-      currentDialogueText = currentDialogueText
-        ? `${currentDialogueText} ${trimmed}`
-        : trimmed;
+      if (PARENTHETICAL_REGEX.test(trimmed)) {
+        continue;
+      }
+      if (currentDialogueText === null) {
+        dialogueIndent = leadingSpaces;
+        currentDialogueText = trimmed;
+      } else {
+        const indent = leadingSpaces;
+        const baseline = dialogueIndent ?? 0;
+        const indentDrop = indent < Math.max(0, baseline - 2);
+        const looksSceneHeading = SCENE_HEADING_REGEX.test(trimmed);
+        const looksCharacter = CHARACTER_NAME_REGEX.test(trimmed);
+        if (indentDrop || looksSceneHeading || looksCharacter) {
+          const prosodyHints: ProsodyHints = {
+            hasQuestion: currentDialogueText.includes('?'),
+            hasExclamation: currentDialogueText.includes('!'),
+            emphasis: (currentDialogueText.match(/!/g) || []).length,
+            emotion: 'neutral',
+            pace: 'normal',
+          };
+          currentScene.content.push({
+            characterName: lastCharacterName,
+            text: currentDialogueText,
+            prosodyHints,
+          });
+          const charDataMid = characters.get(lastCharacterName);
+          if (charDataMid) charDataMid.count++;
+          currentDialogueText = null;
+          lastCharacterName = null;
+          dialogueIndent = null;
+          if (looksSceneHeading || looksCharacter) {
+            i--; 
+          }
+        } else {
+          currentDialogueText = `${currentDialogueText} ${trimmed}`;
+        }
+      }
     }
   }
 
@@ -162,10 +203,32 @@ export function parseScreenplay(text: string): ParsedScript {
     if (charData) charData.count++;
     currentDialogueText = null;
     lastCharacterName = null;
+    dialogueIndent = null;
   }
 
   if (currentScene && currentScene.content.length > 0) {
     scenes.push(currentScene);
+  }
+
+  for (const scene of scenes) {
+    const merged: DialogueContent[] = [];
+    for (const item of scene.content) {
+      const last = merged[merged.length - 1];
+      if (last && last.characterName === item.characterName) {
+        const text = `${last.text} ${item.text}`.replace(/\s+/g, ' ').trim();
+        const prosodyHints: ProsodyHints = {
+          hasQuestion: text.includes('?'),
+          hasExclamation: text.includes('!'),
+          emphasis: (text.match(/!/g) || []).length,
+          emotion: 'neutral',
+          pace: 'normal',
+        };
+        merged[merged.length - 1] = { ...last, text, prosodyHints };
+      } else {
+        merged.push(item);
+      }
+    }
+    scene.content = merged;
   }
 
   const totalLines = Array.from(characters.values()).reduce(
@@ -211,6 +274,16 @@ export function runParseScreenplayTests() {
     {
       name: 'Líneas con espacios y vacías se preservan dentro del mismo diálogo',
       input: 'INT. CASA - NOCHE\nALEX\nPrimera línea.\n\nSegunda línea tras espacio.',
+      expectContentCount: 1,
+    },
+    {
+      name: 'Ignora acotación izquierda entre dos bloques del mismo personaje y fusiona',
+      input: 'INT. CASA - NOCHE\nALEX\n        Hola.\nSe levanta y camina.\nALEX\n        Sigue: ¿vienes?',
+      expectContentCount: 1,
+    },
+    {
+      name: 'Ignora números de escena sueltos',
+      input: '1.\nINT. OFICINA - DÍA\nALEX\n        Probando.',
       expectContentCount: 1,
     },
   ];

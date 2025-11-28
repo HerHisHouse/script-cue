@@ -1,13 +1,25 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, TextInput, ActivityIndicator, Alert, ScrollView } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useRouter } from 'expo-router';
+import { useRouter, useLocalSearchParams } from 'expo-router';
 import { Upload, ArrowLeft, Check, ChevronDown, Camera } from 'lucide-react-native';
 import * as DocumentPicker from 'expo-document-picker';
 import { useAuth } from '@/contexts/AuthContext';
 import { useTheme } from '@/contexts/ThemeContext';
 import { supabase } from '@/utils/supabase';
 import { logger } from '@/utils/logger';
+import { getSettings, setSettings, AppSettings } from '@/utils/appSettings';
+import * as Speech from 'expo-speech';
+
+// Tipo extendido para incluir propiedades dinámicas de configuración de personajes
+type ExtendedAppSettings = {
+  characterVoicesByScript?: Record<string, Record<string, { provider: string; systemVoiceId?: string }>>;
+};
+
+// Helper para merge de settings con propiedades extendidas
+function mergeSettings(current: AppSettings, extended: ExtendedAppSettings): AppSettings {
+  return { ...current, ...extended } as AppSettings;
+}
 
 const CHARACTER_COLORS = [
   { value: '#3B82F6', label: 'Azul' },
@@ -24,22 +36,101 @@ interface CharacterConfig {
   isMyCharacter: boolean;
   gender: 'male' | 'female';
   color: string;
+  provider?: 'openai' | 'elevenlabs' | 'google' | 'system';
+  systemVoiceId?: string;
 }
 
 export default function ImportScriptScreen() {
   const router = useRouter();
+  const { scriptId, openConfig } = useLocalSearchParams();
   const { user } = useAuth();
   const { colors, isDark } = useTheme();
   const [title, setTitle] = useState('');
   const [file, setFile] = useState<any>(null);
   const [uploading, setUploading] = useState(false);
   const mountedRef = useRef(true);
+  // Voces disponibles y valores por defecto
+  const [availableVoices, setAvailableVoices] = useState<Speech.Voice[]>([]);
+  const [defaultSystemVoiceId, setDefaultSystemVoiceId] = useState<string>('');
+  const [openOperatorIndex, setOpenOperatorIndex] = useState<number | null>(null);
+  const [openVoiceIndex, setOpenVoiceIndex] = useState<number | null>(null);
+  const scrollRef = useRef<ScrollView | null>(null);
+  const [configSectionY, setConfigSectionY] = useState<number>(0);
+  const [showConfigOnly, setShowConfigOnly] = useState<boolean>(false);
+  const [loadingExisting, setLoadingExisting] = useState<boolean>(false);
+  const [uploadProgress, setUploadProgress] = useState(0);
 
   useEffect(() => {
     return () => {
       mountedRef.current = false;
     };
   }, []);
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const settings = await getSettings();
+        if (settings?.systemTtsVoiceId) setDefaultSystemVoiceId(settings.systemTtsVoiceId);
+        const voices = await Speech.getAvailableVoicesAsync();
+        setAvailableVoices(voices || []);
+      } catch { }
+    })();
+  }, []);
+
+  useEffect(() => {
+    (async () => {
+      if (openConfig && scriptId) {
+        setShowConfigOnly(true);
+        setLoadingExisting(true);
+        try {
+          const { data: scriptData, error: scriptError } = await supabase
+            .from('scripts')
+            .select('*')
+            .eq('id', scriptId)
+            .maybeSingle();
+          if (scriptError) throw scriptError;
+          if (scriptData?.title) setTitle(scriptData.title);
+
+          const { data: chars, error: charsError } = await supabase
+            .from('characters')
+            .select('*')
+            .eq('script_id', scriptId);
+          if (charsError) throw charsError;
+
+          const settings = await getSettings();
+          const perMap: Record<string, { provider?: string; systemVoiceId?: string }> = ((settings as any)?.characterVoicesByScript?.[String(scriptId)] || {});
+
+          const mapped: CharacterConfig[] = (chars || []).map((c: any, idx: number) => {
+            const nameUpper = (c.name || '').toUpperCase();
+            const per = perMap[nameUpper] || {};
+            return {
+              id: String(c.id),
+              name: nameUpper,
+              isMyCharacter: !!c.is_user_character,
+              gender: (c.voice_gender === 'female' ? 'female' : 'male'),
+              color: c.color || CHARACTER_COLORS[idx % CHARACTER_COLORS.length].value,
+              provider: c.is_user_character ? undefined : ((per.provider as any) || 'system'),
+              systemVoiceId: c.is_user_character ? undefined : (per.systemVoiceId || defaultSystemVoiceId || ''),
+            };
+          });
+          setCharacters(mapped);
+          setCharacterCount(mapped.length);
+
+          const firstNonUserIndex = mapped.findIndex((c) => !c.isMyCharacter);
+          if (firstNonUserIndex >= 0) setOpenOperatorIndex(firstNonUserIndex);
+          setTimeout(() => {
+            if (scrollRef.current) {
+              scrollRef.current.scrollTo({ y: Math.max(configSectionY - 12, 0), animated: true });
+            }
+          }, 100);
+        } catch (e) {
+          // si falla, dejamos flujo de importación normal
+        } finally {
+          setLoadingExisting(false);
+        }
+      }
+    })();
+  }, [openConfig, scriptId]);
 
   const [characterCount, setCharacterCount] = useState<number>(1);
   const [showCountPicker, setShowCountPicker] = useState(false);
@@ -105,6 +196,8 @@ export default function ImportScriptScreen() {
         isMyCharacter,
         gender: characters[i]?.gender || 'male',
         color,
+        provider: isMyCharacter ? undefined : (characters[i]?.provider || 'system'),
+        systemVoiceId: isMyCharacter ? undefined : (characters[i]?.systemVoiceId || defaultSystemVoiceId || ''),
       });
     }
 
@@ -127,6 +220,58 @@ export default function ImportScriptScreen() {
   }
 
   async function handleUpload() {
+    if (showConfigOnly && scriptId) {
+      // Guardar cambios sobre guión existente (sin importar PDF)
+      try {
+        setUploading(true);
+        for (let i = 0; i < characters.length; i++) {
+          const char = characters[i];
+          const voiceGender = char.isMyCharacter ? 'neutral' : char.gender;
+          const { error: updErr } = await supabase
+            .from('characters')
+            .update({
+              name: char.name.toUpperCase(),
+              is_user_character: char.isMyCharacter,
+              voice_gender: voiceGender,
+              voice_preset: 'natural',
+              color: char.color,
+              manually_added: true,
+            })
+            .eq('id', char.id)
+            .eq('script_id', scriptId);
+          if (updErr) throw new Error(`No se pudo actualizar el personaje "${char.name}": ${updErr.message || updErr}`);
+        }
+
+        try {
+          const currentSettings = await getSettings() as ExtendedAppSettings;
+          const perCharacterVoices: Record<string, { provider: string; systemVoiceId?: string }> = {};
+          for (const c of characters) {
+            if (!c.isMyCharacter) {
+              perCharacterVoices[(c.name || '').toUpperCase()] = {
+                provider: (c.provider || 'system'),
+                systemVoiceId: c.systemVoiceId || '',
+              };
+            }
+          }
+          const extendedSettings: ExtendedAppSettings = {
+            characterVoicesByScript: {
+              ...(currentSettings.characterVoicesByScript || {}),
+              [String(scriptId)]: perCharacterVoices,
+            },
+          };
+          await setSettings(mergeSettings(currentSettings as AppSettings, extendedSettings));
+        } catch { }
+
+        Alert.alert('Guardado', 'Se actualizaron los personajes y voces.');
+        router.replace(`/scripts/${scriptId}`);
+      } catch (error: any) {
+        logger.error('Error updating characters:', error);
+        Alert.alert('Error', error.message || 'No se pudieron actualizar los personajes');
+      } finally {
+        if (mountedRef.current) setUploading(false);
+      }
+      return;
+    }
     if (!title.trim()) {
       Alert.alert('Error', 'Por favor ingresa un título');
       return;
@@ -155,6 +300,15 @@ export default function ImportScriptScreen() {
     }
 
     setUploading(true);
+    setUploadProgress(0);
+
+    // Simular progreso
+    const progressInterval = setInterval(() => {
+      setUploadProgress(prev => {
+        if (prev >= 90) return prev;
+        return prev + Math.random() * 5; // Más lento para importación inicial
+      });
+    }, 500);
 
     try {
       const insertData: any = {
@@ -199,7 +353,28 @@ export default function ImportScriptScreen() {
           throw new Error(`No se pudo crear el personaje "${char.name}": ${charErr.message || charErr}`);
         }
       }
-            // Subir PDF a Storage y obtener path con manejo de errores
+
+      // Guardar configuración de voces por personaje para este guión en ajustes locales
+      try {
+        const currentSettings = await getSettings() as ExtendedAppSettings;
+        const perCharacterVoices: Record<string, { provider: string; systemVoiceId?: string }> = {};
+        for (const c of characters) {
+          if (!c.isMyCharacter) {
+            perCharacterVoices[(c.name || '').toUpperCase()] = {
+              provider: (c.provider || 'system'),
+              systemVoiceId: c.systemVoiceId || '',
+            };
+          }
+        }
+        const extendedSettings: ExtendedAppSettings = {
+          characterVoicesByScript: {
+            ...(currentSettings.characterVoicesByScript || {}),
+            [scriptData.id]: perCharacterVoices,
+          },
+        };
+        await setSettings(mergeSettings(currentSettings as AppSettings, extendedSettings));
+      } catch { }
+      // Subir PDF a Storage y obtener path con manejo de errores
       let filePath: string;
       try {
         const name = (file?.name ?? '').toString();
@@ -211,7 +386,7 @@ export default function ImportScriptScreen() {
         // 🚨 CÓDIGO DE SUBIDA DIRECTO PARA ELIMINAR EL ERROR DE ARCHIVO NO SINCRONIZADO
         const fileExt = name.split('.').pop();
         const path = `${user!.id}/${scriptData.id}/script.${fileExt}`;
-        
+
         // 1. Leer el archivo localmente
         const response = await fetch(uri);
         const arrayBuffer = await response.arrayBuffer();
@@ -233,7 +408,7 @@ export default function ImportScriptScreen() {
       } catch (e: any) {
         const msg = e?.message || 'No se pudo subir el PDF al Storage';
         // Esto mostrará el error exacto de Supabase, como "Bucket not found"
-        throw new Error(`Error de subida: ${msg}`); 
+        throw new Error(`Error de subida: ${msg}`);
       }
 
       // Guardar el path en metadata del script para referencia futura
@@ -255,58 +430,53 @@ export default function ImportScriptScreen() {
       const userToken = sessionData.session?.access_token;
 
       if (!userToken) {
-          Alert.alert('Error de Autenticación', 'No se pudo obtener el token de sesión. Por favor, reinicia la aplicación.');
-          setUploading(false);
-          return;
+        Alert.alert('Error de Autenticación', 'No se pudo obtener el token de sesión. Por favor, reinicia la aplicación.');
+        setUploading(false);
+        return;
       }
 
+      // ---------- START: Replace existing parse-pdf fetch block ---------- 
       const functionUrl = `${process.env.EXPO_PUBLIC_SUPABASE_URL}/functions/v1/parse-pdf`;
-      const response = await fetch(functionUrl, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          // 🚨 CORRECCIÓN: USAR EL TOKEN DEL USUARIO EN EL HEADER AUTHORIZATION
-          'Authorization': `Bearer ${userToken}`, 
-        },
-        body: JSON.stringify({
-          scriptId: scriptData.id,
-          filePath,
-          fileName: file?.name ?? 'script.pdf',
-          skipCharacterDetection: true,
-        }),
-      });
 
-      if (!response.ok) {
-        let serverErrorMessage: any = 'Error al procesar el PDF';
-        let details: any = null;
-        try {
-          const contentType = response.headers.get('content-type') || '';
-          if (contentType.includes('application/json')) {
-            const errData = await response.json();
-            details = errData;
-            const candidates = [errData?.error, errData?.message, errData?.hint];
-            const found = candidates.find((v) => typeof v === 'string' && v.trim().length > 0);
-            if (found) serverErrorMessage = found;
-          } else {
-            const textBody = await response.text();
-            if (textBody && textBody.trim().length > 0) {
-              serverErrorMessage = textBody;
-            }
-          }
-        } catch {
-          // keep default message
+      try {
+        // Ensure we have a user token (must be in scope) 
+        if (!userToken) {
+          console.error('No userToken available for parse-pdf request');
+          throw new Error('Missing user token');
         }
-        if (!serverErrorMessage || typeof serverErrorMessage !== 'string' || serverErrorMessage.trim().length === 0) {
-          serverErrorMessage = 'Unknown upload error';
-        }
-        logger.warn('Upload parse error:', {
-          status: response.status,
-          statusText: (response as any).statusText,
-          serverErrorMessage,
-          details,
+
+        const res = await fetch(functionUrl, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${userToken}`, // user token in Authorization header 
+          },
+          body: JSON.stringify({
+            scriptId: scriptData.id,
+            filePath,
+            fileName: file?.name ?? 'script.pdf',
+            // choose true/false according to desired behavior: 
+            // skipCharacterDetection: true  -> keep current behavior (skip auto detect) 
+            // skipCharacterDetection: false -> run detection in backend 
+            skipCharacterDetection: true,
+            // new flag (optional) to request preserving formatting if backend supports it 
+            preserveFormatting: true,
+          }),
         });
-        // No interrumpir la importación: marcamos el estado como "processing" y
-        // registramos el mensaje en metadata para seguimiento.
+
+        if (!res.ok) {
+          const text = await res.text().catch(() => '<no body>');
+          console.error('parse-pdf failed:', res.status, text);
+          throw new Error(`parse-pdf returned ${res.status}`);
+        }
+
+        const result = await res.json();
+        console.log('parse-pdf result:', result);
+        // handle result as before (for example update script parsing state) 
+      } catch (err) {
+        console.error('Error calling parse-pdf:', err);
+        // existing UI/error handling here (alert or toast) if needed 
+        // No interrumpir la importación: marcamos el estado como "processing" 
         try {
           await supabase
             .from('scripts')
@@ -314,28 +484,40 @@ export default function ImportScriptScreen() {
               status: 'processing',
               metadata: {
                 ...scriptData.metadata,
-                parse_status: 'queued',
-                last_error: serverErrorMessage,
+                parse_status: 'error',
+                last_error: err instanceof Error ? err.message : 'Unknown error',
               },
             })
             .eq('id', scriptData.id);
-        } catch (updateErr) {
-          logger.warn('No se pudo actualizar estado tras error de parseo', updateErr as any);
+        } catch (updateErr: any) {
+          logger.warn('No se pudo actualizar estado tras error de parseo', updateErr);
         }
-        // Continuamos a la pantalla del guión para que el usuario vea el recurso importado.
       }
+      // ---------- END: Replace existing parse-pdf fetch block ----------
 
+      // Volver al Resumen del guion (flujo original)
       router.replace(`/scripts/${scriptData.id}`);
     } catch (error: any) {
       logger.error('Error uploading script:', error);
       Alert.alert('Error', error.message || 'No se pudo cargar el guión');
     } finally {
+      clearInterval(progressInterval);
       if (mountedRef.current) setUploading(false);
     }
   }
 
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
+      {uploading && (
+        <View style={[styles.backdrop, { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.7)', alignItems: 'center', justifyContent: 'center', zIndex: 2000 }]}>
+          <ActivityIndicator size="large" color={colors.primary} style={{ marginBottom: 20 }} />
+          <Text style={{ color: '#FFFFFF', fontSize: 18, fontWeight: '600', marginBottom: 10 }}>Importando el guion...</Text>
+          <View style={{ width: '80%', height: 8, backgroundColor: 'rgba(255,255,255,0.2)', borderRadius: 4, overflow: 'hidden' }}>
+            <View style={{ width: `${uploadProgress}%`, height: '100%', backgroundColor: colors.primary }} />
+          </View>
+          <Text style={{ color: 'rgba(255,255,255,0.8)', marginTop: 8, fontSize: 14 }}>{Math.round(uploadProgress)}%</Text>
+        </View>
+      )}
       <View style={[styles.header, { backgroundColor: colors.background, borderBottomColor: colors.border }]}>
         <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
           <ArrowLeft size={24} color={colors.text} />
@@ -344,7 +526,7 @@ export default function ImportScriptScreen() {
         <View style={{ width: 40 }} />
       </View>
 
-      <ScrollView style={styles.content}>
+      <ScrollView ref={scrollRef} style={styles.content}>
         <View style={styles.form}>
           <Text style={[styles.label, { color: colors.text }]}>Título del Guión</Text>
           <TextInput
@@ -355,43 +537,49 @@ export default function ImportScriptScreen() {
             placeholderTextColor={colors.placeholder}
           />
 
-          <Text style={[styles.label, { color: colors.text }]}>Archivo PDF</Text>
-          <TouchableOpacity
-            style={[
-              styles.uploadButton,
-              { backgroundColor: colors.surface, borderColor: colors.border },
-              ...(file ? [styles.uploadButtonSuccess] : [])
-            ]}
-            onPress={pickDocument}
-          >
-            <Upload size={24} color={file ? colors.success : colors.textSecondary} />
-            <Text style={[
-              styles.uploadText,
-              { color: file ? colors.success : colors.textSecondary }
-            ]}>
-              {file ? file.name : 'Seleccionar PDF'}
-            </Text>
-          </TouchableOpacity>
-
-          <View style={styles.divider}>
-            <View style={[styles.dividerLine, { backgroundColor: colors.border }]} />
-            <Text style={[styles.dividerText, { color: colors.textSecondary }]}>o</Text>
-            <View style={[styles.dividerLine, { backgroundColor: colors.border }]} />
-          </View>
-
-          <TouchableOpacity
-            style={[styles.scanButton, { backgroundColor: colors.surface, borderColor: colors.border }]}
-            onPress={() => router.push('/scan-script')}
-          >
-            <Camera size={24} color={colors.primary} />
-            <Text style={[styles.scanButtonText, { color: colors.primary }]}>
-              Escanear Guión
-            </Text>
-          </TouchableOpacity>
-
-          {file && (
+          {!showConfigOnly && (
             <>
-              <Text style={[styles.sectionTitle, { color: colors.text }]}>Configuración de Personajes</Text>
+              <Text style={[styles.label, { color: colors.text }]}>Archivo PDF</Text>
+              <TouchableOpacity
+                style={[
+                  styles.uploadButton,
+                  { backgroundColor: colors.surface, borderColor: colors.border },
+                  ...(file ? [styles.uploadButtonSuccess] : [])
+                ]}
+                onPress={pickDocument}
+              >
+                <Upload size={24} color={file ? colors.success : colors.textSecondary} />
+                <Text style={[
+                  styles.uploadText,
+                  { color: file ? colors.success : colors.textSecondary }
+                ]}>
+                  {file ? file.name : 'Seleccionar PDF'}
+                </Text>
+              </TouchableOpacity>
+
+              <View style={styles.divider}>
+                <View style={[styles.dividerLine, { backgroundColor: colors.border }]} />
+                <Text style={[styles.dividerText, { color: colors.textSecondary }]}>o</Text>
+                <View style={[styles.dividerLine, { backgroundColor: colors.border }]} />
+              </View>
+
+              <TouchableOpacity
+                style={[styles.scanButton, { backgroundColor: colors.surface, borderColor: colors.border }]}
+                onPress={() => router.push('/scan-script')}
+              >
+                <Camera size={24} color={colors.primary} />
+                <Text style={[styles.scanButtonText, { color: colors.primary }]}>
+                  Escanear Guión
+                </Text>
+              </TouchableOpacity>
+            </>
+          )}
+
+          {(file || showConfigOnly) && (
+            <>
+              <View onLayout={(e) => setConfigSectionY(e.nativeEvent.layout.y)}>
+                <Text style={[styles.sectionTitle, { color: colors.text }]}>Configuración de Personajes</Text>
+              </View>
 
               <Text style={[styles.label, { color: colors.text }]}>Número de Personajes</Text>
               <TouchableOpacity
@@ -402,7 +590,7 @@ export default function ImportScriptScreen() {
                 <ChevronDown size={20} color={colors.textSecondary} />
               </TouchableOpacity>
 
-              {showCountPicker && (
+              {showConfigOnly ? null : showCountPicker && (
                 <View style={[styles.pickerOptions, { backgroundColor: colors.surface, borderColor: colors.border }]}>
                   {[1, 2, 3, 4].map((count) => {
                     const isSelected = count === characterCount;
@@ -477,7 +665,7 @@ export default function ImportScriptScreen() {
                           ? { color: '#FFFFFF', fontWeight: '600' }
                           : { color: colors.textSecondary }
                       ]}>
-                        Hombre
+                        Masculino
                       </Text>
                     </TouchableOpacity>
 
@@ -496,7 +684,7 @@ export default function ImportScriptScreen() {
                           ? { color: '#FFFFFF', fontWeight: '600' }
                           : { color: colors.textSecondary }
                       ]}>
-                        Mujer
+                        Femenino
                       </Text>
                     </TouchableOpacity>
                   </View>
@@ -524,6 +712,103 @@ export default function ImportScriptScreen() {
                           );
                         })}
                       </View>
+
+                      {/* Operador de voces por personaje */}
+                      <Text style={[styles.label, { color: colors.text }]}>Operador de voces</Text>
+                      <TouchableOpacity
+                        style={[styles.picker, { backgroundColor: colors.surface, borderColor: colors.border }]}
+                        onPress={() => setOpenOperatorIndex(openOperatorIndex === index ? null : index)}
+                      >
+                        <Text style={[styles.pickerText, { color: colors.text }]}>
+                          {(() => {
+                            const prov = char.provider || 'system';
+                            return prov === 'openai'
+                              ? 'OpenAI'
+                              : prov === 'elevenlabs'
+                                ? 'ElevenLabs'
+                                : prov === 'google'
+                                  ? 'Google'
+                                  : 'Sistema (offline)';
+                          })()}
+                        </Text>
+                        <ChevronDown size={20} color={colors.textSecondary} />
+                      </TouchableOpacity>
+                      {openOperatorIndex === index && (
+                        <View style={[styles.pickerOptions, { backgroundColor: colors.surface, borderColor: colors.border }]}
+                        >
+                          {(['openai', 'elevenlabs', 'google', 'system'] as const).map((prov) => {
+                            const isSelected = (char.provider || 'system') === prov;
+                            return (
+                              <TouchableOpacity
+                                key={prov}
+                                style={styles.pickerOption}
+                                onPress={() => {
+                                  updateCharacter(index, { provider: prov });
+                                  setOpenOperatorIndex(null);
+                                }}
+                              >
+                                <Text style={[
+                                  styles.pickerOptionText,
+                                  isSelected ? styles.pickerOptionTextSelected : { color: colors.textSecondary }
+                                ]}>
+                                  {prov === 'openai' ? 'OpenAI' : prov === 'elevenlabs' ? 'ElevenLabs' : prov === 'google' ? 'Google' : 'Sistema (offline)'}
+                                </Text>
+                              </TouchableOpacity>
+                            );
+                          })}
+                        </View>
+                      )}
+
+                      {/* Voz del sistema por personaje */}
+                      {(char.provider || 'system') === 'system' && (
+                        <>
+                          <Text style={[styles.label, { color: colors.text }]}>Voz del sistema</Text>
+                          <TouchableOpacity
+                            style={[styles.picker, { backgroundColor: colors.surface, borderColor: colors.border }]}
+                            onPress={() => setOpenVoiceIndex(openVoiceIndex === index ? null : index)}
+                          >
+                            <Text style={[styles.pickerText, { color: colors.text }]}>
+                              {(() => {
+                                const current = (availableVoices || []).find((v) => v.identifier === char.systemVoiceId);
+                                return current ? current.name : 'Selecciona voz';
+                              })()}
+                            </Text>
+                            <ChevronDown size={20} color={colors.textSecondary} />
+                          </TouchableOpacity>
+                          {openVoiceIndex === index && (
+                            <View style={[styles.pickerOptions, { backgroundColor: colors.surface, borderColor: colors.border }]}
+                            >
+                              {(availableVoices || []).map((voice) => {
+                                const isSelected = char.systemVoiceId === voice.identifier;
+                                return (
+                                  <TouchableOpacity
+                                    key={voice.identifier}
+                                    style={styles.pickerOption}
+                                    onPress={() => {
+                                      updateCharacter(index, { systemVoiceId: voice.identifier });
+                                      setOpenVoiceIndex(null);
+                                    }}
+                                  >
+                                    <Text style={[
+                                      styles.pickerOptionText,
+                                      isSelected ? styles.pickerOptionTextSelected : { color: colors.textSecondary }
+                                    ]}>
+                                      {voice.name}
+                                    </Text>
+                                    <Text style={[styles.pickerOptionText, { color: colors.textSecondary, fontSize: 12 }]}>
+                                      {voice.language}
+                                    </Text>
+                                  </TouchableOpacity>
+                                );
+                              })}
+                            </View>
+                          )}
+                          <Text style={[styles.label, { color: colors.textSecondary, marginTop: 4 }]}>
+                            Los parámetros de voz se ajustan en
+                            <Text style={{ color: colors.primary, textDecorationLine: 'underline' }} onPress={() => router.push('/(tabs)/settings')}>Ajustes</Text>.
+                          </Text>
+                        </>
+                      )}
                     </>
                   )}
 
@@ -535,6 +820,8 @@ export default function ImportScriptScreen() {
                   )}
                 </View>
               ))}
+
+              {/* Selectores de voz globales eliminados; ahora por personaje */}
             </>
           )}
 
@@ -544,12 +831,12 @@ export default function ImportScriptScreen() {
               ...(uploading ? [styles.submitButtonDisabled] : [])
             ]}
             onPress={handleUpload}
-            disabled={uploading}
+            disabled={uploading || loadingExisting}
           >
             {uploading ? (
               <ActivityIndicator color="#FFFFFF" />
             ) : (
-              <Text style={styles.submitText}>Importar Guión</Text>
+              <Text style={styles.submitText}>{showConfigOnly ? 'Guardar cambios' : 'Importar Guión'}</Text>
             )}
           </TouchableOpacity>
         </View>

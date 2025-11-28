@@ -1,7 +1,7 @@
 {
   "expo": {
-    "name": "bolt-expo-nativewind",
-    "slug": "bolt-expo-nativewind",
+    "name": "Script Cue",
+    "slug": "script-cue",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
@@ -11,9 +11,10 @@
     "ios": {
       "supportsTablet": true,
       "infoPlist": {
-        "NSMicrophoneUsageDescription": "Necesitamos acceso al micrófono para grabar tus sesiones de estudio y detectar la lectura de tus líneas."
+        "NSMicrophoneUsageDescription": "Necesitamos acceso al micrófono para grabar tus sesiones de estudio y detectar la lectura de tus líneas.",
+        "ITSAppUsesNonExemptEncryption": false
       },
-      "bundleIdentifier": "com.alexx223.boltexponativewind"
+      "bundleIdentifier": "com.alexdiaz.scriptcue"
     },
     "web": {
       "bundler": "metro",
@@ -29,13 +30,30 @@
       "typedRoutes": true
     },
     "android": {
-      "package": "com.alexx223.boltexponativewind"
+      "package": "com.alexdiaz.scriptcue"
     },
     "extra": {
       "router": {},
       "eas": {
-        "projectId": "fbac62da-3222-4c65-9ce9-5766b360e35a"
-      }
+        "projectId": "7084f548-a9ac-4d2a-844d-86d8ecfa06bd"
+      },
+      "appIdBase": {
+        "ios": "com.alexdiaz.scriptcue",
+        "android": "com.alexdiaz.scriptcue"
+      },
+      "appIdEffective": {
+        "ios": "com.alexdiaz.scriptcue",
+        "android": "com.alexdiaz.scriptcue"
+      },
+      "appIdSuffix": "",
+      "mergeServerUrl": "http://localhost:3000"
+    },
+    "owner": "alexx223",
+    "runtimeVersion": {
+      "policy": "appVersion"
+    },
+    "updates": {
+      "url": "https://u.expo.dev/7084f548-a9ac-4d2a-844d-86d8ecfa06bd"
     }
   }
 }

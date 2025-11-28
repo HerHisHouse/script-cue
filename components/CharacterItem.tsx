@@ -16,12 +16,12 @@ export function CharacterItem({ character, onPress, isSelected }: CharacterItemP
       onPress={onPress}
     >
       <View style={[styles.iconContainer, { backgroundColor: character.color + '20' }]}>
-        <User size={20} color={character.color} />
+        <User size={20} color={character.color || '#6B7280'} />
       </View>
       <View style={styles.content}>
         <Text style={styles.name}>{character.name}</Text>
         <Text style={styles.stats}>
-          {character.line_count} líneas • {character.occurrence_percentage.toFixed(1)}%
+          {character.name}
         </Text>
       </View>
       {isSelected && (

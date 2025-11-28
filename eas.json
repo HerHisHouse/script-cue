@@ -1,0 +1,27 @@
+{
+  "cli": {
+    "version": ">= 16.26.0",
+    "appVersionSource": "remote"
+  },
+  "build": {
+    "development": {
+      "developmentClient": true,
+      "distribution": "internal",
+      "env": {
+        "APP_ID_SUFFIX": ".dev"
+      }
+    },
+    "preview": {
+      "distribution": "internal",
+      "env": {
+        "APP_ID_SUFFIX": ".preview"
+      }
+    },
+    "production": {
+      "autoIncrement": true
+    }
+  },
+  "submit": {
+    "production": {}
+  }
+}

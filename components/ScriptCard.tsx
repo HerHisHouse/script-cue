@@ -37,17 +37,17 @@ export function ScriptCard({ script, onPress, onLongPress, selected = false, sho
       Animated.timing(menuScale, { toValue: showMenu ? 1 : 0.98, duration: 140, easing: Easing.out(Easing.cubic), useNativeDriver: true }),
     ]).start();
   }, [showMenu]);
-  const statusColor = {
+  const statusColor = script.status ? {
     processing: '#F59E0B',
     ready: '#10B981',
     error: '#EF4444',
-  }[script.status];
+  }[script.status] : '#6B7280';
 
-  const statusText = {
+  const statusText = script.status ? {
     processing: 'Configurar personajes',
     ready: 'Listo',
     error: 'Error',
-  }[script.status];
+  }[script.status] : 'Desconocido';
 
   return (
     <TouchableOpacity
@@ -121,10 +121,10 @@ export function ScriptCard({ script, onPress, onLongPress, selected = false, sho
               style={{ color: colors.textSecondary, fontSize: 11, lineHeight: 14 }}
               numberOfLines={1}
             >
-              {new Date(script.created_at).toLocaleDateString('es-ES', {
+              {script.created_at ? new Date(script.created_at).toLocaleDateString('es-ES', {
                 day: 'numeric',
                 month: 'short',
-              })}
+              }) : 'Fecha desconocida'}
             </Text>
             <View style={{ flexDirection: 'row', alignItems: 'center' }}>
               <View style={[styles.statusDot, { backgroundColor: statusColor, marginRight: 6 }]} />
@@ -171,10 +171,10 @@ export function ScriptCard({ script, onPress, onLongPress, selected = false, sho
               <View style={styles.date}>
                 <Clock size={14} color={colors.textSecondary} />
                 <Text style={[styles.dateText, { color: colors.textSecondary }]} numberOfLines={1} ellipsizeMode="tail">
-                  {new Date(script.created_at).toLocaleDateString('es-ES', {
+                  {script.created_at ? new Date(script.created_at).toLocaleDateString('es-ES', {
                     day: 'numeric',
                     month: 'short',
-                  })}
+                  }) : 'Fecha desconocida'}
                 </Text>
               </View>
             </View>
