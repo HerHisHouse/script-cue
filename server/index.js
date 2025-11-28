@@ -46,6 +46,7 @@ app.post('/merge', async (req, res) => {
         await fs.promises.mkdir(tempDir, { recursive: true });
 
         console.log(`[Merge] Processing ${segments.length} segments for user ${userId}`);
+        console.log('[Merge] Segments:', JSON.stringify(segments, null, 2));
 
         // Download all segments
         const downloadedFiles = [];
