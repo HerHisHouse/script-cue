@@ -307,6 +307,10 @@ export default function CastingModeScreen() {
 
   async function speakLine(line: DialogueLine) {
     if (speaking) return;
+
+    // CRITICAL: Stop VAD before AI speaks to prevent interference
+    await stopVAD();
+
     setSpeaking(true);
 
     const lineStartTime = isRecording ? (Date.now() - recordingStartTime.current) / 1000 : 0;
@@ -337,13 +341,18 @@ export default function CastingModeScreen() {
 
             // Record timing if recording
             if (isRecording) {
-              setLineTimings(prev => [...prev, {
-                index: currentIndex,
-                type: 'ai',
-                startTime: lineStartTime,
-                duration,
-                audioPath: audioUri, // Keep full URI for easier reading
-              }]);
+              console.log(`[Casting] Recording AI timing: index=${currentIndex}, startTime=${lineStartTime}, duration=${duration}`);
+              setLineTimings(prev => {
+                const newTimings = [...prev, {
+                  index: currentIndex,
+                  type: 'ai' as const,
+                  startTime: lineStartTime,
+                  duration,
+                  audioPath: audioUri, // Keep full URI for easier reading
+                }];
+                console.log(`[Casting] Total timings after AI: ${newTimings.length}`);
+                return newTimings;
+              });
             }
 
             setSpeaking(false);
@@ -428,12 +437,17 @@ export default function CastingModeScreen() {
 
       // Record start time for user line
       if (isRecording) {
-        setLineTimings(prev => [...prev, {
-          index: currentIndex,
-          type: 'user',
-          startTime: lineStartTime,
-          duration: 0, // Will be updated when line ends
-        }]);
+        console.log(`[Casting] Recording user timing start: index=${currentIndex}, startTime=${lineStartTime}`);
+        setLineTimings(prev => {
+          const newTimings = [...prev, {
+            index: currentIndex,
+            type: 'user' as const,
+            startTime: lineStartTime,
+            duration: 0, // Will be updated when line ends
+          }];
+          console.log(`[Casting] Total timings after user start: ${newTimings.length}`);
+          return newTimings;
+        });
       }
 
       // Start VAD to detect when user finishes speaking
@@ -539,11 +553,15 @@ export default function CastingModeScreen() {
           const now = (Date.now() - recordingStartTime.current) / 1000;
           const duration = now - last.startTime;
 
+          console.log(`[Casting] Updating user duration: index=${last.index}, duration=${duration}`);
+
           // Return new array with updated last element
-          return [
+          const updated = [
             ...prev.slice(0, -1),
             { ...last, duration }
           ];
+          console.log(`[Casting] Total timings after user end: ${updated.length}`);
+          return updated;
         }
         return prev;
       });
@@ -649,6 +667,8 @@ export default function CastingModeScreen() {
       // STRATEGY: Send video + AI audio files directly to Render server
       // This avoids the 50MB Supabase Storage limit for large videos
       console.log('[Casting] Preparing video and audio for processing...');
+      console.log(`[Casting] Current lineTimings count: ${lineTimings.length}`);
+      console.log('[Casting] Line timings:', JSON.stringify(lineTimings, null, 2));
 
       // Read video file as base64 for transmission
       const videoBase64 = await FileSystem.readAsStringAsync(uri, {
