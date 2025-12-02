@@ -1,0 +1,1 @@
+ALTER TABLE scripts ADD COLUMN IF NOT EXISTS script_html TEXT;

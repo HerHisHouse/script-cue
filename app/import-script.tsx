@@ -472,7 +472,35 @@ export default function ImportScriptScreen() {
 
         const result = await res.json();
         console.log('parse-pdf result:', result);
-        // handle result as before (for example update script parsing state) 
+
+        // Pre-generate TTS audio in background
+        try {
+          console.log('🎙️ Starting TTS pre-generation...');
+          const { preGenerateScriptAudio } = await import('@/utils/ttsCache');
+          const { getSettings } = await import('@/utils/appSettings');
+
+          const settings = await getSettings();
+          const characterVoices = (settings as any)?.characterVoicesByScript?.[scriptData.id] || {};
+
+          // Start pre-generation in background (don't await to avoid blocking UI)
+          preGenerateScriptAudio(
+            scriptData.id,
+            user!.id,
+            characterVoices,
+            (current, total) => {
+              console.log(`TTS Progress: ${current}/${total}`);
+            }
+          ).catch(err => {
+            console.error('TTS pre-generation error:', err);
+            // Don't block import on TTS errors
+          });
+
+          console.log('✅ TTS pre-generation started in background');
+        } catch (ttsError) {
+          console.error('Error starting TTS pre-generation:', ttsError);
+          // Don't block import on TTS errors
+        }
+
       } catch (err) {
         console.error('Error calling parse-pdf:', err);
         // existing UI/error handling here (alert or toast) if needed 
@@ -516,6 +544,9 @@ export default function ImportScriptScreen() {
             <View style={{ width: `${uploadProgress}%`, height: '100%', backgroundColor: colors.primary }} />
           </View>
           <Text style={{ color: 'rgba(255,255,255,0.8)', marginTop: 8, fontSize: 14 }}>{Math.round(uploadProgress)}%</Text>
+          <Text style={{ color: 'rgba(255,255,255,0.6)', marginTop: 16, fontSize: 13, textAlign: 'center', paddingHorizontal: 40 }}>
+            Generando voces IA en segundo plano, este proceso puede tardar unos minutos...
+          </Text>
         </View>
       )}
       <View style={[styles.header, { backgroundColor: colors.background, borderBottomColor: colors.border }]}>

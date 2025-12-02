@@ -17,7 +17,8 @@ import { useRouter, useLocalSearchParams } from 'expo-router';
 import { useTheme } from '@/contexts/ThemeContext';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/utils/supabase';
-import { extractDialogue, DialogueLine } from '@/utils/dialogueParser';
+import { DialogueLine } from '@/utils/dialogueParser';
+import { loadDialogueLines } from '@/utils/loadDialogueLines';
 import { ArrowLeft, ChevronLeft, ChevronRight, Heart, Zap } from 'lucide-react-native';
 import { saveScore, addFailedLine } from '@/utils/gamification';
 
@@ -48,11 +49,8 @@ export default function GhostModeScreen() {
         const loadData = async () => {
             try {
                 setLoading(true);
-                const { data: scenes } = await supabase.from('scenes').select('*').eq('script_id', id).order('order_index');
-                const { data: characters } = await supabase.from('characters').select('*').eq('script_id', id);
-                if (scenes && characters) {
-                    setDialogueLines(extractDialogue(scenes, characters));
-                }
+                const lines = await loadDialogueLines(id as string);
+                setDialogueLines(lines);
             } catch (e) {
                 console.error(e);
             } finally {

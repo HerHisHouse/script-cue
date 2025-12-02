@@ -14,7 +14,8 @@ import { useRouter, useLocalSearchParams } from 'expo-router';
 import { useTheme } from '@/contexts/ThemeContext';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/utils/supabase';
-import { extractDialogue, DialogueLine } from '@/utils/dialogueParser';
+import { DialogueLine } from '@/utils/dialogueParser';
+import { loadDialogueLines } from '@/utils/loadDialogueLines';
 import { X, Settings, Mic, Play, SkipForward, RotateCcw } from 'lucide-react-native';
 import { Audio } from 'expo-av';
 import * as Speech from 'expo-speech';
@@ -45,8 +46,15 @@ export default function CarModeScreen() {
   const [dialogueLines, setDialogueLines] = useState<DialogueLine[]>([]);
   const [currentIndex, setCurrentIndex] = useState(0);
   const [phase, setPhase] = useState<CarModePhase>('idle');
+  const phaseRef = useRef<CarModePhase>('idle');
   const [statusText, setStatusText] = useState('Listo');
   const [isRecording, setIsRecording] = useState(false);
+
+  // Update ref when state changes
+  useEffect(() => {
+    phaseRef.current = phase;
+    console.log('[Car Mode] Phase changed to:', phase);
+  }, [phase]);
   const [isActive, setIsActive] = useState(false);
 
   // Settings
@@ -69,13 +77,12 @@ export default function CarModeScreen() {
     const loadData = async () => {
       try {
         setLoading(true);
-        const { data: scenes } = await supabase.from('scenes').select('*').eq('script_id', id).order('order_index');
-        const { data: characters } = await supabase.from('characters').select('*').eq('script_id', id);
-        if (scenes && characters) {
-          setDialogueLines(extractDialogue(scenes, characters));
-        }
+        console.log('[Car Mode] Loading dialogue lines for script:', id);
+        const lines = await loadDialogueLines(id as string);
+        console.log('[Car Mode] Loaded lines:', lines.length);
+        setDialogueLines(lines);
       } catch (e) {
-        console.error(e);
+        console.error('[Car Mode] Error loading dialogue:', e);
         Alert.alert('Error', 'No se pudo cargar el guión');
       } finally {
         setLoading(false);
@@ -104,6 +111,7 @@ export default function CarModeScreen() {
   }, [currentIndex, isActive, dialogueLines, loading]);
 
   const processCurrentLine = async () => {
+    console.log('[Car Mode] processCurrentLine called for index:', currentIndex);
     await stopRecording();
     Speech.stop();
 
@@ -114,22 +122,72 @@ export default function CarModeScreen() {
       setPhase('playing_ai');
       setStatusText(`Escuchando a ${line.characterName}...`);
 
-      Speech.speak(line.text, {
-        language: 'es-ES',
-        rate: speechRate,
-        voice: aiVoiceId,
-        onDone: () => {
-          // If continuous mode, just wait a bit and next
-          // If not, wait for user? Actually requirement says:
-          // "Al terminar, la app pasa automáticamente a modo escucha"
-          // But wait, if it's AI turn, next is usually User turn.
-          // If next line is ALSO AI, we should just continue.
+      try {
+        const { getCachedAudio } = await import('@/utils/ttsCache');
+        const Crypto = await import('expo-crypto');
+        const { Audio } = await import('expo-av');
 
-          setTimeout(() => {
-            advanceToNext();
-          }, 500);
+        const textHash = await Crypto.digestStringAsync(
+          Crypto.CryptoDigestAlgorithm.SHA256,
+          line.text
+        );
+
+        console.log('[Car Mode] Checking cache for line:', line.id);
+        const audioUri = await getCachedAudio(line.id, 'openai', null, textHash);
+
+        if (audioUri) {
+          console.log('[Car Mode] Playing cached audio:', audioUri);
+          const { sound } = await Audio.Sound.createAsync(
+            { uri: audioUri },
+            { shouldPlay: true, rate: speechRate }
+          );
+
+          sound.setOnPlaybackStatusUpdate((status) => {
+            if (status.isLoaded && status.didJustFinish) {
+              // Audio finished
+              handleAudioFinished();
+            }
+          });
+        } else {
+          console.log('[Car Mode] Cache miss, using System TTS');
+          // Fallback to System TTS
+          speakWithSystemTTS();
         }
-      });
+      } catch (error) {
+        console.error('[Car Mode] TTS Error:', error);
+        speakWithSystemTTS();
+      }
+
+      function handleAudioFinished() {
+        // After AI speaks, check if next line is user's
+        if (currentIndex < dialogueLines.length - 1) {
+          const nextLine = dialogueLines[currentIndex + 1];
+          if (nextLine && nextLine.isUserCharacter) {
+            // Next is user's turn - advance and start listening
+            setTimeout(() => {
+              advanceToNext();
+            }, 500);
+          } else {
+            // Next is also AI - continue automatically
+            setTimeout(() => {
+              advanceToNext();
+            }, 500);
+          }
+        } else {
+          // End of script
+          setPhase('idle');
+          setStatusText('Fin del guión');
+        }
+      }
+
+      function speakWithSystemTTS() {
+        Speech.speak(line.text, {
+          language: 'es-ES',
+          rate: speechRate,
+          voice: aiVoiceId,
+          onDone: handleAudioFinished
+        });
+      }
     } else {
       // User Turn
       if (continuousMode) {
@@ -153,7 +211,13 @@ export default function CarModeScreen() {
     }
   };
 
+  // Debug: Log phase changes
+  useEffect(() => {
+    console.log('[Car Mode] Phase changed to:', phase);
+  }, [phase]);
+
   const advanceToNext = () => {
+    console.log('[Car Mode] advanceToNext called, current:', currentIndex);
     if (currentIndex < dialogueLines.length - 1) {
       setCurrentIndex(p => p + 1);
     } else {
@@ -178,6 +242,7 @@ export default function CarModeScreen() {
   };
 
   const startListening = async () => {
+    console.log('[Car Mode] startListening called');
     try {
       await Audio.requestPermissionsAsync();
       await Audio.setAudioModeAsync({ allowsRecordingIOS: true, playsInSilentModeIOS: true });
@@ -193,9 +258,11 @@ export default function CarModeScreen() {
         if (status.isRecording && status.metering !== undefined) {
           const level = status.metering;
           if (level > -35) { // Speech detected
+            console.log('[Car Mode] Voice detected, level:', level);
             if (silenceTimerRef.current) clearTimeout(silenceTimerRef.current);
             silenceTimerRef.current = setTimeout(() => {
               // Silence after speech -> Process Command or Next
+              console.log('[Car Mode] Silence after speech detected');
               handleSilenceDetected();
             }, 1500) as any;
           }
@@ -218,7 +285,14 @@ export default function CarModeScreen() {
   };
 
   const handleSilenceDetected = async () => {
-    if (phase !== 'listening_user') return;
+    const currentPhase = phaseRef.current;
+    console.log('[Car Mode] handleSilenceDetected called, phaseRef:', currentPhase);
+
+    if (currentPhase !== 'listening_user') {
+      console.log('[Car Mode] Skipping - not in listening_user phase');
+      return;
+    }
+
     setPhase('processing_command');
     setStatusText('Analizando...');
 
@@ -231,28 +305,57 @@ export default function CarModeScreen() {
     }
 
     try {
-      // Transcribe to check for commands
+      // Transcribe audio
       const text = await transcribeAudio(uri);
       const lower = text.toLowerCase().trim();
-      console.log('Transcribed:', lower);
+      console.log('[Car Mode] Transcribed:', text);
 
+      // Get current line (should be user's line)
+      const currentLine = dialogueLines[currentIndex];
+
+      if (currentLine && currentLine.isUserCharacter) {
+        // Calculate similarity with expected line
+        const s1 = text.toLowerCase().replace(/[^\w\s]/g, '').trim();
+        const s2 = currentLine.text.toLowerCase().replace(/[^\w\s]/g, '').trim();
+
+        let similarity = 0;
+        if (s1 && s2) {
+          if (s1 === s2) {
+            similarity = 1;
+          } else {
+            const words1 = s1.split(/\s+/);
+            const words2 = s2.split(/\s+/);
+            const intersection = words1.filter(w => words2.includes(w));
+            similarity = intersection.length / Math.max(words1.length, words2.length);
+          }
+        }
+
+        console.log('[Car Mode] Similarity:', similarity);
+
+        if (similarity > 0.6) {
+          // User said their line correctly -> Auto advance
+          console.log('[Car Mode] ✅ Line matched! Auto-advancing...');
+          advanceToNext();
+          return;
+        }
+      }
+
+      // If not a line match, check for voice commands
       if (lower.includes('siguiente') || lower.includes('next')) {
         advanceToNext();
       } else if (lower.includes('repetir') || lower.includes('repeat')) {
-        // Go back to previous line (which was likely AI)
-        // If current is User, prev is AI.
         if (currentIndex > 0) setCurrentIndex(p => p - 1);
-        else processCurrentLine(); // Retry current
+        else processCurrentLine();
       } else if (lower.includes('atrás') || lower.includes('back') || lower.includes('anterior')) {
         if (currentIndex > 0) setCurrentIndex(p => p - 1);
       } else if (lower.includes('parar') || lower.includes('stop') || lower.includes('salir')) {
         router.back();
       } else {
-        // No command -> Assume it was the line reading -> Next
+        // No command and no line match -> Still advance (assume they tried)
         advanceToNext();
       }
     } catch (e) {
-      console.error('Command processing error:', e);
+      console.error('[Car Mode] Command processing error:', e);
       // Fallback: just next
       advanceToNext();
     }
@@ -277,6 +380,9 @@ export default function CarModeScreen() {
   };
 
   const handleStart = () => {
+    console.log('[Car Mode] handleStart called');
+    console.log('[Car Mode] dialogueLines.length:', dialogueLines.length);
+    console.log('[Car Mode] currentIndex:', currentIndex);
     setIsActive(true);
     // useEffect will trigger processCurrentLine when isActive becomes true
   };
@@ -316,10 +422,23 @@ export default function CarModeScreen() {
       {/* Main Content */}
       <View style={styles.content}>
         {!isActive ? (
-          <TouchableOpacity style={styles.startBtn} onPress={handleStart}>
-            <Play size={64} color="#000" fill="#000" />
-            <Text style={styles.startBtnText}>EMPEZAR</Text>
-          </TouchableOpacity>
+          <>
+            <TouchableOpacity
+              style={[styles.startBtn, dialogueLines.length === 0 && { opacity: 0.5 }]}
+              onPress={handleStart}
+              disabled={dialogueLines.length === 0}
+            >
+              <Play size={64} color="#000" fill="#000" />
+              <Text style={styles.startBtnText}>
+                {dialogueLines.length === 0 ? 'CARGANDO...' : 'EMPEZAR'}
+              </Text>
+            </TouchableOpacity>
+            {dialogueLines.length === 0 && (
+              <Text style={{ color: colors.textSecondary, marginTop: 20, fontSize: 14 }}>
+                Cargando diálogos del guión...
+              </Text>
+            )}
+          </>
         ) : (
           <>
             <Text style={[styles.statusText, { color: phase === 'listening_user' ? colors.success : colors.primary }]}>

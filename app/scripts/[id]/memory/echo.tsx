@@ -13,7 +13,8 @@ import { useRouter, useLocalSearchParams } from 'expo-router';
 import { useTheme } from '@/contexts/ThemeContext';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/utils/supabase';
-import { extractDialogue, DialogueLine } from '@/utils/dialogueParser';
+import { DialogueLine } from '@/utils/dialogueParser';
+import { loadDialogueLines } from '@/utils/loadDialogueLines';
 import { ArrowLeft, Mic, Clock, ChevronLeft, ChevronRight, Play, RotateCcw } from 'lucide-react-native';
 import { Audio } from 'expo-av';
 import * as Speech from 'expo-speech';
@@ -45,11 +46,8 @@ export default function EchoModeScreen() {
         const loadData = async () => {
             try {
                 setLoading(true);
-                const { data: scenes } = await supabase.from('scenes').select('*').eq('script_id', id).order('order_index');
-                const { data: characters } = await supabase.from('characters').select('*').eq('script_id', id);
-                if (scenes && characters) {
-                    setDialogueLines(extractDialogue(scenes, characters));
-                }
+                const lines = await loadDialogueLines(id as string);
+                setDialogueLines(lines);
             } catch (e) {
                 console.error(e);
             } finally {
@@ -79,18 +77,64 @@ export default function EchoModeScreen() {
 
         if (!line.isUserCharacter) {
             setPhase('done');
-            // Speak AI line
-            Speech.speak(line.text, {
-                language: 'es-ES',
-                onDone: () => {
-                    // Auto advance after small delay
-                    setTimeout(() => {
-                        if (currentIndex < dialogueLines.length - 1) {
-                            setCurrentIndex(p => p + 1);
-                        }
-                    }, 1000);
-                }
-            });
+            // Speak AI line with cache
+            try {
+                const loadAndPlayAudio = async () => {
+                    const { getCachedAudio } = await import('@/utils/ttsCache');
+                    const Crypto = await import('expo-crypto');
+                    const { Audio } = await import('expo-av');
+
+                    const textHash = await Crypto.digestStringAsync(
+                        Crypto.CryptoDigestAlgorithm.SHA256,
+                        line.text
+                    );
+
+                    const audioUri = await getCachedAudio(line.id, 'openai', null, textHash);
+
+                    if (audioUri) {
+                        const { sound } = await Audio.Sound.createAsync(
+                            { uri: audioUri },
+                            { shouldPlay: true }
+                        );
+
+                        sound.setOnPlaybackStatusUpdate((status) => {
+                            if (status.isLoaded && status.didJustFinish) {
+                                setTimeout(() => {
+                                    if (currentIndex < dialogueLines.length - 1) {
+                                        setCurrentIndex(p => p + 1);
+                                    }
+                                }, 1000);
+                            }
+                        });
+                    } else {
+                        // Fallback to System TTS
+                        Speech.speak(line.text, {
+                            language: 'es-ES',
+                            onDone: () => {
+                                setTimeout(() => {
+                                    if (currentIndex < dialogueLines.length - 1) {
+                                        setCurrentIndex(p => p + 1);
+                                    }
+                                }, 1000);
+                            }
+                        });
+                    }
+                };
+                loadAndPlayAudio();
+            } catch (error) {
+                console.error('TTS Error:', error);
+                // Fallback to System TTS
+                Speech.speak(line.text, {
+                    language: 'es-ES',
+                    onDone: () => {
+                        setTimeout(() => {
+                            if (currentIndex < dialogueLines.length - 1) {
+                                setCurrentIndex(p => p + 1);
+                            }
+                        }, 1000);
+                    }
+                });
+            }
             return;
         }
 

@@ -29,7 +29,8 @@ import * as Speech from 'expo-speech';
 import { Script, Character } from '@/types/database';
 import { parseScreenplay, ParsedScript } from '@/utils/pdfParser';
 import { DialogueContent } from '@/types/database';
-import { extractDialogue, DialogueLine } from '@/utils/dialogueParser';
+import { DialogueLine } from '@/utils/dialogueParser';
+import { loadDialogueLines } from '@/utils/loadDialogueLines';
 
 type SceneItem = ParsedScript['scenes'][0];
 
@@ -41,11 +42,12 @@ export default function CastingModeScreen() {
   const insets = useSafeAreaInsets();
 
   // Camera State
-  const [permission, requestPermission] = useCameraPermissions();
+  const [recordingTime, setRecordingTime] = useState(0);
+  const recordingTimeRef = useRef(0);
   const [facing, setFacing] = useState<CameraType>('front');
+  const [permission, requestPermission] = useCameraPermissions();
   const cameraRef = useRef<CameraView>(null);
   const [isRecording, setIsRecording] = useState(false);
-  const [recordingTime, setRecordingTime] = useState(0);
 
   // Script State
   const [loading, setLoading] = useState(true);
@@ -81,6 +83,18 @@ export default function CastingModeScreen() {
   // Use Animated.Value for smooth 60fps resizing
   const teleprompterHeight = useRef(new Animated.Value(screenHeight * 0.4)).current;
   const [showVolumeControl, setShowVolumeControl] = useState(false);
+
+  // Video Processing State
+  const [lineTimings, setLineTimings] = useState<Array<{
+    index: number;
+    type: 'user' | 'ai';
+    startTime: number;
+    duration: number;
+    audioPath?: string;
+  }>>([]);
+  const recordingStartTime = useRef<number>(0);
+  const [isProcessing, setIsProcessing] = useState(false);
+  const [processingProgress, setProcessingProgress] = useState(0);
 
   const panResponder = useRef(
     PanResponder.create({
@@ -153,25 +167,24 @@ export default function CastingModeScreen() {
     try {
       if (!id) return;
 
-      const [{ data: scriptData }, { data: charData }, { data: sceneData }] = await Promise.all([
+      const [{ data: scriptData }, { data: charData }] = await Promise.all([
         supabase.from('scripts').select('*').eq('id', id).single(),
         supabase.from('characters').select('*').eq('script_id', id),
-        supabase.from('scenes').select('*').eq('script_id', id),
       ]);
 
       if (scriptData) {
         setScript(scriptData);
         setCharacters(charData || []);
 
-        // Robust Data Loading (matching study.tsx)
+        // Try loading from database first
         let lines: DialogueLine[] = [];
-
-        // 1. Try from DB Scenes
-        if (sceneData && sceneData.length > 0) {
-          lines = extractDialogue(sceneData as any, charData || []);
+        try {
+          lines = await loadDialogueLines(id as string);
+        } catch (dbError) {
+          console.warn('Failed to load from database, trying fallback:', dbError);
         }
 
-        // 2. Fallback to local parsing if empty
+        // Fallback to local parsing if database is empty
         if (lines.length === 0 && scriptData.parsed_text) {
           try {
             const parsed = parseScreenplay(scriptData.parsed_text);
@@ -185,6 +198,9 @@ export default function CastingModeScreen() {
               heading: s.heading,
               created_at: new Date().toISOString()
             }));
+
+            // Use extractDialogue for fallback
+            const { extractDialogue } = await import('@/utils/dialogueParser');
             lines = extractDialogue(fallbackScenes as any, charData || []);
           } catch (e) {
             console.warn('Fallback parsing failed:', e);
@@ -208,48 +224,49 @@ export default function CastingModeScreen() {
     }
   }, [ttsVolume]);
 
-  // Generate Audio using OpenAI or ElevenLabs
+  // Generate Audio using TTS Cache
   async function generateAudioForScript() {
-    if (dialogueLines.length === 0) return;
+    if (dialogueLines.length === 0 || !user) return;
 
     // Filter lines that need audio (AI lines)
     const aiLines = dialogueLines.filter((line) => !line.isUserCharacter);
     if (aiLines.length === 0) return;
 
     // Filter lines that specifically need generation (OpenAI or ElevenLabs)
-    // If all lines are 'system', we shouldn't show loading or generate anything.
     const linesToGenerate = aiLines.filter(line => {
       const characterName = line.characterName.toUpperCase();
       const voiceConfig = perCharacterVoices[characterName];
       const provider = voiceConfig?.provider || 'openai';
-      // Check for 'system' or 'Sistema (offline)' or any variation
       return !provider.toLowerCase().includes('system');
     });
 
     if (linesToGenerate.length === 0) return;
 
-    // Check if we already have audio for these lines
-    // This check is a bit simplistic (size vs length), but works for now if we assume cache grows monotonically
-    // Better: check if all linesToGenerate are in cache
+    // Check if we already have audio in local cache
     const allCached = linesToGenerate.every(line => {
       const index = dialogueLines.findIndex(l => l.id === line.id);
       return ttsCache.has(index);
     });
 
-    if (allCached) return;
+    if (allCached) {
+      console.log('✅ All audio already in local cache');
+      return;
+    }
 
     setLoadingAudio(true);
     setAudioProgress(0);
     const newCache = new Map(ttsCache);
 
     try {
-      console.log('Starting TTS generation...');
+      console.log('🎙️ Loading TTS audio from cache...');
+      const { getCachedAudio, generateAndCacheAudio } = await import('@/utils/ttsCache');
+      const Crypto = await import('expo-crypto');
 
       for (let i = 0; i < aiLines.length; i++) {
         const line = aiLines[i];
         const lineIndex = dialogueLines.findIndex(l => l.id === line.id);
 
-        // Skip if already cached
+        // Skip if already in local cache
         if (newCache.has(lineIndex)) {
           setAudioProgress(((i + 1) / aiLines.length) * 100);
           continue;
@@ -258,62 +275,50 @@ export default function CastingModeScreen() {
         const text = line.cleanText || line.text;
         if (!text) continue;
 
-        // Determine Provider
         const characterName = line.characterName.toUpperCase();
         const voiceConfig = perCharacterVoices[characterName];
-        const provider = voiceConfig?.provider || 'openai'; // Default to OpenAI if not set (or change to system?)
+        const provider = voiceConfig?.provider || 'openai';
 
-        // If System, skip generation (we'll use Speech.speak in real-time)
+        // Skip system TTS
         if (provider === 'system') {
           setAudioProgress(((i + 1) / aiLines.length) * 100);
           continue;
         }
 
-        let arrayBuffer: ArrayBuffer | null = null;
+        // Try to get from cache first
+        const textHash = await Crypto.digestStringAsync(
+          Crypto.CryptoDigestAlgorithm.SHA256,
+          text
+        );
+        const voiceId = voiceConfig?.systemVoiceId || null;
 
-        if (provider === 'elevenlabs') {
-          // ElevenLabs Generation
-          // Use a default voice ID if none configured, or specific one
-          // Default ID: "21m00Tcm4TlvDq8ikWAM" (Rachel)
-          const voiceId = voiceConfig?.systemVoiceId || "21m00Tcm4TlvDq8ikWAM";
-          try {
-            arrayBuffer = await generateElevenLabsAudio(text, voiceId);
-          } catch (e) {
-            console.error('ElevenLabs Error:', e);
-            // Fallback?
-          }
-        } else {
-          // OpenAI Generation (Default)
-          try {
-            const response = await client.audio.speech.create({
-              model: "tts-1",
-              voice: "alloy",
-              input: text,
-            });
-            arrayBuffer = await response.arrayBuffer();
-          } catch (e) {
-            console.error('OpenAI Error:', e);
-          }
+        let localPath = await getCachedAudio(line.id, provider, voiceId, textHash);
+
+        // If not in cache, generate and cache
+        if (!localPath) {
+          console.log(`Generating audio for ${characterName}...`);
+          localPath = await generateAndCacheAudio(
+            id as string,
+            line.id,
+            line.characterName,
+            text,
+            { provider: provider as any, voiceId: voiceId || undefined },
+            user.id
+          );
         }
 
-        if (arrayBuffer) {
-          const base64 = arrayBufferToBase64(arrayBuffer);
-          const filename = `tts_${id}_${lineIndex}_${Date.now()}.mp3`;
-          const uri = `${FileSystem.cacheDirectory}${filename}`;
-
-          await FileSystem.writeAsStringAsync(uri, base64, {
-            encoding: FileSystem.EncodingType.Base64,
-          });
-
-          newCache.set(lineIndex, uri);
+        if (localPath) {
+          newCache.set(lineIndex, localPath);
           setTtsCache(new Map(newCache));
         }
 
         setAudioProgress(((i + 1) / aiLines.length) * 100);
       }
+
+      console.log('✅ TTS audio loaded successfully');
     } catch (e) {
-      console.error('TTS Generation Error:', e);
-      Alert.alert('Error', 'No se pudo generar el audio de la IA. Verifica tu conexión.');
+      console.error('TTS Loading Error:', e);
+      Alert.alert('Error', 'No se pudo cargar el audio de la IA. Verifica tu conexión.');
     } finally {
       setLoadingAudio(false);
     }
@@ -333,6 +338,8 @@ export default function CastingModeScreen() {
   async function speakLine(line: DialogueLine) {
     if (speaking) return;
     setSpeaking(true);
+
+    const lineStartTime = isRecording ? (Date.now() - recordingStartTime.current) / 1000 : 0;
 
     try {
       // Check cache first
@@ -356,6 +363,19 @@ export default function CastingModeScreen() {
 
         sound.setOnPlaybackStatusUpdate((status) => {
           if (status.isLoaded && status.didJustFinish) {
+            const duration = (status.durationMillis || 0) / 1000;
+
+            // Record timing if recording
+            if (isRecording) {
+              setLineTimings(prev => [...prev, {
+                index: currentIndex,
+                type: 'ai',
+                startTime: lineStartTime,
+                duration,
+                audioPath: audioUri.replace('file://', ''), // Store relative path
+              }]);
+            }
+
             setSpeaking(false);
             nextLine();
           }
@@ -376,6 +396,19 @@ export default function CastingModeScreen() {
           language: settings.systemTtsLanguage || 'es-ES',
           rate: rate,
           onDone: () => {
+            // Estimate duration for System TTS
+            const words = line.text.split(' ').length;
+            const estimatedDuration = words * 0.5; // Rough estimate
+
+            if (isRecording) {
+              setLineTimings(prev => [...prev, {
+                index: currentIndex,
+                type: 'ai',
+                startTime: lineStartTime,
+                duration: estimatedDuration,
+              }]);
+            }
+
             setSpeaking(false);
             nextLine();
           },
@@ -486,10 +519,17 @@ export default function CastingModeScreen() {
       setIsRecording(true);
       setIsPlaying(true); // Auto-start teleprompter
       setRecordingTime(0);
+      recordingTimeRef.current = 0;
+      recordingStartTime.current = Date.now();
+      setLineTimings([]); // Clear previous timings
 
       // Start timer
       const timer = setInterval(() => {
-        setRecordingTime(t => t + 1);
+        setRecordingTime(t => {
+          const newVal = t + 1;
+          recordingTimeRef.current = newVal;
+          return newVal;
+        });
       }, 1000);
       (cameraRef.current as any).timer = timer;
 
@@ -525,28 +565,79 @@ export default function CastingModeScreen() {
 
   async function handleRecordingFinished(uri: string) {
     try {
-      // 1. Save to FileSystem
-      const filename = `casting_${Date.now()}.mp4`;
-      const targetPath = `${FileSystem.documentDirectory}${filename}`;
-      await FileSystem.moveAsync({ from: uri, to: targetPath });
+      setIsProcessing(true);
+      setProcessingProgress(10);
 
-      // 2. Insert into DB
+      // 1. Upload raw video to Supabase Storage
+      console.log('[Casting] Uploading raw video to Supabase...');
+      const filename = `${user?.id}/casting_${Date.now()}_raw.mp4`;
+
+      // Read video file
+      const videoInfo = await FileSystem.getInfoAsync(uri);
+      if (!videoInfo.exists) {
+        throw new Error('Video file not found');
+      }
+
+      const videoBlob = await fetch(uri).then(r => r.blob());
+
+      const { data: uploadData, error: uploadError } = await supabase.storage
+        .from('recordings')
+        .upload(filename, videoBlob, {
+          contentType: 'video/mp4',
+          upsert: false
+        });
+
+      if (uploadError) throw uploadError;
+
+      setProcessingProgress(30);
+      console.log('[Casting] Video uploaded:', filename);
+
+      // 2. Process video with Render server
+      console.log('[Casting] Sending to Render for processing...');
+      const renderUrl = process.env.EXPO_PUBLIC_RENDER_SERVER_URL || 'https://script-cue-merge-server.onrender.com';
+
+      const response = await fetch(`${renderUrl}/process-casting`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          videoPath: filename,
+          scriptId: id,
+          userId: user?.id,
+          lineTimings: lineTimings,
+        }),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.message || 'Processing failed');
+      }
+
+      const { path: processedPath } = await response.json();
+      setProcessingProgress(80);
+      console.log('[Casting] Processed video:', processedPath);
+
+      // 3. Insert into DB
       const { error: dbError } = await supabase.from('recordings').insert({
         user_id: user?.id,
         script_id: id,
         project_id: null,
         title: `Casting - ${script?.title || 'Guión'}`,
-        audio_url: targetPath, // Store local path
+        audio_url: processedPath, // Store processed video path
         type: 'video',
-        duration_seconds: recordingTime,
+        duration_seconds: recordingTimeRef.current,
         file_size_bytes: 0,
       });
 
       if (dbError) throw dbError;
 
+      setProcessingProgress(100);
+      setIsProcessing(false);
+
       Alert.alert(
-        'Grabación realizada con éxito',
-        'El video ha sido guardado en Grabaciones.',
+        '¡Video procesado con éxito!',
+        'Tu casting con audio de IA ha sido guardado en Grabaciones.',
         [
           {
             text: 'OK',
@@ -558,8 +649,20 @@ export default function CastingModeScreen() {
       );
 
     } catch (e: any) {
-      console.error('Save error:', e);
-      Alert.alert('Error', 'No se pudo guardar el video: ' + (e.message || 'Error desconocido'));
+      console.error('[Casting] Error:', e);
+      setIsProcessing(false);
+      Alert.alert(
+        'Error al procesar video',
+        e.message || 'No se pudo procesar el video. Inténtalo de nuevo.',
+        [
+          {
+            text: 'OK',
+            onPress: () => {
+              router.replace(`/scripts/${id}`);
+            }
+          }
+        ]
+      );
     }
   }
 
@@ -614,7 +717,7 @@ export default function CastingModeScreen() {
           <View style={styles.loadingOverlay}>
             <ActivityIndicator size="large" color="#10B981" />
             <Text style={styles.loadingText}>
-              Generando voces IA... {Math.round(audioProgress)}%
+              Cargando voces IA... {Math.round(audioProgress)}%
             </Text>
           </View>
         )}
@@ -800,6 +903,26 @@ export default function CastingModeScreen() {
         </View>
 
       </SafeAreaView>
+
+      {/* Processing Modal */}
+      {isProcessing && (
+        <View style={styles.processingOverlay}>
+          <View style={styles.processingModal}>
+            <ActivityIndicator size="large" color="#3B82F6" />
+            <Text style={styles.processingTitle}>Procesando tu casting...</Text>
+            <Text style={styles.processingText}>
+              Estamos mezclando tu actuación con el audio de IA de alta calidad.
+            </Text>
+            <View style={styles.progressBarContainer}>
+              <View style={[styles.progressBar, { width: `${processingProgress}%` }]} />
+            </View>
+            <Text style={styles.progressText}>{processingProgress}%</Text>
+            <Text style={styles.processingSubtext}>
+              Esto puede tardar 30-60 segundos
+            </Text>
+          </View>
+        </View>
+      )}
     </View>
   );
 }
@@ -1116,6 +1239,60 @@ const styles = StyleSheet.create({
     height: 30,
     justifyContent: 'center',
     alignItems: 'center',
+  },
+  processingOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: 'rgba(0,0,0,0.9)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    zIndex: 1000,
+  },
+  processingModal: {
+    backgroundColor: '#1F2937',
+    borderRadius: 24,
+    padding: 32,
+    alignItems: 'center',
+    maxWidth: 320,
+    gap: 16,
+  },
+  processingTitle: {
+    fontSize: 20,
+    fontWeight: '700',
+    color: '#FFFFFF',
+    textAlign: 'center',
+  },
+  processingText: {
+    fontSize: 14,
+    color: '#9CA3AF',
+    textAlign: 'center',
+    lineHeight: 20,
+  },
+  progressBarContainer: {
+    width: '100%',
+    height: 8,
+    backgroundColor: '#374151',
+    borderRadius: 4,
+    overflow: 'hidden',
+    marginTop: 8,
+  },
+  progressBar: {
+    height: '100%',
+    backgroundColor: '#3B82F6',
+    borderRadius: 4,
+  },
+  progressText: {
+    fontSize: 24,
+    fontWeight: '700',
+    color: '#3B82F6',
+  },
+  processingSubtext: {
+    fontSize: 12,
+    color: '#6B7280',
+    textAlign: 'center',
   },
 });
 

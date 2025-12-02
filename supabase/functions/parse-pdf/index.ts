@@ -97,163 +97,294 @@ Deno.serve(async (req)=>{
       }
       text = parsedPdf.text;
     }
-    let parsed = parseScreenplay(text);
-    let structuredLines: Array<{ type: 'scene' | 'character' | 'dialogue' | 'action'; text?: string; name?: string; x?: number; page?: number }> = [];
-
-    // OpenAI semantic extraction first (new strategy)
-    try {
-      console.log(`[parse-pdf] Calling OpenAI for semantic extraction (preserveFormatting: ${!!preserveFormatting})`);
-      const ai = await callOpenAIExtract(text);
-      if (ai && Array.isArray(ai.scenes)) {
-        const grouped: Record<string, { scene_number: number; heading: string; content: Array<{ characterName: string; text: string }>; order_index: number }> = {};
-        let orderIndexAI = 0;
-        for (const item of ai.scenes) {
-          const num = Number(item.sceneNumber || 0) || 0;
-          const key = String(num);
-          if (!grouped[key]) grouped[key] = { scene_number: num, heading: '', content: [], order_index: orderIndexAI++ };
-          const character = String(item.character || '').trim();
-          const dialogue = String(item.dialogue || '').trim();
-          if (character && dialogue) {
-            grouped[key].content.push({ characterName: character, text: dialogue });
-            structuredLines.push({ type: 'character', name: character });
-            structuredLines.push({ type: 'dialogue', text: dialogue });
-          }
-        }
-        const aiScenes = Object.values(grouped).filter(s => s.content.length > 0);
-        if (aiScenes.length > 0) {
-          parsed = { scenes: aiScenes } as any;
-          console.log(`[parse-pdf] OpenAI parsed scenes: ${aiScenes.length}`);
-        } else {
-          console.warn('[parse-pdf] OpenAI returned no dialogues, will attempt layout-based analysis');
-        }
-      }
-    } catch (e: any) {
-      console.error('[parse-pdf] OpenAI error, using regex fallback:', e?.message || e);
-      const fb = simpleRegexFallback(text);
-      if (Array.isArray(fb.scenes) && fb.sceneCount > 0) {
-        const grouped: Record<string, { scene_number: number; heading: string; content: Array<{ characterName: string; text: string }>; order_index: number }> = {};
-        let orderIndexFB = 0;
-        for (const item of fb.scenes) {
-          const num = Number(item.sceneNumber || 0) || 0;
-          const key = String(num);
-          if (!grouped[key]) grouped[key] = { scene_number: num, heading: '', content: [], order_index: orderIndexFB++ };
-          grouped[key].content.push({ characterName: String(item.character || '').trim(), text: String(item.dialogue || '').trim() });
-          structuredLines.push({ type: 'character', name: String(item.character || '').trim() });
-          structuredLines.push({ type: 'dialogue', text: String(item.dialogue || '').trim() });
-        }
-        const fbScenes = Object.values(grouped).filter(s => s.content.length > 0);
-        if (fbScenes.length > 0) {
-          parsed = { scenes: fbScenes } as any;
-          console.log(`[parse-pdf] Fallback parsed scenes: ${fbScenes.length}`);
-        }
-      }
-    }
-    
-    // Si preserveFormatting es true, usar análisis avanzado basado en posición
-    if (preserveFormatting === true && typeof parsedPdf === 'object' && layoutPages.length > 0) {
-      console.log('🔍 MODO AVANZADO: Analizando formato con detección de posiciones');
-      try {
-        const layoutResult = parseScreenplayFromLayoutAdvanced(layoutPages);
-        const totalDialogues = Array.isArray(layoutResult?.scenes)
-          ? layoutResult!.scenes.reduce((acc, s) => acc + (Array.isArray(s.content) ? s.content.length : 0), 0)
-          : 0;
-        if (layoutResult && layoutResult.scenes && totalDialogues > 0) {
-          parsed = { scenes: layoutResult.scenes } as any;
-          structuredLines = layoutResult.structuredLines;
-          console.log(`✅ MODO AVANZADO: Procesadas ${layoutResult.scenes.length} escenas con formato preservado`);
-          console.log(`[parse-pdf] Detected ${totalDialogues} dialogues from formatted script`);
-        } else {
-          console.log('⚠️ MODO AVANZADO: Sin diálogos tras primera pasada. Ejecutando fallback ignorando márgenes…');
-          const fb = fallbackBuildDialoguesFromText(text);
-          if (fb.scenes.length > 0) {
-            parsed = { scenes: fb.scenes } as any;
-            structuredLines = fb.structuredLines;
-            const fbTotal = fb.scenes.reduce((acc, s) => acc + s.content.length, 0);
-            console.log(`✅ FALLBACK: Detectados ${fbTotal} diálogos ignorando márgenes`);
-            console.log(`[parse-pdf] Detected ${fbTotal} dialogues from formatted script (fallback)`);
-          } else {
-            console.log('⚠️ FALLBACK: Sin resultados, usando análisis estándar');
-          }
-        }
-      } catch (error) {
-        console.log('❌ MODO AVANZADO: Error, usando análisis estándar:', error);
-      }
-    } else {
-      // Comportamiento estándar cuando preserveFormatting es false o no está definido
-      console.log('📄 MODO ESTÁNDAR: Usando análisis de texto plano');
-      try {
-        if (typeof parsedPdf === 'object') {
-          const layoutResult = parseScreenplayFromLayout(layoutPages);
-          if (layoutResult && layoutResult.scenes && layoutResult.scenes.length > 0) {
-            parsed = { scenes: layoutResult.scenes } as any;
-            structuredLines = layoutResult.structuredLines;
-          }
-        }
-      } catch (_) {}
-    }
-    // Merge existing metadata to avoid overwriting fields like pdf_url/pdf_path
-    let existingMeta: Record<string, any> = {};
-    try {
-      const { data: existingScript } = await supabase
-        .from("scripts")
-        .select("metadata")
-        .eq("id", scriptId)
-        .maybeSingle();
-      if (existingScript && typeof existingScript.metadata === "object") {
-        existingMeta = existingScript.metadata as Record<string, any>;
-      }
-    } catch (_) {}
-
-    const mergedMetadata = {
-      ...existingMeta,
-      sceneCount: parsed.scenes.length,
-      structuredLines
-    };
-
-    await supabase
+    // STEP 1: Save raw text
+    console.log("Saving raw text to script_raw...");
+    const { error: updateRawError } = await supabase
       .from("scripts")
       .update({
-        parsed_text: text,
-        metadata: mergedMetadata
+        script_raw: text,
+        parsed_text: text // Keep for compatibility
       })
       .eq("id", scriptId);
-    for (const scene of parsed.scenes){
-      await supabase.from("scenes").insert({
-        script_id: scriptId,
-        scene_number: scene.scene_number,
-        heading: scene.heading,
-        content: scene.content,
-        order_index: scene.order_index
-      });
+
+    if (updateRawError) throw updateRawError;
+
+    // STEP 2: Convert to HTML using OpenAI (Skip if preserving formatting)
+    if (!preserveFormatting) {
+        console.log("Converting script to HTML using OpenAI...");
+        const openaiApiKey = Deno.env.get("OPENAI_API_KEY");
+        
+        if (!openaiApiKey) {
+          console.warn("OpenAI API key not found, skipping HTML conversion");
+        } else {
+            const prompt = `Convierte el siguiente guion en un documento HTML con formato profesional de screenplay cinematográfico. Mantén la estructura exacta sin inventar contenido nuevo.
+    
+    Reglas:
+    • Fuente: Courier Prime o Courier New.
+    • Título: centrado, MAYÚSCULAS, negrita y subrayado.
+    • Encabezados de escena (INT./EXT.): mayúsculas, negrita, alineados a la izquierda.
+    • Acciones: texto normal, alineado a la izquierda.
+    • Nombres de personaje: centrados, MAYÚSCULAS, negrita.
+    • Diálogos: debajo del personaje, sangría de 40px.
+    • Acotaciones: entre paréntesis, cursiva.
+    • Mantén saltos de línea y espaciado.
+    • Usa <hr> para separar páginas si el PDF lo indicaba.
+    
+    Entrega SOLO el HTML sin comentarios.
+    
+    GUION:
+    ${text}`;
+    
+            try {
+              const openaiResponse = await fetch("https://api.openai.com/v1/chat/completions", {
+                method: "POST",
+                headers: {
+                  "Content-Type": "application/json",
+                  "Authorization": `Bearer ${openaiApiKey}`
+                },
+                body: JSON.stringify({
+                  model: "gpt-4o-mini",
+                  messages: [
+                    {
+                      role: "system",
+                      content: "Eres un experto en formateo de guiones cinematográficos. Conviertes texto plano en HTML profesional siguiendo estándares de screenplay."
+                    },
+                    {
+                      role: "user",
+                      content: prompt
+                    }
+                  ],
+                  temperature: 0.3,
+                  max_tokens: 16000
+                })
+              });
+    
+              if (!openaiResponse.ok) {
+                const errorText = await openaiResponse.text();
+                console.error("OpenAI API error:", errorText);
+                throw new Error(`OpenAI API error: ${openaiResponse.status}`);
+              }
+    
+              const openaiData = await openaiResponse.json();
+              const htmlContent = openaiData.choices[0]?.message?.content || "";
+    
+              if (!htmlContent) {
+                throw new Error("OpenAI returned empty HTML content");
+              }
+    
+              // STEP 3: Save HTML to script_html
+              console.log("Saving HTML to script_html...");
+              const { error: updateHtmlError } = await supabase
+                .from("scripts")
+                .update({
+                  script_html: htmlContent
+                })
+                .eq("id", scriptId);
+    
+              if (updateHtmlError) throw updateHtmlError;
+    
+            } catch (openaiError) {
+              console.error("Error converting to HTML:", openaiError);
+              // Continue to parsing even if HTML fails
+            }
+        }
     }
-  const responseScenes = ([] as any[]).concat(...parsed.scenes.map((s: any) =>
-    (s.content || []).map((item: any) => ({ character: item.characterName, dialogue: item.text, sceneNumber: s.scene_number }))
-  ));
-  console.log(`[parse-pdf] Detected ${responseScenes.length} dialogues from formatted script (response)`);
-  return new Response(JSON.stringify({
-      success: true,
-      sceneCount: responseScenes.length,
-      scenes: responseScenes
+
+    // STEP 4: Parse scenes and lines for Studio Mode
+    console.log("Parsing scenes and lines for Studio Mode...");
+    let parsed;
+    
+    // Try OpenAI parsing first (as requested)
+    try {
+        console.log("Attempting OpenAI parsing for Studio Mode structure...");
+        parsed = await parseScreenplayWithOpenAI(text);
+    } catch (openaiError) {
+        console.error("OpenAI parsing failed, falling back to local regex parser:", openaiError);
+        parsed = parseScreenplay(text);
+    }
+    
+    // Delete existing scenes (cascade delete lines)
+    const { error: deleteError } = await supabase
+        .from('scenes')
+        .delete()
+        .eq('script_id', scriptId);
+
+    if (deleteError) throw deleteError;
+
+    // Insert new scenes and lines
+    for (const scene of parsed.scenes) {
+        // Construct a text representation of the scene content for the 'content' column
+        // This satisfies the NOT NULL constraint and provides a fallback/summary
+        let sceneContentText = scene.content && Array.isArray(scene.content)
+            ? scene.content.map((c: any) => `${c.characterName}: ${c.text}`).join('\n')
+            : '';
+        
+        if (!sceneContentText || sceneContentText.trim() === '') {
+            sceneContentText = '[Sin contenido]';
+        }
+
+        console.log(`Inserting scene ${scene.scene_number} with content length: ${sceneContentText.length}`);
+
+        const { data: sceneData, error: sceneError } = await supabase
+            .from('scenes')
+            .insert({
+                script_id: scriptId,
+                scene_number: scene.scene_number,
+                heading: scene.heading || 'ESCENA SIN TÍTULO',
+                order_index: scene.order_index,
+                content: sceneContentText // Added content field
+            })
+            .select()
+            .single();
+
+        if (sceneError) throw sceneError;
+
+        if (scene.content.length > 0) {
+            const linesToInsert = scene.content.map((line: any, idx: number) => ({
+                scene_id: sceneData.id,
+                character_name: line.characterName,
+                content: line.text,
+                order_index: idx,
+                prosody_hints: line.prosodyHints
+            }));
+
+            const { error: linesError } = await supabase
+                .from('lines')
+                .insert(linesToInsert);
+
+            if (linesError) throw linesError;
+        }
+    }
+
+    return new Response(JSON.stringify({
+        success: true,
+        message: "Script processed successfully. Studio Mode updated.",
+        sceneCount: parsed.scenes.length
     }), {
-      headers: {
-        ...corsHeaders,
-        "Content-Type": "application/json"
-      }
+        headers: {
+            ...corsHeaders,
+            "Content-Type": "application/json"
+        }
     });
   } catch (error) {
     console.error("Error parsing PDF:", error);
     return new Response(JSON.stringify({
-      error: error?.message ?? "Unknown error",
-      hint: "Check storage path, PDF integrity, and function logs."
+        error: error?.message ?? "Unknown error",
+        hint: "Check storage path, PDF integrity, and function logs."
     }), {
-      status: 500,
-      headers: {
-        ...corsHeaders,
-        "Content-Type": "application/json"
-      }
+        status: 500,
+        headers: {
+            ...corsHeaders,
+            "Content-Type": "application/json"
+        }
     });
   }
 });
+
+async function parseScreenplayWithOpenAI(text: string) {
+    const apiKey = Deno.env.get('OPENAI_API_KEY');
+    if (!apiKey) {
+        console.error('❌ OPENAI_API_KEY not configured');
+        throw new Error('OPENAI_API_KEY not configured');
+    }
+
+    console.log('🤖 Starting OpenAI parsing for Studio Mode...');
+    console.log(`📝 Text length: ${text.length} characters`);
+
+    const systemPrompt = `You are an expert screenplay parser. Your job is to extract ONLY the dialogue structure from a screenplay into JSON format.
+    
+    CRITICAL RULES:
+    1. Extract ONLY dialogues - ignore ALL action lines, scene descriptions, and transitions
+    2. Identify scenes by INT./EXT. headings
+    3. For each scene, extract ONLY the character names and their dialogue lines
+    4. Ignore parentheticals like (whispering), (O.S.), etc.
+    
+    Output format:
+    {
+      "scenes": [
+        {
+          "scene_number": 1,
+          "heading": "INT. KITCHEN - DAY",
+          "order_index": 0,
+          "content": [
+            {
+              "characterName": "JOHN",
+              "text": "Hello, how are you?",
+              "prosodyHints": {
+                "emotion": "neutral",
+                "pace": "normal",
+                "hasQuestion": true,
+                "hasExclamation": false,
+                "emphasis": 0
+              }
+            }
+          ]
+        }
+      ]
+    }
+    
+    IMPORTANT: 
+    - Return ONLY valid JSON
+    - Include ALL dialogues from the script
+    - Each dialogue must have characterName, text, and prosodyHints
+    - Set hasQuestion=true if dialogue ends with "?"
+    - Set hasExclamation=true if dialogue contains "!"`;
+
+    const textToSend = text.substring(0, 50000);
+    console.log(`📤 Sending ${textToSend.length} characters to OpenAI...`);
+
+    const response = await fetch('https://api.openai.com/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+            'Authorization': `Bearer ${apiKey}`,
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+            model: 'gpt-4o-mini',
+            messages: [
+                { role: 'system', content: systemPrompt },
+                { role: 'user', content: `Extract all dialogues from this screenplay:\n\n${textToSend}` }
+            ],
+            temperature: 0.1,
+            response_format: { type: "json_object" }
+        }),
+    });
+
+    console.log(`📥 OpenAI response status: ${response.status}`);
+
+    if (!response.ok) {
+        const errorText = await response.text();
+        console.error(`❌ OpenAI API error: ${response.status} - ${errorText}`);
+        throw new Error(`OpenAI API error: ${response.status}`);
+    }
+
+    const data = await response.json();
+    const content = data.choices[0]?.message?.content;
+    
+    if (!content) {
+        console.error('❌ Empty content from OpenAI');
+        throw new Error('Empty response from OpenAI');
+    }
+
+    console.log(`📋 Received content length: ${content.length} characters`);
+    
+    const parsed = JSON.parse(content);
+    
+    const sceneCount = parsed.scenes?.length || 0;
+    const dialogueCount = parsed.scenes?.reduce((acc: number, scene: any) => 
+        acc + (scene.content?.length || 0), 0) || 0;
+    
+    console.log(`✅ OpenAI parsing successful:`);
+    console.log(`   - Scenes: ${sceneCount}`);
+    console.log(`   - Total dialogues: ${dialogueCount}`);
+    
+    if (dialogueCount === 0) {
+        console.warn('⚠️ WARNING: No dialogues extracted by OpenAI!');
+    }
+
+    return parsed;
+}
+
 /**
  * Función mejorada para analizar el texto plano de un guion y extraer los diálogos.
  * Esta versión maneja mejor los bloques de diálogo que ocupan varias líneas

@@ -6,13 +6,15 @@ import {
     TouchableOpacity,
     ActivityIndicator,
     ScrollView,
+    Alert,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { useTheme } from '@/contexts/ThemeContext';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/utils/supabase';
-import { extractDialogue, DialogueLine } from '@/utils/dialogueParser';
+import { DialogueLine } from '@/utils/dialogueParser';
+import { loadDialogueLines } from '@/utils/loadDialogueLines';
 import { ArrowLeft, Check, X } from 'lucide-react-native';
 import { saveScore, addFailedLine } from '@/utils/gamification';
 
@@ -42,12 +44,8 @@ export default function QuizModeScreen() {
         const loadData = async () => {
             try {
                 setLoading(true);
-                const { data: scenes } = await supabase.from('scenes').select('*').eq('script_id', id).order('order_index');
-                const { data: characters } = await supabase.from('characters').select('*').eq('script_id', id);
-                if (scenes && characters) {
-                    const lines = extractDialogue(scenes, characters);
-                    generateQuestions(lines);
-                }
+                const lines = await loadDialogueLines(id as string);
+                generateQuestions(lines); // Generate questions immediately after loading lines
             } catch (e) {
                 console.error(e);
             } finally {

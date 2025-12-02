@@ -46,7 +46,7 @@
         "android": "com.alexdiaz.scriptcue"
       },
       "appIdSuffix": "",
-      "mergeServerUrl": "http://localhost:3000"
+      "mergeServerUrl": "https://script-cue-merge-server.onrender.com"
     },
     "owner": "alexx223",
     "runtimeVersion": {

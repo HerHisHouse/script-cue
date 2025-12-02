@@ -10,11 +10,12 @@ import {
     Platform,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useRouter, useLocalSearchParams, Stack } from 'expo-router';
+import { useRouter, useLocalSearchParams, Stack, useFocusEffect } from 'expo-router';
 import { useTheme } from '@/contexts/ThemeContext';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/utils/supabase';
-import { extractDialogue, DialogueLine } from '@/utils/dialogueParser';
+import { DialogueLine } from '@/utils/dialogueParser';
+import { loadDialogueLines } from '@/utils/loadDialogueLines';
 import {
     ArrowLeft,
     Mic,
@@ -29,11 +30,15 @@ import {
     EyeOff,
     Edit3,
     Volume2,
+    Headphones,
+    Check,
 } from 'lucide-react-native';
-import { Audio, InterruptionModeIOS } from 'expo-av';
+import { Audio, InterruptionModeIOS, InterruptionModeAndroid } from 'expo-av';
 import * as Speech from 'expo-speech';
 import { transcribeAudio } from '@/services/transcription';
 import * as FileSystem from 'expo-file-system/legacy';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { Modal } from 'react-native';
 import Constants from 'expo-constants';
 import { createTTSService } from '@/utils/tts';
 import { getSettings } from '@/utils/appSettings';
@@ -76,54 +81,56 @@ export default function StudioV2Screen() {
     const sessionRecordingRef = useRef<Audio.Recording | null>(null); // Not used for continuous anymore, but kept for types if needed
     const recordingTimerRef = useRef<NodeJS.Timeout | null>(null);
     const sessionStartingRef = useRef(false);
-    const segmentsRef = useRef<{ uri: string; storagePath?: string; duration?: number; type: 'ai' | 'user' }[]>([]);
+    const segmentsRef = useRef<{ uri: string; storagePath?: string; duration?: number; type: 'ai' | 'user'; index: number }[]>([]);
     const [isProcessing, setIsProcessing] = useState(false);
+    const [processingStep, setProcessingStep] = useState<string>('');
+    const [uploadProgress, setUploadProgress] = useState(0);
+    const uploadingSegmentsRef = useRef(0); // Track pending uploads
+
+    // Headphone Alert State
+    const [showHeadphoneAlert, setShowHeadphoneAlert] = useState(false);
+    const [dontShowHeadphoneAgain, setDontShowHeadphoneAgain] = useState(false);
 
     // Load script data
-    useEffect(() => {
+    const loadData = useCallback(async () => {
         if (!id || !user) return;
 
-        const loadData = async () => {
-            try {
-                setLoading(true);
+        try {
+            setLoading(true);
 
-                // Load script
-                const { data: script } = await supabase
-                    .from('scripts')
-                    .select('title')
-                    .eq('id', id)
-                    .single();
+            // Load script
+            const { data: script } = await supabase
+                .from('scripts')
+                .select('title')
+                .eq('id', id)
+                .single();
 
-                setScriptTitle(script?.title || 'Guion');
+            setScriptTitle(script?.title || 'Guion');
 
-                // Load scenes and characters
-                const { data: scenes } = await supabase
-                    .from('scenes')
-                    .select('*')
-                    .eq('script_id', id)
-                    .order('order_index');
+            // Load dialogue lines using helper function
+            const lines = await loadDialogueLines(id as string);
+            setDialogueLines(lines);
 
-                const { data: characters } = await supabase
-                    .from('characters')
-                    .select('*')
-                    .eq('script_id', id);
-
-                if (scenes && characters) {
-                    const lines = extractDialogue(scenes, characters);
-                    setDialogueLines(lines);
-                }
-            } catch (error) {
-                console.error('Error loading data:', error);
-                Alert.alert('Error', 'No se pudo cargar el guion');
-            } finally {
-                setLoading(false);
-            }
-        };
-
-        loadData();
+            console.log(`✅ Studio Mode loaded ${lines.length} dialogue lines`);
+        } catch (error) {
+            console.error('Error loading data:', error);
+            Alert.alert('Error', 'No se pudo cargar el guion');
+        } finally {
+            setLoading(false);
+        }
     }, [id, user]);
 
+    useEffect(() => {
+        loadData();
+    }, [loadData]);
+
     // Load TTS provider from settings
+    useFocusEffect(
+        React.useCallback(() => {
+            loadData();
+        }, [id, user])
+    );
+
     useEffect(() => {
         (async () => {
             try {
@@ -189,15 +196,94 @@ export default function StudioV2Screen() {
                         setTimeout(handleNext, 800);
                     }
                 });
+                // Note: System TTS doesn't generate a file, so we can't upload it
+                console.warn('[speakLine] System TTS used - no AI segment will be saved');
                 return;
             }
 
-            // Use cloud TTS (OpenAI, ElevenLabs, Google)
-            const supabaseUrl = Constants.expoConfig?.extra?.supabaseUrl;
-            const supabaseAnonKey = Constants.expoConfig?.extra?.supabaseAnonKey;
+            // Use cloud TTS (OpenAI, ElevenLabs, Google) with cache
+            try {
+                const { getCachedAudio, generateAndCacheAudio } = await import('@/utils/ttsCache');
+                const Crypto = await import('expo-crypto');
 
-            if (!supabaseUrl || !supabaseAnonKey) {
-                console.warn('Supabase config missing, falling back to system TTS');
+                // Calculate text hash for cache lookup
+                const textHash = await Crypto.digestStringAsync(
+                    Crypto.CryptoDigestAlgorithm.SHA256,
+                    line.text
+                );
+
+                // Determine provider and voice
+                const effectiveProvider = ttsProvider === 'system' || ttsProvider === 'google' ? 'openai' : ttsProvider;
+                const provider: 'openai' | 'elevenlabs' = effectiveProvider as 'openai' | 'elevenlabs';
+                const voiceId = null; // Use default voice for now
+
+                // Try to get from cache first
+                let audioUri = await getCachedAudio(line.id, provider, voiceId, textHash);
+
+                // If not in cache, generate and cache
+                if (!audioUri && user) {
+                    console.log(`Generating audio for ${line.characterName}...`);
+                    audioUri = await generateAndCacheAudio(
+                        id as string,
+                        line.id,
+                        line.characterName,
+                        line.text,
+                        { provider: provider as any, voiceId: voiceId || undefined },
+                        user.id
+                    );
+                }
+
+                if (!audioUri) {
+                    throw new Error('Failed to generate audio');
+                }
+
+                // Force speaker output for playback (only if not recording)
+                if (!isRecording) {
+                    await Audio.setAudioModeAsync({
+                        allowsRecordingIOS: false,
+                        playsInSilentModeIOS: true,
+                    });
+                }
+
+                // Upload AI segment BEFORE playing (if recording)
+                if (isRecording) {
+                    uploadingSegmentsRef.current++;
+                    (async () => {
+                        try {
+                            const storagePath = await uploadAISegment(audioUri!, currentIndex);
+                            if (storagePath) {
+                                segmentsRef.current.push({
+                                    uri: audioUri!,
+                                    storagePath,
+                                    type: 'ai',
+                                    index: currentIndex,
+                                });
+                            }
+                        } catch (err) {
+                            console.error('[uploadAISegment] Error:', err);
+                        } finally {
+                            uploadingSegmentsRef.current--;
+                        }
+                    })();
+                }
+
+                // Play audio
+                const { sound } = await Audio.Sound.createAsync(
+                    { uri: audioUri },
+                    { shouldPlay: true }
+                );
+
+                soundRef.current = sound;
+
+                sound.setOnPlaybackStatusUpdate((status) => {
+                    if (status.isLoaded && status.didJustFinish) {
+                        setIsSpeaking(false);
+                        setTimeout(handleNext, 800);
+                    }
+                });
+            } catch (error) {
+                console.error('Error speaking line:', error);
+                // Fallback to system TTS
                 Speech.speak(line.text, {
                     language: 'es-ES',
                     onDone: () => {
@@ -205,55 +291,7 @@ export default function StudioV2Screen() {
                         setTimeout(handleNext, 800);
                     }
                 });
-                return;
             }
-
-            const ttsService = createTTSService(supabaseUrl, supabaseAnonKey);
-            const response = await ttsService.generateSpeech({
-                text: line.text,
-                voiceGender: (line.voiceGender || 'neutral') as 'male' | 'female' | 'neutral',
-                voicePreset: (line.voicePreset || 'natural') as 'natural' | 'warm' | 'deep' | 'authoritative' | 'soft' | 'energetic',
-                providerOverride: ttsProvider,
-                scriptId: id as string,
-            });
-
-            // Force speaker output for playback (only if not recording)
-            if (!isRecording) {
-                await Audio.setAudioModeAsync({
-                    allowsRecordingIOS: false,
-                    playsInSilentModeIOS: true,
-                });
-            }
-
-            // Play audio
-            const { sound } = await Audio.Sound.createAsync(
-                { uri: response.audioUrl },
-                { shouldPlay: true },
-                (status) => {
-                    if (status.isLoaded && status.didJustFinish) {
-                        setIsSpeaking(false);
-
-                        // Add to segments if in session mode
-                        if (isRecording) {
-                            // For AI segments, we need to upload to Supabase first
-                            uploadAISegment(response.audioUrl, currentIndex).then(storagePath => {
-                                if (storagePath) {
-                                    segmentsRef.current.push({
-                                        uri: response.audioUrl,
-                                        storagePath,
-                                        type: 'ai',
-                                        duration: status.durationMillis ? status.durationMillis / 1000 : undefined
-                                    });
-                                }
-                            }).catch(err => console.error('Error uploading AI segment:', err));
-                        }
-
-                        setTimeout(handleNext, 800);
-                    }
-                }
-            );
-            soundRef.current = sound;
-
         } catch (error) {
             console.error('Error speaking line:', error);
             setIsSpeaking(false);
@@ -282,17 +320,29 @@ export default function StudioV2Screen() {
         if (processingRef.current || isListening) return;
 
         try {
-            setIsListening(true);
-
             // Stop any existing recording first (VAD)
             await stopRecording();
+
+            setIsListening(true);
 
             await Audio.requestPermissionsAsync();
             await Audio.setAudioModeAsync({
                 allowsRecordingIOS: true,
                 playsInSilentModeIOS: true,
-                staysActiveInBackground: false,
+                staysActiveInBackground: true,
+                interruptionModeIOS: InterruptionModeIOS.DoNotMix,
                 shouldDuckAndroid: true,
+                interruptionModeAndroid: InterruptionModeAndroid.DoNotMix,
+                playThroughEarpieceAndroid: false,
+            });
+            // Force speaker output specifically for iOS when recording
+            await Audio.setAudioModeAsync({
+                allowsRecordingIOS: true,
+                playsInSilentModeIOS: true,
+                staysActiveInBackground: true,
+                interruptionModeIOS: InterruptionModeIOS.DoNotMix,
+                shouldDuckAndroid: true,
+                interruptionModeAndroid: InterruptionModeAndroid.DoNotMix,
                 playThroughEarpieceAndroid: false,
             });
             // iOS needs time to apply audio mode
@@ -402,9 +452,17 @@ export default function StudioV2Screen() {
                 try { await FileSystem.deleteAsync(uri, { idempotent: true }); } catch { }
             } else if (isRecording && uri) {
                 // Upload user segment to Supabase and add to segments
-                const storagePath = await uploadUserSegment(uri, currentIndex);
-                if (storagePath) {
-                    segmentsRef.current.push({ uri, storagePath, type: 'user' });
+                uploadingSegmentsRef.current++;
+                try {
+                    const storagePath = await uploadUserSegment(uri, currentIndex);
+                    if (storagePath) {
+                        segmentsRef.current.push({ uri, storagePath, type: 'user', index: currentIndex });
+                        console.log('[User Segment] Uploaded:', storagePath);
+                    }
+                } catch (err) {
+                    console.error('Error uploading user segment:', err);
+                } finally {
+                    uploadingSegmentsRef.current--;
                 }
                 // We don't save individual takes to Supabase in this mode, we wait for the merge.
             }
@@ -475,30 +533,39 @@ export default function StudioV2Screen() {
         }
     }
 
-    // --- Session Recording (Digital Stitching) ---
-
-    async function stopSessionRecording() {
-        // Stop timer
-        if (recordingTimerRef.current) {
-            clearInterval(recordingTimerRef.current);
-            recordingTimerRef.current = null;
-        }
-
-        // Stop any current action
-        stopPlaying();
-        await stopRecording(); // Stop user recording if active
-
-        setIsRecording(false);
-
-        // Trigger Merge
-        if (segmentsRef.current.length > 0) {
-            await mergeAndSaveSession();
+    const handleRecButton = async () => {
+        if (isRecording) {
+            stopSessionRecording();
         } else {
-            setRecordingTime(0);
+            // Check for headphone alert preference
+            try {
+                const hidden = await AsyncStorage.getItem('hideHeadphoneAlert');
+                if (hidden === 'true') {
+                    startSessionRecording();
+                } else {
+                    setShowHeadphoneAlert(true);
+                }
+            } catch (error) {
+                console.error('Error checking headphone alert:', error);
+                startSessionRecording(); // Fallback
+            }
         }
-    }
+    };
+
+    const confirmStartRecording = async () => {
+        setShowHeadphoneAlert(false);
+        if (dontShowHeadphoneAgain) {
+            try {
+                await AsyncStorage.setItem('hideHeadphoneAlert', 'true');
+            } catch (error) {
+                console.error('Error saving headphone alert preference:', error);
+            }
+        }
+        startSessionRecording();
+    };
 
     async function startSessionRecording() {
+
         if (sessionStartingRef.current) return;
         sessionStartingRef.current = true;
         try {
@@ -525,26 +592,85 @@ export default function StudioV2Screen() {
         }
     }
 
+    async function stopSessionRecording() {
+        // Stop timer
+        if (recordingTimerRef.current) {
+            clearInterval(recordingTimerRef.current);
+            recordingTimerRef.current = null;
+        }
+
+        // Stop any current action
+        stopPlaying();
+        await stopRecording(); // Stop user recording if active
+
+        setIsRecording(false);
+
+        // Trigger Merge
+        if (segmentsRef.current.length > 0) {
+            await mergeAndSaveSession();
+        } else {
+            setRecordingTime(0);
+        }
+    }
+
     // --- Helper Functions for Segment Upload ---
 
     async function uploadAISegment(localUri: string, index: number): Promise<string | null> {
         if (!user?.id) return null;
         try {
-            const fileName = `${user.id}/segments/${Date.now()}_ai_${index}.m4a`;
+            console.log('[uploadAISegment] Starting upload for:', localUri);
 
-            // Fetch the audio file from the local cache/URL
-            const response = await fetch(localUri);
-            const blob = await response.blob();
-            const arrayBuffer = await blob.arrayBuffer();
+            // Detect file extension from URL
+            const extension = localUri.endsWith('.mp3') ? 'mp3' : 'm4a';
+            const fileName = `${user.id}/segments/${Date.now()}_ai_${index}.${extension}`;
+            const contentType = extension === 'mp3' ? 'audio/mpeg' : 'audio/m4a';
+
+            let arrayBuffer: ArrayBuffer;
+
+            // Check if it's a local file (file://) or remote URL (http://)
+            if (localUri.startsWith('file://')) {
+                // Local file - use FileSystem
+                console.log('[uploadAISegment] Local file detected, using FileSystem');
+                const base64 = await FileSystem.readAsStringAsync(localUri, {
+                    encoding: FileSystem.EncodingType.Base64,
+                });
+                arrayBuffer = base64ToArrayBuffer(base64);
+            } else {
+                // Remote URL - use fetch
+                console.log('[uploadAISegment] Remote URL detected, using fetch');
+                const response = await fetch(localUri);
+                if (!response.ok) {
+                    throw new Error(`Fetch failed: ${response.status} ${response.statusText}`);
+                }
+                const blob = await response.blob();
+
+                // Convert blob to ArrayBuffer (React Native compatible way)
+                const reader = new FileReader();
+                arrayBuffer = await new Promise((resolve, reject) => {
+                    reader.onloadend = () => {
+                        if (reader.result instanceof ArrayBuffer) {
+                            resolve(reader.result);
+                        } else {
+                            reject(new Error('Failed to convert blob to ArrayBuffer'));
+                        }
+                    };
+                    reader.onerror = reject;
+                    reader.readAsArrayBuffer(blob);
+                });
+            }
+
+            console.log('[uploadAISegment] ArrayBuffer size:', arrayBuffer.byteLength, 'bytes');
 
             const { error } = await supabase.storage
                 .from('recordings')
-                .upload(fileName, arrayBuffer, { contentType: 'audio/m4a' });
+                .upload(fileName, arrayBuffer, { contentType });
 
             if (error) throw error;
+
+            console.log('[uploadAISegment] Success:', fileName);
             return fileName;
         } catch (error) {
-            console.error('Error uploading AI segment:', error);
+            console.error('[uploadAISegment] Error:', error);
             return null;
         }
     }
@@ -575,7 +701,37 @@ export default function StudioV2Screen() {
 
         setIsProcessing(true);
         try {
-            console.log('Merging segments via server:', segmentsRef.current.length);
+            // Wait for any pending uploads
+            const totalPending = uploadingSegmentsRef.current;
+            if (totalPending > 0) {
+                console.log(`[Merge] Waiting for ${totalPending} pending uploads...`);
+
+                // Wait loop
+                let retries = 0;
+                while (uploadingSegmentsRef.current > 0 && retries < 60) { // 60s timeout
+                    const progress = Math.max(0, 100 - Math.round((uploadingSegmentsRef.current / totalPending) * 100));
+                    setUploadProgress(progress);
+                    setProcessingStep(`Subiendo audios (${uploadingSegmentsRef.current} pendientes)...`);
+
+                    await new Promise(resolve => setTimeout(resolve, 500));
+                    retries++;
+                }
+            }
+
+            setUploadProgress(100);
+            setProcessingStep('Mezclando audio en el servidor...');
+            console.log('[Merge] Starting merge with', segmentsRef.current.length, 'segments');
+
+            if (uploadingSegmentsRef.current > 0) {
+                console.warn('[Merge] Timeout waiting for uploads, proceeding anyway');
+            }
+
+            console.log('[Merge] Starting merge with', segmentsRef.current.length, 'segments');
+
+            // Sort segments by index to ensure correct order
+            segmentsRef.current.sort((a, b) => a.index - b.index);
+
+            console.log('[Merge] Segments:', segmentsRef.current.map(s => ({ type: s.type, path: s.storagePath, index: s.index })));
 
             // Prepare segments for server (only those with storagePath)
             const serverSegments = segmentsRef.current
@@ -585,6 +741,8 @@ export default function StudioV2Screen() {
             if (serverSegments.length === 0) {
                 throw new Error('No segments uploaded to storage');
             }
+
+            console.log('[Merge] Sending to server:', serverSegments.length, 'segments');
 
             // Get merge server URL from env
             const mergeServerUrl = Constants.expoConfig?.extra?.mergeServerUrl || 'http://localhost:3000';
@@ -606,7 +764,7 @@ export default function StudioV2Screen() {
             }
 
             const result = await response.json();
-            console.log('Merge success:', result);
+            console.log('[Merge] Success:', result);
 
             // Save to recordings table
             await supabase.from('recordings').insert({
@@ -629,12 +787,13 @@ export default function StudioV2Screen() {
             }
 
         } catch (error: any) {
-            console.error('Error in merge:', error);
+            console.error('[Merge] Error:', error);
             Alert.alert('Error', `Ocurrió un error al guardar la sesión: ${error.message}`);
         } finally {
             setIsProcessing(false);
             setRecordingTime(0);
             segmentsRef.current = [];
+            uploadingSegmentsRef.current = 0;
         }
     }
 
@@ -649,15 +808,7 @@ export default function StudioV2Screen() {
         setIsSpeaking(false);
     }
 
-    function handleRecButton() {
-        if (isRecording) {
-            // Stop session
-            stopSessionRecording();
-        } else {
-            // Start session
-            startSessionRecording();
-        }
-    }
+
 
     function handleRestart() {
         setCurrentIndex(0);
@@ -670,10 +821,10 @@ export default function StudioV2Screen() {
     }
 
     function handleEditScript() {
-        // Navigate to editor (to be implemented)
         setShowMenu(false);
-        Alert.alert('Editor', 'Funcionalidad de edición en desarrollo');
+        router.push(`/scripts/${id}/editor`);
     }
+
 
     // --- Render ---
 
@@ -761,6 +912,83 @@ export default function StudioV2Screen() {
                 </TouchableOpacity>
             )}
 
+            {/* Headphone Alert Modal */}
+            <Modal
+                visible={showHeadphoneAlert}
+                transparent={true}
+                animationType="fade"
+                onRequestClose={() => setShowHeadphoneAlert(false)}
+            >
+                <View style={styles.modalOverlay}>
+                    <View style={[styles.modalContent, { backgroundColor: colors.surface }]}>
+                        <View style={styles.modalHeader}>
+                            <Headphones size={32} color={colors.primary} />
+                            <Text style={[styles.modalTitle, { color: colors.text }]}>Recomendación</Text>
+                        </View>
+
+                        <Text style={[styles.modalText, { color: colors.textSecondary }]}>
+                            Para una mejor calidad de grabación y evitar eco, te recomendamos usar auriculares.
+                        </Text>
+
+                        <TouchableOpacity
+                            style={styles.checkboxContainer}
+                            onPress={() => setDontShowHeadphoneAgain(!dontShowHeadphoneAgain)}
+                        >
+                            <View style={[styles.checkbox, { borderColor: colors.textSecondary, backgroundColor: dontShowHeadphoneAgain ? colors.primary : 'transparent' }]}>
+                                {dontShowHeadphoneAgain && <Check size={12} color="#FFFFFF" />}
+                            </View>
+                            <Text style={[styles.checkboxText, { color: colors.textSecondary }]}>No volver a mostrar</Text>
+                        </TouchableOpacity>
+
+                        <View style={styles.modalButtons}>
+                            <TouchableOpacity
+                                style={[styles.modalButton, { backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border }]}
+                                onPress={() => setShowHeadphoneAlert(false)}
+                            >
+                                <Text style={[styles.modalButtonText, { color: colors.text }]}>Cancelar</Text>
+                            </TouchableOpacity>
+
+                            <TouchableOpacity
+                                style={[styles.modalButton, { backgroundColor: colors.primary }]}
+                                onPress={confirmStartRecording}
+                            >
+                                <Text style={[styles.modalButtonText, { color: '#FFFFFF' }]}>Entendido</Text>
+                            </TouchableOpacity>
+                        </View>
+                    </View>
+                </View>
+            </Modal>
+
+            {/* Processing Overlay */}
+            {isProcessing && (
+                <View style={styles.loadingOverlay}>
+                    <View style={[styles.loadingCard, { backgroundColor: colors.surface }]}>
+                        <ActivityIndicator size="large" color={colors.primary} />
+                        <Text style={[styles.loadingText, { color: colors.text }]}>
+                            {processingStep || 'Procesando...'}
+                        </Text>
+                        {/* Progress Bar */}
+                        <View style={{
+                            width: '100%',
+                            height: 8,
+                            backgroundColor: colors.border,
+                            borderRadius: 4,
+                            marginTop: 8,
+                            overflow: 'hidden'
+                        }}>
+                            <View style={{
+                                width: `${uploadProgress}%`,
+                                height: '100%',
+                                backgroundColor: colors.primary
+                            }} />
+                        </View>
+                        <Text style={{ fontSize: 12, color: colors.textSecondary }}>
+                            {uploadProgress}%
+                        </Text>
+                    </View>
+                </View>
+            )}
+
             {/* Content */}
             <ScrollView
                 style={styles.content}
@@ -768,56 +996,120 @@ export default function StudioV2Screen() {
             >
                 {currentLine && (
                     <View style={styles.cardContainer}>
-                        {/* Character Card */}
+                        {/* Current Card */}
                         <View
                             style={[
                                 styles.card,
                                 {
-                                    backgroundColor: currentLine.isUserCharacter ? '#10B981' : currentLine.color || colors.primary,
+                                    backgroundColor: colors.background,
+                                    borderColor: currentLine.isUserCharacter ? '#10B981' : currentLine.color || colors.primary,
+                                    borderWidth: 4,
                                     opacity: (currentLine.isUserCharacter && hideUserLines) ? 0.3 : 1,
+                                    padding: 0, // Remove padding to let header fill width
+                                    overflow: 'hidden', // Ensure header stays inside border
                                 }
                             ]}
                         >
-                            <View style={styles.cardHeader}>
-                                <Text style={styles.characterName}>
+                            {/* Header Banner */}
+                            <View style={[
+                                styles.cardHeaderBanner,
+                                {
+                                    backgroundColor: currentLine.isUserCharacter ? '#10B981' : currentLine.color || colors.primary,
+                                }
+                            ]}>
+                                <Text style={[styles.characterName, { color: colors.background }]}>
                                     {currentLine.characterName}
                                 </Text>
-                                <View style={[styles.badge, { backgroundColor: 'rgba(255,255,255,0.2)' }]}>
-                                    <Text style={styles.badgeText}>
+                                <View style={[
+                                    styles.badge,
+                                    {
+                                        backgroundColor: 'rgba(0,0,0,0.2)', // Semi-transparent black for contrast on colored banner
+                                    }
+                                ]}>
+                                    <Text style={[styles.badgeText, { color: colors.background }]}>
                                         {currentLine.isUserCharacter ? 'TÚ' : 'IA'}
                                     </Text>
                                 </View>
                             </View>
 
-                            <Text style={[
-                                styles.dialogueText,
-                                (currentLine.isUserCharacter && hideUserLines) && { opacity: 0 }
-                            ]}>
-                                {currentLine.text}
-                            </Text>
+                            <View style={styles.cardContent}>
+                                <Text style={[
+                                    styles.dialogueText,
+                                    { color: colors.text },
+                                    (currentLine.isUserCharacter && hideUserLines) && { opacity: 0 }
+                                ]}>
+                                    {currentLine.text}
+                                </Text>
+                            </View>
 
                             {/* Status indicators */}
-                            {isListening && currentLine.isUserCharacter && (
+                            {/* Show if listening (VAD) OR recording (Session Mode) */}
+                            {(isListening || isRecording) && currentLine.isUserCharacter && (
                                 <View style={styles.statusRow}>
-                                    <Mic size={20} color="#FFFFFF" />
-                                    <Text style={styles.statusText}>Escuchando...</Text>
+                                    <Mic size={24} color="#EF4444" />
+                                    <Text style={[styles.statusText, { color: '#EF4444', fontWeight: '700' }]}>Escuchando...</Text>
                                 </View>
                             )}
 
                             {isTranscribing && currentLine.isUserCharacter && (
                                 <View style={styles.statusRow}>
-                                    <ActivityIndicator size="small" color="#FFFFFF" />
-                                    <Text style={styles.statusText}>Procesando...</Text>
+                                    <ActivityIndicator size="small" color={colors.primary} />
+                                    <Text style={[styles.statusText, { color: colors.textSecondary }]}>Procesando...</Text>
                                 </View>
                             )}
 
                             {isSpeaking && !currentLine.isUserCharacter && (
                                 <View style={styles.statusRow}>
-                                    <Volume2 size={20} color="#FFFFFF" />
-                                    <Text style={styles.statusText}>Reproduciendo...</Text>
+                                    <Volume2 size={20} color={colors.primary} />
+                                    <Text style={[styles.statusText, { color: colors.textSecondary }]}>Reproduciendo...</Text>
                                 </View>
                             )}
                         </View>
+
+                        {/* Next Card (Cascade Effect) */}
+                        {dialogueLines[currentIndex + 1] && (
+                            <View
+                                style={[
+                                    styles.card,
+                                    styles.nextCard,
+                                    {
+                                        backgroundColor: colors.background,
+                                        borderColor: dialogueLines[currentIndex + 1].isUserCharacter ? '#10B981' : dialogueLines[currentIndex + 1].color || colors.primary,
+                                        borderWidth: 4,
+                                        opacity: 0.5,
+                                        padding: 0,
+                                        overflow: 'hidden',
+                                    }
+                                ]}
+                            >
+                                <View style={[
+                                    styles.cardHeaderBanner,
+                                    {
+                                        backgroundColor: dialogueLines[currentIndex + 1].isUserCharacter ? '#10B981' : dialogueLines[currentIndex + 1].color || colors.primary,
+                                    }
+                                ]}>
+                                    <Text style={[styles.characterName, { color: colors.background }]}>
+                                        {dialogueLines[currentIndex + 1].characterName}
+                                    </Text>
+                                    <View style={[
+                                        styles.badge,
+                                        {
+                                            backgroundColor: 'rgba(0,0,0,0.2)',
+                                        }
+                                    ]}>
+                                        <Text style={[styles.badgeText, { color: colors.background }]}>
+                                            {dialogueLines[currentIndex + 1].isUserCharacter ? 'TÚ' : 'IA'}
+                                        </Text>
+                                    </View>
+                                </View>
+
+                                <View style={styles.cardContent}>
+                                    <Text style={[styles.dialogueText, { color: colors.text }]} numberOfLines={2}>
+                                        {dialogueLines[currentIndex + 1].text}
+                                    </Text>
+                                </View>
+                            </View>
+                        )}
                     </View>
                 )}
             </ScrollView>
@@ -974,34 +1266,62 @@ const styles = StyleSheet.create({
     },
     cardContainer: {
         gap: 16,
+        alignItems: 'center', // Center cards horizontally
     },
     card: {
         borderRadius: 20,
-        padding: 24,
+        padding: 32, // Increased padding for better spacing
         shadowColor: '#000',
         shadowOffset: { width: 0, height: 4 },
-        shadowOpacity: 0.2,
+        shadowOpacity: 0.1,
         shadowRadius: 12,
         elevation: 5,
-        minHeight: 200,
+        minHeight: 250, // Increased height
+        width: '100%',
+        alignItems: 'center', // Center content horizontally
+        justifyContent: 'center', // Center content vertically
+        overflow: 'hidden', // Ensure header stays inside border
     },
-    cardHeader: {
+    nextCard: {
+        marginTop: -20, // Overlap slightly
+        transform: [{ scale: 0.9 }, { translateY: 20 }], // Scale down and move down
+        zIndex: -1, // Behind main card
+        minHeight: 150, // Smaller height for next card
+    },
+    cardHeaderBanner: {
         flexDirection: 'row',
         alignItems: 'center',
-        justifyContent: 'space-between',
-        marginBottom: 16,
+        justifyContent: 'center',
+        gap: 12,
+        width: '100%',
+        paddingVertical: 12,
+        marginBottom: 24,
+        position: 'absolute', // Fix to top
+        top: 0,
+        left: 0,
+        right: 0,
+    },
+    cardContent: {
+        marginTop: 60, // Add margin to account for absolute header
+        paddingHorizontal: 24,
+        paddingBottom: 24,
+        width: '100%',
+        alignItems: 'center',
+        justifyContent: 'center',
+        flex: 1, // Fill remaining space
     },
     characterName: {
-        fontSize: 16,
+        fontSize: 18,
         fontWeight: '700',
         color: '#FFFFFF',
         textTransform: 'uppercase',
         letterSpacing: 1,
+        textAlign: 'center',
     },
     badge: {
-        paddingHorizontal: 12,
-        paddingVertical: 4,
-        borderRadius: 12,
+        paddingHorizontal: 16,
+        paddingVertical: 6,
+        borderRadius: 20,
     },
     badgeText: {
         fontSize: 12,
@@ -1009,20 +1329,25 @@ const styles = StyleSheet.create({
         color: '#FFFFFF',
     },
     dialogueText: {
-        fontSize: 22,
-        lineHeight: 32,
+        fontSize: 24,
+        lineHeight: 36,
         color: '#FFFFFF',
         fontWeight: '500',
+        textAlign: 'center',
     },
     statusRow: {
         flexDirection: 'row',
         alignItems: 'center',
         gap: 8,
-        marginTop: 16,
+        marginTop: 24,
+        padding: 8,
+        // Removed background color for cleaner look
+        borderRadius: 12,
+        justifyContent: 'center', // Ensure centering
     },
     statusText: {
         fontSize: 14,
-        fontWeight: '600',
+        fontWeight: '500',
         color: '#FFFFFF',
     },
     footer: {
@@ -1108,5 +1433,98 @@ const styles = StyleSheet.create({
         fontSize: 14,
         fontWeight: '600',
         fontVariant: ['tabular-nums'],
+    },
+    // Modal Styles
+    modalOverlay: {
+        flex: 1,
+        backgroundColor: 'rgba(0,0,0,0.5)',
+        justifyContent: 'center',
+        alignItems: 'center',
+        padding: 20,
+    },
+    modalContent: {
+        borderRadius: 20,
+        padding: 24,
+        width: '100%',
+        maxWidth: 340,
+        alignItems: 'center',
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.25,
+        shadowRadius: 12,
+        elevation: 10,
+    },
+    modalHeader: {
+        alignItems: 'center',
+        marginBottom: 16,
+        gap: 12,
+    },
+    modalTitle: {
+        fontSize: 18,
+        fontWeight: '700',
+        textAlign: 'center',
+    },
+    modalText: {
+        fontSize: 15,
+        textAlign: 'center',
+        marginBottom: 24,
+        lineHeight: 22,
+    },
+    checkboxContainer: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        marginBottom: 24,
+        gap: 8,
+    },
+    checkbox: {
+        width: 20,
+        height: 20,
+        borderRadius: 4,
+        borderWidth: 2,
+        alignItems: 'center',
+        justifyContent: 'center',
+    },
+    checkboxText: {
+        fontSize: 14,
+    },
+    modalButtons: {
+        flexDirection: 'row',
+        gap: 12,
+        width: '100%',
+    },
+    modalButton: {
+        flex: 1,
+        paddingVertical: 12,
+        borderRadius: 12,
+        alignItems: 'center',
+        justifyContent: 'center',
+    },
+    modalButtonText: {
+        fontSize: 15,
+        fontWeight: '600',
+    },
+    // Loading Overlay
+    loadingOverlay: {
+        position: 'absolute',
+        top: 0,
+        left: 0,
+        right: 0,
+        bottom: 0,
+        backgroundColor: 'rgba(0,0,0,0.7)',
+        justifyContent: 'center',
+        alignItems: 'center',
+        zIndex: 2000,
+    },
+    loadingCard: {
+        padding: 24,
+        borderRadius: 16,
+        alignItems: 'center',
+        gap: 16,
+        minWidth: 200,
+    },
+    loadingText: {
+        fontSize: 16,
+        fontWeight: '600',
+        textAlign: 'center',
     },
 });

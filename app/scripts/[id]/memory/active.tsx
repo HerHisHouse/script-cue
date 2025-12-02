@@ -15,7 +15,8 @@ import { useRouter, useLocalSearchParams } from 'expo-router';
 import { useTheme } from '@/contexts/ThemeContext';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/utils/supabase';
-import { extractDialogue, DialogueLine } from '@/utils/dialogueParser';
+import { DialogueLine } from '@/utils/dialogueParser';
+import { loadDialogueLines } from '@/utils/loadDialogueLines';
 import {
   ArrowLeft,
   ChevronLeft,
@@ -79,21 +80,8 @@ export default function MemoryModeScreen() {
         const userChar = characters?.find(c => c.is_user_character);
         setUserCharacterName(userChar?.name || 'Tu personaje');
 
-        // 3. Load Scenes (for dialogue extraction)
-        const { data: scenes, error: scenesError } = await supabase
-          .from('scenes')
-          .select('*')
-          .eq('script_id', id)
-          .order('order_index');
-
-        if (scenesError) throw scenesError;
-
-        // 4. Parse Dialogues
-        if (scenes && characters) {
-          const lines = extractDialogue(scenes, characters || []);
-          setDialogueLines(lines);
-        }
-
+        const lines = await loadDialogueLines(id as string);
+        setDialogueLines(lines);
       } catch (error: any) {
         console.error('Error loading memory mode:', error);
         Alert.alert('Error', 'No se pudo cargar el guion para el modo memoria.');
@@ -124,7 +112,7 @@ export default function MemoryModeScreen() {
     setIsUserLineVisible(prev => !prev);
   };
 
-  // TTS Logic
+  // TTS Logic with Cache
   const playPartnerLine = async () => {
     const currentLine = dialogueLines[currentIndex];
     if (!currentLine || currentLine.isUserCharacter) return;
@@ -133,9 +121,54 @@ export default function MemoryModeScreen() {
       setIsPlaying(true);
       const textToSpeak = currentLine.cleanText || currentLine.text;
 
-      // Simple TTS using Expo Speech
+      // Try to use cached audio first
+      const { getCachedAudio } = await import('@/utils/ttsCache');
+      const Crypto = await import('expo-crypto');
+      const { Audio } = await import('expo-av');
+
+      const textHash = await Crypto.digestStringAsync(
+        Crypto.CryptoDigestAlgorithm.SHA256,
+        textToSpeak
+      );
+
+      // Try cache with OpenAI (default provider)
+      const audioUri = await getCachedAudio(currentLine.id, 'openai', null, textHash);
+
+      if (audioUri) {
+        // Play from cache
+        const { sound } = await Audio.Sound.createAsync(
+          { uri: audioUri },
+          { shouldPlay: true }
+        );
+
+        sound.setOnPlaybackStatusUpdate((status) => {
+          if (status.isLoaded && status.didJustFinish) {
+            setIsPlaying(false);
+            if (autoAdvance) {
+              goToNext();
+            }
+          }
+        });
+      } else {
+        // Fallback to System TTS
+        Speech.speak(textToSpeak, {
+          language: 'es-ES',
+          onDone: () => {
+            setIsPlaying(false);
+            if (autoAdvance) {
+              goToNext();
+            }
+          },
+          onStopped: () => setIsPlaying(false),
+          onError: () => setIsPlaying(false),
+        });
+      }
+    } catch (error) {
+      console.error('TTS Error:', error);
+      // Final fallback to System TTS
+      const textToSpeak = currentLine.cleanText || currentLine.text;
       Speech.speak(textToSpeak, {
-        language: 'es-ES', // Could be dynamic based on settings
+        language: 'es-ES',
         onDone: () => {
           setIsPlaying(false);
           if (autoAdvance) {
@@ -145,9 +178,6 @@ export default function MemoryModeScreen() {
         onStopped: () => setIsPlaying(false),
         onError: () => setIsPlaying(false),
       });
-    } catch (error) {
-      console.error('TTS Error:', error);
-      setIsPlaying(false);
     }
   };
 

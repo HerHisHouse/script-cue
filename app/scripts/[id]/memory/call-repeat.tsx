@@ -12,7 +12,8 @@ import { useRouter, useLocalSearchParams } from 'expo-router';
 import { useTheme } from '@/contexts/ThemeContext';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/utils/supabase';
-import { extractDialogue, DialogueLine } from '@/utils/dialogueParser';
+import { DialogueLine } from '@/utils/dialogueParser';
+import { loadDialogueLines } from '@/utils/loadDialogueLines';
 import { ArrowLeft, Play, Mic, CheckCircle, XCircle, AlertTriangle } from 'lucide-react-native';
 import { Audio } from 'expo-av';
 import * as Speech from 'expo-speech';
@@ -39,11 +40,8 @@ export default function CallRepeatScreen() {
         const loadData = async () => {
             try {
                 setLoading(true);
-                const { data: scenes } = await supabase.from('scenes').select('*').eq('script_id', id).order('order_index');
-                const { data: characters } = await supabase.from('characters').select('*').eq('script_id', id);
-                if (scenes && characters) {
-                    setDialogueLines(extractDialogue(scenes, characters));
-                }
+                const lines = await loadDialogueLines(id as string);
+                setDialogueLines(lines);
             } catch (e) {
                 console.error(e);
             } finally {
@@ -59,14 +57,54 @@ export default function CallRepeatScreen() {
 
         setStatus('playing');
         const start = Date.now();
-        Speech.speak(line.cleanText, {
-            language: 'es-ES',
-            onDone: () => {
-                ttsDurationRef.current = Date.now() - start;
-                startRecording();
-            },
-            onError: () => setStatus('idle')
-        });
+
+        try {
+            const { getCachedAudio } = await import('@/utils/ttsCache');
+            const Crypto = await import('expo-crypto');
+            const { Audio } = await import('expo-av');
+
+            const textHash = await Crypto.digestStringAsync(
+                Crypto.CryptoDigestAlgorithm.SHA256,
+                line.cleanText
+            );
+
+            const audioUri = await getCachedAudio(line.id, 'openai', null, textHash);
+
+            if (audioUri) {
+                const { sound } = await Audio.Sound.createAsync(
+                    { uri: audioUri },
+                    { shouldPlay: true }
+                );
+
+                sound.setOnPlaybackStatusUpdate((status) => {
+                    if (status.isLoaded && status.didJustFinish) {
+                        ttsDurationRef.current = Date.now() - start;
+                        startRecording();
+                    }
+                });
+            } else {
+                // Fallback to System TTS
+                Speech.speak(line.cleanText, {
+                    language: 'es-ES',
+                    onDone: () => {
+                        ttsDurationRef.current = Date.now() - start;
+                        startRecording();
+                    },
+                    onError: () => setStatus('idle')
+                });
+            }
+        } catch (error) {
+            console.error('TTS Error:', error);
+            // Fallback to System TTS
+            Speech.speak(line.cleanText, {
+                language: 'es-ES',
+                onDone: () => {
+                    ttsDurationRef.current = Date.now() - start;
+                    startRecording();
+                },
+                onError: () => setStatus('idle')
+            });
+        }
     };
 
     const startRecording = async () => {

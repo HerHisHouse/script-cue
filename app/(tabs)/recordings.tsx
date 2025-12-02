@@ -462,10 +462,17 @@ export default function RecordingsScreen() {
   }
 
   // Gestión de reproductor modal
-  async function loadAndPlay(index: number) {
-    const recording = queue[index];
+  async function loadAndPlay(index: number, specificQueue?: Recording[]) {
+    const currentQueue = specificQueue || queue;
+    const recording = currentQueue[index];
     if (!recording) return;
     try {
+      await Audio.setAudioModeAsync({
+        playsInSilentModeIOS: true,
+        staysActiveInBackground: true,
+        shouldDuckAndroid: true,
+      });
+
       if (sound) {
         try {
           const status = await sound.getStatusAsync();
@@ -521,12 +528,12 @@ export default function RecordingsScreen() {
           if (currentLoop === 'one') {
             newSound.replayAsync();
           } else if (currentLoop === 'all') {
-            const nextIndex = (index + 1) % queue.length;
-            loadAndPlay(nextIndex);
+            const nextIndex = (index + 1) % currentQueue.length;
+            loadAndPlay(nextIndex, currentQueue);
           } else {
             const nextIndex = index + 1;
-            if (nextIndex < queue.length) {
-              loadAndPlay(nextIndex);
+            if (nextIndex < currentQueue.length) {
+              loadAndPlay(nextIndex, currentQueue);
             } else {
               setIsPlaying(false);
             }
@@ -553,7 +560,7 @@ export default function RecordingsScreen() {
       Animated.timing(modalOpacity, { toValue: 1, duration: 300, easing: Easing.out(Easing.ease), useNativeDriver: true }),
       Animated.timing(modalScale, { toValue: 1, duration: 300, easing: Easing.out(Easing.ease), useNativeDriver: true }),
     ]).start();
-    loadAndPlay(0);
+    loadAndPlay(0, q);
   }
 
   async function togglePlayPause() {
@@ -1534,7 +1541,11 @@ export default function RecordingsScreen() {
                           <Image source={{ uri: (item as any).thumbnail_url }} style={styles.playlistThumb} />
                         ) : (
                           <View style={[styles.playlistThumb, { backgroundColor: colors.input, alignItems: 'center', justifyContent: 'center' }]}>
-                            <FileAudio size={18} color={colors.primary} />
+                            {item.type === 'video' ? (
+                              <VideoIcon size={18} color={colors.primary} />
+                            ) : (
+                              <FileAudio size={18} color={colors.primary} />
+                            )}
                           </View>
                         )}
                         <View style={{ flex: 1 }}>

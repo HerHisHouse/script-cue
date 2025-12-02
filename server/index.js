@@ -158,6 +158,191 @@ app.post('/merge', async (req, res) => {
     }
 });
 
+// Process Casting Video endpoint
+app.post('/process-casting', async (req, res) => {
+    const { videoPath, scriptId, userId, lineTimings } = req.body;
+
+    if (!videoPath || !scriptId || !userId || !lineTimings) {
+        return res.status(400).json({ error: 'Missing required fields' });
+    }
+
+    const tempDir = path.join(__dirname, 'temp', `casting_${Date.now()}`);
+    const videoFile = path.join(tempDir, 'input.mp4');
+    const userAudioFile = path.join(tempDir, 'user_audio.m4a');
+    const mixedAudioFile = path.join(tempDir, 'mixed_audio.m4a');
+    const outputFile = path.join(tempDir, 'output.mp4');
+
+    try {
+        await fs.promises.mkdir(tempDir, { recursive: true });
+
+        console.log(`[Casting] Processing video for user ${userId}, script ${scriptId}`);
+        console.log(`[Casting] Line timings:`, JSON.stringify(lineTimings, null, 2));
+
+        // 1. Download the user's video from Supabase
+        console.log(`[Casting] Downloading video: ${videoPath}`);
+        const { data: videoData, error: videoError } = await supabase.storage
+            .from('recordings')
+            .download(videoPath);
+
+        if (videoError) {
+            throw new Error(`Failed to download video: ${videoError.message}`);
+        }
+
+        const videoBuffer = await videoData.arrayBuffer();
+        await fs.promises.writeFile(videoFile, Buffer.from(videoBuffer));
+
+        // 2. Extract user audio from video
+        console.log('[Casting] Extracting user audio from video...');
+        await new Promise((resolve, reject) => {
+            ffmpeg(videoFile)
+                .output(userAudioFile)
+                .audioCodec('aac')
+                .noVideo()
+                .on('end', () => {
+                    console.log('[Casting] User audio extracted');
+                    resolve();
+                })
+                .on('error', reject)
+                .run();
+        });
+
+        // 3. Download AI audio segments from cache
+        console.log('[Casting] Downloading AI audio segments...');
+        const aiSegments = [];
+        for (const timing of lineTimings) {
+            if (timing.type === 'ai' && timing.audioPath) {
+                const aiAudioFile = path.join(tempDir, `ai_${timing.index}.mp3`);
+
+                const { data: aiData, error: aiError } = await supabase.storage
+                    .from('recordings')
+                    .download(timing.audioPath);
+
+                if (aiError) {
+                    console.warn(`[Casting] Could not download AI audio ${timing.audioPath}:`, aiError.message);
+                    continue;
+                }
+
+                const aiBuffer = await aiData.arrayBuffer();
+                await fs.promises.writeFile(aiAudioFile, Buffer.from(aiBuffer));
+
+                aiSegments.push({
+                    file: aiAudioFile,
+                    startTime: timing.startTime,
+                    duration: timing.duration
+                });
+            }
+        }
+
+        // 4. Create mixed audio track
+        console.log('[Casting] Mixing audio tracks...');
+
+        // Build FFmpeg filter complex for mixing
+        // We'll use amix to overlay AI segments on top of user audio
+        const filterParts = [`[0:a]`]; // User audio as base
+        const overlayInputs = [];
+
+        aiSegments.forEach((segment, idx) => {
+            overlayInputs.push(`[${idx + 1}:a]adelay=${segment.startTime * 1000}|${segment.startTime * 1000}[a${idx}]`);
+        });
+
+        const mixInputs = overlayInputs.map((_, idx) => `[a${idx}]`).join('');
+        const filterComplex = overlayInputs.length > 0
+            ? `${overlayInputs.join(';')};[0:a]${mixInputs}amix=inputs=${aiSegments.length + 1}:duration=longest[outa]`
+            : '[0:a]anull[outa]';
+
+        await new Promise((resolve, reject) => {
+            const command = ffmpeg();
+
+            // Add user audio as first input
+            command.input(userAudioFile);
+
+            // Add all AI segments as inputs
+            aiSegments.forEach(segment => {
+                command.input(segment.file);
+            });
+
+            command
+                .complexFilter(filterComplex)
+                .map('[outa]')
+                .audioCodec('aac')
+                .audioBitrate('128k')
+                .output(mixedAudioFile)
+                .on('start', (cmd) => console.log('[FFmpeg] Mix command:', cmd))
+                .on('progress', (progress) => console.log(`[FFmpeg] Mixing: ${progress.percent?.toFixed(1)}%`))
+                .on('end', () => {
+                    console.log('[Casting] Audio mixing completed');
+                    resolve();
+                })
+                .on('error', reject)
+                .run();
+        });
+
+        // 5. Replace video audio with mixed audio
+        console.log('[Casting] Replacing video audio track...');
+        await new Promise((resolve, reject) => {
+            ffmpeg()
+                .input(videoFile)
+                .input(mixedAudioFile)
+                .outputOptions([
+                    '-c:v copy',           // Copy video stream without re-encoding
+                    '-c:a aac',            // Encode audio as AAC
+                    '-map 0:v:0',          // Map video from first input
+                    '-map 1:a:0',          // Map audio from second input
+                    '-shortest'            // Match shortest stream duration
+                ])
+                .output(outputFile)
+                .on('start', (cmd) => console.log('[FFmpeg] Final command:', cmd))
+                .on('progress', (progress) => console.log(`[FFmpeg] Finalizing: ${progress.percent?.toFixed(1)}%`))
+                .on('end', () => {
+                    console.log('[Casting] Video processing completed');
+                    resolve();
+                })
+                .on('error', reject)
+                .run();
+        });
+
+        // 6. Upload processed video to Supabase
+        const processedFileName = `${userId}/casting_${Date.now()}_processed.mp4`;
+        const processedBuffer = await fs.promises.readFile(outputFile);
+
+        console.log('[Casting] Uploading processed video...');
+        const { data: uploadData, error: uploadError } = await supabase.storage
+            .from('recordings')
+            .upload(processedFileName, processedBuffer, {
+                contentType: 'video/mp4',
+                upsert: false
+            });
+
+        if (uploadError) {
+            throw new Error(`Failed to upload processed video: ${uploadError.message}`);
+        }
+
+        console.log('[Casting] Success! Processed video uploaded:', processedFileName);
+
+        // Cleanup temp files
+        await fs.promises.rm(tempDir, { recursive: true, force: true });
+
+        res.json({
+            success: true,
+            path: processedFileName,
+            message: 'Video processed successfully'
+        });
+
+    } catch (error) {
+        console.error('[Casting] Error:', error);
+
+        // Cleanup on error
+        try {
+            await fs.promises.rm(tempDir, { recursive: true, force: true });
+        } catch { }
+
+        res.status(500).json({
+            error: 'Video processing failed',
+            message: error.message
+        });
+    }
+});
+
 app.listen(PORT, () => {
     console.log(`🎵 Audio Merge Server running on port ${PORT}`);
     console.log(`📊 Health check: http://localhost:${PORT}/health`);

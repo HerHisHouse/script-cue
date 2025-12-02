@@ -11,7 +11,8 @@ import { useRouter, useLocalSearchParams } from 'expo-router';
 import { useTheme } from '@/contexts/ThemeContext';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/utils/supabase';
-import { extractDialogue, DialogueLine } from '@/utils/dialogueParser';
+import { DialogueLine } from '@/utils/dialogueParser';
+import { loadDialogueLines } from '@/utils/loadDialogueLines';
 import { ArrowLeft, Eye, EyeOff, Check } from 'lucide-react-native';
 import { getFailedLines, clearFailedLine, saveScore } from '@/utils/gamification';
 
@@ -31,13 +32,11 @@ export default function ReinforcementScreen() {
         const loadData = async () => {
             try {
                 setLoading(true);
-                const { data: scenes } = await supabase.from('scenes').select('*').eq('script_id', id).order('order_index');
-                const { data: characters } = await supabase.from('characters').select('*').eq('script_id', id);
+                const lines = await loadDialogueLines(id as string);
                 const failures = await getFailedLines(id as string);
 
-                if (scenes && characters && failures.length > 0) {
-                    const allLines = extractDialogue(scenes, characters);
-                    const linesToReview = allLines.filter(l => failures.some(f => f.lineId === l.id));
+                if (lines && failures.length > 0) {
+                    const linesToReview = lines.filter(l => failures.some(f => f.lineId === l.id));
                     setFailedLines(linesToReview);
                 }
             } catch (e) {
