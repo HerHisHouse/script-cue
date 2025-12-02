@@ -17,7 +17,7 @@ import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 import { useRouter, useLocalSearchParams, Stack } from 'expo-router';
 import { CameraView, CameraType, useCameraPermissions } from 'expo-camera';
 import { Audio, InterruptionModeIOS, InterruptionModeAndroid } from 'expo-av';
-import * as FileSystem from 'expo-file-system';
+import * as FileSystem from 'expo-file-system/legacy'; // Fix: Use legacy API
 import { transcribeAudio } from '@/services/transcription'; // Import transcription service
 import { calculateSimilarity } from '@/utils/stringUtils'; // Helper for similarity
 import { ArrowLeft, Mic, RotateCcw, Play, Pause, Square, Video, SwitchCamera, Settings2, SkipBack, SkipForward, MoreVertical, EyeOff, Eye, Minus, Plus, Volume2, GripHorizontal } from 'lucide-react-native';
@@ -105,10 +105,11 @@ export default function CastingModeScreen() {
   const [isTranscribing, setIsTranscribing] = useState(false);
   const transcriptionRecordingRef = useRef<Audio.Recording | null>(null);
   const silenceTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const noSpeechTimerRef = useRef<NodeJS.Timeout | null>(null); // Safety timer
   const isUserSpeakingRef = useRef(false);
   const processingRef = useRef(false);
-  const SILENCE_THRESHOLD = -35; // dB (adjusted from Car Mode)
-  const [metering, setMetering] = useState(-160); // For UI display
+  const SILENCE_THRESHOLD = -45; // dB (More sensitive)
+  const [metering, setMetering] = useState(-160);
 
   const panResponder = useRef(
     PanResponder.create({
@@ -475,9 +476,15 @@ export default function CastingModeScreen() {
 
       console.log('[Casting] Starting transcription listener...');
 
-      // Configure for parallel recording (if possible) or just standard
-      // Note: On iOS, we need to be careful not to interrupt the camera recording
-      // The camera uses the mic, so we might need to share the session
+      // Safety timer: If no speech detected in 5s, try to process anyway
+      // This helps if the user speaks too quietly for the threshold
+      if (noSpeechTimerRef.current) clearTimeout(noSpeechTimerRef.current);
+      noSpeechTimerRef.current = setTimeout(() => {
+        if (!isUserSpeakingRef.current && !processingRef.current) {
+          console.log('[Casting] No speech detected for 5s, trying to process anyway...');
+          processUserAudio();
+        }
+      }, 5000) as any;
 
       const { recording } = await Audio.Recording.createAsync(
         Audio.RecordingOptionsPresets.HIGH_QUALITY,
@@ -487,6 +494,11 @@ export default function CastingModeScreen() {
 
             // Simple VAD to detect end of speech
             if (status.metering > SILENCE_THRESHOLD) {
+              if (!isUserSpeakingRef.current) {
+                console.log('[Casting] Speech detected!');
+                // Clear safety timer as we detected speech
+                if (noSpeechTimerRef.current) clearTimeout(noSpeechTimerRef.current);
+              }
               isUserSpeakingRef.current = true;
               if (silenceTimerRef.current) {
                 clearTimeout(silenceTimerRef.current);
@@ -529,6 +541,10 @@ export default function CastingModeScreen() {
     if (silenceTimerRef.current) {
       clearTimeout(silenceTimerRef.current);
       silenceTimerRef.current = null;
+    }
+    if (noSpeechTimerRef.current) {
+      clearTimeout(noSpeechTimerRef.current);
+      noSpeechTimerRef.current = null;
     }
 
     if (transcriptionRecordingRef.current) {
