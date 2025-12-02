@@ -213,7 +213,7 @@ export default function StudioV2Screen() {
                 );
 
                 // Determine provider and voice
-                const effectiveProvider = ttsProvider === 'system' || ttsProvider === 'google' ? 'openai' : ttsProvider;
+                const effectiveProvider = ttsProvider === 'google' ? 'openai' : ttsProvider;
                 const provider: 'openai' | 'elevenlabs' = effectiveProvider as 'openai' | 'elevenlabs';
                 const voiceId = null; // Use default voice for now
 

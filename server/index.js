@@ -12,7 +12,7 @@ const PORT = process.env.PORT || 3000;
 
 // Middleware
 app.use(cors());
-app.use(express.json({ limit: '50mb' }));
+app.use(express.json({ limit: '200mb' })); // Increased for large video files
 
 // Supabase client
 const supabase = createClient(
@@ -160,9 +160,9 @@ app.post('/merge', async (req, res) => {
 
 // Process Casting Video endpoint
 app.post('/process-casting', async (req, res) => {
-    const { videoPath, scriptId, userId, lineTimings } = req.body;
+    const { videoBase64, scriptId, userId, lineTimings } = req.body;
 
-    if (!videoPath || !scriptId || !userId || !lineTimings) {
+    if (!videoBase64 || !scriptId || !userId || !lineTimings) {
         return res.status(400).json({ error: 'Missing required fields' });
     }
 
@@ -178,18 +178,11 @@ app.post('/process-casting', async (req, res) => {
         console.log(`[Casting] Processing video for user ${userId}, script ${scriptId}`);
         console.log(`[Casting] Line timings:`, JSON.stringify(lineTimings, null, 2));
 
-        // 1. Download the user's video from Supabase
-        console.log(`[Casting] Downloading video: ${videoPath}`);
-        const { data: videoData, error: videoError } = await supabase.storage
-            .from('recordings')
-            .download(videoPath);
-
-        if (videoError) {
-            throw new Error(`Failed to download video: ${videoError.message}`);
-        }
-
-        const videoBuffer = await videoData.arrayBuffer();
-        await fs.promises.writeFile(videoFile, Buffer.from(videoBuffer));
+        // 1. Decode base64 video and save to file
+        console.log(`[Casting] Decoding video from base64...`);
+        const videoBuffer = Buffer.from(videoBase64, 'base64');
+        await fs.promises.writeFile(videoFile, videoBuffer);
+        console.log(`[Casting] Video saved (${(videoBuffer.length / 1024 / 1024).toFixed(2)} MB)`);
 
         // 2. Extract user audio from video
         console.log('[Casting] Extracting user audio from video...');
@@ -206,32 +199,32 @@ app.post('/process-casting', async (req, res) => {
                 .run();
         });
 
-        // 3. Download AI audio segments from cache
-        console.log('[Casting] Downloading AI audio segments...');
+        // 3. Save AI audio files from base64
+        console.log('[Casting] Processing AI audio files...');
         const aiSegments = [];
-        for (const timing of lineTimings) {
-            if (timing.type === 'ai' && timing.audioPath) {
-                const aiAudioFile = path.join(tempDir, `ai_${timing.index}.mp3`);
 
-                const { data: aiData, error: aiError } = await supabase.storage
-                    .from('recordings')
-                    .download(timing.audioPath);
+        if (req.body.aiAudioFiles && Array.isArray(req.body.aiAudioFiles)) {
+            for (const aiFile of req.body.aiAudioFiles) {
+                const aiAudioFile = path.join(tempDir, `ai_${aiFile.index}.mp3`);
 
-                if (aiError) {
-                    console.warn(`[Casting] Could not download AI audio ${timing.audioPath}:`, aiError.message);
-                    continue;
+                try {
+                    const aiBuffer = Buffer.from(aiFile.base64, 'base64');
+                    await fs.promises.writeFile(aiAudioFile, aiBuffer);
+
+                    aiSegments.push({
+                        file: aiAudioFile,
+                        startTime: aiFile.startTime,
+                        duration: aiFile.duration
+                    });
+
+                    console.log(`[Casting] Saved AI audio for line ${aiFile.index}`);
+                } catch (err) {
+                    console.warn(`[Casting] Error saving AI audio for line ${aiFile.index}:`, err);
                 }
-
-                const aiBuffer = await aiData.arrayBuffer();
-                await fs.promises.writeFile(aiAudioFile, Buffer.from(aiBuffer));
-
-                aiSegments.push({
-                    file: aiAudioFile,
-                    startTime: timing.startTime,
-                    duration: timing.duration
-                });
             }
         }
+
+        console.log(`[Casting] Processed ${aiSegments.length} AI audio segments`);
 
         // 4. Create mixed audio track
         console.log('[Casting] Mixing audio tracks...');

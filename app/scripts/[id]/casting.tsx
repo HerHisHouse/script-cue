@@ -96,6 +96,14 @@ export default function CastingModeScreen() {
   const [isProcessing, setIsProcessing] = useState(false);
   const [processingProgress, setProcessingProgress] = useState(0);
 
+  // VAD State
+  const [metering, setMetering] = useState(-160);
+  const vadRecordingRef = useRef<Audio.Recording | null>(null);
+  const silenceTimerRef = useRef<any>(null);
+  const isUserSpeakingRef = useRef(false);
+  const SILENCE_THRESHOLD = -40; // dB
+  const SILENCE_DURATION = 1500; // ms
+
   const panResponder = useRef(
     PanResponder.create({
       onMoveShouldSetPanResponder: () => true,
@@ -232,96 +240,58 @@ export default function CastingModeScreen() {
     const aiLines = dialogueLines.filter((line) => !line.isUserCharacter);
     if (aiLines.length === 0) return;
 
-    // Filter lines that specifically need generation (OpenAI or ElevenLabs)
-    const linesToGenerate = aiLines.filter(line => {
-      const characterName = line.characterName.toUpperCase();
-      const voiceConfig = perCharacterVoices[characterName];
-      const provider = voiceConfig?.provider || 'openai';
-      return !provider.toLowerCase().includes('system');
-    });
+    // Check if we have enough cached audio to start immediately
+    // We'll run the full check in background
+    const { getCachedAudio } = await import('@/utils/ttsCache');
+    const Crypto = await import('expo-crypto');
 
-    if (linesToGenerate.length === 0) return;
+    // Start background loading
+    (async () => {
+      try {
+        console.log('🎙️ Checking TTS audio cache in background...');
+        const newCache = new Map(ttsCache);
+        let missingCount = 0;
 
-    // Check if we already have audio in local cache
-    const allCached = linesToGenerate.every(line => {
-      const index = dialogueLines.findIndex(l => l.id === line.id);
-      return ttsCache.has(index);
-    });
+        for (let i = 0; i < aiLines.length; i++) {
+          const line = aiLines[i];
+          const lineIndex = dialogueLines.findIndex(l => l.id === line.id);
 
-    if (allCached) {
-      console.log('✅ All audio already in local cache');
-      return;
-    }
+          if (newCache.has(lineIndex)) continue;
 
-    setLoadingAudio(true);
-    setAudioProgress(0);
-    const newCache = new Map(ttsCache);
+          const text = line.cleanText || line.text;
+          if (!text) continue;
 
-    try {
-      console.log('🎙️ Loading TTS audio from cache...');
-      const { getCachedAudio, generateAndCacheAudio } = await import('@/utils/ttsCache');
-      const Crypto = await import('expo-crypto');
+          const characterName = line.characterName.toUpperCase();
+          const voiceConfig = perCharacterVoices[characterName];
+          const provider = voiceConfig?.provider || 'openai';
 
-      for (let i = 0; i < aiLines.length; i++) {
-        const line = aiLines[i];
-        const lineIndex = dialogueLines.findIndex(l => l.id === line.id);
+          if (provider === 'system') continue;
 
-        // Skip if already in local cache
-        if (newCache.has(lineIndex)) {
-          setAudioProgress(((i + 1) / aiLines.length) * 100);
-          continue;
-        }
-
-        const text = line.cleanText || line.text;
-        if (!text) continue;
-
-        const characterName = line.characterName.toUpperCase();
-        const voiceConfig = perCharacterVoices[characterName];
-        const provider = voiceConfig?.provider || 'openai';
-
-        // Skip system TTS
-        if (provider === 'system') {
-          setAudioProgress(((i + 1) / aiLines.length) * 100);
-          continue;
-        }
-
-        // Try to get from cache first
-        const textHash = await Crypto.digestStringAsync(
-          Crypto.CryptoDigestAlgorithm.SHA256,
-          text
-        );
-        const voiceId = voiceConfig?.systemVoiceId || null;
-
-        let localPath = await getCachedAudio(line.id, provider, voiceId, textHash);
-
-        // If not in cache, generate and cache
-        if (!localPath) {
-          console.log(`Generating audio for ${characterName}...`);
-          localPath = await generateAndCacheAudio(
-            id as string,
-            line.id,
-            line.characterName,
-            text,
-            { provider: provider as any, voiceId: voiceId || undefined },
-            user.id
+          const textHash = await Crypto.digestStringAsync(
+            Crypto.CryptoDigestAlgorithm.SHA256,
+            text
           );
+          const voiceId = voiceConfig?.systemVoiceId || null;
+
+          // Just check cache, don't generate yet
+          const localPath = await getCachedAudio(line.id, provider, voiceId, textHash);
+
+          if (localPath) {
+            newCache.set(lineIndex, localPath);
+          } else {
+            missingCount++;
+          }
         }
 
-        if (localPath) {
-          newCache.set(lineIndex, localPath);
+        if (newCache.size > ttsCache.size) {
           setTtsCache(new Map(newCache));
         }
 
-        setAudioProgress(((i + 1) / aiLines.length) * 100);
+        console.log(`✅ Cache check complete. Missing: ${missingCount}`);
+      } catch (e) {
+        console.error('Background TTS check error:', e);
       }
-
-      console.log('✅ TTS audio loaded successfully');
-    } catch (e) {
-      console.error('TTS Loading Error:', e);
-      Alert.alert('Error', 'No se pudo cargar el audio de la IA. Verifica tu conexión.');
-    } finally {
-      setLoadingAudio(false);
-    }
+    })();
   }
 
   // Load script data
@@ -372,7 +342,7 @@ export default function CastingModeScreen() {
                 type: 'ai',
                 startTime: lineStartTime,
                 duration,
-                audioPath: audioUri.replace('file://', ''), // Store relative path
+                audioPath: audioUri, // Keep full URI for easier reading
               }]);
             }
 
@@ -453,15 +423,21 @@ export default function CastingModeScreen() {
     if (!line) return;
 
     if (line.isUserCharacter) {
-      // User's turn: Wait for manual advance or auto-timer
-      // We can implement a simple timer based on text length
-      const words = line.text.split(' ').length;
-      const duration = Math.max(2000, words * 400); // Rough estimate
+      // User's turn
+      const lineStartTime = isRecording ? (Date.now() - recordingStartTime.current) / 1000 : 0;
 
-      // Optional: Auto-advance
-      // autoAdvanceTimerRef.current = setTimeout(() => {
-      //   nextLine();
-      // }, duration);
+      // Record start time for user line
+      if (isRecording) {
+        setLineTimings(prev => [...prev, {
+          index: currentIndex,
+          type: 'user',
+          startTime: lineStartTime,
+          duration: 0, // Will be updated when line ends
+        }]);
+      }
+
+      // Start VAD to detect when user finishes speaking
+      await startVAD();
 
     } else {
       // AI's turn: Speak
@@ -471,7 +447,108 @@ export default function CastingModeScreen() {
 
 
 
+  async function startVAD() {
+    try {
+      // CRITICAL: Always stop existing VAD first
+      if (vadRecordingRef.current) {
+        console.log('[Casting] Stopping existing VAD before starting new one');
+        await stopVAD();
+      }
+
+      console.log('[Casting] Starting VAD...');
+
+      // Reset state
+      isUserSpeakingRef.current = false;
+      setMetering(-160);
+
+      const { recording } = await Audio.Recording.createAsync(
+        Audio.RecordingOptionsPresets.LOW_QUALITY,
+        (status) => {
+          if (status.metering !== undefined) {
+            setMetering(status.metering);
+
+            if (status.metering > SILENCE_THRESHOLD) {
+              // Speech detected
+              if (!isUserSpeakingRef.current) {
+                console.log('[Casting] Speech detected!');
+              }
+              isUserSpeakingRef.current = true;
+              if (silenceTimerRef.current) {
+                clearTimeout(silenceTimerRef.current);
+                silenceTimerRef.current = null;
+              }
+            } else if (isUserSpeakingRef.current) {
+              // Silence after speech
+              if (!silenceTimerRef.current) {
+                console.log('[Casting] Silence after speech, starting timer...');
+                silenceTimerRef.current = setTimeout(() => {
+                  console.log('[Casting] Silence timeout reached, advancing...');
+                  stopVAD();
+                  nextLine();
+                }, SILENCE_DURATION);
+              }
+            }
+          }
+        },
+        100 // Update interval
+      );
+
+      vadRecordingRef.current = recording;
+      console.log('[Casting] VAD started successfully');
+    } catch (e) {
+      console.warn('[Casting] VAD start failed:', e);
+      // Fallback: Auto-advance after delay based on text length
+      const line = dialogueLines[currentIndex];
+      if (line) {
+        const words = line.text.split(' ').length;
+        const duration = Math.max(2000, words * 500);
+        console.log(`[Casting] Using fallback timer: ${duration}ms`);
+        silenceTimerRef.current = setTimeout(() => {
+          nextLine();
+        }, duration);
+      }
+    }
+  }
+
+  async function stopVAD() {
+    if (silenceTimerRef.current) {
+      clearTimeout(silenceTimerRef.current);
+      silenceTimerRef.current = null;
+    }
+
+    // CRITICAL: Reset speaking flag so next VAD cycle can detect speech
+    isUserSpeakingRef.current = false;
+    setMetering(-160); // Reset metering display
+
+    if (vadRecordingRef.current) {
+      try {
+        await vadRecordingRef.current.stopAndUnloadAsync();
+      } catch { }
+      vadRecordingRef.current = null;
+    }
+  }
+
   function nextLine() {
+    stopVAD(); // Ensure VAD is stopped
+
+    // Update duration for the last user line if we are recording
+    if (isRecording) {
+      setLineTimings(prev => {
+        const last = prev[prev.length - 1];
+        if (last && last.type === 'user' && last.duration === 0) {
+          const now = (Date.now() - recordingStartTime.current) / 1000;
+          const duration = now - last.startTime;
+
+          // Return new array with updated last element
+          return [
+            ...prev.slice(0, -1),
+            { ...last, duration }
+          ];
+        }
+        return prev;
+      });
+    }
+
     if (currentIndex < dialogueLines.length - 1) {
       setCurrentIndex(prev => prev + 1);
     } else {
@@ -488,6 +565,7 @@ export default function CastingModeScreen() {
 
   function cleanupSound() {
     Speech.stop();
+    stopVAD();
     if (soundRef.current) {
       soundRef.current.unloadAsync();
     }
@@ -568,41 +646,59 @@ export default function CastingModeScreen() {
       setIsProcessing(true);
       setProcessingProgress(10);
 
-      // 1. Upload raw video to Supabase Storage
-      console.log('[Casting] Uploading raw video to Supabase...');
-      const filename = `${user?.id}/casting_${Date.now()}_raw.mp4`;
+      // STRATEGY: Send video + AI audio files directly to Render server
+      // This avoids the 50MB Supabase Storage limit for large videos
+      console.log('[Casting] Preparing video and audio for processing...');
 
-      // Read video file
-      const videoInfo = await FileSystem.getInfoAsync(uri);
-      if (!videoInfo.exists) {
-        throw new Error('Video file not found');
+      // Read video file as base64 for transmission
+      const videoBase64 = await FileSystem.readAsStringAsync(uri, {
+        encoding: FileSystem.EncodingType.Base64,
+      });
+
+      setProcessingProgress(20);
+
+      // Read AI audio files from local cache and convert to base64
+      console.log('[Casting] Reading AI audio files...');
+      const aiAudioFiles: Array<{ index: number; base64: string; startTime: number; duration: number }> = [];
+
+      for (const timing of lineTimings) {
+        if (timing.type === 'ai' && timing.audioPath) {
+          try {
+            // audioPath is now stored with full URI
+            const audioBase64 = await FileSystem.readAsStringAsync(timing.audioPath, {
+              encoding: FileSystem.EncodingType.Base64,
+            });
+
+            aiAudioFiles.push({
+              index: timing.index,
+              base64: audioBase64,
+              startTime: timing.startTime,
+              duration: timing.duration,
+            });
+
+            console.log(`[Casting] Read AI audio for line ${timing.index}`);
+          } catch (err) {
+            console.warn(`[Casting] Could not read AI audio file ${timing.audioPath}:`, err);
+          }
+        }
       }
 
-      const videoBlob = await fetch(uri).then(r => r.blob());
-
-      const { data: uploadData, error: uploadError } = await supabase.storage
-        .from('recordings')
-        .upload(filename, videoBlob, {
-          contentType: 'video/mp4',
-          upsert: false
-        });
-
-      if (uploadError) throw uploadError;
-
+      console.log(`[Casting] Prepared ${aiAudioFiles.length} AI audio files`);
       setProcessingProgress(30);
-      console.log('[Casting] Video uploaded:', filename);
 
-      // 2. Process video with Render server
-      console.log('[Casting] Sending to Render for processing...');
+      console.log('[Casting] Sending video to Render for processing...');
+
       const renderUrl = process.env.EXPO_PUBLIC_RENDER_SERVER_URL || 'https://script-cue-merge-server.onrender.com';
 
+      // Send video data + AI audio files + timings to Render server
       const response = await fetch(`${renderUrl}/process-casting`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          videoPath: filename,
+          videoBase64: videoBase64,
+          aiAudioFiles: aiAudioFiles, // Send AI audio files in base64
           scriptId: id,
           userId: user?.id,
           lineTimings: lineTimings,
@@ -610,11 +706,18 @@ export default function CastingModeScreen() {
       });
 
       if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.message || 'Processing failed');
+        const errorText = await response.text();
+        console.error('[Casting] Server error:', errorText);
+        throw new Error(`Processing failed: ${response.status} ${response.statusText}`);
       }
 
-      const { path: processedPath } = await response.json();
+      const result = await response.json();
+      const processedPath = result.path || result.storagePath;
+
+      if (!processedPath) {
+        throw new Error('Server did not return a processed video path');
+      }
+
       setProcessingProgress(80);
       console.log('[Casting] Processed video:', processedPath);
 
