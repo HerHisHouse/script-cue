@@ -16,8 +16,10 @@ import {
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter, useLocalSearchParams, Stack } from 'expo-router';
 import { CameraView, CameraType, useCameraPermissions } from 'expo-camera';
-import { Audio, InterruptionModeIOS } from 'expo-av';
-import * as FileSystem from 'expo-file-system/legacy';
+import { Audio, InterruptionModeIOS, InterruptionModeAndroid } from 'expo-av';
+import * as FileSystem from 'expo-file-system';
+import { transcribeAudio } from '@/services/transcription'; // Import transcription service
+import { calculateSimilarity } from '@/utils/stringUtils'; // Helper for similarity
 import { ArrowLeft, Mic, RotateCcw, Play, Pause, Square, Video, SwitchCamera, Settings2, SkipBack, SkipForward, MoreVertical, EyeOff, Eye, Minus, Plus, Volume2, GripHorizontal } from 'lucide-react-native';
 import { supabase } from '@/utils/supabase';
 import client from '@/utils/openaiClient';
@@ -85,24 +87,28 @@ export default function CastingModeScreen() {
   const [showVolumeControl, setShowVolumeControl] = useState(false);
 
   // Video Processing State
-  const [lineTimings, setLineTimings] = useState<Array<{
+  const lineTimingsRef = useRef<Array<{
     index: number;
     type: 'user' | 'ai';
     startTime: number;
     duration: number;
     audioPath?: string;
   }>>([]);
+  // Keep state for UI updates if needed, but rely on ref for logic
+  const [lineTimingsCount, setLineTimingsCount] = useState(0);
+
   const recordingStartTime = useRef<number>(0);
   const [isProcessing, setIsProcessing] = useState(false);
   const [processingProgress, setProcessingProgress] = useState(0);
 
-  // VAD State
-  const [metering, setMetering] = useState(-160);
-  const vadRecordingRef = useRef<Audio.Recording | null>(null);
-  const silenceTimerRef = useRef<any>(null);
+  // Transcription State (replacing VAD)
+  const [isTranscribing, setIsTranscribing] = useState(false);
+  const transcriptionRecordingRef = useRef<Audio.Recording | null>(null);
+  const silenceTimerRef = useRef<NodeJS.Timeout | null>(null);
   const isUserSpeakingRef = useRef(false);
-  const SILENCE_THRESHOLD = -40; // dB
-  const SILENCE_DURATION = 1500; // ms
+  const processingRef = useRef(false);
+  const SILENCE_THRESHOLD = -35; // dB (adjusted from Car Mode)
+  const [metering, setMetering] = useState(-160); // For UI display
 
   const panResponder = useRef(
     PanResponder.create({
@@ -146,6 +152,7 @@ export default function CastingModeScreen() {
       shouldDuckAndroid: true,
       playThroughEarpieceAndroid: false,
       interruptionModeIOS: InterruptionModeIOS.MixWithOthers, // Mix without ducking
+      interruptionModeAndroid: InterruptionModeAndroid.DuckOthers, // Duck others on Android
     });
 
     return () => {
@@ -308,8 +315,8 @@ export default function CastingModeScreen() {
   async function speakLine(line: DialogueLine) {
     if (speaking) return;
 
-    // CRITICAL: Stop VAD before AI speaks to prevent interference
-    await stopVAD();
+    // Stop any active listening/transcription
+    await stopListening();
 
     setSpeaking(true);
 
@@ -342,17 +349,15 @@ export default function CastingModeScreen() {
             // Record timing if recording
             if (isRecording) {
               console.log(`[Casting] Recording AI timing: index=${currentIndex}, startTime=${lineStartTime}, duration=${duration}`);
-              setLineTimings(prev => {
-                const newTimings = [...prev, {
-                  index: currentIndex,
-                  type: 'ai' as const,
-                  startTime: lineStartTime,
-                  duration,
-                  audioPath: audioUri, // Keep full URI for easier reading
-                }];
-                console.log(`[Casting] Total timings after AI: ${newTimings.length}`);
-                return newTimings;
+
+              lineTimingsRef.current.push({
+                index: currentIndex,
+                type: 'ai',
+                startTime: lineStartTime,
+                duration,
+                audioPath: audioUri,
               });
+              setLineTimingsCount(c => c + 1); // Trigger re-render
             }
 
             setSpeaking(false);
@@ -380,12 +385,13 @@ export default function CastingModeScreen() {
             const estimatedDuration = words * 0.5; // Rough estimate
 
             if (isRecording) {
-              setLineTimings(prev => [...prev, {
+              lineTimingsRef.current.push({
                 index: currentIndex,
                 type: 'ai',
                 startTime: lineStartTime,
                 duration: estimatedDuration,
-              }]);
+              });
+              setLineTimingsCount(c => c + 1);
             }
 
             setSpeaking(false);
@@ -438,20 +444,18 @@ export default function CastingModeScreen() {
       // Record start time for user line
       if (isRecording) {
         console.log(`[Casting] Recording user timing start: index=${currentIndex}, startTime=${lineStartTime}`);
-        setLineTimings(prev => {
-          const newTimings = [...prev, {
-            index: currentIndex,
-            type: 'user' as const,
-            startTime: lineStartTime,
-            duration: 0, // Will be updated when line ends
-          }];
-          console.log(`[Casting] Total timings after user start: ${newTimings.length}`);
-          return newTimings;
+
+        lineTimingsRef.current.push({
+          index: currentIndex,
+          type: 'user',
+          startTime: lineStartTime,
+          duration: 0, // Will be updated when line ends
         });
+        setLineTimingsCount(c => c + 1);
       }
 
-      // Start VAD to detect when user finishes speaking
-      await startVAD();
+      // Start listening for user speech (Transcription flow)
+      await startListening();
 
     } else {
       // AI's turn: Speak
@@ -461,31 +465,28 @@ export default function CastingModeScreen() {
 
 
 
-  async function startVAD() {
+  // --- Transcription Logic (Replaces VAD) ---
+
+  async function startListening() {
     try {
-      // CRITICAL: Always stop existing VAD first
-      if (vadRecordingRef.current) {
-        console.log('[Casting] Stopping existing VAD before starting new one');
-        await stopVAD();
+      if (transcriptionRecordingRef.current) {
+        await stopListening();
       }
 
-      console.log('[Casting] Starting VAD...');
+      console.log('[Casting] Starting transcription listener...');
 
-      // Reset state
-      isUserSpeakingRef.current = false;
-      setMetering(-160);
+      // Configure for parallel recording (if possible) or just standard
+      // Note: On iOS, we need to be careful not to interrupt the camera recording
+      // The camera uses the mic, so we might need to share the session
 
       const { recording } = await Audio.Recording.createAsync(
-        Audio.RecordingOptionsPresets.LOW_QUALITY,
+        Audio.RecordingOptionsPresets.HIGH_QUALITY,
         (status) => {
           if (status.metering !== undefined) {
             setMetering(status.metering);
 
+            // Simple VAD to detect end of speech
             if (status.metering > SILENCE_THRESHOLD) {
-              // Speech detected
-              if (!isUserSpeakingRef.current) {
-                console.log('[Casting] Speech detected!');
-              }
               isUserSpeakingRef.current = true;
               if (silenceTimerRef.current) {
                 clearTimeout(silenceTimerRef.current);
@@ -494,77 +495,125 @@ export default function CastingModeScreen() {
             } else if (isUserSpeakingRef.current) {
               // Silence after speech
               if (!silenceTimerRef.current) {
-                console.log('[Casting] Silence after speech, starting timer...');
+                console.log('[Casting] Silence detected, waiting to process...');
                 silenceTimerRef.current = setTimeout(() => {
-                  console.log('[Casting] Silence timeout reached, advancing...');
-                  stopVAD();
-                  nextLine();
-                }, SILENCE_DURATION);
+                  console.log('[Casting] Silence timeout, processing audio...');
+                  processUserAudio();
+                }, 1500) as any; // 1.5s silence
               }
             }
           }
         },
-        100 // Update interval
+        100
       );
 
-      vadRecordingRef.current = recording;
-      console.log('[Casting] VAD started successfully');
+      transcriptionRecordingRef.current = recording;
+      isUserSpeakingRef.current = false;
+      setMetering(-160);
+
     } catch (e) {
-      console.warn('[Casting] VAD start failed:', e);
-      // Fallback: Auto-advance after delay based on text length
+      console.warn('[Casting] Start listening failed:', e);
+      // Fallback: Auto-advance after delay
       const line = dialogueLines[currentIndex];
       if (line) {
         const words = line.text.split(' ').length;
-        const duration = Math.max(2000, words * 500);
-        console.log(`[Casting] Using fallback timer: ${duration}ms`);
+        const duration = Math.max(3000, words * 500);
         silenceTimerRef.current = setTimeout(() => {
           nextLine();
-        }, duration);
+        }, duration) as any;
       }
     }
   }
 
-  async function stopVAD() {
+  async function stopListening() {
     if (silenceTimerRef.current) {
       clearTimeout(silenceTimerRef.current);
       silenceTimerRef.current = null;
     }
 
-    // CRITICAL: Reset speaking flag so next VAD cycle can detect speech
-    isUserSpeakingRef.current = false;
-    setMetering(-160); // Reset metering display
-
-    if (vadRecordingRef.current) {
+    if (transcriptionRecordingRef.current) {
       try {
-        await vadRecordingRef.current.stopAndUnloadAsync();
+        await transcriptionRecordingRef.current.stopAndUnloadAsync();
       } catch { }
-      vadRecordingRef.current = null;
+      transcriptionRecordingRef.current = null;
+    }
+    isUserSpeakingRef.current = false;
+  }
+
+  async function processUserAudio() {
+    if (processingRef.current) return;
+    processingRef.current = true;
+    setIsTranscribing(true);
+
+    try {
+      const uri = transcriptionRecordingRef.current?.getURI();
+      await stopListening();
+
+      if (!uri) {
+        nextLine(); // Fallback
+        return;
+      }
+
+      console.log('[Casting] Transcribing audio:', uri);
+      const text = await transcribeAudio(uri);
+      console.log('[Casting] Transcribed:', text);
+
+      // Check similarity
+      const currentLine = dialogueLines[currentIndex];
+      if (currentLine) {
+        // Simple similarity check
+        const s1 = text.toLowerCase().replace(/[^\w\s]/g, '').trim();
+        const s2 = currentLine.text.toLowerCase().replace(/[^\w\s]/g, '').trim();
+
+        // Calculate Levenshtein or simple word match
+        // For now, let's use a simple inclusion or word overlap
+        const words1 = s1.split(/\s+/);
+        const words2 = s2.split(/\s+/);
+        const intersection = words1.filter(w => words2.includes(w));
+        const similarity = intersection.length / Math.max(words1.length, words2.length);
+
+        console.log('[Casting] Similarity:', similarity);
+
+        if (similarity > 0.4 || text.length > 5) { // Low threshold or just some speech
+          console.log('[Casting] Match found or speech detected, advancing');
+          nextLine();
+        } else {
+          // Retry? Or just advance? User prefers flow.
+          // Let's advance but maybe log it.
+          console.log('[Casting] Low similarity, but advancing to keep flow');
+          nextLine();
+        }
+      } else {
+        nextLine();
+      }
+
+    } catch (e) {
+      console.error('[Casting] Transcription failed:', e);
+      nextLine(); // Always advance on error to not get stuck
+    } finally {
+      setIsTranscribing(false);
+      processingRef.current = false;
     }
   }
 
   function nextLine() {
-    stopVAD(); // Ensure VAD is stopped
+    stopListening(); // Ensure listening is stopped
 
     // Update duration for the last user line if we are recording
     if (isRecording) {
-      setLineTimings(prev => {
-        const last = prev[prev.length - 1];
-        if (last && last.type === 'user' && last.duration === 0) {
-          const now = (Date.now() - recordingStartTime.current) / 1000;
-          const duration = now - last.startTime;
+      const timings = lineTimingsRef.current;
+      const last = timings[timings.length - 1];
 
-          console.log(`[Casting] Updating user duration: index=${last.index}, duration=${duration}`);
+      if (last && last.type === 'user' && last.duration === 0) {
+        const now = (Date.now() - recordingStartTime.current) / 1000;
+        const duration = now - last.startTime;
 
-          // Return new array with updated last element
-          const updated = [
-            ...prev.slice(0, -1),
-            { ...last, duration }
-          ];
-          console.log(`[Casting] Total timings after user end: ${updated.length}`);
-          return updated;
-        }
-        return prev;
-      });
+        console.log(`[Casting] Updating user duration: index=${last.index}, duration=${duration}`);
+
+        // Update in place
+        last.duration = duration;
+        setLineTimingsCount(c => c + 1);
+      }
     }
 
     if (currentIndex < dialogueLines.length - 1) {
@@ -583,7 +632,7 @@ export default function CastingModeScreen() {
 
   function cleanupSound() {
     Speech.stop();
-    stopVAD();
+    stopListening();
     if (soundRef.current) {
       soundRef.current.unloadAsync();
     }
@@ -617,7 +666,8 @@ export default function CastingModeScreen() {
       setRecordingTime(0);
       recordingTimeRef.current = 0;
       recordingStartTime.current = Date.now();
-      setLineTimings([]); // Clear previous timings
+      lineTimingsRef.current = []; // Clear previous timings
+      setLineTimingsCount(0);
 
       // Start timer
       const timer = setInterval(() => {
@@ -667,12 +717,14 @@ export default function CastingModeScreen() {
       // STRATEGY: Send video + AI audio files directly to Render server
       // This avoids the 50MB Supabase Storage limit for large videos
       console.log('[Casting] Preparing video and audio for processing...');
-      console.log(`[Casting] Current lineTimings count: ${lineTimings.length}`);
-      console.log('[Casting] Line timings:', JSON.stringify(lineTimings, null, 2));
+      console.log(`[Casting] Current lineTimings count: ${lineTimingsRef.current.length}`);
+      console.log('[Casting] Line timings:', JSON.stringify(lineTimingsRef.current, null, 2));
+
+      const lineTimings = lineTimingsRef.current; // Use ref value
 
       // Read video file as base64 for transmission
       const videoBase64 = await FileSystem.readAsStringAsync(uri, {
-        encoding: FileSystem.EncodingType.Base64,
+        encoding: 'base64',
       });
 
       setProcessingProgress(20);
@@ -686,7 +738,7 @@ export default function CastingModeScreen() {
           try {
             // audioPath is now stored with full URI
             const audioBase64 = await FileSystem.readAsStringAsync(timing.audioPath, {
-              encoding: FileSystem.EncodingType.Base64,
+              encoding: 'base64',
             });
 
             aiAudioFiles.push({
