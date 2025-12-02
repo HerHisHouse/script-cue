@@ -158,31 +158,70 @@ app.post('/merge', async (req, res) => {
     }
 });
 
-// Process Casting Video endpoint
-app.post('/process-casting', async (req, res) => {
-    const { videoBase64, scriptId, userId, lineTimings } = req.body;
+const multer = require('multer');
 
-    if (!videoBase64 || !scriptId || !userId || !lineTimings) {
-        return res.status(400).json({ error: 'Missing required fields' });
+// Configure multer for disk storage
+const storage = multer.diskStorage({
+    destination: function (req, file, cb) {
+        const tempDir = path.join(__dirname, 'temp');
+        if (!fs.existsSync(tempDir)) {
+            fs.mkdirSync(tempDir, { recursive: true });
+        }
+        cb(null, tempDir);
+    },
+    filename: function (req, file, cb) {
+        const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
+        cb(null, file.fieldname + '-' + uniqueSuffix + path.extname(file.originalname));
     }
+});
 
-    const tempDir = path.join(__dirname, 'temp', `casting_${Date.now()}`);
-    const videoFile = path.join(tempDir, 'input.mp4');
-    const userAudioFile = path.join(tempDir, 'user_audio.m4a');
-    const mixedAudioFile = path.join(tempDir, 'mixed_audio.m4a');
-    const outputFile = path.join(tempDir, 'output.mp4');
+const upload = multer({
+    storage: storage,
+    limits: { fileSize: 500 * 1024 * 1024 } // 500MB limit
+});
+
+// Process Casting Video endpoint
+// Now accepts multipart/form-data
+// Fields:
+// - video: The video file
+// - aiAudio_0, aiAudio_1, ...: AI audio files
+// - scriptId, userId: text fields
+// - lineTimings: JSON string
+app.post('/process-casting', upload.any(), async (req, res) => {
+    console.log('[Casting] Received request');
+
+    let processTempDir = null; // Declare processTempDir here for broader scope
 
     try {
-        await fs.promises.mkdir(tempDir, { recursive: true });
+        const { scriptId, userId, lineTimings: lineTimingsJson } = req.body;
+        const files = req.files;
+
+        if (!files || files.length === 0 || !scriptId || !userId || !lineTimingsJson) {
+            return res.status(400).json({ error: 'Missing required fields or files' });
+        }
+
+        const lineTimings = JSON.parse(lineTimingsJson);
+        processTempDir = path.join(__dirname, 'temp', `casting_${Date.now()}`);
+
+        // Create specific temp dir for this process
+        await fs.promises.mkdir(processTempDir, { recursive: true });
+
+        // Identify video file
+        const videoUpload = files.find(f => f.fieldname === 'video');
+        if (!videoUpload) {
+            throw new Error('No video file uploaded');
+        }
+
+        const videoFile = path.join(processTempDir, 'input.mp4');
+        // Move video from multer temp to our processing dir
+        await fs.promises.rename(videoUpload.path, videoFile);
 
         console.log(`[Casting] Processing video for user ${userId}, script ${scriptId}`);
-        console.log(`[Casting] Line timings:`, JSON.stringify(lineTimings, null, 2));
+        console.log(`[Casting] Video saved: ${videoFile} (${(videoUpload.size / 1024 / 1024).toFixed(2)} MB)`);
 
-        // 1. Decode base64 video and save to file
-        console.log(`[Casting] Decoding video from base64...`);
-        const videoBuffer = Buffer.from(videoBase64, 'base64');
-        await fs.promises.writeFile(videoFile, videoBuffer);
-        console.log(`[Casting] Video saved (${(videoBuffer.length / 1024 / 1024).toFixed(2)} MB)`);
+        const userAudioFile = path.join(processTempDir, 'user_audio.m4a');
+        const mixedAudioFile = path.join(processTempDir, 'mixed_audio.m4a');
+        const outputFile = path.join(processTempDir, 'output.mp4');
 
         // 2. Extract user audio from video
         console.log('[Casting] Extracting user audio from video...');
@@ -199,27 +238,29 @@ app.post('/process-casting', async (req, res) => {
                 .run();
         });
 
-        // 3. Save AI audio files from base64
+        // 3. Process AI audio files
         console.log('[Casting] Processing AI audio files...');
         const aiSegments = [];
 
-        if (req.body.aiAudioFiles && Array.isArray(req.body.aiAudioFiles)) {
-            for (const aiFile of req.body.aiAudioFiles) {
-                const aiAudioFile = path.join(tempDir, `ai_${aiFile.index}.mp3`);
+        // Map uploaded files to timings
+        // We expect files to be named like aiAudio_{index} in the form data
+        for (const timing of lineTimings) {
+            if (timing.type === 'ai') {
+                const fieldName = `aiAudio_${timing.index}`;
+                const upload = files.find(f => f.fieldname === fieldName);
 
-                try {
-                    const aiBuffer = Buffer.from(aiFile.base64, 'base64');
-                    await fs.promises.writeFile(aiAudioFile, aiBuffer);
+                if (upload) {
+                    const aiAudioFile = path.join(processTempDir, `ai_${timing.index}.mp3`);
+                    await fs.promises.rename(upload.path, aiAudioFile);
 
                     aiSegments.push({
                         file: aiAudioFile,
-                        startTime: aiFile.startTime,
-                        duration: aiFile.duration
+                        startTime: timing.startTime,
+                        duration: timing.duration
                     });
-
-                    console.log(`[Casting] Saved AI audio for line ${aiFile.index}`);
-                } catch (err) {
-                    console.warn(`[Casting] Error saving AI audio for line ${aiFile.index}:`, err);
+                    console.log(`[Casting] Found audio for line ${timing.index}`);
+                } else {
+                    console.warn(`[Casting] No audio file found for AI line ${timing.index}`);
                 }
             }
         }
@@ -313,7 +354,12 @@ app.post('/process-casting', async (req, res) => {
         console.log('[Casting] Success! Processed video uploaded:', processedFileName);
 
         // Cleanup temp files
-        await fs.promises.rm(tempDir, { recursive: true, force: true });
+        await fs.promises.rm(processTempDir, { recursive: true, force: true });
+
+        // Cleanup uploaded files in multer temp
+        for (const file of files) {
+            try { await fs.promises.unlink(file.path); } catch { }
+        }
 
         res.json({
             success: true,
@@ -325,9 +371,22 @@ app.post('/process-casting', async (req, res) => {
         console.error('[Casting] Error:', error);
 
         // Cleanup on error
-        try {
-            await fs.promises.rm(tempDir, { recursive: true, force: true });
-        } catch { }
+        if (processTempDir) { // Only try to remove if it was successfully created
+            try {
+                await fs.promises.rm(processTempDir, { recursive: true, force: true });
+            } catch (cleanupError) {
+                console.error('[Casting] Error cleaning up process temp directory:', cleanupError);
+            }
+        }
+
+        // Cleanup uploaded files
+        if (req.files) {
+            for (const file of req.files) {
+                try { await fs.promises.unlink(file.path); } catch (cleanupError) {
+                    console.warn(`[Casting] Error cleaning up multer temp file ${file.path}:`, cleanupError);
+                }
+            }
+        }
 
         res.status(500).json({
             error: 'Video processing failed',

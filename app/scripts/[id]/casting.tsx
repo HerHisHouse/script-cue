@@ -730,67 +730,54 @@ export default function CastingModeScreen() {
       setIsProcessing(true);
       setProcessingProgress(10);
 
-      // STRATEGY: Send video + AI audio files directly to Render server
-      // This avoids the 50MB Supabase Storage limit for large videos
-      console.log('[Casting] Preparing video and audio for processing...');
+      // STRATEGY: Send video + AI audio files directly to Render server using FormData
+      // This avoids loading huge base64 strings into memory and prevents 502 errors
+      console.log('[Casting] Preparing video and audio for processing (FormData)...');
       console.log(`[Casting] Current lineTimings count: ${lineTimingsRef.current.length}`);
-      console.log('[Casting] Line timings:', JSON.stringify(lineTimingsRef.current, null, 2));
 
       const lineTimings = lineTimingsRef.current; // Use ref value
 
-      // Read video file as base64 for transmission
-      const videoBase64 = await FileSystem.readAsStringAsync(uri, {
-        encoding: 'base64',
-      });
+      const formData = new FormData();
 
-      setProcessingProgress(20);
+      // Add metadata
+      formData.append('scriptId', id as string);
+      formData.append('userId', user?.id || '');
+      formData.append('lineTimings', JSON.stringify(lineTimings));
 
-      // Read AI audio files from local cache and convert to base64
-      console.log('[Casting] Reading AI audio files...');
-      const aiAudioFiles: Array<{ index: number; base64: string; startTime: number; duration: number }> = [];
+      // Add video file
+      // Note: React Native FormData expects { uri, name, type }
+      formData.append('video', {
+        uri: uri,
+        name: 'video.mp4',
+        type: 'video/mp4',
+      } as any);
+
+      // Add AI audio files
+      console.log('[Casting] Adding AI audio files to upload...');
 
       for (const timing of lineTimings) {
         if (timing.type === 'ai' && timing.audioPath) {
-          try {
-            // audioPath is now stored with full URI
-            const audioBase64 = await FileSystem.readAsStringAsync(timing.audioPath, {
-              encoding: 'base64',
-            });
-
-            aiAudioFiles.push({
-              index: timing.index,
-              base64: audioBase64,
-              startTime: timing.startTime,
-              duration: timing.duration,
-            });
-
-            console.log(`[Casting] Read AI audio for line ${timing.index}`);
-          } catch (err) {
-            console.warn(`[Casting] Could not read AI audio file ${timing.audioPath}:`, err);
-          }
+          // Add file to FormData
+          // We use a naming convention aiAudio_{index} to map it on server
+          formData.append(`aiAudio_${timing.index}`, {
+            uri: timing.audioPath,
+            name: `ai_${timing.index}.mp3`,
+            type: 'audio/mpeg',
+          } as any);
+          console.log(`[Casting] Added AI audio for line ${timing.index}`);
         }
       }
 
-      console.log(`[Casting] Prepared ${aiAudioFiles.length} AI audio files`);
       setProcessingProgress(30);
 
-      console.log('[Casting] Sending video to Render for processing...');
+      console.log('[Casting] Sending data to Render for processing...');
 
       const renderUrl = process.env.EXPO_PUBLIC_RENDER_SERVER_URL || 'https://script-cue-merge-server.onrender.com';
 
-      // Send video data + AI audio files + timings to Render server
       const response = await fetch(`${renderUrl}/process-casting`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          videoBase64: videoBase64,
-          aiAudioFiles: aiAudioFiles, // Send AI audio files in base64
-          scriptId: id,
-          userId: user?.id,
-          lineTimings: lineTimings,
-        }),
+        // Content-Type header is set automatically with boundary for FormData
+        body: formData,
       });
 
       if (!response.ok) {
