@@ -281,8 +281,16 @@ export default function CastingModeScreen() {
             Crypto.CryptoDigestAlgorithm.SHA256,
             text
           );
-          // Map settings structure (systemVoiceId) to cache structure (voiceId)
-          const voiceId = (voiceConfig as any)?.systemVoiceId || (voiceConfig as any)?.voiceId || null;
+
+          // Map settings structure to cache structure
+          let voiceId = (voiceConfig as any)?.voiceId || (voiceConfig as any)?.systemVoiceId || null;
+
+          // FIX: If provider is OpenAI but voiceId looks like a system voice (com.apple...), 
+          // ignore it and use null (default OpenAI voice) to find the cached audio.
+          if (provider === 'openai' && voiceId && voiceId.includes('com.apple')) {
+            console.log(`[Cache Debug] Ignoring system voice ID for OpenAI provider: ${voiceId}`);
+            voiceId = null;
+          }
 
           console.log(`[Cache Debug] Line: ${line.orderIndex}, Char: ${characterName}`);
           console.log(`[Cache Debug] Provider: ${provider}, VoiceId: ${voiceId}`);
