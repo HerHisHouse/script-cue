@@ -266,7 +266,9 @@ export default function CastingModeScreen() {
 
           if (newCache.has(lineIndex)) continue;
 
-          const text = line.cleanText || line.text;
+          // CRITICAL: Use raw text for hash to match pre-generated cache (Studio Mode logic)
+          // Pre-generation uses the raw DB content, so we must match that hash.
+          const text = line.text;
           if (!text) continue;
 
           const characterName = line.characterName.toUpperCase();
