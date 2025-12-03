@@ -311,18 +311,24 @@ app.post('/process-casting', upload.any(), async (req, res) => {
                 .run();
         });
 
-        // 5. Replace video audio with mixed audio
-        console.log('[Casting] Replacing video audio track...');
+        // 5. Replace video audio with mixed audio and compress video
+        console.log('[Casting] Replacing video audio track and compressing...');
         await new Promise((resolve, reject) => {
             ffmpeg()
                 .input(videoFile)
                 .input(mixedAudioFile)
                 .outputOptions([
-                    '-c:v copy',           // Copy video stream without re-encoding
+                    '-c:v libx264',        // Re-encode video to H.264
+                    '-preset ultrafast',   // Use fast preset to save CPU/time
+                    '-b:v 2000k',          // Target bitrate: 2Mbps (approx 15MB/min)
+                    '-maxrate 2500k',      // Cap max bitrate
+                    '-bufsize 4000k',      // Buffer size
                     '-c:a aac',            // Encode audio as AAC
+                    '-b:a 128k',           // Audio bitrate
                     '-map 0:v:0',          // Map video from first input
                     '-map 1:a:0',          // Map audio from second input
-                    '-shortest'            // Match shortest stream duration
+                    '-shortest',           // Match shortest stream duration
+                    '-movflags +faststart' // Optimize for web playback
                 ])
                 .output(outputFile)
                 .on('start', (cmd) => console.log('[FFmpeg] Final command:', cmd))
@@ -335,16 +341,22 @@ app.post('/process-casting', upload.any(), async (req, res) => {
                 .run();
         });
 
-        // 6. Upload processed video to Supabase
+        // 6. Upload processed video to Supabase using Stream (Low Memory)
         const processedFileName = `${userId}/casting_${Date.now()}_processed.mp4`;
-        const processedBuffer = await fs.promises.readFile(outputFile);
 
-        console.log('[Casting] Uploading processed video...');
+        console.log('[Casting] Uploading processed video (Stream)...');
+        const fileStream = fs.createReadStream(outputFile);
+
+        // Get file size for logging
+        const stats = await fs.promises.stat(outputFile);
+        console.log(`[Casting] File size to upload: ${(stats.size / 1024 / 1024).toFixed(2)} MB`);
+
         const { data: uploadData, error: uploadError } = await supabase.storage
             .from('recordings')
-            .upload(processedFileName, processedBuffer, {
+            .upload(processedFileName, fileStream, {
                 contentType: 'video/mp4',
-                upsert: false
+                upsert: false,
+                duplex: 'half' // Important for node fetch streaming
             });
 
         if (uploadError) {
@@ -356,10 +368,8 @@ app.post('/process-casting', upload.any(), async (req, res) => {
         // Cleanup temp files
         await fs.promises.rm(processTempDir, { recursive: true, force: true });
 
-        // Cleanup uploaded files in multer temp
-        for (const file of files) {
-            try { await fs.promises.unlink(file.path); } catch { }
-        }
+        // Note: We don't need to clean up req.files manually because we moved them 
+        // into processTempDir which we just deleted.
 
         res.json({
             success: true,
@@ -379,12 +389,14 @@ app.post('/process-casting', upload.any(), async (req, res) => {
             }
         }
 
-        // Cleanup uploaded files
+        // Cleanup uploaded files (only if they weren't moved/deleted)
         if (req.files) {
             for (const file of req.files) {
-                try { await fs.promises.unlink(file.path); } catch (cleanupError) {
-                    console.warn(`[Casting] Error cleaning up multer temp file ${file.path}:`, cleanupError);
-                }
+                // Check if file still exists before trying to delete
+                try {
+                    await fs.promises.access(file.path);
+                    await fs.promises.unlink(file.path);
+                } catch { }
             }
         }
 
