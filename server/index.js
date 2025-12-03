@@ -21,6 +21,8 @@ const supabase = createClient(
     process.env.SUPABASE_SERVICE_KEY
 );
 
+console.log('🚀 Server starting - Version: LOCAL_STORAGE_FIX_v2 - Date:', new Date().toISOString());
+
 // Health check
 app.get('/health', (req, res) => {
     res.json({ status: 'ok', timestamp: new Date().toISOString() });
