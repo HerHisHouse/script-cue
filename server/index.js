@@ -13,6 +13,7 @@ const PORT = process.env.PORT || 3000;
 // Middleware
 app.use(cors());
 app.use(express.json({ limit: '200mb' })); // Increased for large video files
+app.use('/download', express.static(path.join(__dirname, 'public'))); // Serve processed videos
 
 // Supabase client
 const supabase = createClient(
@@ -337,39 +338,34 @@ app.post('/process-casting', upload.any(), async (req, res) => {
                 .run();
         });
 
-        // 6. Upload processed video to Supabase using Stream (Low Memory)
-        const processedFileName = `${userId}/casting_${Date.now()}_processed.mp4`;
-
-        console.log('[Casting] Uploading processed video (Stream)...');
-        const fileStream = fs.createReadStream(outputFile);
-
-        // Get file size for logging
-        const stats = await fs.promises.stat(outputFile);
-        console.log(`[Casting] File size to upload: ${(stats.size / 1024 / 1024).toFixed(2)} MB`);
-
-        const { data: uploadData, error: uploadError } = await supabase.storage
-            .from('recordings')
-            .upload(processedFileName, fileStream, {
-                contentType: 'video/mp4',
-                upsert: false,
-                duplex: 'half' // Important for node fetch streaming
-            });
-
-        if (uploadError) {
-            throw new Error(`Failed to upload processed video: ${uploadError.message}`);
+        // 6. Instead of uploading to Supabase, save to server's public folder
+        // and provide a download URL for the client to fetch
+        const publicDir = path.join(__dirname, 'public');
+        if (!fs.existsSync(publicDir)) {
+            fs.mkdirSync(publicDir, { recursive: true });
         }
 
-        console.log('[Casting] Success! Processed video uploaded:', processedFileName);
+        const fileName = `casting_${userId}_${Date.now()}.mp4`;
+        const publicPath = path.join(publicDir, fileName);
+
+        console.log('[Casting] Moving processed video to public folder...');
+        await fs.promises.rename(outputFile, publicPath);
+
+        // Get file size for logging
+        const stats = await fs.promises.stat(publicPath);
+        console.log(`[Casting] File ready for download: ${(stats.size / 1024 / 1024).toFixed(2)} MB`);
 
         // Cleanup temp files
         await fs.promises.rm(processTempDir, { recursive: true, force: true });
 
-        // Note: We don't need to clean up req.files manually because we moved them 
-        // into processTempDir which we just deleted.
+        // Return download URL
+        const downloadUrl = `${req.protocol}://${req.get('host')}/download/${fileName}`;
+        console.log('[Casting] Success! Download URL:', downloadUrl);
 
         res.json({
             success: true,
-            path: processedFileName,
+            downloadUrl: downloadUrl,
+            fileName: fileName,
             message: 'Video processed successfully'
         });
 

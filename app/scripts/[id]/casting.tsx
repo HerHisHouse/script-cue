@@ -787,22 +787,42 @@ export default function CastingModeScreen() {
       }
 
       const result = await response.json();
-      const processedPath = result.path || result.storagePath;
 
-      if (!processedPath) {
-        throw new Error('Server did not return a processed video path');
+      if (!result.downloadUrl) {
+        throw new Error('Server did not return a download URL');
       }
 
-      setProcessingProgress(80);
-      console.log('[Casting] Processed video:', processedPath);
+      setProcessingProgress(70);
+      console.log('[Casting] Downloading processed video...');
 
-      // 3. Insert into DB
+      // Download the processed video from the server
+      const downloadResponse = await fetch(result.downloadUrl);
+      if (!downloadResponse.ok) {
+        throw new Error('Failed to download processed video');
+      }
+
+      // Save to local file system
+      const localPath = `${FileSystem.documentDirectory}${result.fileName}`;
+      const downloadResumable = FileSystem.createDownloadResumable(
+        result.downloadUrl,
+        localPath
+      );
+
+      const downloadResult = await downloadResumable.downloadAsync();
+      if (!downloadResult || !downloadResult.uri) {
+        throw new Error('Download failed');
+      }
+
+      console.log('[Casting] Video downloaded to:', downloadResult.uri);
+      setProcessingProgress(90);
+
+      // Insert into DB with local path
       const { error: dbError } = await supabase.from('recordings').insert({
         user_id: user?.id,
         script_id: id,
         project_id: null,
         title: `Casting - ${script?.title || 'Guión'}`,
-        audio_url: processedPath, // Store processed video path
+        audio_url: downloadResult.uri, // Store local path
         type: 'video',
         duration_seconds: recordingTimeRef.current,
         file_size_bytes: 0,
