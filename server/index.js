@@ -311,18 +311,14 @@ app.post('/process-casting', upload.any(), async (req, res) => {
                 .run();
         });
 
-        // 5. Replace video audio with mixed audio and compress video
-        console.log('[Casting] Replacing video audio track and compressing...');
+        // 5. Replace video audio with mixed audio (OPTIMIZED FOR SPEED)
+        console.log('[Casting] Replacing video audio track...');
         await new Promise((resolve, reject) => {
             ffmpeg()
                 .input(videoFile)
                 .input(mixedAudioFile)
                 .outputOptions([
-                    '-c:v libx264',        // Re-encode video to H.264
-                    '-preset ultrafast',   // Use fast preset to save CPU/time
-                    '-b:v 2000k',          // Target bitrate: 2Mbps (approx 15MB/min)
-                    '-maxrate 2500k',      // Cap max bitrate
-                    '-bufsize 4000k',      // Buffer size
+                    '-c:v copy',           // Copy video stream WITHOUT re-encoding (FAST!)
                     '-c:a aac',            // Encode audio as AAC
                     '-b:a 128k',           // Audio bitrate
                     '-map 0:v:0',          // Map video from first input
