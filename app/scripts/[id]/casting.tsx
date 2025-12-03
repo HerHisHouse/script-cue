@@ -635,14 +635,10 @@ export default function CastingModeScreen() {
     if (currentIndex < dialogueLines.length - 1) {
       setCurrentIndex(prev => prev + 1);
     } else {
-      setIsPlaying(false); // End of script
-      setIsRecording(false);
+      // End of script reached - but DON'T stop recording
+      // Just stop the teleprompter and let user manually stop when ready
       setIsPlaying(false);
-      cleanupSound();
-
-      if ((cameraRef.current as any).timer) {
-        clearInterval((cameraRef.current as any).timer);
-      }
+      console.log('[Casting] End of script reached. Recording continues until user stops.');
     }
   }
 
@@ -911,12 +907,17 @@ export default function CastingModeScreen() {
 
 
         {/* Audio Loading Overlay */}
-        {loadingAudio && (
-          <View style={styles.loadingOverlay}>
-            <ActivityIndicator size="large" color="#10B981" />
-            <Text style={styles.loadingText}>
-              Cargando voces IA... {Math.round(audioProgress)}%
+        {isProcessing && (
+          <View style={[styles.processingOverlay, { backgroundColor: 'rgba(0,0,0,0.9)' }]}>
+            <ActivityIndicator size="large" color={colors.primary} />
+            <Text style={[styles.processingText, { color: colors.text }]}>
+              Procesando tu casting...
             </Text>
+            {processingProgress > 0 && (
+              <View style={styles.progressContainer}>
+                <View style={[styles.progressBar, { width: `${processingProgress}%`, backgroundColor: colors.primary }]} />
+              </View>
+            )}
           </View>
         )}
 
@@ -1476,6 +1477,14 @@ const styles = StyleSheet.create({
     borderRadius: 4,
     overflow: 'hidden',
     marginTop: 8,
+  },
+  progressContainer: {
+    width: '80%',
+    height: 6,
+    backgroundColor: 'rgba(255,255,255,0.2)',
+    borderRadius: 3,
+    overflow: 'hidden',
+    marginTop: 16,
   },
   progressBar: {
     height: '100%',
