@@ -28,6 +28,7 @@ import { useTheme } from '@/contexts/ThemeContext';
 import { useAuth } from '@/contexts/AuthContext';
 import { getSettings } from '@/utils/appSettings';
 import * as Speech from 'expo-speech';
+import { FFmpegKit, ReturnCode } from 'ffmpeg-kit-react-native';
 import { Script, Character } from '@/types/database';
 import { parseScreenplay, ParsedScript } from '@/utils/pdfParser';
 import { DialogueContent } from '@/types/database';
@@ -730,79 +731,121 @@ export default function CastingModeScreen() {
       setIsProcessing(true);
       setProcessingProgress(10);
 
-      // STRATEGY: Send video + AI audio files directly to Render server using FormData
-      // This avoids loading huge base64 strings into memory and prevents 502 errors
-      console.log('[Casting] Preparing video and audio for processing (FormData)...');
+      // NEW STRATEGY: Process video locally with FFmpegKit (FAST!)
+      // No server upload needed - everything happens on device in seconds
+      console.log('[Casting] Starting local video processing...');
       console.log(`[Casting] Current lineTimings count: ${lineTimingsRef.current.length}`);
 
-      const lineTimings = lineTimingsRef.current; // Use ref value
+      const lineTimings = lineTimingsRef.current;
+      setProcessingProgress(20);
 
-      const formData = new FormData();
+      // 1. Extract audio from video
+      const videoAudioPath = `${FileSystem.cacheDirectory}casting_video_audio.m4a`;
+      console.log('[Casting] Extracting audio from video...');
 
-      // Add metadata
-      formData.append('scriptId', id as string);
-      formData.append('userId', user?.id || '');
-      formData.append('lineTimings', JSON.stringify(lineTimings));
+      const extractCmd = `-i "${uri}" -vn -acodec copy "${videoAudioPath}"`;
+      const extractSession = await FFmpegKit.execute(extractCmd);
+      const extractReturnCode = await extractSession.getReturnCode();
 
-      // Add video file
-      // Note: React Native FormData expects { uri, name, type }
-      formData.append('video', {
-        uri: uri,
-        name: 'video.mp4',
-        type: 'video/mp4',
-      } as any);
-
-      // Add AI audio files
-      console.log('[Casting] Adding AI audio files to upload...');
-
-      for (const timing of lineTimings) {
-        if (timing.type === 'ai' && timing.audioPath) {
-          // Add file to FormData
-          // We use a naming convention aiAudio_{index} to map it on server
-          formData.append(`aiAudio_${timing.index}`, {
-            uri: timing.audioPath,
-            name: `ai_${timing.index}.mp3`,
-            type: 'audio/mpeg',
-          } as any);
-          console.log(`[Casting] Added AI audio for line ${timing.index}`);
-        }
+      if (!ReturnCode.isSuccess(extractReturnCode)) {
+        throw new Error('Failed to extract audio from video');
       }
 
-      setProcessingProgress(30);
+      setProcessingProgress(40);
 
-      console.log('[Casting] Sending data to Render for processing...');
+      // 2. Build FFmpeg filter for mixing AI audio
+      console.log('[Casting] Preparing audio mix...');
+      const aiTimings = lineTimings.filter(t => t.type === 'ai' && t.audioPath);
 
-      const renderUrl = process.env.EXPO_PUBLIC_RENDER_SERVER_URL || 'https://script-cue-merge-server.onrender.com';
+      if (aiTimings.length === 0) {
+        // No AI audio, just save original video
+        console.log('[Casting] No AI audio to mix, using original video');
 
-      const response = await fetch(`${renderUrl}/process-casting`, {
-        method: 'POST',
-        // Content-Type header is set automatically with boundary for FormData
-        body: formData,
+        const { error: dbError } = await supabase.from('recordings').insert({
+          user_id: user?.id,
+          script_id: id,
+          project_id: null,
+          title: `Casting - ${script?.title || 'Guión'}`,
+          audio_url: uri,
+          type: 'video',
+          duration_seconds: recordingTimeRef.current,
+          file_size_bytes: 0,
+        });
+
+        if (dbError) throw dbError;
+
+        setProcessingProgress(100);
+        setIsProcessing(false);
+
+        Alert.alert('¡Listo!', 'Tu video ha sido guardado.', [
+          { text: 'OK', onPress: () => router.replace(`/scripts/${id}`) }
+        ]);
+        return;
+      }
+
+      // Build FFmpeg command for audio mixing
+      let inputs = `-i "${videoAudioPath}"`; // User audio
+      let filterComplex = '';
+
+      aiTimings.forEach((timing, idx) => {
+        inputs += ` -i "${timing.audioPath}"`;
+        const delayMs = Math.round(timing.startTime * 1000);
+        filterComplex += `[${idx + 1}:a]adelay=${delayMs}|${delayMs}[a${idx}];`;
       });
 
-      if (!response.ok) {
-        const errorText = await response.text();
-        console.error('[Casting] Server error:', errorText);
-        throw new Error(`Processing failed: ${response.status} ${response.statusText}`);
+      // Mix all audio streams
+      const mixInputs = aiTimings.map((_, idx) => `[a${idx}]`).join('');
+      filterComplex += `[0:a]${mixInputs}amix=inputs=${aiTimings.length + 1}:duration=longest[outa]`;
+
+      const mixedAudioPath = `${FileSystem.cacheDirectory}casting_mixed_audio.m4a`;
+      const mixCmd = `${inputs} -filter_complex "${filterComplex}" -map "[outa]" -c:a aac -b:a 128k "${mixedAudioPath}"`;
+
+      console.log('[Casting] Mixing audio tracks...');
+      const mixSession = await FFmpegKit.execute(mixCmd);
+      const mixReturnCode = await mixSession.getReturnCode();
+
+      if (!ReturnCode.isSuccess(mixReturnCode)) {
+        const output = await mixSession.getOutput();
+        console.error('[Casting] Mix failed:', output);
+        throw new Error('Failed to mix audio');
       }
 
-      const result = await response.json();
-      const processedPath = result.path || result.storagePath;
+      setProcessingProgress(60);
 
-      if (!processedPath) {
-        throw new Error('Server did not return a processed video path');
+      // 3. Replace video audio with mixed audio
+      const outputPath = `${FileSystem.documentDirectory}casting_${Date.now()}.mp4`;
+      console.log('[Casting] Replacing video audio...');
+
+      const finalCmd = `-i "${uri}" -i "${mixedAudioPath}" -c:v copy -c:a aac -map 0:v:0 -map 1:a:0 -shortest "${outputPath}"`;
+      const finalSession = await FFmpegKit.execute(finalCmd);
+      const finalReturnCode = await finalSession.getReturnCode();
+
+      if (!ReturnCode.isSuccess(finalReturnCode)) {
+        const output = await finalSession.getOutput();
+        console.error('[Casting] Final merge failed:', output);
+        throw new Error('Failed to merge video and audio');
       }
 
       setProcessingProgress(80);
-      console.log('[Casting] Processed video:', processedPath);
 
-      // 3. Insert into DB
+      // 4. Cleanup temp files
+      try {
+        await FileSystem.deleteAsync(videoAudioPath, { idempotent: true });
+        await FileSystem.deleteAsync(mixedAudioPath, { idempotent: true });
+        await FileSystem.deleteAsync(uri, { idempotent: true }); // Delete original video
+      } catch (e) {
+        console.warn('[Casting] Cleanup warning:', e);
+      }
+
+      setProcessingProgress(90);
+
+      // 5. Save to database (metadata only)
       const { error: dbError } = await supabase.from('recordings').insert({
         user_id: user?.id,
         script_id: id,
         project_id: null,
         title: `Casting - ${script?.title || 'Guión'}`,
-        audio_url: processedPath, // Store processed video path
+        audio_url: outputPath,
         type: 'video',
         duration_seconds: recordingTimeRef.current,
         file_size_bytes: 0,
@@ -812,19 +855,11 @@ export default function CastingModeScreen() {
 
       setProcessingProgress(100);
       setIsProcessing(false);
+      console.log('[Casting] ✅ Video processed successfully!');
 
-      Alert.alert(
-        '¡Video procesado con éxito!',
-        'Tu casting con audio de IA ha sido guardado en Grabaciones.',
-        [
-          {
-            text: 'OK',
-            onPress: () => {
-              router.replace(`/scripts/${id}`);
-            }
-          }
-        ]
-      );
+      Alert.alert('¡Listo!', 'Tu video ha sido procesado y guardado.', [
+        { text: 'OK', onPress: () => router.replace(`/scripts/${id}`) }
+      ]);
 
     } catch (e: any) {
       console.error('[Casting] Error:', e);
@@ -835,9 +870,7 @@ export default function CastingModeScreen() {
         [
           {
             text: 'OK',
-            onPress: () => {
-              router.replace(`/scripts/${id}`);
-            }
+            onPress: () => router.replace(`/scripts/${id}`)
           }
         ]
       );
