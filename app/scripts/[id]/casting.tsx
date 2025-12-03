@@ -281,14 +281,22 @@ export default function CastingModeScreen() {
             Crypto.CryptoDigestAlgorithm.SHA256,
             text
           );
-          const voiceId = voiceConfig?.systemVoiceId || null;
+          // Map settings structure (systemVoiceId) to cache structure (voiceId)
+          const voiceId = (voiceConfig as any)?.systemVoiceId || (voiceConfig as any)?.voiceId || null;
+
+          console.log(`[Cache Debug] Line: ${line.orderIndex}, Char: ${characterName}`);
+          console.log(`[Cache Debug] Provider: ${provider}, VoiceId: ${voiceId}`);
+          console.log(`[Cache Debug] Text: "${text.substring(0, 20)}..."`);
+          console.log(`[Cache Debug] Hash: ${textHash.substring(0, 10)}...`);
 
           // Just check cache, don't generate yet
           const localPath = await getCachedAudio(line.id, provider, voiceId, textHash);
 
           if (localPath) {
+            console.log(`[Cache Debug] ✅ HIT for line ${line.orderIndex}`);
             newCache.set(lineIndex, localPath);
           } else {
+            console.log(`[Cache Debug] ❌ MISS for line ${line.orderIndex}`);
             missingCount++;
           }
         }
