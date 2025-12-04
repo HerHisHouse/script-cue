@@ -973,7 +973,7 @@ export default function CastingModeScreen() {
               ref={flatListRef}
               data={dialogueLines}
               keyExtractor={(item) => item.id}
-              contentContainerStyle={{ paddingTop: 10, paddingBottom: 100, paddingHorizontal: 24 }}
+              contentContainerStyle={{ paddingTop: 20, paddingBottom: 100, paddingHorizontal: 24 }}
               renderItem={({ item, index }) => {
                 const isActive = index === currentIndex;
 
@@ -1017,13 +1017,10 @@ export default function CastingModeScreen() {
                   </TouchableOpacity>
                 );
               }}
-              getItemLayout={(data, index) => (
-                { length: 120, offset: 120 * index, index }
-              )}
               onScrollToIndexFailed={info => {
                 const wait = new Promise(resolve => setTimeout(resolve, 500));
                 wait.then(() => {
-                  flatListRef.current?.scrollToIndex({ index: info.index, animated: true });
+                  flatListRef.current?.scrollToIndex({ index: info.index, animated: true, viewPosition: 0 });
                 });
               }}
             />
