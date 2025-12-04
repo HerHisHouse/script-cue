@@ -321,18 +321,10 @@ export default function ScriptDetailScreen() {
           <View style={styles.actionsColumn}>
             <TouchableOpacity
               style={styles.actionButton}
-              onPress={() => router.push(`/scripts/${id}/study`)}
-            >
-              <Play size={24} color="#FFFFFF" />
-              <Text style={styles.actionText}>Modo Estudio</Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={[styles.actionButton, { backgroundColor: '#10B981' }]}
               onPress={() => router.push(`/scripts/${id}/studio-v2`)}
             >
               <Play size={24} color="#FFFFFF" />
-              <Text style={styles.actionText}>Modo Estudio 1.0</Text>
+              <Text style={styles.actionText}>Modo Estudio</Text>
             </TouchableOpacity>
 
             <TouchableOpacity

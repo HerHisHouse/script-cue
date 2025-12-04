@@ -54,7 +54,6 @@ function AppRoot() {
       <Stack.Screen name="import-script" options={{ headerShown: false }} />
       <Stack.Screen name="scripts/[id]/index" options={{ headerShown: false }} />
       <Stack.Screen name="scripts/[id]/record" options={{ title: 'Grabar' }} />
-      <Stack.Screen name="scripts/[id]/study" options={{ headerShown: false }} />
       <Stack.Screen name="scripts/[id]/memory" options={{ headerShown: false }} />
     </Stack>
   );
