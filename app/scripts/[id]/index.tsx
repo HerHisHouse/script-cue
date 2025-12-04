@@ -374,7 +374,7 @@ export default function ScriptDetailScreen() {
         </View>
         <FixedFooterSpacer />
       </ScrollView>
-      <FixedFooter activeKey={'index'} />
+      <FixedFooter />
     </SafeAreaView>
   );
 }
