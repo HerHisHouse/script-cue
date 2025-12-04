@@ -16,6 +16,11 @@ import { useRouter } from 'expo-router';
 import { Mic } from 'lucide-react-native';
 import { useAuth } from '@/contexts/AuthContext';
 import { useTheme } from '@/contexts/ThemeContext';
+import * as WebBrowser from 'expo-web-browser';
+import { supabase } from '@/utils/supabase';
+
+// Configure WebBrowser for OAuth
+WebBrowser.maybeCompleteAuthSession();
 
 export default function AuthScreen() {
   const router = useRouter();
@@ -87,6 +92,41 @@ export default function AuthScreen() {
       }
     } catch (error: any) {
       Alert.alert('Error', error.message || 'Ocurrió un error');
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function signInWithGoogle() {
+    try {
+      setLoading(true);
+      const { data, error } = await supabase.auth.signInWithOAuth({
+        provider: 'google',
+        options: {
+          redirectTo: Platform.OS === 'web'
+            ? window.location.origin
+            : 'scriptcue://auth/callback',
+          skipBrowserRedirect: Platform.OS !== 'web',
+        },
+      });
+
+      if (error) throw error;
+
+      // For web, the redirect happens automatically
+      // For mobile, we need to open the browser
+      if (Platform.OS !== 'web' && data?.url) {
+        const result = await WebBrowser.openAuthSessionAsync(
+          data.url,
+          'scriptcue://auth/callback'
+        );
+
+        if (result.type === 'success') {
+          // The session will be handled by Supabase automatically
+          router.replace('/(tabs)');
+        }
+      }
+    } catch (error: any) {
+      Alert.alert('Error', error.message || 'No se pudo iniciar sesión con Google');
     } finally {
       setLoading(false);
     }
@@ -234,6 +274,29 @@ export default function AuthScreen() {
               )}
             </TouchableOpacity>
 
+            {/* Divider */}
+            <View style={styles.divider}>
+              <View style={[styles.dividerLine, { backgroundColor: colors.border }]} />
+              <Text style={[styles.dividerText, { color: colors.textSecondary }]}>O continúa con</Text>
+              <View style={[styles.dividerLine, { backgroundColor: colors.border }]} />
+            </View>
+
+            {/* Google Sign In Button */}
+            <TouchableOpacity
+              style={[styles.googleButton, { backgroundColor: colors.surface, borderColor: colors.border }]}
+              onPress={signInWithGoogle}
+              disabled={loading}
+              accessibilityRole="button"
+              accessibilityLabel="Iniciar sesión con Google"
+            >
+              <View style={styles.googleIcon}>
+                <Text style={{ fontSize: 20 }}>G</Text>
+              </View>
+              <Text style={[styles.googleButtonText, { color: colors.text }]}>
+                Continuar con Google
+              </Text>
+            </TouchableOpacity>
+
             <TouchableOpacity
               style={styles.switchButton}
               onPress={() => setIsSignUp(!isSignUp)}
@@ -363,5 +426,45 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: '#3B82F6',
     fontWeight: '500',
+  },
+  divider: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginVertical: 24,
+  },
+  dividerLine: {
+    flex: 1,
+    height: 1,
+    backgroundColor: '#E5E7EB',
+  },
+  dividerText: {
+    marginHorizontal: 16,
+    fontSize: 14,
+    color: '#6B7280',
+    fontWeight: '500',
+  },
+  googleButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#FFFFFF',
+    borderRadius: 12,
+    paddingVertical: 14,
+    borderWidth: 1.5,
+    borderColor: '#E5E7EB',
+    gap: 12,
+  },
+  googleIcon: {
+    width: 24,
+    height: 24,
+    borderRadius: 4,
+    backgroundColor: '#FFFFFF',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  googleButtonText: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: '#374151',
   },
 });
