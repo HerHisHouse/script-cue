@@ -41,15 +41,6 @@ export default function TabLayout() {
       <Tabs.Screen
         name="index"
         options={{
-          title: 'Mis proyectos',
-          tabBarIcon: ({ size, color }) => (
-            <Folder size={size} color={color} />
-          ),
-        }}
-      />
-      <Tabs.Screen
-        name="scripts"
-        options={{
           title: 'Mis Guiones',
           tabBarIcon: ({ size, color }) => (
             <FileText size={size} color={color} />
@@ -62,6 +53,15 @@ export default function TabLayout() {
           title: 'Grabaciones',
           tabBarIcon: ({ size, color }) => (
             <Mic size={size} color={color} />
+          ),
+        }}
+      />
+      <Tabs.Screen
+        name="projects"
+        options={{
+          title: 'Mis proyectos',
+          tabBarIcon: ({ size, color }) => (
+            <Folder size={size} color={color} />
           ),
         }}
       />
