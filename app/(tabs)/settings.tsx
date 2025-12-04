@@ -107,12 +107,19 @@ export default function SettingsScreen() {
   }
 
   const displayName = useMemo(() => {
-    const name = profile?.full_name?.trim();
-    if (name) return name;
+    // First try to get username from profile
+    const username = profile?.username?.trim();
+    if (username) return username;
+
+    // Fallback to full_name if no username
+    const fullName = profile?.full_name?.trim();
+    if (fullName) return fullName;
+
+    // Last resort: use email prefix
     const email = user?.email || '';
     const localPart = email.split('@')[0];
     return localPart || 'Usuario';
-  }, [profile?.full_name, user?.email]);
+  }, [profile?.username, profile?.full_name, user?.email]);
 
   const appName = 'Script Cue';
   const appVersion = `v${appConfig?.expo?.version ?? '1.0.0'}`;

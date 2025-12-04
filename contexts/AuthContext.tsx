@@ -88,6 +88,22 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     });
 
     if (error) throw error;
+
+    // Create profile entry with username
+    if (data.user) {
+      const { error: profileError } = await supabase
+        .from('profiles')
+        .insert({
+          id: data.user.id,
+          username: username || null,
+          full_name: username || null,
+        });
+
+      if (profileError) {
+        console.error('Error creating profile:', profileError);
+        // Don't throw error here to avoid blocking signup
+      }
+    }
   }
 
   async function signOut() {

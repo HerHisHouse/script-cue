@@ -9,6 +9,7 @@ import {
   Alert,
   KeyboardAvoidingView,
   Platform,
+  ScrollView,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
@@ -97,7 +98,11 @@ export default function AuthScreen() {
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
         style={styles.keyboardView}
       >
-        <View style={styles.content}>
+        <ScrollView
+          contentContainerStyle={styles.scrollContent}
+          keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={false}
+        >
           <View style={styles.header}>
             <View style={[styles.logoContainer, { backgroundColor: isDark ? '#0B1220' : colors.input }]}>
               <Mic size={48} color={colors.primary} />
@@ -106,7 +111,7 @@ export default function AuthScreen() {
             <Text style={[styles.subtitle, { color: colors.textSecondary }]}>Practica tus guiones con IA</Text>
           </View>
 
-          <View style={[styles.form, { backgroundColor: colors.surface }] }>
+          <View style={[styles.form, { backgroundColor: colors.surface }]}>
             {isSignUp && (
               <View style={styles.inputContainer} accessible accessibilityLabel="Nombre de usuario" accessibilityHint="Solo letras, números y guiones bajos. 3 a 20 caracteres">
                 <Text style={[styles.label, { color: colors.textSecondary }]}>Nombre de usuario</Text>
@@ -235,12 +240,12 @@ export default function AuthScreen() {
               accessibilityRole="button"
               accessibilityLabel={isSignUp ? 'Cambiar a iniciar sesión' : 'Cambiar a crear cuenta'}
             >
-              <Text style={[styles.switchText, { color: colors.primary }] }>
+              <Text style={[styles.switchText, { color: colors.primary }]}>
                 {isSignUp ? '¿Ya tienes cuenta? Inicia sesión' : '¿No tienes cuenta? Regístrate'}
               </Text>
             </TouchableOpacity>
           </View>
-        </View>
+        </ScrollView>
       </KeyboardAvoidingView>
     </SafeAreaView>
   );
@@ -254,10 +259,11 @@ const styles = StyleSheet.create({
   keyboardView: {
     flex: 1,
   },
-  content: {
-    flex: 1,
+  scrollContent: {
+    flexGrow: 1,
     justifyContent: 'center',
     paddingHorizontal: 32,
+    paddingVertical: 20,
   },
   header: {
     alignItems: 'center',
