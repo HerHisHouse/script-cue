@@ -240,6 +240,7 @@ export default function RecordingsScreen() {
   const defaultGridCols = windowWidth >= 1200 ? 5 : windowWidth >= 800 ? 4 : 3;
   const [gridColumns, setGridColumns] = useState(defaultGridCols);
   const pinchRef = useRef(null);
+  const videoRef = useRef<Video>(null);
 
   const [renameModalVisible, setRenameModalVisible] = useState(false);
   const [renamingRecording, setRenamingRecording] = useState<Recording | null>(null);
@@ -466,22 +467,34 @@ export default function RecordingsScreen() {
     const currentQueue = specificQueue || queue;
     const recording = currentQueue[index];
     if (!recording) return;
+
+    // Stop existing sound
+    if (sound) {
+      try {
+        const status = await sound.getStatusAsync();
+        if (status.isLoaded) {
+          await sound.stopAsync();
+        }
+      } catch { }
+      await sound.unloadAsync().catch(() => { });
+      setSound(null);
+    }
+
+    // Handle Video
+    if (recording.type === 'video') {
+      setPlayingId(recording.id);
+      setCurrentIndex(index);
+      setIsPlaying(true);
+      // Video component will auto-play via shouldPlay prop or we can trigger it
+      return;
+    }
+
     try {
       await Audio.setAudioModeAsync({
         playsInSilentModeIOS: true,
         staysActiveInBackground: true,
         shouldDuckAndroid: true,
       });
-
-      if (sound) {
-        try {
-          const status = await sound.getStatusAsync();
-          if (status.isLoaded) {
-            await sound.stopAsync();
-          }
-        } catch { }
-        await sound.unloadAsync().catch(() => { });
-      }
 
       const settings = await getSettings();
       const storagePath = (recording.audio_url || (recording as any).storage_path || '').trim();
@@ -564,6 +577,18 @@ export default function RecordingsScreen() {
   }
 
   async function togglePlayPause() {
+    const current = queue[currentIndex];
+    if (current?.type === 'video') {
+      if (isPlaying) {
+        await videoRef.current?.pauseAsync();
+        setIsPlaying(false);
+      } else {
+        await videoRef.current?.playAsync();
+        setIsPlaying(true);
+      }
+      return;
+    }
+
     if (!sound) return;
     const st = await sound.getStatusAsync();
     if (!st.isLoaded) return;
@@ -577,6 +602,16 @@ export default function RecordingsScreen() {
   }
 
   async function seekToRatio(ratio: number) {
+    const current = queue[currentIndex];
+    if (current?.type === 'video') {
+      if (!durationMillis) return;
+      const target = Math.floor(durationMillis * ratio);
+      try {
+        await videoRef.current?.setPositionAsync(target);
+      } catch { }
+      return;
+    }
+
     if (!sound || !durationMillis) return;
     const target = Math.floor(durationMillis * ratio);
     try {
@@ -589,10 +624,17 @@ export default function RecordingsScreen() {
     const current = volume;
     const steps = getSmoothedVolumeSteps(current, target, 300, 40, MIN_VOL, MAX_VOL);
     volumeRampingRef.current = true;
+
+    const isVideo = queue[currentIndex]?.type === 'video';
+
     try {
       for (const v of steps) {
         setVolume(v);
-        await sound?.setVolumeAsync(v);
+        if (isVideo) {
+          await videoRef.current?.setVolumeAsync(v);
+        } else {
+          await sound?.setVolumeAsync(v);
+        }
         await new Promise((res) => setTimeout(res, 40));
       }
     } finally {
@@ -603,8 +645,14 @@ export default function RecordingsScreen() {
   async function toggleMute() {
     const next = !muted;
     setMuted(next);
+
+    const isVideo = queue[currentIndex]?.type === 'video';
     try {
-      await sound?.setIsMutedAsync(next);
+      if (isVideo) {
+        await videoRef.current?.setIsMutedAsync(next);
+      } else {
+        await sound?.setIsMutedAsync(next);
+      }
     } catch { }
   }
 
@@ -1422,18 +1470,33 @@ export default function RecordingsScreen() {
                 {queue[currentIndex]?.type === 'video' && (
                   <View style={{ width: '100%', aspectRatio: 16 / 9, backgroundColor: 'black', marginBottom: 16, borderRadius: 12, overflow: 'hidden' }}>
                     <Video
+                      ref={videoRef}
                       source={{ uri: queue[currentIndex].audio_url }}
                       style={{ width: '100%', height: '100%' }}
                       resizeMode={ResizeMode.CONTAIN}
-                      useNativeControls
+                      useNativeControls={false} // We use our own controls
                       isLooping={loopMode === 'one'}
                       shouldPlay={isPlaying}
                       onPlaybackStatusUpdate={status => {
                         if (status.isLoaded) {
                           setPositionMillis(status.positionMillis);
                           setDurationMillis(status.durationMillis || 0);
-                          if (status.didJustFinish && loopMode !== 'one') {
-                            setIsPlaying(false);
+                          setIsPlaying(status.isPlaying);
+                          if (status.didJustFinish) {
+                            const currentLoop = loopModeRef.current;
+                            if (currentLoop === 'one') {
+                              videoRef.current?.replayAsync();
+                            } else if (currentLoop === 'all') {
+                              const nextIndex = (currentIndex + 1) % queue.length;
+                              loadAndPlay(nextIndex, queue);
+                            } else {
+                              const nextIndex = currentIndex + 1;
+                              if (nextIndex < queue.length) {
+                                loadAndPlay(nextIndex, queue);
+                              } else {
+                                setIsPlaying(false);
+                              }
+                            }
                           }
                         }
                       }}
