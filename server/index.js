@@ -273,19 +273,43 @@ app.post('/process-casting', upload.any(), async (req, res) => {
         // 4. Create mixed audio track
         console.log('[Casting] Mixing audio tracks...');
 
-        // Build FFmpeg filter complex for mixing
-        // We'll use amix to overlay AI segments on top of user audio
-        const filterParts = [`[0:a]`]; // User audio as base
-        const overlayInputs = [];
+        // Build FFmpeg filter complex for mixing with echo reduction
+        // Strategy:
+        // 1. Normalize user audio volume
+        // 2. Normalize each AI segment
+        // 3. Use overlay with proper timing and volume control
+        // 4. Apply dynamic compression to reduce echo/reverb
 
+        const filterParts = [];
+
+        // Normalize user audio and apply highpass filter to reduce rumble
+        filterParts.push('[0:a]highpass=f=80,loudnorm=I=-16:TP=-1.5:LRA=11[user]');
+
+        // Process each AI segment: delay, normalize, and reduce volume slightly to prevent overlap echo
         aiSegments.forEach((segment, idx) => {
-            overlayInputs.push(`[${idx + 1}:a]adelay=${segment.startTime * 1000}|${segment.startTime * 1000}[a${idx}]`);
+            const delayMs = Math.round(segment.startTime * 1000);
+            filterParts.push(
+                `[${idx + 1}:a]highpass=f=80,loudnorm=I=-16:TP=-1.5:LRA=11,volume=0.85,adelay=${delayMs}|${delayMs}[ai${idx}]`
+            );
         });
 
-        const mixInputs = overlayInputs.map((_, idx) => `[a${idx}]`).join('');
-        const filterComplex = overlayInputs.length > 0
-            ? `${overlayInputs.join(';')};[0:a]${mixInputs}amix=inputs=${aiSegments.length + 1}:duration=longest[outa]`
-            : '[0:a]anull[outa]';
+        // Mix all tracks together with proper balance
+        if (aiSegments.length > 0) {
+            const aiInputs = aiSegments.map((_, idx) => `[ai${idx}]`).join('');
+            // Use amix with dropout_transition to prevent echo artifacts
+            filterParts.push(
+                `[user]${aiInputs}amix=inputs=${aiSegments.length + 1}:duration=longest:dropout_transition=0:normalize=0[mixed]`
+            );
+            // Apply final compression and limiting to prevent clipping and reduce echo
+            filterParts.push(
+                '[mixed]acompressor=threshold=-20dB:ratio=4:attack=5:release=50,alimiter=limit=0.95[outa]'
+            );
+        } else {
+            // No AI segments, just process user audio
+            filterParts.push('[user]acompressor=threshold=-20dB:ratio=4:attack=5:release=50[outa]');
+        }
+
+        const filterComplex = filterParts.join(';');
 
         await new Promise((resolve, reject) => {
             const command = ffmpeg();
@@ -302,7 +326,9 @@ app.post('/process-casting', upload.any(), async (req, res) => {
                 .complexFilter(filterComplex)
                 .map('[outa]')
                 .audioCodec('aac')
-                .audioBitrate('128k')
+                .audioBitrate('192k') // Increased bitrate for better quality
+                .audioChannels(1) // Mono to reduce echo from stereo artifacts
+                .audioFrequency(44100)
                 .output(mixedAudioFile)
                 .on('start', (cmd) => console.log('[FFmpeg] Mix command:', cmd))
                 .on('progress', (progress) => console.log(`[FFmpeg] Mixing: ${progress.percent?.toFixed(1)}%`))
