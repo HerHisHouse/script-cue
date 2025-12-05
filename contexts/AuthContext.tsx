@@ -68,11 +68,23 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }
 
   async function signIn(email: string, password: string) {
-    const { error } = await supabase.auth.signInWithPassword({
-      email,
-      password,
-    });
-    if (error) throw error;
+    try {
+      const { error } = await supabase.auth.signInWithPassword({
+        email,
+        password,
+      });
+      if (error) {
+        console.error('[Auth] Sign in error:', error);
+        throw new Error(error.message || 'Error al iniciar sesión');
+      }
+    } catch (error: any) {
+      console.error('[Auth] Sign in exception:', error);
+      // Check if it's a JSON parse error
+      if (error.message?.includes('JSON') || error.message?.includes('Unexpected')) {
+        throw new Error('Error de conexión con el servidor. Por favor verifica tu conexión a internet.');
+      }
+      throw error;
+    }
   }
 
   async function signUp(email: string, password: string, username?: string) {
