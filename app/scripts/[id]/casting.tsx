@@ -1127,10 +1127,6 @@ export default function CastingModeScreen() {
             <Text style={styles.processingText}>
               Estamos mezclando tu actuación con el audio de IA de alta calidad.
             </Text>
-            <View style={styles.progressBarContainer}>
-              <View style={[styles.progressBar, { width: `${processingProgress}%` }]} />
-            </View>
-            <Text style={styles.progressText}>{processingProgress}%</Text>
             <Text style={styles.processingSubtext}>
               Esto puede tardar 30-60 segundos
             </Text>
