@@ -427,6 +427,166 @@ app.post('/process-casting', upload.any(), async (req, res) => {
     }
 });
 
+// --- COACH MODE ENDPOINT ---
+app.post('/analyze-recording', express.json(), async (req, res) => {
+    const { recordingPath, userId, scriptId, recordingType } = req.body;
+
+    if (!recordingPath || !userId) {
+        return res.status(400).json({ error: 'Missing required fields' });
+    }
+
+    const tempDir = path.join(__dirname, 'temp', `coach_${Date.now()}`);
+
+    try {
+        await fs.promises.mkdir(tempDir, { recursive: true });
+        console.log(`[Coach] Analyzing recording: ${recordingPath}`);
+
+        // 1. Download file from Supabase
+        const { data, error } = await supabase.storage
+            .from('recordings')
+            .download(recordingPath);
+
+        if (error) throw new Error(`Download failed: ${error.message}`);
+
+        const originalExt = path.extname(recordingPath);
+        const localInputPath = path.join(tempDir, `input${originalExt}`);
+        const buffer = await data.arrayBuffer();
+        await fs.promises.writeFile(localInputPath, Buffer.from(buffer));
+
+        // 2. Extract/Convert Audio for OpenAI
+        // OpenAI supports mp3, mp4, mpeg, mpa, m4a, ogg, wav, webm.
+        // We'll convert to mp3 128k mono to save size/tokens.
+        const audioPath = path.join(tempDir, 'audio.mp3');
+
+        console.log('[Coach] Converting/Extracting audio...');
+        await new Promise((resolve, reject) => {
+            ffmpeg(localInputPath)
+                .toFormat('mp3')
+                .audioBitrate('128k')
+                .audioChannels(1) // Mono
+                .on('end', resolve)
+                .on('error', reject)
+                .save(audioPath);
+        });
+
+        // 3. Prepare Audio for OpenAI API
+        // Read file as base64
+        const audioBuffer = await fs.promises.readFile(audioPath);
+        const base64Audio = audioBuffer.toString('base64');
+
+        console.log('[Coach] Sending to OpenAI...');
+
+        // Construct the prompt
+        // We ask for JSON for easier UI rendering
+        const systemPrompt = `Actúa como un coach profesional de interpretación para cine y televisión. Analiza esta interpretación y ofrece un informe claro, técnico, emocional y práctico.
+Evalúa: Ritmo, Dicción, Intención, Emociones, Proyección, Naturalidad vs marcación, Uso de pausas y silencios.
+Luego ofrece: Sugerencias interpretativas concretas, Comparación con tomas anteriores (si existen, menciona generalidades), Recomendaciones según tipo de personaje, Una mini rutina de ejercicios.
+Usa lenguaje profesional pero accesible para actores.
+
+IMPORTANTE: Devuelve la respuesta EXCLUSIVAMENTE en formato JSON válido con la siguiente estructura:
+{
+  "feedback": {
+    "ritmo": "string",
+    "diccion": "string",
+    "intencion": "string",
+    "emociones": "string",
+    "proyeccion": "string",
+    "naturalidad": "string",
+    "pausas": "string"
+  },
+  "sugerencias": ["string", "string", ...],
+  "comparacion": "string",
+  "recomendaciones_personaje": "string",
+  "ejercicios": [
+    { "nombre": "string", "descripcion": "string" },
+    ...
+  ]
+}`;
+
+        const openAIResponse = await fetch('https://api.openai.com/v1/chat/completions', {
+            method: 'POST',
+            headers: {
+                'Authorization': `Bearer ${process.env.OPENAI_API_KEY}`,
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                model: "gpt-4o-audio-preview",
+                modalities: ["text", "audio"],
+                audio: { voice: "alloy", format: "mp3" },
+                messages: [
+                    {
+                        role: "system",
+                        content: systemPrompt
+                    },
+                    {
+                        role: "user",
+                        content: [
+                            { type: "text", text: "Analiza esta interpretación." },
+                            { type: "input_audio", input_audio: { data: base64Audio, format: "mp3" } }
+                        ]
+                    }
+                ]
+            })
+        });
+
+        if (!openAIResponse.ok) {
+            const errText = await openAIResponse.text();
+            throw new Error(`OpenAI API Error: ${openAIResponse.status} ${errText}`);
+        }
+
+        const aiResult = await openAIResponse.json();
+        const content = aiResult.choices[0].message.content; // Should be JSON string (or mixed if model disregards, but system prompt helps)
+
+        let analysisData;
+        try {
+            // Remove markdown code blocks if present
+            const jsonString = content.replace(/^```json\n/, '').replace(/\n```$/, '');
+            analysisData = JSON.parse(jsonString);
+        } catch (e) {
+            console.error('[Coach] Failed to parse JSON from AI, using raw text');
+            analysisData = { raw: content };
+        }
+
+        console.log('[Coach] Analysis complete.');
+
+        // 4. Save to Supabase
+        const { data: insertData, error: insertError } = await supabase
+            .from('coach_feedback')
+            .insert({
+                recording_id: null, // We might need to find the recording ID or just use what data we have. 
+                // Wait, recordingPath is just a path. We need recording_id for the relation.
+                // The client should send recordingId. 
+                // But for now, let's assume client sends recordingId if available.
+                // If not, we store it loosely or requiring recordingId.
+                // I'll add recordingId to request body.
+                recording_id: req.body.recordingId,
+                user_id: userId,
+                feedback: analysisData
+            })
+            .select()
+            .single();
+
+        if (insertError) {
+            console.error('[Coach] Failed to save to DB:', insertError);
+            // Return result anyway, just not saved
+        }
+
+        // Cleanup
+        await fs.promises.rm(tempDir, { recursive: true, force: true });
+
+        res.json({
+            success: true,
+            analysis: analysisData,
+            savedId: insertData?.id
+        });
+
+    } catch (error) {
+        console.error('[Coach] Error:', error);
+        await fs.promises.rm(tempDir, { recursive: true, force: true }).catch(() => { });
+        res.status(500).json({ error: error.message });
+    }
+});
+
 app.listen(PORT, () => {
     console.log(`🎵 Audio Merge Server running on port ${PORT}`);
     console.log(`📊 Health check: http://localhost:${PORT}/health`);
