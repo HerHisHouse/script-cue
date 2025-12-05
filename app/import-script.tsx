@@ -387,11 +387,35 @@ export default function ImportScriptScreen() {
         const fileExt = name.split('.').pop();
         const path = `${user!.id}/${scriptData.id}/script.${fileExt}`;
 
-        // 1. Leer el archivo localmente
-        const response = await fetch(uri);
+        // 1. Leer el archivo localmente con timeout
+        logger.log('[Upload] Fetching file from URI:', uri);
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 60000); // 60 segundos
+
+        const response = await fetch(uri, { signal: controller.signal }).catch(e => {
+          clearTimeout(timeoutId);
+          if (e.name === 'AbortError') {
+            throw new Error('La lectura del archivo tardó demasiado. Intenta con un archivo más pequeño.');
+          }
+          throw new Error(`Error de red al leer el archivo: ${e.message}`);
+        });
+        clearTimeout(timeoutId);
+
+        if (!response.ok) {
+          throw new Error(`Error al leer el archivo: ${response.status}`);
+        }
+
+        logger.log('[Upload] Converting to ArrayBuffer...');
         const arrayBuffer = await response.arrayBuffer();
+        const fileSizeMB = (arrayBuffer.byteLength / 1024 / 1024).toFixed(2);
+        logger.log(`[Upload] File size: ${fileSizeMB} MB`);
+
+        if (arrayBuffer.byteLength > 50 * 1024 * 1024) {
+          throw new Error('El archivo es demasiado grande (máximo 50MB)');
+        }
 
         // 2. Subir a Supabase Storage (Bucket 'scripts')
+        logger.log('[Upload] Uploading to Supabase Storage...');
         const { error: uploadError } = await supabase.storage
           .from('scripts') // <--- Unificado: usar el bucket 'scripts'
           .upload(path, arrayBuffer, {
@@ -400,8 +424,11 @@ export default function ImportScriptScreen() {
           });
 
         if (uploadError) {
+          logger.error('[Upload] Supabase error:', uploadError);
           throw uploadError;
         }
+
+        logger.log('[Upload] Upload successful!');
 
         filePath = path; // La ruta de Supabase Storage
 
