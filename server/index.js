@@ -509,7 +509,6 @@ Do not return markdown formatting like \`\`\`json. Return raw JSON only. Languag
                 model: "gpt-4o-audio-preview",
                 modalities: ["text", "audio"],
                 audio: { voice: "alloy", format: "mp3" },
-                response_format: { type: "json_object" }, // FORCE JSON MODE
                 messages: [
                     {
                         role: "system",
