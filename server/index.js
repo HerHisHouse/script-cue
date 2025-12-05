@@ -478,30 +478,26 @@ app.post('/analyze-recording', express.json(), async (req, res) => {
 
         // Construct the prompt
         // We ask for JSON for easier UI rendering
-        const systemPrompt = `Actúa como un coach profesional de interpretación para cine y televisión. Analiza esta interpretación y ofrece un informe claro, técnico, emocional y práctico.
-Evalúa: Ritmo, Dicción, Intención, Emociones, Proyección, Naturalidad vs marcación, Uso de pausas y silencios.
-Luego ofrece: Sugerencias interpretativas concretas, Comparación con tomas anteriores (si existen, menciona generalidades), Recomendaciones según tipo de personaje, Una mini rutina de ejercicios.
-Usa lenguaje profesional pero accesible para actores.
-
-IMPORTANTE: Devuelve la respuesta EXCLUSIVAMENTE en formato JSON válido con la siguiente estructura:
+        const systemPrompt = `You are a professional acting coach. Analyze the audio performance.
+Return ONLY valid JSON with this exact structure:
 {
   "feedback": {
-    "ritmo": "string",
-    "diccion": "string",
-    "intencion": "string",
-    "emociones": "string",
-    "proyeccion": "string",
-    "naturalidad": "string",
-    "pausas": "string"
+    "ritmo": "Analysis of rhythm...",
+    "diccion": "Analysis of diction...",
+    "intencion": "Analysis of intention...",
+    "emociones": "Analysis of emotions...",
+    "proyeccion": "Analysis of projection...",
+    "naturalidad": "Analysis of naturalness...",
+    "pausas": "Analysis of pauses..."
   },
-  "sugerencias": ["string", "string", ...],
-  "comparacion": "string",
-  "recomendaciones_personaje": "string",
+  "sugerencias": ["Suggestion 1", "Suggestion 2", ...],
+  "comparacion": "Comparison with previous takes (or general comment if none)...",
+  "recomendaciones_personaje": "Character specific advice...",
   "ejercicios": [
-    { "nombre": "string", "descripcion": "string" },
-    ...
+    { "nombre": "Exercise Name", "descripcion": "Exercise Description" }
   ]
-}`;
+}
+Do not return markdown formatting like \`\`\`json. Return raw JSON only. Language: Spanish.`;
 
         const openAIResponse = await fetch('https://api.openai.com/v1/chat/completions', {
             method: 'POST',
@@ -513,6 +509,7 @@ IMPORTANTE: Devuelve la respuesta EXCLUSIVAMENTE en formato JSON válido con la 
                 model: "gpt-4o-audio-preview",
                 modalities: ["text", "audio"],
                 audio: { voice: "alloy", format: "mp3" },
+                response_format: { type: "json_object" }, // FORCE JSON MODE
                 messages: [
                     {
                         role: "system",
@@ -535,16 +532,23 @@ IMPORTANTE: Devuelve la respuesta EXCLUSIVAMENTE en formato JSON válido con la 
         }
 
         const aiResult = await openAIResponse.json();
-        const content = aiResult.choices[0].message.content; // Should be JSON string (or mixed if model disregards, but system prompt helps)
+        const content = aiResult.choices?.[0]?.message?.content || "{}";
+
+        console.log('[Coach] Raw AI content length:', content.length);
 
         let analysisData;
         try {
-            // Remove markdown code blocks if present
-            const jsonString = content.replace(/^```json\n/, '').replace(/\n```$/, '');
+            // Remove markdown code blocks if present (just in case)
+            const jsonString = content.replace(/^```json\s*/, '').replace(/\s*```$/, '');
             analysisData = JSON.parse(jsonString);
         } catch (e) {
-            console.error('[Coach] Failed to parse JSON from AI, using raw text');
-            analysisData = { raw: content };
+            console.error('[Coach] Failed to parse JSON from AI, using raw text to fallback structure');
+            console.error('[Coach] Content was:', content.substring(0, 200));
+            // Fallback structure so UI doesn't crash but shows something
+            analysisData = {
+                feedback: { error: "No se pudo generar el formato correcto. Lectura raw abajo." },
+                comparacion: content
+            };
         }
 
         console.log('[Coach] Analysis complete.');
