@@ -1,9 +1,10 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, TextInput, ActivityIndicator, Alert, ScrollView } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, TextInput, ActivityIndicator, Alert, ScrollView, Platform } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { Upload, ArrowLeft, Check, ChevronDown, Camera } from 'lucide-react-native';
 import * as DocumentPicker from 'expo-document-picker';
+import * as FileSystem from 'expo-file-system/legacy';
 import { useAuth } from '@/contexts/AuthContext';
 import { useTheme } from '@/contexts/ThemeContext';
 import { supabase } from '@/utils/supabase';
@@ -389,29 +390,61 @@ export default function ImportScriptScreen() {
 
         // 1. Leer el archivo localmente con timeout
         logger.log('[Upload] Fetching file from URI:', uri);
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 60000); // 60 segundos
 
-        const response = await fetch(uri, { signal: controller.signal }).catch(e => {
-          clearTimeout(timeoutId);
-          if (e.name === 'AbortError') {
-            throw new Error('La lectura del archivo tardó demasiado. Intenta con un archivo más pequeño.');
+        let arrayBuffer: ArrayBuffer;
+
+        // En Android, usar FileSystem en lugar de fetch para mejor compatibilidad
+        if (Platform.OS === 'android') {
+          try {
+            logger.log('[Upload] Using FileSystem for Android...');
+            const base64 = await FileSystem.readAsStringAsync(uri, {
+              encoding: FileSystem.EncodingType.Base64,
+            });
+
+            // Convertir base64 a ArrayBuffer
+            const binaryString = atob(base64);
+            const bytes = new Uint8Array(binaryString.length);
+            for (let i = 0; i < binaryString.length; i++) {
+              bytes[i] = binaryString.charCodeAt(i);
+            }
+            arrayBuffer = bytes.buffer;
+
+            const fileSizeMB = (arrayBuffer.byteLength / 1024 / 1024).toFixed(2);
+            logger.log(`[Upload] File size: ${fileSizeMB} MB`);
+
+            if (arrayBuffer.byteLength > 50 * 1024 * 1024) {
+              throw new Error('El archivo es demasiado grande (máximo 50MB)');
+            }
+          } catch (e: any) {
+            logger.error('[Upload] FileSystem error:', e);
+            throw new Error(`Error al leer el archivo: ${e.message}`);
           }
-          throw new Error(`Error de red al leer el archivo: ${e.message}`);
-        });
-        clearTimeout(timeoutId);
+        } else {
+          // iOS y Web: usar fetch con timeout
+          const controller = new AbortController();
+          const timeoutId = setTimeout(() => controller.abort(), 60000); // 60 segundos
 
-        if (!response.ok) {
-          throw new Error(`Error al leer el archivo: ${response.status}`);
-        }
+          const response = await fetch(uri, { signal: controller.signal }).catch(e => {
+            clearTimeout(timeoutId);
+            if (e.name === 'AbortError') {
+              throw new Error('La lectura del archivo tardó demasiado. Intenta con un archivo más pequeño.');
+            }
+            throw new Error(`Error de red al leer el archivo: ${e.message}`);
+          });
+          clearTimeout(timeoutId);
 
-        logger.log('[Upload] Converting to ArrayBuffer...');
-        const arrayBuffer = await response.arrayBuffer();
-        const fileSizeMB = (arrayBuffer.byteLength / 1024 / 1024).toFixed(2);
-        logger.log(`[Upload] File size: ${fileSizeMB} MB`);
+          if (!response.ok) {
+            throw new Error(`Error al leer el archivo: ${response.status}`);
+          }
 
-        if (arrayBuffer.byteLength > 50 * 1024 * 1024) {
-          throw new Error('El archivo es demasiado grande (máximo 50MB)');
+          logger.log('[Upload] Converting to ArrayBuffer...');
+          arrayBuffer = await response.arrayBuffer();
+          const fileSizeMB = (arrayBuffer.byteLength / 1024 / 1024).toFixed(2);
+          logger.log(`[Upload] File size: ${fileSizeMB} MB`);
+
+          if (arrayBuffer.byteLength > 50 * 1024 * 1024) {
+            throw new Error('El archivo es demasiado grande (máximo 50MB)');
+          }
         }
 
         // 2. Subir a Supabase Storage (Bucket 'scripts')
