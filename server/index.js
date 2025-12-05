@@ -428,7 +428,7 @@ app.post('/process-casting', upload.any(), async (req, res) => {
 });
 
 // --- COACH MODE ENDPOINT ---
-app.post('/analyze-recording', express.json(), async (req, res) => {
+app.post('/analyze-recording', async (req, res) => {
     const { recordingPath, userId, scriptId, recordingType } = req.body;
 
     if (!recordingPath || !userId) {
