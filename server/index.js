@@ -429,11 +429,19 @@ app.post('/process-casting', upload.any(), async (req, res) => {
 
 // --- COACH MODE ENDPOINT ---
 app.post('/analyze-recording', async (req, res) => {
-    const { recordingPath, userId, scriptId, recordingType } = req.body;
+    console.log('[Coach] ========== NEW ANALYSIS REQUEST ==========');
+    console.log('[Coach] Request received at:', new Date().toISOString());
+    console.log('[Coach] Body keys:', Object.keys(req.body));
+
+    const { recordingPath, userId, scriptId, recordingType, recordingId } = req.body;
 
     if (!recordingPath || !userId) {
+        console.log('[Coach] ERROR: Missing required fields');
         return res.status(400).json({ error: 'Missing required fields' });
     }
+
+    console.log(`[Coach] Processing: ${recordingPath}`);
+    console.log(`[Coach] User: ${userId}, Script: ${scriptId}, Type: ${recordingType}`);
 
     const tempDir = path.join(__dirname, 'temp', `coach_${Date.now()}`);
 
