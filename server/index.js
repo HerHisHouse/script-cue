@@ -21,7 +21,7 @@ const supabase = createClient(
     process.env.SUPABASE_SERVICE_KEY
 );
 
-console.log('🚀 Server starting - Version: COACH_FIX_V3 - Date:', new Date().toISOString());
+console.log('🚀 Server starting - Version: COACH_FIX_V4_TRANSCRIPT - Date:', new Date().toISOString());
 
 // Health check
 app.get('/health', (req, res) => {
