@@ -500,10 +500,72 @@ app.post('/analyze-recording', async (req, res) => {
         const base64Audio = audioBuffer.toString('base64');
 
         console.log('[Coach] Sending to OpenAI...');
+        console.log('[Coach] Audio file size (bytes):', audioBuffer.length);
+        console.log('[Coach] Base64 length:', base64Audio.length);
+        console.log('[Coach] Model: gpt-4o-audio-preview');
+
+        // 4. Fetch script context for better analysis
+        let scriptContext = '';
+        let userCharacterName = 'el usuario';
+
+        if (scriptId) {
+            try {
+                console.log('[Coach] Fetching script context...');
+
+                // Get script info
+                const { data: script } = await supabase
+                    .from('scripts')
+                    .select('title')
+                    .eq('id', scriptId)
+                    .single();
+
+                // Get all characters
+                const { data: characters } = await supabase
+                    .from('characters')
+                    .select('id, name, is_user_character')
+                    .eq('script_id', scriptId);
+
+                // Find user's character
+                const userCharacter = characters?.find(c => c.is_user_character);
+                if (userCharacter?.name) {
+                    userCharacterName = userCharacter.name;
+                    console.log('[Coach] User character:', userCharacterName);
+                }
+
+                // Get dialogue lines
+                const { data: dialogues } = await supabase
+                    .from('dialogues')
+                    .select('character_id, line_text, line_number')
+                    .eq('script_id', scriptId)
+                    .order('line_number', { ascending: true });
+
+                if (dialogues && dialogues.length > 0) {
+                    // Build script context
+                    const characterMap = new Map(characters?.map(c => [c.id, c.name]) || []);
+                    const scriptLines = dialogues
+                        .map(d => {
+                            const charName = characterMap.get(d.character_id) || 'NARRADOR';
+                            return `${charName}: ${d.line_text}`;
+                        })
+                        .join('\n');
+
+                    scriptContext = `\n\nCONTEXTO DEL GUION "${script?.title || 'Sin título'}":\n${scriptLines}\n\nEl usuario interpreta al personaje: ${userCharacterName}`;
+                    console.log('[Coach] Script context added, length:', scriptContext.length);
+                }
+            } catch (e) {
+                console.error('[Coach] Error fetching script context:', e);
+                // Continue without context
+            }
+        }
 
         // Construct the prompt
         // We ask for JSON for easier UI rendering
         const systemPrompt = `You are a professional acting coach. Analyze the audio performance.
+
+IMPORTANTE: El audio contiene una interpretación de una escena con múltiples personajes. El usuario está interpretando SOLO al personaje "${userCharacterName}". Las otras voces son generadas por IA para dar contexto.
+
+Tu análisis debe centrarse EXCLUSIVAMENTE en las líneas interpretadas por ${userCharacterName}. Ignora las voces de IA.${scriptContext}
+
 Return ONLY valid JSON with this exact structure:
 {
   "feedback": {
@@ -517,7 +579,7 @@ Return ONLY valid JSON with this exact structure:
   },
   "sugerencias": ["Suggestion 1", "Suggestion 2", ...],
   "comparacion": "Comparison with previous takes (or general comment if none)...",
-  "recomendaciones_personaje": "Character specific advice...",
+  "recomendaciones_personaje": "Character specific advice for ${userCharacterName}...",
   "ejercicios": [
     { "nombre": "Exercise Name", "descripcion": "Exercise Description" }
   ]
