@@ -562,7 +562,19 @@ Do not return markdown formatting like \`\`\`json. Return raw JSON only. Languag
         const aiResult = await openAIResponse.json();
         console.log('[Coach] OpenAI full response:', JSON.stringify(aiResult, null, 2));
 
-        const content = aiResult.choices?.[0]?.message?.content || "{}";
+        // For gpt-4o-audio-preview with audio modality, the text response is in audio.transcript
+        let content = aiResult.choices?.[0]?.message?.content;
+
+        // If content is null, check audio.transcript
+        if (!content || content === null) {
+            content = aiResult.choices?.[0]?.message?.audio?.transcript;
+            console.log('[Coach] Content was null, using audio.transcript instead');
+        }
+
+        if (!content) {
+            console.error('[Coach] No content found in either content or audio.transcript');
+            content = "{}";
+        }
 
         console.log('[Coach] Raw AI content length:', content.length);
         console.log('[Coach] Raw AI content preview:', content.substring(0, 500));
