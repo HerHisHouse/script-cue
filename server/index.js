@@ -550,15 +550,22 @@ Do not return markdown formatting like \`\`\`json. Return raw JSON only. Languag
             })
         });
 
+        console.log('[Coach] OpenAI response status:', openAIResponse.status);
+        console.log('[Coach] OpenAI response ok:', openAIResponse.ok);
+
         if (!openAIResponse.ok) {
             const errText = await openAIResponse.text();
+            console.error('[Coach] OpenAI error response:', errText);
             throw new Error(`OpenAI API Error: ${openAIResponse.status} ${errText}`);
         }
 
         const aiResult = await openAIResponse.json();
+        console.log('[Coach] OpenAI full response:', JSON.stringify(aiResult, null, 2));
+
         const content = aiResult.choices?.[0]?.message?.content || "{}";
 
         console.log('[Coach] Raw AI content length:', content.length);
+        console.log('[Coach] Raw AI content preview:', content.substring(0, 500));
 
         let analysisData;
         try {
