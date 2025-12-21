@@ -270,46 +270,66 @@ app.post('/process-casting', upload.any(), async (req, res) => {
 
         console.log(`[Casting] Processed ${aiSegments.length} AI audio segments`);
 
-        // 4. Create mixed audio track
-        console.log('[Casting] Mixing audio tracks...');
+        // 4. Create mixed audio track with AI voice replacement
+        console.log('[Casting] Mixing audio tracks with AI voice replacement...');
 
-        // Build FFmpeg filter complex for mixing with echo reduction
-        // Strategy:
-        // 1. Normalize user audio volume
-        // 2. Normalize each AI segment
-        // 3. Use overlay with proper timing and volume control
-        // 4. Apply dynamic compression to reduce echo/reverb
+        // NEW STRATEGY:
+        // Instead of mixing user audio with AI audio (which causes echo),
+        // we'll mute the user audio during AI sections and use only the cached TTS audio.
+        // This eliminates echo completely when recording without headphones.
 
         const filterParts = [];
 
-        // Normalize user audio and apply highpass filter to reduce rumble
-        filterParts.push('[0:a]highpass=f=80,loudnorm=I=-16:TP=-1.5:LRA=11[user]');
+        // Step 1: Normalize user audio
+        filterParts.push('[0:a]highpass=f=80,loudnorm=I=-16:TP=-1.5:LRA=11[user_normalized]');
 
-        // Process each AI segment: delay, normalize, and reduce volume slightly to prevent overlap echo
+        // Step 2: Create volume control filters for each AI segment
+        // We'll use volume=enable to mute user audio during AI speaking times
+        let volumeExpression = '1'; // Default: full volume
+
+        // Build expression to mute user audio during AI segments
+        if (aiSegments.length > 0) {
+            const muteConditions = aiSegments.map(segment => {
+                const start = segment.startTime;
+                const end = start + segment.duration;
+                // Return 0 (mute) if time is between start and end, else 1 (full volume)
+                return `between(t,${start},${end})`;
+            }).join('+');
+
+            // If any AI segment is active, mute (volume=0), else full volume (volume=1)
+            volumeExpression = `if(${muteConditions},0,1)`;
+        }
+
+        // Apply dynamic volume control to user audio
+        filterParts.push(`[user_normalized]volume='${volumeExpression}':eval=frame[user_controlled]`);
+
+        // Step 3: Process each AI segment with delay and normalization
         aiSegments.forEach((segment, idx) => {
             const delayMs = Math.round(segment.startTime * 1000);
             filterParts.push(
-                `[${idx + 1}:a]highpass=f=80,loudnorm=I=-16:TP=-1.5:LRA=11,volume=0.85,adelay=${delayMs}|${delayMs}[ai${idx}]`
+                `[${idx + 1}:a]highpass=f=80,loudnorm=I=-16:TP=-1.5:LRA=11,adelay=${delayMs}|${delayMs}[ai${idx}]`
             );
         });
 
-        // Mix all tracks together with proper balance
+        // Step 4: Mix controlled user audio with AI segments
         if (aiSegments.length > 0) {
             const aiInputs = aiSegments.map((_, idx) => `[ai${idx}]`).join('');
-            // Use amix with dropout_transition to prevent echo artifacts
+            // Mix with amix - user audio is already muted during AI sections
             filterParts.push(
-                `[user]${aiInputs}amix=inputs=${aiSegments.length + 1}:duration=longest:dropout_transition=0:normalize=0[mixed]`
+                `[user_controlled]${aiInputs}amix=inputs=${aiSegments.length + 1}:duration=longest:dropout_transition=0:normalize=0[mixed]`
             );
-            // Apply final compression and limiting to prevent clipping and reduce echo
+            // Apply final compression and limiting
             filterParts.push(
                 '[mixed]acompressor=threshold=-20dB:ratio=4:attack=5:release=50,alimiter=limit=0.95[outa]'
             );
         } else {
             // No AI segments, just process user audio
-            filterParts.push('[user]acompressor=threshold=-20dB:ratio=4:attack=5:release=50[outa]');
+            filterParts.push('[user_controlled]acompressor=threshold=-20dB:ratio=4:attack=5:release=50[outa]');
         }
 
         const filterComplex = filterParts.join(';');
+
+        console.log('[Casting] Filter complex:', filterComplex);
 
         await new Promise((resolve, reject) => {
             const command = ffmpeg();
@@ -333,7 +353,7 @@ app.post('/process-casting', upload.any(), async (req, res) => {
                 .on('start', (cmd) => console.log('[FFmpeg] Mix command:', cmd))
                 .on('progress', (progress) => console.log(`[FFmpeg] Mixing: ${progress.percent?.toFixed(1)}%`))
                 .on('end', () => {
-                    console.log('[Casting] Audio mixing completed');
+                    console.log('[Casting] Audio mixing completed with AI voice replacement');
                     resolve();
                 })
                 .on('error', reject)
