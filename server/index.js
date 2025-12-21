@@ -317,17 +317,26 @@ app.post('/process-casting', upload.any(), async (req, res) => {
             );
         });
 
-        // Step 4: Mix controlled user audio with AI segments
+        // Step 4: Sum AI segments on top of muted user audio
+        // User audio is already muted during AI sections, so we just add them together
         if (aiSegments.length > 0) {
-            const aiInputs = aiSegments.map((_, idx) => `[ai${idx}]`).join('');
-            // Mix with amix - user audio is already muted during AI sections
-            // Use weights to ensure user audio maintains volume when not muted
+            const allInputs = ['[user_controlled]', ...aiSegments.map((_, idx) => `[ai${idx}]`)].join('');
+
+            // Use amerge to combine all streams, then pan to sum them into mono
+            // This preserves the full volume of each stream
             filterParts.push(
-                `[user_controlled]${aiInputs}amix=inputs=${aiSegments.length + 1}:duration=longest:dropout_transition=0:weights=1 ${aiSegments.map(() => '1').join(' ')}[mixed]`
+                `${allInputs}amerge=inputs=${aiSegments.length + 1}[merged]`
             );
-            // Apply gentle limiting only (no compression to preserve dynamics)
+
+            // Pan/mix all channels into mono by summing (not averaging)
+            const panExpression = Array.from({ length: aiSegments.length + 1 }, (_, i) => `c${i}`).join('+');
             filterParts.push(
-                '[mixed]alimiter=limit=0.99:attack=1:release=50[outa]'
+                `[merged]pan=mono|c0=${panExpression}[summed]`
+            );
+
+            // Apply gentle limiting only
+            filterParts.push(
+                '[summed]alimiter=limit=0.99:attack=1:release=50[outa]'
             );
         } else {
             // No AI segments, just gentle limiting on user audio
