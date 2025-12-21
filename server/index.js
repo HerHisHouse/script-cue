@@ -317,26 +317,26 @@ app.post('/process-casting', upload.any(), async (req, res) => {
             );
         });
 
-        // Step 4: Sum AI segments on top of muted user audio
-        // User audio is already muted during AI sections, so we just add them together
+        // Step 4: Add AI segments on top of muted user audio using sequential mixing
+        // User audio is already muted during AI sections, so we add them one by one
         if (aiSegments.length > 0) {
-            const allInputs = ['[user_controlled]', ...aiSegments.map((_, idx) => `[ai${idx}]`)].join('');
+            // Start with user_controlled as base
+            let currentStream = '[user_controlled]';
 
-            // Use amerge to combine all streams, then pan to sum them into mono
-            // This preserves the full volume of each stream
-            filterParts.push(
-                `${allInputs}amerge=inputs=${aiSegments.length + 1}[merged]`
-            );
-
-            // Pan/mix all channels into mono by summing (not averaging)
-            const panExpression = Array.from({ length: aiSegments.length + 1 }, (_, i) => `c${i}`).join('+');
-            filterParts.push(
-                `[merged]pan=mono|c0=${panExpression}[summed]`
-            );
+            // Add each AI segment sequentially
+            aiSegments.forEach((segment, idx) => {
+                const nextStream = idx === aiSegments.length - 1 ? '[mixed]' : `[mix${idx}]`;
+                // Use amix with normalize=0 and weights to preserve volume
+                // Since user is muted during AI, we're just adding the AI on top
+                filterParts.push(
+                    `${currentStream}[ai${idx}]amix=inputs=2:duration=longest:dropout_transition=0:normalize=0:weights=1 1${nextStream}`
+                );
+                currentStream = nextStream;
+            });
 
             // Apply gentle limiting only
             filterParts.push(
-                '[summed]alimiter=limit=0.99:attack=1:release=50[outa]'
+                '[mixed]alimiter=limit=0.99:attack=1:release=50[outa]'
             );
         } else {
             // No AI segments, just gentle limiting on user audio
