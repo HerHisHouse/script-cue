@@ -321,16 +321,17 @@ app.post('/process-casting', upload.any(), async (req, res) => {
         if (aiSegments.length > 0) {
             const aiInputs = aiSegments.map((_, idx) => `[ai${idx}]`).join('');
             // Mix with amix - user audio is already muted during AI sections
+            // Use weights to ensure user audio maintains volume when not muted
             filterParts.push(
-                `[user_controlled]${aiInputs}amix=inputs=${aiSegments.length + 1}:duration=longest:dropout_transition=0:normalize=0[mixed]`
+                `[user_controlled]${aiInputs}amix=inputs=${aiSegments.length + 1}:duration=longest:dropout_transition=0:weights=1 ${aiSegments.map(() => '1').join(' ')}[mixed]`
             );
-            // Apply final compression and limiting
+            // Apply gentle limiting only (no compression to preserve dynamics)
             filterParts.push(
-                '[mixed]acompressor=threshold=-20dB:ratio=4:attack=5:release=50,alimiter=limit=0.95[outa]'
+                '[mixed]alimiter=limit=0.99:attack=1:release=50[outa]'
             );
         } else {
-            // No AI segments, just process user audio
-            filterParts.push('[user_controlled]acompressor=threshold=-20dB:ratio=4:attack=5:release=50[outa]');
+            // No AI segments, just gentle limiting on user audio
+            filterParts.push('[user_controlled]alimiter=limit=0.99:attack=1:release=50[outa]');
         }
 
         const filterComplex = filterParts.join(';');
