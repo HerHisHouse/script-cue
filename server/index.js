@@ -283,24 +283,30 @@ app.post('/process-casting', upload.any(), async (req, res) => {
         // Step 1: Normalize user audio
         filterParts.push('[0:a]highpass=f=80,loudnorm=I=-16:TP=-1.5:LRA=11[user_normalized]');
 
+
         // Step 2: Create volume control filters for each AI segment
         // We'll use volume=enable to mute user audio during AI speaking times
         let volumeExpression = '1'; // Default: full volume
 
         // Build expression to mute user audio during AI segments
         if (aiSegments.length > 0) {
-            const muteConditions = aiSegments.map(segment => {
+            // Create individual conditions for each segment
+            const conditions = aiSegments.map(segment => {
                 const start = segment.startTime;
                 const end = start + segment.duration;
-                // Return 0 (mute) if time is between start and end, else 1 (full volume)
+                // Return 1 if time is between start and end (AI speaking), else 0
                 return `between(t,${start},${end})`;
-            }).join('+');
+            });
 
-            // If any AI segment is active, mute (volume=0), else full volume (volume=1)
-            volumeExpression = `if(${muteConditions},0,1)`;
+            // Combine conditions with OR logic (gte = greater than or equal)
+            // If ANY condition is true (value >= 1), we're in an AI section
+            const combinedCondition = conditions.join('+');
+
+            // If combined condition >= 1 (any AI speaking), volume=0 (mute), else volume=1 (full)
+            volumeExpression = `if(gte(${combinedCondition},1),0,1)`;
         }
 
-        // Apply dynamic volume control to user audio
+        // Apply dynamic volume control to user audio with fade to avoid clicks
         filterParts.push(`[user_normalized]volume='${volumeExpression}':eval=frame[user_controlled]`);
 
         // Step 3: Process each AI segment with delay and normalization
