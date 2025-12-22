@@ -21,7 +21,7 @@ const supabase = createClient(
     process.env.SUPABASE_SERVICE_KEY
 );
 
-console.log('🚀 Server starting - Version: COACH_FIX_V4_TRANSCRIPT - Date:', new Date().toISOString());
+console.log('🚀 Server starting - Version: AUDIO_NORM_V1 - Date:', new Date().toISOString());
 
 // Health check
 app.get('/health', (req, res) => {
@@ -280,8 +280,11 @@ app.post('/process-casting', upload.any(), async (req, res) => {
 
         const filterParts = [];
 
-        // Step 1: Normalize user audio
-        filterParts.push('[0:a]highpass=f=80,loudnorm=I=-16:TP=-1.5:LRA=11[user_normalized]');
+        // Step 1: Normalize user audio with aggressive settings
+        // -14 LUFS = louder than broadcast standard, better for mobile
+        // LRA=7 = reduced loudness range for consistent volume
+        // dynaudnorm = brings up quiet parts without distorting loud parts
+        filterParts.push('[0:a]highpass=f=80,loudnorm=I=-14:TP=-1.0:LRA=7,dynaudnorm=f=200:g=5:p=0.95[user_normalized]');
 
 
         // Step 2: Create volume control filters for each AI segment
@@ -310,10 +313,11 @@ app.post('/process-casting', upload.any(), async (req, res) => {
         filterParts.push(`[user_normalized]volume='${volumeExpression}':eval=frame[user_controlled]`);
 
         // Step 3: Process each AI segment with delay and normalization
+        // Match AI audio to same level as user for consistent experience
         aiSegments.forEach((segment, idx) => {
             const delayMs = Math.round(segment.startTime * 1000);
             filterParts.push(
-                `[${idx + 1}:a]highpass=f=80,loudnorm=I=-16:TP=-1.5:LRA=11,adelay=${delayMs}|${delayMs}[ai${idx}]`
+                `[${idx + 1}:a]highpass=f=80,loudnorm=I=-14:TP=-1.0:LRA=7,adelay=${delayMs}|${delayMs}[ai${idx}]`
             );
         });
 
@@ -334,13 +338,15 @@ app.post('/process-casting', upload.any(), async (req, res) => {
                 currentStream = nextStream;
             });
 
-            // Apply gentle limiting only
+            // Apply compression + limiting for cohesive final mix
+            // acompressor: glues the mix together, reduces dynamic range further
+            // alimiter: prevents any clipping
             filterParts.push(
-                '[mixed]alimiter=limit=0.99:attack=1:release=50[outa]'
+                '[mixed]acompressor=threshold=-18dB:ratio=3:attack=5:release=100,alimiter=limit=0.95:attack=1:release=50[outa]'
             );
         } else {
-            // No AI segments, just gentle limiting on user audio
-            filterParts.push('[user_controlled]alimiter=limit=0.99:attack=1:release=50[outa]');
+            // No AI segments, apply same processing to user audio only
+            filterParts.push('[user_controlled]acompressor=threshold=-18dB:ratio=3:attack=5:release=100,alimiter=limit=0.95:attack=1:release=50[outa]');
         }
 
         const filterComplex = filterParts.join(';');
