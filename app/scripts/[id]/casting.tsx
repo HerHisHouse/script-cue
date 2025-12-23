@@ -12,15 +12,18 @@ import {
   PanResponder,
   Animated,
   LayoutAnimation,
+  Pressable,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter, useLocalSearchParams, Stack } from 'expo-router';
 import { CameraView, CameraType, useCameraPermissions } from 'expo-camera';
+import { activateKeepAwakeAsync, deactivateKeepAwake } from 'expo-keep-awake';
+import { rf, rp } from '@/utils/responsive';
 import { Audio, InterruptionModeIOS, InterruptionModeAndroid } from 'expo-av';
 import * as FileSystem from 'expo-file-system/legacy'; // Fix: Use legacy API
 import { transcribeAudio } from '@/services/transcription'; // Import transcription service
 import { calculateSimilarity } from '@/utils/stringUtils'; // Helper for similarity
-import { ArrowLeft, Mic, RotateCcw, Play, Pause, Square, Video, SwitchCamera, Settings2, SkipBack, SkipForward, MoreVertical, EyeOff, Eye, Minus, Plus, Volume2, GripHorizontal } from 'lucide-react-native';
+import { ArrowLeft, Mic, RotateCcw, Play, Pause, Square, Video, SwitchCamera, Settings2, SkipBack, SkipForward, MoreVertical, EyeOff, Eye, Minus, Plus, Volume2, GripHorizontal, X, Timer } from 'lucide-react-native';
 import { supabase } from '@/utils/supabase';
 import client from '@/utils/openaiClient';
 import { generateElevenLabsAudio } from '@/utils/elevenLabsClient';
@@ -79,6 +82,8 @@ export default function CastingModeScreen() {
   const [showMenu, setShowMenu] = useState(false);
   const [hideUserLines, setHideUserLines] = useState(false);
   const [hideTeleprompter, setHideTeleprompter] = useState(false);
+  const [startDelay, setStartDelay] = useState(3); // Delay in seconds before first line (0, 3, 5, 10)
+  const [countdown, setCountdown] = useState<number | null>(null); // Countdown display
 
   // Teleprompter UI State
   const screenHeight = Dimensions.get('window').height;
@@ -144,6 +149,7 @@ export default function CastingModeScreen() {
     }
     loadScriptData();
     loadSettings();
+    wakeUpRenderServer(); // Despertar servidor al abrir Modo Casting
 
     // Setup Audio Mode for Speaker Output AND Microphone Recording
     Audio.setAudioModeAsync({
@@ -161,6 +167,25 @@ export default function CastingModeScreen() {
       if (autoAdvanceTimerRef.current) clearTimeout(autoAdvanceTimerRef.current);
     };
   }, []);
+
+  // Función para despertar el servidor de Render
+  async function wakeUpRenderServer() {
+    try {
+      const renderUrl = process.env.EXPO_PUBLIC_RENDER_SERVER_URL || 'https://script-cue-merge-server.onrender.com';
+      console.log('[Casting] Waking up Render server...');
+
+      // Hacer una petición simple para despertar el servidor
+      // No esperamos respuesta, solo queremos que se inicie
+      fetch(`${renderUrl}/health`, {
+        method: 'GET',
+      }).catch(() => {
+        // Ignorar errores, solo queremos despertar el servidor
+        console.log('[Casting] Server wake-up initiated');
+      });
+    } catch (e) {
+      // Ignorar errores
+    }
+  }
 
   async function loadSettings() {
     try {
@@ -236,7 +261,16 @@ export default function CastingModeScreen() {
   // Update volume in real-time
   useEffect(() => {
     if (soundRef.current) {
-      soundRef.current.setVolumeAsync(ttsVolume);
+      // Check if sound is loaded before changing volume
+      soundRef.current.getStatusAsync().then((status) => {
+        if (status.isLoaded) {
+          soundRef.current?.setVolumeAsync(ttsVolume).catch((err) => {
+            console.warn('Failed to set volume:', err);
+          });
+        }
+      }).catch(() => {
+        // Sound not loaded, ignore
+      });
     }
   }, [ttsVolume]);
 
@@ -272,8 +306,27 @@ export default function CastingModeScreen() {
           if (!text) continue;
 
           const characterName = line.characterName.toUpperCase();
-          const voiceConfig = perCharacterVoices[characterName];
-          const provider = voiceConfig?.provider || 'openai';
+
+          // Find character in database to get voice_id and voice_provider
+          const character = characters.find(
+            c => c.name?.toUpperCase() === characterName
+          );
+
+          // Priority: character.voice_id > perCharacterVoices > default
+          let provider: string;
+          let voiceId: string | null = null;
+
+          if (character?.voice_id && character?.voice_provider) {
+            // Use voice from character configuration
+            provider = character.voice_provider;
+            voiceId = character.voice_id;
+            console.log(`[Casting] Using character voice: ${voiceId} (${provider})`);
+          } else {
+            // Fall back to settings
+            const voiceConfig = perCharacterVoices[characterName];
+            provider = voiceConfig?.provider || 'openai';
+            voiceId = (voiceConfig as any)?.voiceId || (voiceConfig as any)?.systemVoiceId || null;
+          }
 
           if (provider === 'system') continue;
 
@@ -281,9 +334,6 @@ export default function CastingModeScreen() {
             Crypto.CryptoDigestAlgorithm.SHA256,
             text
           );
-
-          // Map settings structure to cache structure
-          let voiceId = (voiceConfig as any)?.voiceId || (voiceConfig as any)?.systemVoiceId || null;
 
           // FIX: If provider is OpenAI but voiceId looks like a system voice (com.apple...), 
           // ignore it and use null (default OpenAI voice) to find the cached audio.
@@ -390,8 +440,21 @@ export default function CastingModeScreen() {
 
         // Determine voice for System TTS
         const characterName = line.characterName.toUpperCase();
-        const voiceConfig = perCharacterVoices[characterName];
-        const systemVoiceId = voiceConfig?.systemVoiceId;
+
+        // Find character in database to get voice_id
+        const character = characters.find(
+          c => c.name?.toUpperCase() === characterName
+        );
+
+        // Priority: character.voice_id > perCharacterVoices
+        let systemVoiceId: string | undefined;
+
+        if (character?.voice_id && character?.voice_provider === 'system') {
+          systemVoiceId = character.voice_id;
+        } else {
+          const voiceConfig = perCharacterVoices[characterName];
+          systemVoiceId = voiceConfig?.systemVoiceId;
+        }
 
         const rate = Platform.OS === 'ios' ? 0.5 : 1.0;
 
@@ -668,6 +731,18 @@ export default function CastingModeScreen() {
     }
   }
 
+  // Practice Mode (Play/Pause without recording)
+  function togglePracticeMode() {
+    if (isPlaying && !isRecording) {
+      // Stop practice mode
+      setIsPlaying(false);
+      cleanupSound();
+    } else if (!isRecording) {
+      // Start practice mode (only if not recording)
+      setIsPlaying(true);
+    }
+  }
+
   // 3. Recording Logic
   async function toggleRecording() {
     if (isRecording) {
@@ -692,7 +767,7 @@ export default function CastingModeScreen() {
       });
 
       setIsRecording(true);
-      setIsPlaying(true); // Auto-start teleprompter
+      // DON'T start teleprompter yet - wait for countdown
       setRecordingTime(0);
       recordingTimeRef.current = 0;
       recordingStartTime.current = Date.now();
@@ -709,9 +784,31 @@ export default function CastingModeScreen() {
       }, 1000);
       (cameraRef.current as any).timer = timer;
 
-      const video = await cameraRef.current.recordAsync({
+      // Start video recording
+      const videoPromise = cameraRef.current.recordAsync({
         maxDuration: 600, // 10 mins limit
       });
+
+      // Countdown before starting teleprompter (only if startDelay > 0)
+      if (startDelay > 0) {
+        setCountdown(startDelay);
+        for (let i = startDelay; i > 0; i--) {
+          setCountdown(i);
+          await new Promise(resolve => setTimeout(resolve, 1000));
+          // Check if recording was cancelled during countdown
+          if (!(cameraRef.current as any)?.timer) {
+            setCountdown(null);
+            return;
+          }
+        }
+        setCountdown(null);
+      }
+
+      // NOW start the teleprompter after countdown
+      setIsPlaying(true);
+
+      // Wait for video recording to finish
+      const video = await videoPromise;
 
       // This promise resolves when recording stops
       if (video) {
@@ -723,6 +820,7 @@ export default function CastingModeScreen() {
       Alert.alert('Error', 'No se pudo iniciar la grabación');
       setIsRecording(false);
       setIsPlaying(false);
+      setCountdown(null);
     }
   }
 
@@ -739,7 +837,36 @@ export default function CastingModeScreen() {
     }
   }
 
+  // Nueva función para cancelar grabación sin procesar
+  function cancelRecording() {
+    if (cameraRef.current && isRecording) {
+      // Detener la grabación sin procesar
+      (cameraRef.current as any)._cancelRecording = true;
+      cameraRef.current.stopRecording();
+      setIsRecording(false);
+      setIsPlaying(false);
+      cleanupSound();
+
+      if ((cameraRef.current as any).timer) {
+        clearInterval((cameraRef.current as any).timer);
+      }
+
+      // Limpiar timings
+      lineTimingsRef.current = [];
+      setLineTimingsCount(0);
+
+      Alert.alert('Grabación cancelada', 'La grabación ha sido descartada.');
+    }
+  }
+
   async function handleRecordingFinished(uri: string) {
+    // Verificar si la grabación fue cancelada
+    if ((cameraRef.current as any)?._cancelRecording) {
+      (cameraRef.current as any)._cancelRecording = false;
+      console.log('[Casting] Recording was cancelled, skipping processing');
+      return;
+    }
+
     try {
       setIsProcessing(true);
       setProcessingProgress(10);
@@ -783,21 +910,40 @@ export default function CastingModeScreen() {
       }
 
       setProcessingProgress(30);
-
       console.log('[Casting] Sending data to Render for processing...');
 
       const renderUrl = process.env.EXPO_PUBLIC_RENDER_SERVER_URL || 'https://script-cue-merge-server.onrender.com';
 
-      const response = await fetch(`${renderUrl}/process-casting`, {
-        method: 'POST',
-        // Content-Type header is set automatically with boundary for FormData
-        body: formData,
-      });
+      // Crear AbortController para timeout de 3 minutos
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 180000);
+
+      let response;
+      try {
+        response = await fetch(`${renderUrl}/process-casting`, {
+          method: 'POST',
+          body: formData,
+          signal: controller.signal,
+        });
+        clearTimeout(timeoutId);
+      } catch (fetchError: any) {
+        clearTimeout(timeoutId);
+        if (fetchError.name === 'AbortError') {
+          throw new Error('El procesamiento tardó más de 3 minutos. Esto puede ocurrir con videos largos o si el servidor está ocupado. Intenta con un video más corto o espera unos minutos y vuelve a intentarlo.');
+        }
+        throw fetchError;
+      }
 
       if (!response.ok) {
         const errorText = await response.text();
         console.error('[Casting] Server error:', errorText);
-        throw new Error(`Processing failed: ${response.status} ${response.statusText}`);
+
+        // Detectar timeout del servidor (504 Gateway Timeout, 524 Cloudflare Timeout)
+        if (response.status === 504 || response.status === 524) {
+          throw new Error('El servidor tardó demasiado en procesar el video. Esto suele ocurrir cuando el servidor está iniciándose (tarda ~1 minuto). Por favor, espera un momento e inténtalo de nuevo.');
+        }
+
+        throw new Error(`Error del servidor: ${response.status} ${response.statusText}`);
       }
 
       const result = await response.json();
@@ -888,7 +1034,7 @@ export default function CastingModeScreen() {
   if (!permission.granted) {
     return (
       <View style={styles.container}>
-        <Text style={{ textAlign: 'center', marginTop: 50 }}>Necesitamos permiso de cámara</Text>
+        <Text style={{ textAlign: 'center', marginTop: rp(50) }}>Necesitamos permiso de cámara</Text>
         <TouchableOpacity onPress={requestPermission} style={styles.btn}><Text>Dar permiso</Text></TouchableOpacity>
       </View>
     );
@@ -911,14 +1057,14 @@ export default function CastingModeScreen() {
         {/* Header Controls */}
         <View style={styles.header}>
           <TouchableOpacity onPress={() => router.replace(`/scripts/${id}`)} style={styles.iconBtn}>
-            <ArrowLeft color="white" size={24} />
+            <ArrowLeft color="white" size={rp(24)} />
           </TouchableOpacity>
           <View style={styles.timerBadge}>
             <View style={[styles.dot, isRecording && styles.recordingDot]} />
             <Text style={styles.timerText}>{formatTime(recordingTime)}</Text>
           </View>
           <TouchableOpacity onPress={toggleCamera} style={styles.iconBtn}>
-            <SwitchCamera color="white" size={24} />
+            <SwitchCamera color="white" size={rp(24)} />
           </TouchableOpacity>
         </View>
 
@@ -940,10 +1086,20 @@ export default function CastingModeScreen() {
         )}
 
         {/* Recording Tip Banner */}
-        {isRecording && (
+        {isRecording && !countdown && (
           <View style={styles.recordingTipBanner}>
-            <Mic size={16} color="#10B981" />
+            <Mic size={rp(16)} color="#10B981" />
             <Text style={styles.recordingTipText}>Habla cerca del micrófono para mejor calidad</Text>
+          </View>
+        )}
+
+        {/* Countdown Overlay */}
+        {countdown !== null && (
+          <View style={styles.countdownOverlay}>
+            <View style={styles.countdownCircle}>
+              <Text style={styles.countdownText}>{countdown}</Text>
+            </View>
+            <Text style={styles.countdownLabel}>Prepárate para grabar...</Text>
           </View>
         )}
 
@@ -954,8 +1110,8 @@ export default function CastingModeScreen() {
               styles.teleprompterContainer,
               {
                 height: teleprompterHeight.interpolate({
-                  inputRange: [150, screenHeight * 0.8],
-                  outputRange: [150, screenHeight * 0.8],
+                  inputRange: [rp(150), screenHeight * 0.8],
+                  outputRange: [rp(150), screenHeight * 0.8],
                   extrapolate: 'clamp'
                 })
               }
@@ -966,14 +1122,14 @@ export default function CastingModeScreen() {
               {...panResponder.panHandlers}
               style={styles.dragHandleContainer}
             >
-              <GripHorizontal color="rgba(255,255,255,0.5)" size={24} />
+              <GripHorizontal color="rgba(255,255,255,0.5)" size={rp(24)} />
             </View>
 
             <FlatList
               ref={flatListRef}
               data={dialogueLines}
               keyExtractor={(item) => item.id}
-              contentContainerStyle={{ paddingTop: 20, paddingBottom: 100, paddingHorizontal: 24 }}
+              contentContainerStyle={{ paddingTop: rp(20), paddingBottom: rp(100), paddingHorizontal: rp(24) }}
               renderItem={({ item, index }) => {
                 const isActive = index === currentIndex;
 
@@ -996,9 +1152,13 @@ export default function CastingModeScreen() {
                         <Text style={styles.charBadgeText}>{item.characterName.charAt(0)}</Text>
                       </View>
                       <Text style={[styles.cardCharName, isActive && { color: '#fff' }]}>{item.characterName}</Text>
-                      {item.isUserCharacter && (
+                      {item.isUserCharacter ? (
                         <View style={styles.youBadge}>
                           <Text style={styles.youBadgeText}>TÚ</Text>
+                        </View>
+                      ) : (
+                        <View style={[styles.aiBadge, { backgroundColor: item.color }]}>
+                          <Text style={styles.aiBadgeText}>IA</Text>
                         </View>
                       )}
                     </View>
@@ -1006,7 +1166,7 @@ export default function CastingModeScreen() {
                     {/* Show hidden text placeholder or actual text */}
                     {hideUserLines && item.isUserCharacter ? (
                       <View style={styles.hiddenTextContainer}>
-                        <EyeOff size={32} color="#10B981" />
+                        <EyeOff size={rp(32)} color="#10B981" />
                         <Text style={styles.hiddenText}>Línea oculta</Text>
                       </View>
                     ) : (
@@ -1027,92 +1187,136 @@ export default function CastingModeScreen() {
           </Animated.View>
         )}
 
-        {/* Volume Control Toggle & Overlay */}
-        <View style={styles.volumeWrapper}>
-          <TouchableOpacity
-            onPress={() => setShowVolumeControl(!showVolumeControl)}
-            style={styles.volumeToggleBtn}
-          >
-            <Volume2 size={24} color="white" />
-          </TouchableOpacity>
+        {/* Botón de cancelar grabación (solo visible cuando está grabando) */}
+        {isRecording && (
+          <View style={styles.cancelRecordingContainer}>
+            <TouchableOpacity
+              onPress={cancelRecording}
+              style={styles.cancelRecordingBtn}
+            >
+              <X size={rp(16)} color="#EF4444" />
+              <Text style={styles.cancelRecordingText}>Cancelar</Text>
+            </TouchableOpacity>
+          </View>
+        )}
 
-          {showVolumeControl && (
-            <View style={styles.volumeControlSide}>
-              <TouchableOpacity
-                onPress={() => setTtsVolume(Math.min(1.0, ttsVolume + 0.1))}
-                style={styles.volumeBtnSide}
-              >
-                <Plus size={20} color="white" />
-              </TouchableOpacity>
-
-              <View style={styles.volumeDisplaySide}>
-                <Text style={styles.volumeText}>{Math.round(ttsVolume * 100)}%</Text>
-              </View>
-
-              <TouchableOpacity
-                onPress={() => setTtsVolume(Math.max(0.1, ttsVolume - 0.1))}
-                style={styles.volumeBtnSide}
-              >
-                <Minus size={20} color="white" />
-              </TouchableOpacity>
-            </View>
-          )}
-        </View>
-
-        {/* Controls - Always visible, independent of teleprompter */}
         <View style={styles.controlsContainer}>
           <View style={styles.controls}>
             {/* Previous */}
             <TouchableOpacity onPress={() => setCurrentIndex(Math.max(0, currentIndex - 1))} style={styles.controlBtn}>
-              <SkipBack color="white" size={20} />
+              <SkipBack color="white" size={rp(20)} />
             </TouchableOpacity>
+
+            {/* Practice Mode: Play/Pause (only when not recording) */}
+            {!isRecording && (
+              <TouchableOpacity
+                onPress={togglePracticeMode}
+                style={[styles.practiceBtn, isPlaying && styles.practiceBtnActive]}
+              >
+                {isPlaying ? <Pause color="white" size={rp(24)} /> : <Play color="white" size={rp(24)} />}
+              </TouchableOpacity>
+            )}
 
             {/* Record / Stop */}
             <TouchableOpacity
               onPress={toggleRecording}
               style={[styles.recordBtn, isRecording && styles.recordingBtnActive]}
             >
-              {isRecording ? <Square fill="white" color="white" size={24} /> : <View style={styles.recordInner} />}
+              {isRecording ? <Square fill="white" color="white" size={rp(24)} /> : <View style={styles.recordInner} />}
             </TouchableOpacity>
 
             {/* Next (Manual Advance) */}
             <TouchableOpacity onPress={nextLine} style={styles.controlBtn}>
-              <SkipForward color="white" size={20} />
+              <SkipForward color="white" size={rp(20)} />
             </TouchableOpacity>
 
             {/* Menu */}
             <TouchableOpacity onPress={() => setShowMenu(!showMenu)} style={styles.controlBtn}>
-              <MoreVertical color="white" size={20} />
+              <MoreVertical color="white" size={rp(20)} />
             </TouchableOpacity>
           </View>
 
           {/* Dropdown Menu */}
           {showMenu && (
-            <View style={styles.menuDropdown}>
-              <TouchableOpacity
-                onPress={() => { setHideUserLines(!hideUserLines); setShowMenu(false); }}
-                style={styles.menuItem}
-              >
-                {hideUserLines ? (
-                  <Eye size={20} color="white" />
-                ) : (
-                  <EyeOff size={20} color="white" />
-                )}
-                <Text style={styles.menuText}>
-                  {hideUserLines ? 'Mostrar mis líneas' : 'Ocultar mis líneas'}
-                </Text>
-              </TouchableOpacity>
-              <View style={styles.menuSeparator} />
-              <TouchableOpacity
-                onPress={() => { setHideTeleprompter(!hideTeleprompter); setShowMenu(false); }}
-                style={styles.menuItem}
-              >
-                <EyeOff size={20} color="white" />
-                <Text style={styles.menuText}>
-                  {hideTeleprompter ? 'Mostrar Teleprompter' : 'Ocultar Teleprompter'}
-                </Text>
-              </TouchableOpacity>
-            </View>
+            <>
+              <Pressable
+                style={styles.menuBackdrop}
+                onPress={() => setShowMenu(false)}
+              />
+              <View style={styles.menuDropdown}>
+                <TouchableOpacity
+                  onPress={() => { setHideUserLines(!hideUserLines); setShowMenu(false); }}
+                  style={styles.menuItem}
+                >
+                  {hideUserLines ? (
+                    <Eye size={rp(20)} color="white" />
+                  ) : (
+                    <EyeOff size={rp(20)} color="white" />
+                  )}
+                  <Text style={styles.menuText}>
+                    {hideUserLines ? 'Mostrar mis líneas' : 'Ocultar mis líneas'}
+                  </Text>
+                </TouchableOpacity>
+                <View style={styles.menuSeparator} />
+                <TouchableOpacity
+                  onPress={() => { setHideTeleprompter(!hideTeleprompter); setShowMenu(false); }}
+                  style={styles.menuItem}
+                >
+                  <EyeOff size={rp(20)} color="white" />
+                  <Text style={styles.menuText}>
+                    {hideTeleprompter ? 'Mostrar Teleprompter' : 'Ocultar Teleprompter'}
+                  </Text>
+                </TouchableOpacity>
+                <View style={styles.menuSeparator} />
+                {/* Control de volumen en el menú */}
+                <View style={styles.menuItem}>
+                  <Volume2 size={rp(20)} color="white" />
+                  <Text style={styles.menuText}>Volumen voz IA</Text>
+                </View>
+                <View style={styles.volumeControlMenu}>
+                  <TouchableOpacity
+                    onPress={() => setTtsVolume(Math.max(0.1, ttsVolume - 0.1))}
+                    style={styles.volumeBtnMenu}
+                  >
+                    <Minus size={rp(18)} color="white" />
+                  </TouchableOpacity>
+                  <View style={styles.volumeDisplayMenu}>
+                    <Text style={styles.volumeTextMenu}>{Math.round(ttsVolume * 100)}%</Text>
+                  </View>
+                  <TouchableOpacity
+                    onPress={() => setTtsVolume(Math.min(1.0, ttsVolume + 0.1))}
+                    style={styles.volumeBtnMenu}
+                  >
+                    <Plus size={rp(18)} color="white" />
+                  </TouchableOpacity>
+                </View>
+                <View style={styles.menuSeparator} />
+                {/* Delay de inicio */}
+                <View style={styles.menuItem}>
+                  <Timer size={rp(20)} color="white" />
+                  <Text style={styles.menuText}>Espera inicial</Text>
+                </View>
+                <View style={styles.delayControlMenu}>
+                  {[0, 3, 5, 10].map((delay) => (
+                    <TouchableOpacity
+                      key={delay}
+                      onPress={() => setStartDelay(delay)}
+                      style={[
+                        styles.delayBtn,
+                        startDelay === delay && styles.delayBtnActive
+                      ]}
+                    >
+                      <Text style={[
+                        styles.delayBtnText,
+                        startDelay === delay && styles.delayBtnTextActive
+                      ]}>
+                        {delay === 0 ? 'Off' : `${delay}s`}
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              </View>
+            </>
           )}
         </View>
 
@@ -1149,36 +1353,36 @@ const styles = StyleSheet.create({
     backgroundColor: 'black',
   },
   btn: {
-    padding: 20,
+    padding: rp(20),
     backgroundColor: 'white',
     alignSelf: 'center',
-    borderRadius: 10,
-    marginTop: 20
+    borderRadius: rp(10),
+    marginTop: rp(20)
   },
   header: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    padding: 16,
+    padding: rp(16),
     alignItems: 'center',
   },
   iconBtn: {
-    padding: 10,
+    padding: rp(10),
     backgroundColor: 'rgba(0,0,0,0.3)',
-    borderRadius: 20,
+    borderRadius: rp(20),
   },
   timerBadge: {
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: 'rgba(0,0,0,0.5)',
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 16,
-    gap: 8,
+    paddingHorizontal: rp(12),
+    paddingVertical: rp(6),
+    borderRadius: rp(16),
+    gap: rp(8),
   },
   dot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
+    width: rp(8),
+    height: rp(8),
+    borderRadius: rp(4),
     backgroundColor: '#ccc',
   },
   recordingDot: {
@@ -1196,20 +1400,20 @@ const styles = StyleSheet.create({
     right: 0,
     height: '45%',
     backgroundColor: 'rgba(0,0,0,0.6)',
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
-    paddingBottom: 20,
+    borderTopLeftRadius: rp(24),
+    borderTopRightRadius: rp(24),
+    paddingBottom: rp(20),
   },
   scriptScroll: {
     flex: 1,
-    paddingHorizontal: 24,
+    paddingHorizontal: rp(24),
   },
   dialogueCard: {
     backgroundColor: 'rgba(255,255,255,0.1)',
-    borderRadius: 12,
-    padding: 16,
-    marginBottom: 12,
-    borderLeftWidth: 4,
+    borderRadius: rp(12),
+    padding: rp(16),
+    marginBottom: rp(12),
+    borderLeftWidth: rp(4),
   },
   activeCard: {
     backgroundColor: 'rgba(255,255,255,0.25)',
@@ -1218,47 +1422,61 @@ const styles = StyleSheet.create({
   cardHeader: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 8,
-    gap: 8,
+    justifyContent: 'center',
+    marginBottom: rp(8),
+    gap: rp(8),
   },
   charBadge: {
-    width: 24,
-    height: 24,
-    borderRadius: 12,
+    width: rp(24),
+    height: rp(24),
+    borderRadius: rp(12),
     alignItems: 'center',
     justifyContent: 'center',
   },
   charBadgeText: {
     color: 'white',
-    fontSize: 10,
+    fontSize: rf(10),
     fontWeight: '700',
   },
   cardCharName: {
     color: 'rgba(255,255,255,0.7)',
-    fontSize: 13,
-    fontWeight: '700',
-    textTransform: 'uppercase',
+    fontSize: rf(10),
+    fontWeight: '600',
+    marginBottom: rp(2),
+  },
+  lineText: {
+    fontSize: rf(13),
+    lineHeight: rp(18),
+  },
+  currentLineCard: {
+    borderWidth: rp(2),
+  },
+  dialogueText: {
+    fontSize: rf(18),
+    lineHeight: rp(26),
+    fontWeight: '500',
   },
   cardText: {
     color: 'rgba(255,255,255,0.9)',
-    fontSize: 18,
-    lineHeight: 26,
+    fontSize: rf(18),
+    lineHeight: rp(26),
+    textAlign: 'center',
   },
   controls: {
     flexDirection: 'row',
     justifyContent: 'space-around',
     alignItems: 'center',
-    paddingTop: 16,
-    paddingHorizontal: 32,
+    paddingTop: rp(16),
+    paddingHorizontal: rp(32),
   },
   controlBtn: {
-    padding: 12,
+    padding: rp(12),
   },
   recordBtn: {
-    width: 72,
-    height: 72,
-    borderRadius: 36,
-    borderWidth: 4,
+    width: rp(72),
+    height: rp(72),
+    borderRadius: rp(36),
+    borderWidth: rp(4),
     borderColor: 'white',
     alignItems: 'center',
     justifyContent: 'center',
@@ -1268,65 +1486,88 @@ const styles = StyleSheet.create({
     borderColor: '#ef4444',
   },
   recordInner: {
-    width: 56,
-    height: 56,
-    borderRadius: 28,
+    width: rp(56),
+    height: rp(56),
+    borderRadius: rp(28),
     backgroundColor: '#ef4444',
+  },
+  practiceBtn: {
+    width: rp(60),
+    height: rp(60),
+    borderRadius: rp(30),
+    borderWidth: rp(3),
+    borderColor: 'white',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(16, 185, 129, 0.2)',
+  },
+  practiceBtnActive: {
+    backgroundColor: 'rgba(16, 185, 129, 0.4)',
+    borderColor: '#10B981',
   },
   youBadge: {
     backgroundColor: '#10B981',
-    paddingHorizontal: 6,
-    paddingVertical: 3,
-    borderRadius: 4,
-    marginLeft: 6,
+    paddingHorizontal: rp(6),
+    paddingVertical: rp(3),
+    borderRadius: rp(4),
+    marginLeft: rp(6),
   },
   youBadgeText: {
-    fontSize: 9,
+    fontSize: rf(9),
     fontWeight: '700',
     color: '#FFFFFF',
-    letterSpacing: 0.5,
+    letterSpacing: rp(0.5),
   },
   menuDropdown: {
     position: 'absolute',
-    bottom: 120,
-    right: 20,
+    bottom: rp(120),
+    right: rp(20),
     backgroundColor: 'rgba(0,0,0,0.9)',
-    borderRadius: 12,
-    paddingVertical: 8,
-    minWidth: 220,
+    borderRadius: rp(12),
+    paddingVertical: rp(8),
+    minWidth: rp(220),
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
+    shadowOffset: { width: 0, height: rp(4) },
     shadowOpacity: 0.3,
-    shadowRadius: 8,
-    elevation: 5,
+    shadowRadius: rp(8),
+    elevation: rp(5),
+    zIndex: 1001,
+  },
+  menuBackdrop: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    zIndex: 1000,
   },
   menuItem: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    gap: 12,
+    paddingHorizontal: rp(16),
+    paddingVertical: rp(12),
+    gap: rp(12),
   },
   menuText: {
     color: 'white',
-    fontSize: 15,
+    fontSize: rf(15),
     fontWeight: '500',
   },
   menuSeparator: {
-    height: 1,
+    height: rp(1),
     backgroundColor: 'rgba(255,255,255,0.2)',
-    marginVertical: 4,
+    marginVertical: rp(4),
   },
   hiddenTextContainer: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: 24,
-    gap: 12,
+    paddingVertical: rp(24),
+    gap: rp(12),
   },
   hiddenText: {
     color: '#10B981',
-    fontSize: 16,
+    fontSize: rf(16),
     fontWeight: '600',
   },
   controlsContainer: {
@@ -1334,24 +1575,24 @@ const styles = StyleSheet.create({
     bottom: 0,
     left: 0,
     right: 0,
-    paddingBottom: 20,
+    paddingBottom: rp(20),
   },
   recordingTipBanner: {
     backgroundColor: 'rgba(16, 185, 129, 0.15)',
-    borderLeftWidth: 3,
+    borderLeftWidth: rp(3),
     borderLeftColor: '#10B981',
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    marginHorizontal: 16,
-    marginTop: 8,
-    borderRadius: 8,
+    paddingHorizontal: rp(16),
+    paddingVertical: rp(10),
+    marginHorizontal: rp(16),
+    marginTop: rp(8),
+    borderRadius: rp(8),
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 10,
+    gap: rp(10),
   },
   recordingTipText: {
     color: '#10B981',
-    fontSize: 13,
+    fontSize: rf(13),
     fontWeight: '600',
     flex: 1,
   },
@@ -1368,8 +1609,8 @@ const styles = StyleSheet.create({
   },
   loadingText: {
     color: 'white',
-    marginTop: 20,
-    fontSize: 16,
+    marginTop: rp(20),
+    fontSize: rf(16),
     fontWeight: '600',
     textAlign: 'center',
   },
@@ -1378,22 +1619,21 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: 'rgba(0,0,0,0.6)',
-    borderRadius: 20,
-    padding: 8,
-    marginHorizontal: 20,
-    marginBottom: 10,
+    borderRadius: rp(20),
+    padding: rp(8),
+    marginHorizontal: rp(20),
+    marginBottom: rp(10),
     alignSelf: 'center',
-    gap: 15,
+    gap: rp(15),
   },
   volumeBtn: {
-    padding: 8,
+    padding: rp(8),
     backgroundColor: 'rgba(255,255,255,0.2)',
-    borderRadius: 20,
+    borderRadius: rp(20),
   },
   volumeDisplay: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
     minWidth: 60,
     justifyContent: 'center',
   },
@@ -1511,6 +1751,122 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: '#6B7280',
     textAlign: 'center',
+  },
+  cancelRecordingContainer: {
+    position: 'absolute',
+    bottom: rp(100),
+    left: rp(20),
+    zIndex: 1000,
+  },
+  cancelRecordingBtn: {
+    backgroundColor: 'rgba(0,0,0,0.8)',
+    paddingVertical: rp(8),
+    paddingHorizontal: rp(12),
+    borderRadius: 8,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    borderWidth: 1.5,
+    borderColor: '#EF4444',
+  },
+  cancelRecordingText: {
+    color: '#EF4444',
+    fontSize: rf(12),
+    fontWeight: '700',
+  },
+  aiBadge: {
+    paddingHorizontal: rp(8),
+    paddingVertical: rp(4),
+    borderRadius: 4,
+  },
+  aiBadgeText: {
+    color: '#FFFFFF',
+    fontSize: rf(11),
+    fontWeight: '700',
+  },
+  volumeControlMenu: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: rp(16),
+    paddingVertical: rp(8),
+    gap: rp(12),
+  },
+  volumeBtnMenu: {
+    backgroundColor: 'rgba(255,255,255,0.1)',
+    padding: rp(8),
+    borderRadius: 8,
+  },
+  volumeDisplayMenu: {
+    flex: 1,
+    alignItems: 'center',
+  },
+  volumeTextMenu: {
+    color: 'white',
+    fontSize: rf(14),
+    fontWeight: '600',
+  },
+  delayControlMenu: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: rp(16),
+    paddingVertical: rp(8),
+    gap: rp(8),
+  },
+  delayBtn: {
+    flex: 1,
+    paddingVertical: rp(8),
+    paddingHorizontal: rp(12),
+    borderRadius: 8,
+    backgroundColor: 'rgba(255,255,255,0.1)',
+    alignItems: 'center',
+  },
+  delayBtnActive: {
+    backgroundColor: '#10B981',
+  },
+  delayBtnText: {
+    color: 'rgba(255,255,255,0.7)',
+    fontSize: rf(13),
+    fontWeight: '600',
+  },
+  delayBtnTextActive: {
+    color: '#FFFFFF',
+  },
+  countdownOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: 'rgba(0,0,0,0.6)',
+    zIndex: 2000,
+  },
+  countdownCircle: {
+    width: rp(120),
+    height: rp(120),
+    borderRadius: rp(60),
+    backgroundColor: 'rgba(16, 185, 129, 0.9)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    shadowColor: '#10B981',
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.8,
+    shadowRadius: 20,
+    elevation: 10,
+  },
+  countdownText: {
+    color: 'white',
+    fontSize: rf(56),
+    fontWeight: '800',
+  },
+  countdownLabel: {
+    color: 'white',
+    fontSize: rf(14),
+    fontWeight: '600',
+    marginTop: rp(16),
   },
 });
 

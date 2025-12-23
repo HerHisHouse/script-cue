@@ -21,7 +21,7 @@ const supabase = createClient(
     process.env.SUPABASE_SERVICE_KEY
 );
 
-console.log('🚀 Server starting - Version: AUDIO_NORM_V1 - Date:', new Date().toISOString());
+console.log('🚀 Server starting - Version: AUDIO_NORM_V2 - Date:', new Date().toISOString());
 
 // Health check
 app.get('/health', (req, res) => {
@@ -281,10 +281,10 @@ app.post('/process-casting', upload.any(), async (req, res) => {
         const filterParts = [];
 
         // Step 1: Normalize user audio with aggressive settings
-        // -14 LUFS = louder than broadcast standard, better for mobile
+        // -12 LUFS = louder than AI, user is the star of the selftape
         // LRA=7 = reduced loudness range for consistent volume
         // dynaudnorm = brings up quiet parts without distorting loud parts
-        filterParts.push('[0:a]highpass=f=80,loudnorm=I=-14:TP=-1.0:LRA=7,dynaudnorm=f=200:g=5:p=0.95[user_normalized]');
+        filterParts.push('[0:a]highpass=f=80,loudnorm=I=-12:TP=-1.0:LRA=7,dynaudnorm=f=200:g=5:p=0.95[user_normalized]');
 
 
         // Step 2: Create volume control filters for each AI segment
@@ -313,11 +313,11 @@ app.post('/process-casting', upload.any(), async (req, res) => {
         filterParts.push(`[user_normalized]volume='${volumeExpression}':eval=frame[user_controlled]`);
 
         // Step 3: Process each AI segment with delay and normalization
-        // Match AI audio to same level as user for consistent experience
+        // -16 LUFS = slightly quieter than user, so user stands out
         aiSegments.forEach((segment, idx) => {
             const delayMs = Math.round(segment.startTime * 1000);
             filterParts.push(
-                `[${idx + 1}:a]highpass=f=80,loudnorm=I=-14:TP=-1.0:LRA=7,adelay=${delayMs}|${delayMs}[ai${idx}]`
+                `[${idx + 1}:a]highpass=f=80,loudnorm=I=-16:TP=-1.0:LRA=7,adelay=${delayMs}|${delayMs}[ai${idx}]`
             );
         });
 
