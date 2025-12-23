@@ -79,7 +79,7 @@ export default function CastingModeScreen() {
   const [settings, setSettingsState] = useState<any>({});
 
   // OpenAI TTS State
-  const [ttsCache, setTtsCache] = useState<Map<number, string>>(new Map());
+  const [ttsCache, setTtsCache] = useState<Map<string, string>>(new Map());
   const [loadingAudio, setLoadingAudio] = useState(false);
   const [audioProgress, setAudioProgress] = useState(0);
   const [perCharacterVoices, setPerCharacterVoices] = useState<Record<string, { provider?: string; systemVoiceId?: string }>>({});
@@ -356,9 +356,8 @@ export default function CastingModeScreen() {
 
         for (let i = 0; i < aiLines.length; i++) {
           const line = aiLines[i];
-          const lineIndex = dialogueLines.findIndex(l => l.id === line.id);
-
-          if (newCache.has(lineIndex)) continue;
+          // Use line.id as cache key (stable regardless of action cards)
+          if (newCache.has(line.id)) continue;
 
           // CRITICAL: Use raw text for hash to match pre-generated cache (Studio Mode logic)
           // Pre-generation uses the raw DB content, so we must match that hash.
@@ -412,7 +411,7 @@ export default function CastingModeScreen() {
 
           if (localPath) {
             console.log(`[Cache Debug] ✅ HIT for line ${line.orderIndex}`);
-            newCache.set(lineIndex, localPath);
+            newCache.set(line.id, localPath);
           } else {
             console.log(`[Cache Debug] ❌ MISS for line ${line.orderIndex}`);
             missingCount++;
@@ -452,8 +451,8 @@ export default function CastingModeScreen() {
     const lineStartTime = isRecording ? (Date.now() - recordingStartTime.current) / 1000 : 0;
 
     try {
-      // Check cache first
-      const audioUri = ttsCache.get(currentIndex);
+      // Check cache first using line.id (stable key regardless of action cards)
+      const audioUri = ttsCache.get(line.id);
 
       if (audioUri) {
         // Play from file with volume control
