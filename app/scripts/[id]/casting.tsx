@@ -13,6 +13,8 @@ import {
   Animated,
   LayoutAnimation,
   Pressable,
+  ScrollView,
+  TextInput,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter, useLocalSearchParams, Stack } from 'expo-router';
@@ -23,7 +25,7 @@ import { Audio, InterruptionModeIOS, InterruptionModeAndroid } from 'expo-av';
 import * as FileSystem from 'expo-file-system/legacy'; // Fix: Use legacy API
 import { transcribeAudio } from '@/services/transcription'; // Import transcription service
 import { calculateSimilarity } from '@/utils/stringUtils'; // Helper for similarity
-import { ArrowLeft, Mic, RotateCcw, Play, Pause, Square, Video, SwitchCamera, Settings2, SkipBack, SkipForward, MoreVertical, EyeOff, Eye, Minus, Plus, Volume2, GripHorizontal, X, Timer } from 'lucide-react-native';
+import { ArrowLeft, Mic, RotateCcw, Play, Pause, Square, Video, SwitchCamera, Settings2, SkipBack, SkipForward, MoreVertical, EyeOff, Eye, Minus, Plus, Volume2, GripHorizontal, X, Timer, Clapperboard, Trash2, ChevronRight } from 'lucide-react-native';
 import { supabase } from '@/utils/supabase';
 import client from '@/utils/openaiClient';
 import { generateElevenLabsAudio } from '@/utils/elevenLabsClient';
@@ -36,6 +38,14 @@ import { parseScreenplay, ParsedScript } from '@/utils/pdfParser';
 import { DialogueContent } from '@/types/database';
 import { DialogueLine } from '@/utils/dialogueParser';
 import { loadDialogueLines } from '@/utils/loadDialogueLines';
+import {
+  SceneConfig,
+  ActionCard,
+  loadSceneConfig,
+  saveSceneConfig,
+  calculateLineDuration,
+  generateActionId
+} from '@/utils/sceneConfig';
 
 type SceneItem = ParsedScript['scenes'][0];
 
@@ -82,8 +92,16 @@ export default function CastingModeScreen() {
   const [showMenu, setShowMenu] = useState(false);
   const [hideUserLines, setHideUserLines] = useState(false);
   const [hideTeleprompter, setHideTeleprompter] = useState(false);
+  const [hideActions, setHideActions] = useState(false); // Hide action cards in teleprompter
   const [startDelay, setStartDelay] = useState(5); // Delay in seconds before first line (0, 5, 10, 15... up to 60)
   const [countdown, setCountdown] = useState<number | null>(null); // Countdown display
+
+  // Scene Configuration State
+  const [showConfigScreen, setShowConfigScreen] = useState(true); // Start in config mode
+  const [sceneConfig, setSceneConfig] = useState<SceneConfig | null>(null);
+  const [configuredLines, setConfiguredLines] = useState<Array<DialogueLine | ActionCard>>([]);
+  const [newActionText, setNewActionText] = useState('');
+  const [addingActionAfterLineId, setAddingActionAfterLineId] = useState<string | null>(null);
 
   // Teleprompter UI State
   const screenHeight = Dimensions.get('window').height;
@@ -249,6 +267,20 @@ export default function CastingModeScreen() {
         }
 
         setDialogueLines(lines);
+
+        // Load scene configuration
+        const config = await loadSceneConfig(id as string);
+        if (config) {
+          setSceneConfig(config);
+        } else {
+          // Initialize empty config
+          setSceneConfig({
+            scriptId: id as string,
+            actionCards: [],
+            lineTimings: [],
+            updatedAt: new Date().toISOString()
+          });
+        }
       }
     } catch (e) {
       console.error('Error loading script:', e);
@@ -257,6 +289,34 @@ export default function CastingModeScreen() {
       setLoading(false);
     }
   }
+
+  // Build configured lines with action cards when dialogueLines or config changes
+  useEffect(() => {
+    if (dialogueLines.length === 0) return;
+
+    const buildConfiguredLines = () => {
+      const result: Array<DialogueLine | ActionCard> = [];
+
+      for (const line of dialogueLines) {
+        // Add the dialogue line with any timing adjustments
+        const timingAdjustment = sceneConfig?.lineTimings.find(lt => lt.lineId === line.id)?.timingAdjustment || 0;
+        result.push({
+          ...line,
+          customTimingAdjustment: timingAdjustment
+        });
+
+        // Add any action cards that come after this line
+        const actionsAfter = sceneConfig?.actionCards.filter(ac => ac.afterLineId === line.id) || [];
+        for (const action of actionsAfter) {
+          result.push(action);
+        }
+      }
+
+      setConfiguredLines(result);
+    };
+
+    buildConfiguredLines();
+  }, [dialogueLines, sceneConfig]);
 
   // Update volume in real-time
   useEffect(() => {
@@ -499,6 +559,98 @@ export default function CastingModeScreen() {
     }
   }
 
+  // --- Scene Configuration Functions ---
+
+  // Add an action card after a specific line
+  async function addActionCard(afterLineId: string, text: string, duration: number = 5) {
+    if (!sceneConfig || !text.trim()) return;
+
+    const newAction: ActionCard = {
+      id: generateActionId(),
+      text: text.trim(),
+      duration: duration,
+      afterLineId: afterLineId
+    };
+
+    const updatedConfig: SceneConfig = {
+      ...sceneConfig,
+      actionCards: [...sceneConfig.actionCards, newAction],
+      updatedAt: new Date().toISOString()
+    };
+
+    setSceneConfig(updatedConfig);
+    await saveSceneConfig(updatedConfig);
+    setNewActionText('');
+    setAddingActionAfterLineId(null);
+    console.log('[Config] Added action card:', newAction.id);
+  }
+
+  // Remove an action card
+  async function removeActionCard(actionId: string) {
+    if (!sceneConfig) return;
+
+    const updatedConfig: SceneConfig = {
+      ...sceneConfig,
+      actionCards: sceneConfig.actionCards.filter(ac => ac.id !== actionId),
+      updatedAt: new Date().toISOString()
+    };
+
+    setSceneConfig(updatedConfig);
+    await saveSceneConfig(updatedConfig);
+    console.log('[Config] Removed action card:', actionId);
+  }
+
+  // Update action card duration
+  async function updateActionDuration(actionId: string, newDuration: number) {
+    if (!sceneConfig) return;
+
+    const updatedConfig: SceneConfig = {
+      ...sceneConfig,
+      actionCards: sceneConfig.actionCards.map(ac =>
+        ac.id === actionId ? { ...ac, duration: Math.max(1, newDuration) } : ac
+      ),
+      updatedAt: new Date().toISOString()
+    };
+
+    setSceneConfig(updatedConfig);
+    await saveSceneConfig(updatedConfig);
+  }
+
+  // Adjust line timing
+  async function adjustLineTiming(lineId: string, adjustment: number) {
+    if (!sceneConfig) return;
+
+    const existingIndex = sceneConfig.lineTimings.findIndex(lt => lt.lineId === lineId);
+    let newTimings = [...sceneConfig.lineTimings];
+
+    if (existingIndex >= 0) {
+      newTimings[existingIndex] = { lineId, timingAdjustment: adjustment };
+    } else {
+      newTimings.push({ lineId, timingAdjustment: adjustment });
+    }
+
+    const updatedConfig: SceneConfig = {
+      ...sceneConfig,
+      lineTimings: newTimings,
+      updatedAt: new Date().toISOString()
+    };
+
+    setSceneConfig(updatedConfig);
+    await saveSceneConfig(updatedConfig);
+  }
+
+  // Get duration for a line (calculated + adjustment)
+  function getLineDuration(line: DialogueLine): number {
+    const adjustment = sceneConfig?.lineTimings.find(lt => lt.lineId === line.id)?.timingAdjustment || 0;
+    return calculateLineDuration(line.text, adjustment);
+  }
+
+  // Start recording (transition from config screen to camera)
+  function startCastingSession() {
+    setShowConfigScreen(false);
+    setCurrentIndex(0);
+  }
+
   // 2. Logic: Handle Line Change
   useEffect(() => {
     // Auto-scroll to current index - Subir hasta el margen superior
@@ -606,15 +758,14 @@ export default function CastingModeScreen() {
 
     } catch (e) {
       console.warn('[Casting] Start listening failed:', e);
-      // Fallback: Auto-advance after delay based on word count
+      // Fallback: Auto-advance after delay using configured timing
       // When camera is recording, iOS doesn't allow separate audio recording
-      // So we estimate time based on the text length
+      // So we use the pre-configured timing from scene setup
       const line = dialogueLines[currentIndex];
       if (line) {
-        const words = line.text.split(' ').length;
-        // Base: 800ms per word, minimum 5s, maximum 30s for very long lines
-        const duration = Math.min(30000, Math.max(5000, words * 800));
-        console.log(`[Casting] Fallback timer: ${duration}ms for ${words} words`);
+        // Get configured duration (includes any user adjustments)
+        const duration = getLineDuration(line) * 1000; // Convert to ms
+        console.log(`[Casting] Using configured timer: ${duration}ms for line ${currentIndex}`);
         silenceTimerRef.current = setTimeout(() => {
           nextLine();
         }, duration) as any;
@@ -1048,296 +1199,494 @@ export default function CastingModeScreen() {
     <View style={styles.container}>
       <Stack.Screen options={{ headerShown: false }} />
 
-      {/* Camera Fullscreen */}
-      <CameraView
-        style={StyleSheet.absoluteFill}
-        facing={facing}
-        ref={cameraRef}
-        mode="video"
-      />
-
-      {/* UI Overlay - Absolute positioned to avoid CameraView children warning */}
-      <SafeAreaView style={StyleSheet.absoluteFill}>
-        {/* Header Controls */}
-        <View style={styles.header}>
-          <TouchableOpacity onPress={() => router.replace(`/scripts/${id}`)} style={styles.iconBtn}>
-            <ArrowLeft color="white" size={rp(24)} />
-          </TouchableOpacity>
-          <View style={styles.timerBadge}>
-            <View style={[styles.dot, isRecording && styles.recordingDot]} />
-            <Text style={styles.timerText}>{formatTime(recordingTime)}</Text>
+      {/* Scene Configuration Screen */}
+      {showConfigScreen ? (
+        <SafeAreaView style={[styles.configContainer, { backgroundColor: colors.background }]}>
+          {/* Header */}
+          <View style={styles.configHeader}>
+            <TouchableOpacity onPress={() => router.replace(`/scripts/${id}`)} style={styles.configBackBtn}>
+              <ArrowLeft color={colors.text} size={rp(24)} />
+            </TouchableOpacity>
+            <View style={styles.configTitleContainer}>
+              <Clapperboard color={colors.primary} size={rp(24)} />
+              <Text style={[styles.configTitle, { color: colors.text }]}>Configurar Escena</Text>
+            </View>
+            <View style={{ width: rp(44) }} />
           </View>
-          <TouchableOpacity onPress={toggleCamera} style={styles.iconBtn}>
-            <SwitchCamera color="white" size={rp(24)} />
-          </TouchableOpacity>
-        </View>
 
-
-
-        {/* Audio Loading Overlay */}
-        {isProcessing && (
-          <View style={[styles.processingOverlay, { backgroundColor: 'rgba(0,0,0,0.9)' }]}>
-            <ActivityIndicator size="large" color={colors.primary} />
-            <Text style={[styles.processingText, { color: colors.text }]}>
-              Procesando tu casting...
+          {/* Instructions */}
+          <View style={[styles.configInstructions, { backgroundColor: colors.card }]}>
+            <Text style={[styles.configInstructionsText, { color: colors.textSecondary }]}>
+              Ajusta el tiempo de cada línea con los botones +/- y añade acciones entre diálogos si necesitas tiempo extra para moverte.
             </Text>
-            {processingProgress > 0 && (
-              <View style={styles.progressContainer}>
-                <View style={[styles.progressBar, { width: `${processingProgress}%`, backgroundColor: colors.primary }]} />
-              </View>
-            )}
           </View>
-        )}
 
-        {/* Recording Tip Banner */}
-        {isRecording && !countdown && (
-          <View style={styles.recordingTipBanner}>
-            <Mic size={rp(16)} color="#10B981" />
-            <Text style={styles.recordingTipText}>Habla cerca del micrófono para mejor calidad</Text>
-          </View>
-        )}
+          {/* Lines List */}
+          <ScrollView style={styles.configList} contentContainerStyle={{ paddingBottom: rp(100) }}>
+            {configuredLines.map((item, index) => {
+              // Check if this is an action card
+              const isAction = 'afterLineId' in item;
 
-        {/* Countdown Overlay */}
-        {countdown !== null && (
-          <View style={styles.countdownOverlay}>
-            <View style={styles.countdownCircle}>
-              <Text style={styles.countdownText}>{countdown}</Text>
-            </View>
-            <Text style={styles.countdownLabel}>Prepárate para grabar...</Text>
-          </View>
-        )}
-
-        {/* Teleprompter Overlay */}
-        {!hideTeleprompter && (
-          <Animated.View
-            style={[
-              styles.teleprompterContainer,
-              {
-                height: teleprompterHeight.interpolate({
-                  inputRange: [rp(150), screenHeight * 0.8],
-                  outputRange: [rp(150), screenHeight * 0.8],
-                  extrapolate: 'clamp'
-                })
-              }
-            ]}
-          >
-            {/* Drag Handle (Top) */}
-            <View
-              {...panResponder.panHandlers}
-              style={styles.dragHandleContainer}
-            >
-              <GripHorizontal color="rgba(255,255,255,0.5)" size={rp(24)} />
-            </View>
-
-            <FlatList
-              ref={flatListRef}
-              data={dialogueLines}
-              keyExtractor={(item) => item.id}
-              contentContainerStyle={{ paddingTop: rp(20), paddingBottom: rp(100), paddingHorizontal: rp(24) }}
-              renderItem={({ item, index }) => {
-                const isActive = index === currentIndex;
-
-                // Calculate opacity: active = 1, neighbors = 0.6, others = 0.3
-                let opacity = 0.3;
-                if (isActive) opacity = 1;
-                else if (Math.abs(index - currentIndex) <= 1) opacity = 0.6;
-
+              if (isAction) {
+                const action = item as ActionCard;
                 return (
-                  <TouchableOpacity
-                    onPress={() => setCurrentIndex(index)}
-                    style={[
-                      styles.dialogueCard,
-                      isActive && styles.activeCard,
-                      { opacity, borderLeftColor: item.color }
-                    ]}
-                  >
-                    <View style={styles.cardHeader}>
-                      <View style={[styles.charBadge, { backgroundColor: item.color }]}>
-                        <Text style={styles.charBadgeText}>{item.characterName.charAt(0)}</Text>
+                  <View key={action.id} style={styles.actionCard}>
+                    <View style={styles.actionCardHeader}>
+                      <Clapperboard color="#F59E0B" size={rp(16)} />
+                      <Text style={styles.actionCardLabel}>ACCIÓN</Text>
+                      <TouchableOpacity onPress={() => removeActionCard(action.id)} style={styles.deleteActionBtn}>
+                        <Trash2 color="#EF4444" size={rp(16)} />
+                      </TouchableOpacity>
+                    </View>
+                    <Text style={styles.actionCardText}>({action.text})</Text>
+                    <View style={styles.actionTimingRow}>
+                      <TouchableOpacity
+                        onPress={() => updateActionDuration(action.id, action.duration - 1)}
+                        style={styles.timingBtn}
+                      >
+                        <Minus size={rp(16)} color="#fff" />
+                      </TouchableOpacity>
+                      <View style={styles.timingDisplay}>
+                        <Timer size={rp(14)} color="#F59E0B" />
+                        <Text style={styles.timingText}>{action.duration}s</Text>
                       </View>
-                      <Text style={[styles.cardCharName, isActive && { color: '#fff' }]}>{item.characterName}</Text>
-                      {item.isUserCharacter ? (
-                        <View style={styles.youBadge}>
-                          <Text style={styles.youBadgeText}>TÚ</Text>
+                      <TouchableOpacity
+                        onPress={() => updateActionDuration(action.id, action.duration + 1)}
+                        style={styles.timingBtn}
+                      >
+                        <Plus size={rp(16)} color="#fff" />
+                      </TouchableOpacity>
+                    </View>
+                  </View>
+                );
+              }
+
+              // It's a dialogue line
+              const line = item as DialogueLine;
+              const lineDuration = getLineDuration(line);
+              const adjustment = sceneConfig?.lineTimings.find(lt => lt.lineId === line.id)?.timingAdjustment || 0;
+
+              return (
+                <View key={line.id}>
+                  <View style={[styles.configLineCard, { backgroundColor: colors.card, borderLeftColor: line.color }]}>
+                    {/* Line header */}
+                    <View style={styles.configLineHeader}>
+                      <View style={[styles.configCharBadge, { backgroundColor: line.color }]}>
+                        <Text style={styles.configCharBadgeText}>{line.characterName.charAt(0)}</Text>
+                      </View>
+                      <Text style={[styles.configCharName, { color: colors.text }]}>{line.characterName}</Text>
+                      {line.isUserCharacter ? (
+                        <View style={styles.configYouBadge}>
+                          <Text style={styles.configYouBadgeText}>TÚ</Text>
                         </View>
                       ) : (
-                        <View style={[styles.aiBadge, { backgroundColor: item.color }]}>
-                          <Text style={styles.aiBadgeText}>IA</Text>
+                        <View style={[styles.configAiBadge, { backgroundColor: line.color }]}>
+                          <Text style={styles.configAiBadgeText}>IA</Text>
                         </View>
                       )}
                     </View>
 
-                    {/* Show hidden text placeholder or actual text */}
-                    {hideUserLines && item.isUserCharacter ? (
-                      <View style={styles.hiddenTextContainer}>
-                        <EyeOff size={rp(32)} color="#10B981" />
-                        <Text style={styles.hiddenText}>Línea oculta</Text>
-                      </View>
-                    ) : (
-                      <Text style={[styles.cardText, isActive && { color: '#fff', fontWeight: '600' }]}>
-                        {item.text}
-                      </Text>
-                    )}
-                  </TouchableOpacity>
-                );
-              }}
-              onScrollToIndexFailed={info => {
-                const wait = new Promise(resolve => setTimeout(resolve, 500));
-                wait.then(() => {
-                  flatListRef.current?.scrollToIndex({ index: info.index, animated: true, viewPosition: 0 });
-                });
-              }}
-            />
-          </Animated.View>
-        )}
+                    {/* Line text */}
+                    <Text style={[styles.configLineText, { color: colors.text }]} numberOfLines={2}>
+                      {line.text}
+                    </Text>
 
-        {/* Botón de cancelar grabación (solo visible cuando está grabando) */}
-        {isRecording && (
-          <View style={styles.cancelRecordingContainer}>
+                    {/* Timing controls (only for user lines) */}
+                    {line.isUserCharacter && (
+                      <View style={styles.configTimingRow}>
+                        <TouchableOpacity
+                          onPress={() => adjustLineTiming(line.id, adjustment - 1)}
+                          style={[styles.timingBtn, { backgroundColor: 'rgba(0,0,0,0.2)' }]}
+                        >
+                          <Minus size={rp(16)} color={colors.text} />
+                        </TouchableOpacity>
+                        <View style={styles.timingDisplay}>
+                          <Timer size={rp(14)} color={colors.primary} />
+                          <Text style={[styles.timingText, { color: colors.text }]}>{lineDuration}s</Text>
+                          {adjustment !== 0 && (
+                            <Text style={[styles.timingAdjustment, { color: adjustment > 0 ? '#10B981' : '#EF4444' }]}>
+                              {adjustment > 0 ? `+${adjustment}` : adjustment}
+                            </Text>
+                          )}
+                        </View>
+                        <TouchableOpacity
+                          onPress={() => adjustLineTiming(line.id, adjustment + 1)}
+                          style={[styles.timingBtn, { backgroundColor: 'rgba(0,0,0,0.2)' }]}
+                        >
+                          <Plus size={rp(16)} color={colors.text} />
+                        </TouchableOpacity>
+                      </View>
+                    )}
+
+                    {/* AI badge shows "Auto" timing */}
+                    {!line.isUserCharacter && (
+                      <View style={styles.configAutoTiming}>
+                        <Timer size={rp(12)} color={colors.textSecondary} />
+                        <Text style={[styles.configAutoText, { color: colors.textSecondary }]}>Auto (TTS)</Text>
+                      </View>
+                    )}
+                  </View>
+
+                  {/* Add Action Button */}
+                  {addingActionAfterLineId === line.id ? (
+                    <View style={styles.addActionForm}>
+                      <TextInput
+                        style={[styles.addActionInput, { color: colors.text, borderColor: colors.border }]}
+                        placeholder="Describe la acción..."
+                        placeholderTextColor={colors.textSecondary}
+                        value={newActionText}
+                        onChangeText={setNewActionText}
+                        autoFocus
+                      />
+                      <View style={styles.addActionButtons}>
+                        <TouchableOpacity
+                          onPress={() => { setAddingActionAfterLineId(null); setNewActionText(''); }}
+                          style={[styles.addActionCancelBtn, { borderColor: colors.border }]}
+                        >
+                          <Text style={{ color: colors.textSecondary }}>Cancelar</Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity
+                          onPress={() => addActionCard(line.id, newActionText)}
+                          style={styles.addActionConfirmBtn}
+                        >
+                          <Text style={{ color: '#fff', fontWeight: '600' }}>Añadir</Text>
+                        </TouchableOpacity>
+                      </View>
+                    </View>
+                  ) : (
+                    <TouchableOpacity
+                      onPress={() => setAddingActionAfterLineId(line.id)}
+                      style={styles.addActionBtn}
+                    >
+                      <Plus size={rp(14)} color={colors.textSecondary} />
+                      <Text style={[styles.addActionText, { color: colors.textSecondary }]}>Añadir acción</Text>
+                    </TouchableOpacity>
+                  )}
+                </View>
+              );
+            })}
+          </ScrollView>
+
+          {/* Start Recording Button */}
+          <View style={styles.configFooter}>
             <TouchableOpacity
-              onPress={cancelRecording}
-              style={styles.cancelRecordingBtn}
+              onPress={startCastingSession}
+              style={styles.startRecordingBtn}
             >
-              <X size={rp(16)} color="#EF4444" />
-              <Text style={styles.cancelRecordingText}>Cancelar</Text>
+              <Video size={rp(20)} color="#fff" />
+              <Text style={styles.startRecordingText}>Empezar a Grabar</Text>
+              <ChevronRight size={rp(20)} color="#fff" />
             </TouchableOpacity>
           </View>
-        )}
+        </SafeAreaView>
+      ) : (
+        <>
+          {/* Camera Fullscreen */}
+          <CameraView
+            style={StyleSheet.absoluteFill}
+            facing={facing}
+            ref={cameraRef}
+            mode="video"
+          />
 
-        <View style={styles.controlsContainer}>
-          <View style={styles.controls}>
-            {/* Previous */}
-            <TouchableOpacity onPress={() => setCurrentIndex(Math.max(0, currentIndex - 1))} style={styles.controlBtn}>
-              <SkipBack color="white" size={rp(20)} />
-            </TouchableOpacity>
-
-            {/* Practice Mode: Play/Pause (only when not recording) */}
-            {!isRecording && (
-              <TouchableOpacity
-                onPress={togglePracticeMode}
-                style={[styles.practiceBtn, isPlaying && styles.practiceBtnActive]}
-              >
-                {isPlaying ? <Pause color="white" size={rp(24)} /> : <Play color="white" size={rp(24)} />}
+          {/* UI Overlay - Absolute positioned to avoid CameraView children warning */}
+          <SafeAreaView style={StyleSheet.absoluteFill}>
+            {/* Header Controls */}
+            <View style={styles.header}>
+              <TouchableOpacity onPress={() => router.replace(`/scripts/${id}`)} style={styles.iconBtn}>
+                <ArrowLeft color="white" size={rp(24)} />
               </TouchableOpacity>
+              <View style={styles.timerBadge}>
+                <View style={[styles.dot, isRecording && styles.recordingDot]} />
+                <Text style={styles.timerText}>{formatTime(recordingTime)}</Text>
+              </View>
+              <TouchableOpacity onPress={toggleCamera} style={styles.iconBtn}>
+                <SwitchCamera color="white" size={rp(24)} />
+              </TouchableOpacity>
+            </View>
+
+
+
+            {/* Audio Loading Overlay */}
+            {isProcessing && (
+              <View style={[styles.processingOverlay, { backgroundColor: 'rgba(0,0,0,0.9)' }]}>
+                <ActivityIndicator size="large" color={colors.primary} />
+                <Text style={[styles.processingText, { color: colors.text }]}>
+                  Procesando tu casting...
+                </Text>
+                {processingProgress > 0 && (
+                  <View style={styles.progressContainer}>
+                    <View style={[styles.progressBar, { width: `${processingProgress}%`, backgroundColor: colors.primary }]} />
+                  </View>
+                )}
+              </View>
             )}
 
-            {/* Record / Stop */}
-            <TouchableOpacity
-              onPress={toggleRecording}
-              style={[styles.recordBtn, isRecording && styles.recordingBtnActive]}
-            >
-              {isRecording ? <Square fill="white" color="white" size={rp(24)} /> : <View style={styles.recordInner} />}
-            </TouchableOpacity>
-
-            {/* Next (Manual Advance) */}
-            <TouchableOpacity onPress={nextLine} style={styles.controlBtn}>
-              <SkipForward color="white" size={rp(20)} />
-            </TouchableOpacity>
-
-            {/* Menu */}
-            <TouchableOpacity onPress={() => setShowMenu(!showMenu)} style={styles.controlBtn}>
-              <MoreVertical color="white" size={rp(20)} />
-            </TouchableOpacity>
-          </View>
-
-          {/* Dropdown Menu */}
-          {showMenu && (
-            <>
-              <Pressable
-                style={styles.menuBackdrop}
-                onPress={() => setShowMenu(false)}
-              />
-              <View style={styles.menuDropdown}>
-                <TouchableOpacity
-                  onPress={() => { setHideUserLines(!hideUserLines); setShowMenu(false); }}
-                  style={styles.menuItem}
-                >
-                  {hideUserLines ? (
-                    <Eye size={rp(20)} color="white" />
-                  ) : (
-                    <EyeOff size={rp(20)} color="white" />
-                  )}
-                  <Text style={styles.menuText}>
-                    {hideUserLines ? 'Mostrar mis líneas' : 'Ocultar mis líneas'}
-                  </Text>
-                </TouchableOpacity>
-                <View style={styles.menuSeparator} />
-                <TouchableOpacity
-                  onPress={() => { setHideTeleprompter(!hideTeleprompter); setShowMenu(false); }}
-                  style={styles.menuItem}
-                >
-                  <EyeOff size={rp(20)} color="white" />
-                  <Text style={styles.menuText}>
-                    {hideTeleprompter ? 'Mostrar Teleprompter' : 'Ocultar Teleprompter'}
-                  </Text>
-                </TouchableOpacity>
-                <View style={styles.menuSeparator} />
-                {/* Control de volumen en el menú */}
-                <View style={styles.menuItem}>
-                  <Volume2 size={rp(20)} color="white" />
-                  <Text style={styles.menuText}>Volumen voz IA</Text>
-                </View>
-                <View style={styles.volumeControlMenu}>
-                  <TouchableOpacity
-                    onPress={() => setTtsVolume(Math.max(0.1, ttsVolume - 0.1))}
-                    style={styles.volumeBtnMenu}
-                  >
-                    <Minus size={rp(18)} color="white" />
-                  </TouchableOpacity>
-                  <View style={styles.volumeDisplayMenu}>
-                    <Text style={styles.volumeTextMenu}>{Math.round(ttsVolume * 100)}%</Text>
-                  </View>
-                  <TouchableOpacity
-                    onPress={() => setTtsVolume(Math.min(1.0, ttsVolume + 0.1))}
-                    style={styles.volumeBtnMenu}
-                  >
-                    <Plus size={rp(18)} color="white" />
-                  </TouchableOpacity>
-                </View>
-                <View style={styles.menuSeparator} />
-                {/* Delay de inicio */}
-                <View style={styles.menuItem}>
-                  <Timer size={rp(20)} color="white" />
-                  <Text style={styles.menuText}>Espera inicial</Text>
-                </View>
-                <View style={styles.volumeControlMenu}>
-                  <TouchableOpacity
-                    onPress={() => setStartDelay(Math.max(0, startDelay - 5))}
-                    style={styles.volumeBtnMenu}
-                  >
-                    <Minus size={rp(18)} color="white" />
-                  </TouchableOpacity>
-                  <View style={styles.volumeDisplayMenu}>
-                    <Text style={styles.volumeTextMenu}>{startDelay === 0 ? 'Off' : `${startDelay}s`}</Text>
-                  </View>
-                  <TouchableOpacity
-                    onPress={() => setStartDelay(Math.min(60, startDelay + 5))}
-                    style={styles.volumeBtnMenu}
-                  >
-                    <Plus size={rp(18)} color="white" />
-                  </TouchableOpacity>
-                </View>
+            {/* Recording Tip Banner */}
+            {isRecording && !countdown && (
+              <View style={styles.recordingTipBanner}>
+                <Mic size={rp(16)} color="#10B981" />
+                <Text style={styles.recordingTipText}>Habla cerca del micrófono para mejor calidad</Text>
               </View>
-            </>
+            )}
+
+            {/* Countdown Overlay */}
+            {countdown !== null && (
+              <View style={styles.countdownOverlay}>
+                <View style={styles.countdownCircle}>
+                  <Text style={styles.countdownText}>{countdown}</Text>
+                </View>
+                <Text style={styles.countdownLabel}>Prepárate para grabar...</Text>
+              </View>
+            )}
+
+            {/* Teleprompter Overlay */}
+            {!hideTeleprompter && (
+              <Animated.View
+                style={[
+                  styles.teleprompterContainer,
+                  {
+                    height: teleprompterHeight.interpolate({
+                      inputRange: [rp(150), screenHeight * 0.8],
+                      outputRange: [rp(150), screenHeight * 0.8],
+                      extrapolate: 'clamp'
+                    })
+                  }
+                ]}
+              >
+                {/* Drag Handle (Top) */}
+                <View
+                  {...panResponder.panHandlers}
+                  style={styles.dragHandleContainer}
+                >
+                  <GripHorizontal color="rgba(255,255,255,0.5)" size={rp(24)} />
+                </View>
+
+                <FlatList
+                  ref={flatListRef}
+                  data={dialogueLines}
+                  keyExtractor={(item) => item.id}
+                  contentContainerStyle={{ paddingTop: rp(20), paddingBottom: rp(100), paddingHorizontal: rp(24) }}
+                  renderItem={({ item, index }) => {
+                    const isActive = index === currentIndex;
+
+                    // Calculate opacity: active = 1, neighbors = 0.6, others = 0.3
+                    let opacity = 0.3;
+                    if (isActive) opacity = 1;
+                    else if (Math.abs(index - currentIndex) <= 1) opacity = 0.6;
+
+                    return (
+                      <TouchableOpacity
+                        onPress={() => setCurrentIndex(index)}
+                        style={[
+                          styles.dialogueCard,
+                          isActive && styles.activeCard,
+                          { opacity, borderLeftColor: item.color }
+                        ]}
+                      >
+                        <View style={styles.cardHeader}>
+                          <View style={[styles.charBadge, { backgroundColor: item.color }]}>
+                            <Text style={styles.charBadgeText}>{item.characterName.charAt(0)}</Text>
+                          </View>
+                          <Text style={[styles.cardCharName, isActive && { color: '#fff' }]}>{item.characterName}</Text>
+                          {item.isUserCharacter ? (
+                            <View style={styles.youBadge}>
+                              <Text style={styles.youBadgeText}>TÚ</Text>
+                            </View>
+                          ) : (
+                            <View style={[styles.aiBadge, { backgroundColor: item.color }]}>
+                              <Text style={styles.aiBadgeText}>IA</Text>
+                            </View>
+                          )}
+                        </View>
+
+                        {/* Show hidden text placeholder or actual text */}
+                        {hideUserLines && item.isUserCharacter ? (
+                          <View style={styles.hiddenTextContainer}>
+                            <EyeOff size={rp(32)} color="#10B981" />
+                            <Text style={styles.hiddenText}>Línea oculta</Text>
+                          </View>
+                        ) : (
+                          <Text style={[styles.cardText, isActive && { color: '#fff', fontWeight: '600' }]}>
+                            {item.text}
+                          </Text>
+                        )}
+                      </TouchableOpacity>
+                    );
+                  }}
+                  onScrollToIndexFailed={info => {
+                    const wait = new Promise(resolve => setTimeout(resolve, 500));
+                    wait.then(() => {
+                      flatListRef.current?.scrollToIndex({ index: info.index, animated: true, viewPosition: 0 });
+                    });
+                  }}
+                />
+              </Animated.View>
+            )}
+
+            {/* Botón de cancelar grabación (solo visible cuando está grabando) */}
+            {isRecording && (
+              <View style={styles.cancelRecordingContainer}>
+                <TouchableOpacity
+                  onPress={cancelRecording}
+                  style={styles.cancelRecordingBtn}
+                >
+                  <X size={rp(16)} color="#EF4444" />
+                  <Text style={styles.cancelRecordingText}>Cancelar</Text>
+                </TouchableOpacity>
+              </View>
+            )}
+
+            <View style={styles.controlsContainer}>
+              <View style={styles.controls}>
+                {/* Previous */}
+                <TouchableOpacity onPress={() => setCurrentIndex(Math.max(0, currentIndex - 1))} style={styles.controlBtn}>
+                  <SkipBack color="white" size={rp(20)} />
+                </TouchableOpacity>
+
+                {/* Practice Mode: Play/Pause (only when not recording) */}
+                {!isRecording && (
+                  <TouchableOpacity
+                    onPress={togglePracticeMode}
+                    style={[styles.practiceBtn, isPlaying && styles.practiceBtnActive]}
+                  >
+                    {isPlaying ? <Pause color="white" size={rp(24)} /> : <Play color="white" size={rp(24)} />}
+                  </TouchableOpacity>
+                )}
+
+                {/* Record / Stop */}
+                <TouchableOpacity
+                  onPress={toggleRecording}
+                  style={[styles.recordBtn, isRecording && styles.recordingBtnActive]}
+                >
+                  {isRecording ? <Square fill="white" color="white" size={rp(24)} /> : <View style={styles.recordInner} />}
+                </TouchableOpacity>
+
+                {/* Next (Manual Advance) */}
+                <TouchableOpacity onPress={nextLine} style={styles.controlBtn}>
+                  <SkipForward color="white" size={rp(20)} />
+                </TouchableOpacity>
+
+                {/* Menu */}
+                <TouchableOpacity onPress={() => setShowMenu(!showMenu)} style={styles.controlBtn}>
+                  <MoreVertical color="white" size={rp(20)} />
+                </TouchableOpacity>
+              </View>
+
+              {/* Dropdown Menu */}
+              {showMenu && (
+                <>
+                  <Pressable
+                    style={styles.menuBackdrop}
+                    onPress={() => setShowMenu(false)}
+                  />
+                  <View style={styles.menuDropdown}>
+                    <TouchableOpacity
+                      onPress={() => { setHideUserLines(!hideUserLines); setShowMenu(false); }}
+                      style={styles.menuItem}
+                    >
+                      {hideUserLines ? (
+                        <Eye size={rp(20)} color="white" />
+                      ) : (
+                        <EyeOff size={rp(20)} color="white" />
+                      )}
+                      <Text style={styles.menuText}>
+                        {hideUserLines ? 'Mostrar mis líneas' : 'Ocultar mis líneas'}
+                      </Text>
+                    </TouchableOpacity>
+                    <View style={styles.menuSeparator} />
+                    <TouchableOpacity
+                      onPress={() => { setHideTeleprompter(!hideTeleprompter); setShowMenu(false); }}
+                      style={styles.menuItem}
+                    >
+                      <EyeOff size={rp(20)} color="white" />
+                      <Text style={styles.menuText}>
+                        {hideTeleprompter ? 'Mostrar Teleprompter' : 'Ocultar Teleprompter'}
+                      </Text>
+                    </TouchableOpacity>
+                    <View style={styles.menuSeparator} />
+                    <TouchableOpacity
+                      onPress={() => { setHideActions(!hideActions); setShowMenu(false); }}
+                      style={styles.menuItem}
+                    >
+                      {hideActions ? (
+                        <Eye size={rp(20)} color="#F59E0B" />
+                      ) : (
+                        <EyeOff size={rp(20)} color="#F59E0B" />
+                      )}
+                      <Text style={styles.menuText}>
+                        {hideActions ? 'Mostrar acciones' : 'Ocultar acciones'}
+                      </Text>
+                    </TouchableOpacity>
+                    <View style={styles.menuSeparator} />
+                    {/* Control de volumen en el menú */}
+                    <View style={styles.menuItem}>
+                      <Volume2 size={rp(20)} color="white" />
+                      <Text style={styles.menuText}>Volumen voz IA</Text>
+                    </View>
+                    <View style={styles.volumeControlMenu}>
+                      <TouchableOpacity
+                        onPress={() => setTtsVolume(Math.max(0.1, ttsVolume - 0.1))}
+                        style={styles.volumeBtnMenu}
+                      >
+                        <Minus size={rp(18)} color="white" />
+                      </TouchableOpacity>
+                      <View style={styles.volumeDisplayMenu}>
+                        <Text style={styles.volumeTextMenu}>{Math.round(ttsVolume * 100)}%</Text>
+                      </View>
+                      <TouchableOpacity
+                        onPress={() => setTtsVolume(Math.min(1.0, ttsVolume + 0.1))}
+                        style={styles.volumeBtnMenu}
+                      >
+                        <Plus size={rp(18)} color="white" />
+                      </TouchableOpacity>
+                    </View>
+                    <View style={styles.menuSeparator} />
+                    {/* Delay de inicio */}
+                    <View style={styles.menuItem}>
+                      <Timer size={rp(20)} color="white" />
+                      <Text style={styles.menuText}>Espera inicial</Text>
+                    </View>
+                    <View style={styles.volumeControlMenu}>
+                      <TouchableOpacity
+                        onPress={() => setStartDelay(Math.max(0, startDelay - 5))}
+                        style={styles.volumeBtnMenu}
+                      >
+                        <Minus size={rp(18)} color="white" />
+                      </TouchableOpacity>
+                      <View style={styles.volumeDisplayMenu}>
+                        <Text style={styles.volumeTextMenu}>{startDelay === 0 ? 'Off' : `${startDelay}s`}</Text>
+                      </View>
+                      <TouchableOpacity
+                        onPress={() => setStartDelay(Math.min(60, startDelay + 5))}
+                        style={styles.volumeBtnMenu}
+                      >
+                        <Plus size={rp(18)} color="white" />
+                      </TouchableOpacity>
+                    </View>
+                  </View>
+                </>
+              )}
+            </View>
+
+          </SafeAreaView>
+
+          {/* Processing Modal */}
+          {isProcessing && (
+            <View style={styles.processingOverlay}>
+              <View style={styles.processingModal}>
+                <ActivityIndicator size="large" color="#3B82F6" />
+                <Text style={styles.processingTitle}>Procesando tu casting...</Text>
+                <Text style={styles.processingText}>
+                  Estamos mezclando tu actuación con el audio de IA de alta calidad.
+                </Text>
+                <Text style={styles.processingSubtext}>
+                  Esto puede tardar 30-60 segundos
+                </Text>
+              </View>
+            </View>
           )}
-        </View>
-
-      </SafeAreaView>
-
-      {/* Processing Modal */}
-      {isProcessing && (
-        <View style={styles.processingOverlay}>
-          <View style={styles.processingModal}>
-            <ActivityIndicator size="large" color="#3B82F6" />
-            <Text style={styles.processingTitle}>Procesando tu casting...</Text>
-            <Text style={styles.processingText}>
-              Estamos mezclando tu actuación con el audio de IA de alta calidad.
-            </Text>
-            <Text style={styles.processingSubtext}>
-              Esto puede tardar 30-60 segundos
-            </Text>
-          </View>
-        </View>
+        </>
       )}
     </View>
   );
@@ -1869,6 +2218,239 @@ const styles = StyleSheet.create({
     fontSize: rf(14),
     fontWeight: '600',
     marginTop: rp(16),
+  },
+  // Scene Configuration Styles
+  configContainer: {
+    flex: 1,
+  },
+  configHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: rp(16),
+    paddingVertical: rp(12),
+  },
+  configBackBtn: {
+    padding: rp(8),
+  },
+  configTitleContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: rp(8),
+  },
+  configTitle: {
+    fontSize: rf(18),
+    fontWeight: '700',
+  },
+  configInstructions: {
+    marginHorizontal: rp(16),
+    padding: rp(12),
+    borderRadius: rp(8),
+    marginBottom: rp(12),
+  },
+  configInstructionsText: {
+    fontSize: rf(13),
+    lineHeight: rf(18),
+  },
+  configList: {
+    flex: 1,
+    paddingHorizontal: rp(16),
+  },
+  configLineCard: {
+    padding: rp(12),
+    borderRadius: rp(8),
+    marginBottom: rp(4),
+    borderLeftWidth: rp(4),
+  },
+  configLineHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: rp(8),
+    marginBottom: rp(8),
+  },
+  configCharBadge: {
+    width: rp(28),
+    height: rp(28),
+    borderRadius: rp(14),
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  configCharBadgeText: {
+    color: 'white',
+    fontSize: rf(12),
+    fontWeight: '700',
+  },
+  configCharName: {
+    fontSize: rf(14),
+    fontWeight: '600',
+    flex: 1,
+  },
+  configYouBadge: {
+    backgroundColor: '#10B981',
+    paddingHorizontal: rp(8),
+    paddingVertical: rp(2),
+    borderRadius: rp(4),
+  },
+  configYouBadgeText: {
+    color: 'white',
+    fontSize: rf(10),
+    fontWeight: '700',
+  },
+  configAiBadge: {
+    paddingHorizontal: rp(8),
+    paddingVertical: rp(2),
+    borderRadius: rp(4),
+  },
+  configAiBadgeText: {
+    color: 'white',
+    fontSize: rf(10),
+    fontWeight: '700',
+  },
+  configLineText: {
+    fontSize: rf(13),
+    lineHeight: rf(18),
+    marginBottom: rp(8),
+  },
+  configTimingRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'flex-end',
+    gap: rp(8),
+  },
+  configAutoTiming: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: rp(4),
+    justifyContent: 'flex-end',
+  },
+  configAutoText: {
+    fontSize: rf(12),
+  },
+  timingBtn: {
+    backgroundColor: 'rgba(0,0,0,0.3)',
+    padding: rp(6),
+    borderRadius: rp(6),
+  },
+  timingDisplay: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: rp(4),
+    minWidth: rp(60),
+    justifyContent: 'center',
+  },
+  timingText: {
+    fontSize: rf(13),
+    fontWeight: '600',
+  },
+  timingAdjustment: {
+    fontSize: rf(11),
+    fontWeight: '600',
+    marginLeft: rp(2),
+  },
+  // Action Card Styles (Yellow theme)
+  actionCard: {
+    backgroundColor: 'rgba(245, 158, 11, 0.15)',
+    borderLeftWidth: rp(4),
+    borderLeftColor: '#F59E0B',
+    padding: rp(12),
+    borderRadius: rp(8),
+    marginBottom: rp(4),
+  },
+  actionCardHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: rp(8),
+    marginBottom: rp(8),
+  },
+  actionCardLabel: {
+    color: '#F59E0B',
+    fontSize: rf(11),
+    fontWeight: '700',
+    flex: 1,
+  },
+  deleteActionBtn: {
+    padding: rp(4),
+  },
+  actionCardText: {
+    color: '#F59E0B',
+    fontSize: rf(13),
+    fontStyle: 'italic',
+    marginBottom: rp(8),
+  },
+  actionTimingRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'flex-end',
+    gap: rp(8),
+  },
+  // Add Action Button
+  addActionBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: rp(8),
+    gap: rp(4),
+    borderStyle: 'dashed',
+    borderWidth: 1,
+    borderColor: 'rgba(150,150,150,0.3)',
+    borderRadius: rp(6),
+    marginBottom: rp(12),
+    marginTop: rp(4),
+  },
+  addActionText: {
+    fontSize: rf(12),
+  },
+  addActionForm: {
+    backgroundColor: 'rgba(245, 158, 11, 0.1)',
+    padding: rp(12),
+    borderRadius: rp(8),
+    marginBottom: rp(12),
+    marginTop: rp(4),
+  },
+  addActionInput: {
+    borderWidth: 1,
+    borderRadius: rp(6),
+    paddingHorizontal: rp(12),
+    paddingVertical: rp(10),
+    fontSize: rf(14),
+    marginBottom: rp(8),
+    backgroundColor: 'rgba(255,255,255,0.05)',
+  },
+  addActionButtons: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    gap: rp(8),
+  },
+  addActionCancelBtn: {
+    paddingHorizontal: rp(16),
+    paddingVertical: rp(8),
+    borderRadius: rp(6),
+    borderWidth: 1,
+  },
+  addActionConfirmBtn: {
+    backgroundColor: '#F59E0B',
+    paddingHorizontal: rp(16),
+    paddingVertical: rp(8),
+    borderRadius: rp(6),
+  },
+  // Footer
+  configFooter: {
+    padding: rp(16),
+    paddingBottom: rp(24),
+  },
+  startRecordingBtn: {
+    backgroundColor: '#10B981',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: rp(16),
+    borderRadius: rp(12),
+    gap: rp(10),
+  },
+  startRecordingText: {
+    color: 'white',
+    fontSize: rf(16),
+    fontWeight: '700',
   },
 });
 

@@ -21,7 +21,7 @@ const supabase = createClient(
     process.env.SUPABASE_SERVICE_KEY
 );
 
-console.log('🚀 Server starting - Version: AUDIO_NORM_V3 - Date:', new Date().toISOString());
+console.log('🚀 Server starting - Version: AUDIO_NORM_V4 - Date:', new Date().toISOString());
 
 // Health check
 app.get('/health', (req, res) => {

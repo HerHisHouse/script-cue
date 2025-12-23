@@ -12,6 +12,9 @@ export interface DialogueLine {
   isUserCharacter: boolean;
   orderIndex: number;
   sceneId: string;
+  // New fields for Casting Mode timing
+  isAction?: boolean; // If true, this is an action card, not dialogue
+  customTimingAdjustment?: number; // Seconds to add/subtract from calculated time
 }
 
 export function extractDialogue(
