@@ -16,11 +16,12 @@ import {
   Image,
   Animated,
   DeviceEventEmitter,
+  Keyboard,
 } from 'react-native';
 import { Dimensions } from 'react-native';
 import { PinchGestureHandler, State } from 'react-native-gesture-handler';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Play, Pause, Trash2, Clock, FileAudio, MoreVertical, Edit2, Share2, Search, Grid3x3, List, Send, ChevronRight, Circle, SkipBack, SkipForward, Volume2, VolumeX, Repeat, X, Maximize2, Minimize2, Video as VideoIcon } from 'lucide-react-native';
+import { Play, Pause, Trash2, Clock, FileAudio, MoreVertical, Edit2, Share2, Search, Grid3x3, List, Send, ChevronRight, Circle, SkipBack, SkipForward, Volume2, VolumeX, Repeat, X, Maximize2, Minimize2, Video as VideoIcon, Cast, Waves, Music, Clapperboard, CheckSquare } from 'lucide-react-native';
 import { AudioVisualizer } from '@/components/AudioVisualizer';
 import { SendToModal } from '@/components/SendToModal';
 import { ScreenHeader } from '@/components/ScreenHeader';
@@ -40,6 +41,8 @@ import { LayoutAnimation, Easing } from 'react-native';
 import { computeSafeTopPadding } from '../../utils/layout';
 import { validateAndNormalizeFilename, buildNewPath, RenameError, performRename } from '@/utils/rename';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
+import { setAudioModeForPlayback } from '@/utils/audioMode';
+import { rf, rp } from '@/utils/responsive';
 
 type ViewMode = 'list' | 'grid';
 
@@ -49,11 +52,13 @@ const SearchBar = React.memo(function SearchBar({
   setSearchText,
   searching,
   colors,
+  onClose,
 }: {
   searchText: string;
   setSearchText: (t: string) => void;
   searching: boolean;
   colors: ReturnType<typeof useTheme>['colors'];
+  onClose: () => void;
 }) {
   return (
     <View style={[styles.searchContainer, { backgroundColor: colors.surface, borderBottomColor: colors.border }]}
@@ -67,15 +72,22 @@ const SearchBar = React.memo(function SearchBar({
           value={searchText}
           onChangeText={setSearchText}
           autoFocus
-          blurOnSubmit={false}
+          blurOnSubmit={true}
           autoCorrect={false}
           autoCapitalize="none"
-          inputMode="search"
+          returnKeyType="search"
+          onSubmitEditing={() => Keyboard.dismiss()}
         />
         {searching && (
           <ActivityIndicator size="small" color={colors.primary} />
         )}
       </View>
+      <TouchableOpacity
+        onPress={onClose}
+        style={styles.closeSearchButton}
+      >
+        <Text style={{ color: colors.textSecondary, fontSize: rf(24), fontWeight: '300' }}>×</Text>
+      </TouchableOpacity>
     </View>
   );
 });
@@ -111,6 +123,15 @@ export default function RecordingsScreen() {
   const modalScale = useRef(new Animated.Value(0.96)).current;
   const insets = useSafeAreaInsets();
   const headerMenuOpacity = useRef(new Animated.Value(0)).current;
+  const lastVideoUpdateRef = useRef<number>(0);
+
+  // Controls visibility for player
+  const [controlsVisible, setControlsVisible] = useState(true);
+  const controlsOpacity = useRef(new Animated.Value(1)).current;
+  const hideControlsTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Animation visibility toggle
+  const [showAnimation, setShowAnimation] = useState(true);
 
   const [showHeaderMenu, setShowHeaderMenu] = useState(false);
   const [headerHeight, setHeaderHeight] = useState(0);
@@ -394,7 +415,11 @@ export default function RecordingsScreen() {
   useFocusEffect(
     useCallback(() => {
       handleRefresh();
-      return undefined;
+      return () => {
+        // Cleanup: cerrar todos los menús cuando se pierde el foco
+        setShowHeaderMenu(false);
+        setShowSearch(false);
+      };
     }, [handleRefresh])
   );
 
@@ -402,6 +427,24 @@ export default function RecordingsScreen() {
   useEffect(() => {
     loopModeRef.current = loopMode;
   }, [loopMode]);
+
+  // Auto-maximize player when rotating to landscape
+  useEffect(() => {
+    const subscription = Dimensions.addEventListener('change', ({ window }) => {
+      const isLandscape = window.width > window.height;
+
+      // Only auto-maximize if player is active (playing something)
+      if (playingId && isLandscape && !isFullscreen) {
+        setIsFullscreen(true);
+      }
+      // Auto-minimize when rotating back to portrait
+      else if (playingId && !isLandscape && isFullscreen) {
+        setIsFullscreen(false);
+      }
+    });
+
+    return () => subscription?.remove();
+  }, [playingId, isFullscreen]);
 
   async function handlePlay(recording: Recording) {
     try {
@@ -490,11 +533,8 @@ export default function RecordingsScreen() {
     }
 
     try {
-      await Audio.setAudioModeAsync({
-        playsInSilentModeIOS: true,
-        staysActiveInBackground: true,
-        shouldDuckAndroid: true,
-      });
+      // Force speaker output for playback
+      await setAudioModeForPlayback();
 
       const settings = await getSettings();
       const storagePath = (recording.audio_url || (recording as any).storage_path || '').trim();
@@ -601,6 +641,48 @@ export default function RecordingsScreen() {
     }
   }
 
+  // Show/hide controls functions
+  function showControls() {
+    if (hideControlsTimerRef.current) {
+      clearTimeout(hideControlsTimerRef.current);
+    }
+
+    setControlsVisible(true);
+    Animated.timing(controlsOpacity, {
+      toValue: 1,
+      duration: 200,
+      useNativeDriver: true,
+    }).start();
+
+    // Auto-hide after 3 seconds ONLY if playing
+    if (isPlaying) {
+      hideControlsTimerRef.current = setTimeout(() => {
+        hideControls();
+      }, 3000);
+    }
+  }
+
+  function hideControls() {
+    Animated.timing(controlsOpacity, {
+      toValue: 0,
+      duration: 200,
+      useNativeDriver: true,
+    }).start(() => {
+      setControlsVisible(false);
+    });
+  }
+
+  function toggleControls() {
+    if (controlsVisible) {
+      if (hideControlsTimerRef.current) {
+        clearTimeout(hideControlsTimerRef.current);
+      }
+      hideControls();
+    } else {
+      showControls();
+    }
+  }
+
   async function seekToRatio(ratio: number) {
     const current = queue[currentIndex];
     if (current?.type === 'video') {
@@ -655,6 +737,42 @@ export default function RecordingsScreen() {
       }
     } catch { }
   }
+
+  // Show controls when player opens, hide timer on close
+  useEffect(() => {
+    if (playerVisible) {
+      showControls();
+    } else {
+      if (hideControlsTimerRef.current) {
+        clearTimeout(hideControlsTimerRef.current);
+        hideControlsTimerRef.current = null;
+      }
+      setControlsVisible(true);
+      controlsOpacity.setValue(1);
+    }
+  }, [playerVisible]);
+
+  // Handle controls visibility based on playback state
+  useEffect(() => {
+    if (!playerVisible) return;
+
+    if (isPlaying) {
+      // When playing starts, show controls and schedule auto-hide
+      showControls();
+    } else {
+      // When paused, show controls and keep them visible
+      if (hideControlsTimerRef.current) {
+        clearTimeout(hideControlsTimerRef.current);
+        hideControlsTimerRef.current = null;
+      }
+      setControlsVisible(true);
+      Animated.timing(controlsOpacity, {
+        toValue: 1,
+        duration: 200,
+        useNativeDriver: true,
+      }).start();
+    }
+  }, [isPlaying, playerVisible]);
 
   // Listener opcional del volumen del dispositivo (si el módulo está disponible)
   useEffect(() => {
@@ -1149,8 +1267,20 @@ export default function RecordingsScreen() {
           </>
         ) : (
           <View style={styles.gridContent}>
-            <View style={[styles.gridIconContainer, { backgroundColor: '#7C3AED', width: gridIconSize, height: gridIconSize, borderRadius: 10 }]}>
-              <FileAudio size={Math.round(gridIconSize * 0.53)} color="#FFFFFF" />
+            <View style={[
+              styles.gridIconContainer,
+              {
+                backgroundColor: item.type === 'video' ? '#8B5CF6' : colors.primary,
+                width: gridIconSize,
+                height: gridIconSize,
+                borderRadius: 10
+              }
+            ]}>
+              {item.type === 'video' ? (
+                <VideoIcon size={Math.round(gridIconSize * 0.53)} color="#FFFFFF" />
+              ) : (
+                <Play size={Math.round(gridIconSize * 0.53)} color="#FFFFFF" fill="#FFFFFF" />
+              )}
             </View>
             <Text style={[styles.gridTitle, { color: colors.text }]} numberOfLines={2}>
               {item.title || 'Sin título'}
@@ -1236,8 +1366,8 @@ export default function RecordingsScreen() {
   };
 
   return (
-    <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
-      {(showHeaderMenu || showSearch) && (
+    <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]} edges={['top', 'left', 'right']}>
+      {(showHeaderMenu) && (
         <Pressable
           style={styles.backdrop}
           accessibilityRole="button"
@@ -1251,10 +1381,6 @@ export default function RecordingsScreen() {
             }).start(({ finished }) => {
               if (finished) setShowHeaderMenu(false);
             });
-            if (showSearch) {
-              setShowSearch(false);
-              setSearchText('');
-            }
             // Por coherencia, cerrar menú de grabación si estuviera marcado
             if (showRecordingMenu !== null) setShowRecordingMenu(null);
           }}
@@ -1293,19 +1419,14 @@ export default function RecordingsScreen() {
         }
       />
 
+
       {showHeaderMenu && (
-        <Animated.View
-          accessibilityRole="menu"
-          style={[
-            makeHeaderMenuStyles(colors).container,
-            { top: headerHeight + 16, opacity: headerMenuOpacity },
-          ]}
-        >
-          <TouchableOpacity
-            accessibilityRole="menuitem"
-            style={makeHeaderMenuStyles(colors).item}
+        <>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Cerrar menú"
+            style={styles.backdrop}
             onPress={() => {
-              setShowSearch(!showSearch);
               Animated.timing(headerMenuOpacity, {
                 toValue: 0,
                 duration: 200,
@@ -1315,54 +1436,77 @@ export default function RecordingsScreen() {
                 if (finished) setShowHeaderMenu(false);
               });
             }}
+          />
+          <Animated.View
+            accessibilityRole="menu"
+            style={[
+              makeHeaderMenuStyles(colors).container,
+              { top: headerHeight + 16, opacity: headerMenuOpacity },
+            ]}
           >
-            <Search size={18} color={colors.text} />
-            <Text style={[styles.menuText, { color: colors.text }]}>Búsqueda avanzada</Text>
-          </TouchableOpacity>
-          <View style={makeHeaderMenuStyles(colors).separator} />
-          <TouchableOpacity
-            accessibilityRole="menuitem"
-            style={makeHeaderMenuStyles(colors).item}
-            onPress={() => {
-              setSelectionMode(!selectionMode);
-              setSelectedIds(new Set());
-              Animated.timing(headerMenuOpacity, {
-                toValue: 0,
-                duration: 200,
-                easing: Easing.inOut(Easing.ease),
-                useNativeDriver: true,
-              }).start(({ finished }) => {
-                if (finished) setShowHeaderMenu(false);
-              });
-            }}
-          >
-            <Circle size={18} color={colors.text} />
-            <Text style={[styles.menuText, { color: colors.text }]}>
-              {selectionMode ? 'Cancelar selección' : 'Selección múltiple'}
-            </Text>
-          </TouchableOpacity>
-          <View style={makeHeaderMenuStyles(colors).separator} />
-          <TouchableOpacity
-            style={makeHeaderMenuStyles(colors).item}
-            onPress={() => {
-              LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
-              setViewMode(prev => (prev === 'grid' ? 'list' : 'grid'));
-              setShowHeaderMenu(false);
-            }}
-          >
-            {viewMode === 'list' ? (
-              <>
-                <Grid3x3 size={18} color={colors.text} />
-                <Text style={[styles.menuText, { color: colors.text }]}>Vista de cuadrícula</Text>
-              </>
-            ) : (
-              <>
-                <List size={18} color={colors.text} />
-                <Text style={[styles.menuText, { color: colors.text }]}>Vista de lista</Text>
-              </>
-            )}
-          </TouchableOpacity>
-        </Animated.View>
+            <TouchableOpacity
+              accessibilityRole="menuitem"
+              style={makeHeaderMenuStyles(colors).item}
+              onPress={() => {
+                setShowSearch(!showSearch);
+                Animated.timing(headerMenuOpacity, {
+                  toValue: 0,
+                  duration: 200,
+                  easing: Easing.inOut(Easing.ease),
+                  useNativeDriver: true,
+                }).start(({ finished }) => {
+                  if (finished) setShowHeaderMenu(false);
+                });
+              }}
+            >
+              <Search size={18} color={colors.text} />
+              <Text style={[styles.menuText, { color: colors.text }]}>Búsqueda avanzada</Text>
+            </TouchableOpacity>
+            <View style={makeHeaderMenuStyles(colors).separator} />
+            <TouchableOpacity
+              accessibilityRole="menuitem"
+              style={makeHeaderMenuStyles(colors).item}
+              onPress={() => {
+                setSelectionMode(!selectionMode);
+                setSelectedIds(new Set());
+                Animated.timing(headerMenuOpacity, {
+                  toValue: 0,
+                  duration: 200,
+                  easing: Easing.inOut(Easing.ease),
+                  useNativeDriver: true,
+                }).start(({ finished }) => {
+                  if (finished) setShowHeaderMenu(false);
+                });
+              }}
+            >
+              <CheckSquare size={18} color={colors.text} />
+              <Text style={[styles.menuText, { color: colors.text }]}>
+                {selectionMode ? 'Cancelar selección' : 'Selección múltiple'}
+              </Text>
+            </TouchableOpacity>
+            <View style={makeHeaderMenuStyles(colors).separator} />
+            <TouchableOpacity
+              style={makeHeaderMenuStyles(colors).item}
+              onPress={() => {
+                LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+                setViewMode(prev => (prev === 'grid' ? 'list' : 'grid'));
+                setShowHeaderMenu(false);
+              }}
+            >
+              {viewMode === 'list' ? (
+                <>
+                  <Grid3x3 size={18} color={colors.text} />
+                  <Text style={[styles.menuText, { color: colors.text }]}>Vista de cuadrícula</Text>
+                </>
+              ) : (
+                <>
+                  <List size={18} color={colors.text} />
+                  <Text style={[styles.menuText, { color: colors.text }]}>Vista de lista</Text>
+                </>
+              )}
+            </TouchableOpacity>
+          </Animated.View>
+        </>
       )}
 
       {/* Search bar moved into FlatList header to avoid remount/focus loss */}
@@ -1395,15 +1539,26 @@ export default function RecordingsScreen() {
       )}
 
       {recordings.length === 0 ? (
-        <View style={styles.emptyState}>
-          <Text style={[styles.emptyTitle, { color: colors.text }]}>
-            {searchText ? 'No se encontraron grabaciones' : 'No hay grabaciones'}
-          </Text>
-          <Text style={[styles.emptyText, { color: colors.textSecondary }]}>
-            {searchText
-              ? 'Intenta con otro término de búsqueda'
-              : 'Tus sesiones de práctica aparecerán aquí'}
-          </Text>
+        <View style={{ flex: 1 }}>
+          {showSearch && (
+            <SearchBar
+              searchText={searchText}
+              setSearchText={setSearchText}
+              searching={searching}
+              colors={colors}
+              onClose={() => { setShowSearch(false); setSearchText(''); }}
+            />
+          )}
+          <View style={styles.emptyState}>
+            <Text style={[styles.emptyTitle, { color: colors.text }]}>
+              {searchText ? 'No se encontraron grabaciones' : 'No hay grabaciones'}
+            </Text>
+            <Text style={[styles.emptyText, { color: colors.textSecondary }]}>
+              {searchText
+                ? 'Intenta con otro término de búsqueda'
+                : 'Tus sesiones de práctica aparecerán aquí'}
+            </Text>
+          </View>
         </View>
       ) : (
         <PinchGestureHandler
@@ -1427,7 +1582,7 @@ export default function RecordingsScreen() {
               data={recordings}
               renderItem={({ item }) => <RecordingCard item={item} />}
               keyExtractor={(item) => item.id}
-              contentContainerStyle={viewMode === 'grid' ? { paddingVertical: 20 } : styles.list}
+              contentContainerStyle={viewMode === 'grid' ? { paddingVertical: rp(20), paddingBottom: 100 + insets.bottom } : { ...styles.list, paddingBottom: 100 + insets.bottom }}
               numColumns={viewMode === 'grid' ? gridColumns : 1}
               key={viewMode === 'grid' ? `grid-${gridColumns}` : 'list'}
               columnWrapperStyle={viewMode === 'grid' && gridColumns > 1 ? { paddingHorizontal: gridPadding, justifyContent: 'space-between', marginBottom: gridGap } : undefined}
@@ -1442,10 +1597,11 @@ export default function RecordingsScreen() {
                   setSearchText={setSearchText}
                   searching={searching}
                   colors={colors}
+                  onClose={() => { setShowSearch(false); setSearchText(''); }}
                 />
               ) : null}
               ListFooterComponent={loadingMore ? (
-                <View style={{ paddingVertical: 20 }}>
+                <View style={{ paddingVertical: rp(20) }}>
                   <ActivityIndicator size="small" color={colors.primary} />
                 </View>
               ) : null}
@@ -1464,24 +1620,45 @@ export default function RecordingsScreen() {
       >
         <View style={styles.playerOverlay}>
           <Animated.View style={{ flex: 1, opacity: modalOpacity, transform: [{ scale: modalScale }] }}>
-            <View style={{ flex: 1, backgroundColor: colors.surface }}>
+            <View style={{ flex: 1, backgroundColor: '#151718' }}>
               {/* Player Module - Top Section */}
-              <View style={[styles.playerModule, isFullscreen && styles.playerModuleFullscreen, { paddingTop: computeSafeTopPadding(insets.top) }]}>
+              <TouchableOpacity
+                activeOpacity={1}
+                onPress={toggleControls}
+                style={[
+                  styles.playerModule,
+                  isFullscreen && styles.playerModuleFullscreen,
+                  Platform.OS === 'ios' ? { paddingTop: insets.top + 12 } : { paddingTop: insets.top }
+                ]}
+              >
+                {/* Video Player (if video type) - Background layer */}
                 {queue[currentIndex]?.type === 'video' && (
-                  <View style={{ width: '100%', aspectRatio: 16 / 9, backgroundColor: 'black', marginBottom: 16, borderRadius: 12, overflow: 'hidden' }}>
+                  <View style={styles.visualizerContainer} pointerEvents="none">
                     <Video
                       ref={videoRef}
-                      source={{ uri: queue[currentIndex].audio_url }}
+                      source={{ uri: queue[currentIndex]?.audio_url || '' }}
                       style={{ width: '100%', height: '100%' }}
                       resizeMode={ResizeMode.CONTAIN}
-                      useNativeControls={false} // We use our own controls
-                      isLooping={loopMode === 'one'}
                       shouldPlay={isPlaying}
                       onPlaybackStatusUpdate={status => {
                         if (status.isLoaded) {
-                          setPositionMillis(status.positionMillis);
-                          setDurationMillis(status.durationMillis || 0);
-                          setIsPlaying(status.isPlaying);
+                          // Throttle: solo actualizar posición cada 100ms para evitar re-renders constantes
+                          const now = Date.now();
+                          const lastUpdate = lastVideoUpdateRef.current;
+
+                          if (now - lastUpdate > 100) {
+                            lastVideoUpdateRef.current = now;
+                            setPositionMillis(status.positionMillis);
+                          }
+
+                          // Duración solo se actualiza una vez
+                          if (status.durationMillis && !durationMillis) {
+                            setDurationMillis(status.durationMillis);
+                          }
+
+                          // NO actualizar isPlaying aquí - causa loop infinito
+                          // shouldPlay={isPlaying} ya controla el estado
+
                           if (status.didJustFinish) {
                             const currentLoop = loopModeRef.current;
                             if (currentLoop === 'one') {
@@ -1504,101 +1681,169 @@ export default function RecordingsScreen() {
                   </View>
                 )}
 
-                <View style={styles.playerHeader}>
-                  <Text style={[styles.playerTitle, { color: '#FFFFFF' }]} numberOfLines={1}>
-                    {queue[currentIndex]?.title || 'Sin título'}
-                  </Text>
-                  <TouchableOpacity accessibilityRole="button" accessibilityLabel="Cerrar reproductor" onPress={closePlayer} style={styles.closeButton}>
-                    <X size={24} color="#FFFFFF" />
-                  </TouchableOpacity>
-                </View>
-                <Text style={[styles.playerMeta, { color: 'rgba(255,255,255,0.6)' }]}>
-                  {(() => {
-                    const r = queue[currentIndex];
-                    if (!r) return '';
-                    const dateStr = new Date(r.created_at).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' });
-                    return `${formatDuration(r.duration_seconds || 0)} • ${dateStr}`;
-                  })()}
-                </Text>
-
-                {/* Audio Visualizer (Only for audio) */}
+                {/* Audio Visualizer Container - Background layer */}
                 {queue[currentIndex]?.type !== 'video' && (
-                  <View style={{ alignItems: 'center', justifyContent: 'center', height: 80, marginVertical: 10, width: '100%', flex: isFullscreen ? 1 : 0 }}>
-                    <AudioVisualizer isPlaying={isPlaying} color="#3B82F6" height={60} barCount={isFullscreen ? 60 : 30} />
+                  <View style={styles.visualizerContainer} pointerEvents="none">
+                    {showAnimation ? (
+                      <AudioVisualizer isPlaying={isPlaying} color={colors.primary} height={isFullscreen ? 80 : 60} barCount={isFullscreen ? 60 : 30} />
+                    ) : (
+                      <View style={styles.staticImageContainer}>
+                        <Music size={80} color="rgba(59, 130, 246, 0.3)" strokeWidth={1.5} />
+                      </View>
+                    )}
                   </View>
                 )}
 
-                {/* Controls (Hide play/pause for video as it uses native controls or custom logic?) 
-                    Actually, let's keep controls for playlist navigation, but maybe hide play/pause if using native controls.
-                    For consistency, let's keep our controls and control the video ref.
-                */}
-                {queue[currentIndex]?.type !== 'video' && (
-                  <View style={styles.controlsRow}>
-                    <Pressable style={({ hovered, pressed }) => [styles.controlButton, { transform: [{ scale: hovered || pressed ? 1.05 : 1 }], opacity: hovered ? 0.95 : 1 }]} onPress={playPrev} accessibilityLabel="Anterior">
-                      <SkipBack size={28} color="#FFFFFF" />
-                    </Pressable>
-                    <Pressable style={({ hovered, pressed }) => [[styles.playPauseButton, { backgroundColor: '#3B82F6' }], { transform: [{ scale: hovered || pressed ? 1.06 : 1 }], opacity: hovered ? 0.95 : 1 }]} onPress={togglePlayPause} accessibilityLabel={isPlaying ? 'Pausar' : 'Reproducir'}>
-                      {isPlaying ? <Pause size={32} color="#FFFFFF" /> : <Play size={32} color="#FFFFFF" />}
-                    </Pressable>
-                    <Pressable style={({ hovered, pressed }) => [styles.controlButton, { transform: [{ scale: hovered || pressed ? 1.05 : 1 }], opacity: hovered ? 0.95 : 1 }]} onPress={playNext} accessibilityLabel="Siguiente">
-                      <SkipForward size={28} color="#FFFFFF" />
-                    </Pressable>
-                  </View>
-                )}
+                {/* All player controls - Always rendered but with opacity */}
+                <Animated.View
+                  style={[
+                    { opacity: controlsOpacity, paddingHorizontal: rp(16) },
+                    isFullscreen && { flex: 1, justifyContent: 'space-between', paddingHorizontal: rp(24) }
+                  ]}
+                  pointerEvents="box-none"
+                >
+                  <View style={styles.playerHeader}>
+                    <Text style={[styles.playerTitle, { color: '#FFFFFF' }]} numberOfLines={1}>
+                      {queue[currentIndex]?.title || 'Sin título'}
+                    </Text>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+                      {/* Chromecast Button */}
+                      <TouchableOpacity
+                        accessibilityRole="button"
+                        accessibilityLabel="Chromecast"
+                        onPress={() => {
+                          // TODO: Implement Chromecast functionality
+                          Alert.alert('Chromecast', 'Funcionalidad de Chromecast próximamente');
+                        }}
+                        style={styles.headerIconButton}
+                      >
+                        <Cast size={22} color="#FFFFFF" />
+                      </TouchableOpacity>
 
-                {/* Secondary Controls: Speaker, Loop, Expand (Right Aligned) */}
-                <View style={styles.secondaryControlsRow}>
-                  <Pressable style={({ hovered, pressed }) => [styles.controlButton, { transform: [{ scale: hovered || pressed ? 1.05 : 1 }], opacity: hovered ? 0.95 : 1 }]} onPress={toggleMute} accessibilityLabel={muted ? 'Reanudar sonido' : 'Silenciar'}>
-                    {muted ? <VolumeX size={24} color="#FFFFFF" /> : <Volume2 size={24} color="#FFFFFF" />}
-                  </Pressable>
+                      {/* Toggle Animation Button */}
+                      <TouchableOpacity
+                        accessibilityRole="button"
+                        accessibilityLabel={showAnimation ? 'Ocultar animación' : 'Mostrar animación'}
+                        onPress={() => setShowAnimation(!showAnimation)}
+                        style={styles.headerIconButton}
+                      >
+                        <Waves size={22} color={showAnimation ? colors.primary : 'rgba(255,255,255,0.5)'} />
+                      </TouchableOpacity>
 
-                  <Pressable style={({ hovered, pressed }) => [styles.loopWrapper, { transform: [{ scale: hovered || pressed ? 1.08 : 1 }], opacity: hovered ? 0.95 : 1 }]} onPress={cycleLoopMode} accessibilityLabel="Modo de bucle">
-                    <Animated.View style={{ transform: [{ scale: loopAnim }], position: 'relative' }}>
-                      <Repeat size={20} color={loopMode === 'off' ? 'rgba(255,255,255,0.5)' : '#3B82F6'} />
-                      {loopMode === 'one' && (
-                        <View style={[styles.loopBadge, { backgroundColor: '#3B82F6' }]}>
-                          <Text style={styles.loopBadgeText}>1</Text>
-                        </View>
-                      )}
-                    </Animated.View>
-                  </Pressable>
-
-                  <Pressable style={({ hovered, pressed }) => [styles.controlButton, { transform: [{ scale: hovered || pressed ? 1.05 : 1 }], opacity: hovered ? 0.95 : 1 }]} onPress={() => setIsFullscreen(!isFullscreen)} accessibilityLabel={isFullscreen ? 'Salir de pantalla completa' : 'Pantalla completa'}>
-                    {isFullscreen ? <Minimize2 size={24} color="#FFFFFF" /> : <Maximize2 size={24} color="#FFFFFF" />}
-                  </Pressable>
-                </View>
-
-                {/* Progress Bar (Bottom) */}
-                <View style={[styles.progressRow, { width: '100%' }]}>
-                  <Text style={[styles.timeText, { color: '#FFFFFF' }]}>{formatDuration(Math.floor((positionMillis || 0) / 1000))}</Text>
-                  <Pressable
-                    style={[styles.progressBar, { backgroundColor: 'rgba(255,255,255,0.2)' }]}
-                    onPress={(e) => {
-                      const { locationX } = e.nativeEvent as any;
-                      const w = progressBarWidthRef.current || 1;
-                      const ratio = Math.max(0, Math.min(1, locationX / w));
-                      seekToRatio(ratio);
-                    }}
-                    onLayout={(e) => { progressBarWidthRef.current = e.nativeEvent.layout.width; }}
-                  >
-                    <View style={[styles.progressFill, { width: durationMillis ? `${(positionMillis / durationMillis) * 100}%` : '0%', backgroundColor: '#3B82F6' }]}>
-                      <View style={styles.progressThumb} />
+                      {/* Close Button */}
+                      <TouchableOpacity
+                        accessibilityRole="button"
+                        accessibilityLabel="Cerrar reproductor"
+                        onPress={closePlayer}
+                        style={styles.closeButton}
+                      >
+                        <X size={24} color="#FFFFFF" />
+                      </TouchableOpacity>
                     </View>
-                  </Pressable>
-                  <Text style={[styles.timeText, { color: '#FFFFFF' }]}>{formatDuration(Math.floor((durationMillis || 0) / 1000))}</Text>
-                </View>
-              </View>
+                  </View>
+                  <Text style={[styles.playerMeta, { color: 'rgba(255,255,255,0.6)' }]}>
+                    {(() => {
+                      const r = queue[currentIndex];
+                      if (!r) return '';
+                      const dateStr = new Date(r.created_at).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' });
+                      return `${formatDuration(r.duration_seconds || 0)} • ${dateStr}`;
+                    })()}
+                  </Text>
+
+                  {/* Center Controls Container - Groups play controls and secondary controls */}
+                  <View style={isFullscreen ? { flex: 1, justifyContent: 'space-between' } : {}}>
+                    {/* Play/Pause/Skip Controls - Centered wrapper */}
+                    <View style={isFullscreen ? { flex: 1, justifyContent: 'center' } : {}}>
+                      <View style={[styles.controlsOverlay, { position: 'relative', backgroundColor: 'transparent' }]}>
+                        <View style={styles.controlsRow}>
+                          <Pressable
+                            style={({ pressed }) => [styles.controlButton, { opacity: pressed ? 0.7 : 1 }]}
+                            onPress={(e) => { e.stopPropagation(); playPrev(); }}
+                            accessibilityLabel="Anterior"
+                          >
+                            <SkipBack size={28} color="#FFFFFF" />
+                          </Pressable>
+                          <Pressable
+                            style={({ pressed }) => [[styles.playPauseButton, { backgroundColor: colors.primary }], { opacity: pressed ? 0.8 : 1 }]}
+                            onPress={(e) => { e.stopPropagation(); togglePlayPause(); }}
+                            accessibilityLabel={isPlaying ? 'Pausar' : 'Reproducir'}
+                          >
+                            {isPlaying ? <Pause size={32} color="#FFFFFF" /> : <Play size={32} color="#FFFFFF" />}
+                          </Pressable>
+                          <Pressable
+                            style={({ pressed }) => [styles.controlButton, { opacity: pressed ? 0.7 : 1 }]}
+                            onPress={(e) => { e.stopPropagation(); playNext(); }}
+                            accessibilityLabel="Siguiente"
+                          >
+                            <SkipForward size={28} color="#FFFFFF" />
+                          </Pressable>
+                        </View>
+                      </View>
+                    </View>
+
+                    {/* Secondary Controls: Speaker, Loop, Expand (Right Aligned) */}
+                    <View style={styles.secondaryControlsRow}>
+                      <Pressable style={({ hovered, pressed }) => [styles.controlButton, { transform: [{ scale: hovered || pressed ? 1.05 : 1 }], opacity: hovered ? 0.95 : 1 }]} onPress={toggleMute} accessibilityLabel={muted ? 'Reanudar sonido' : 'Silenciar'}>
+                        {muted ? <VolumeX size={20} color="#FFFFFF" /> : <Volume2 size={20} color="#FFFFFF" />}
+                      </Pressable>
+
+                      <Pressable style={({ hovered, pressed }) => [styles.loopWrapper, { transform: [{ scale: hovered || pressed ? 1.08 : 1 }], opacity: hovered ? 0.95 : 1 }]} onPress={cycleLoopMode} accessibilityLabel="Modo de bucle">
+                        <Animated.View style={{ transform: [{ scale: loopAnim }], position: 'relative' }}>
+                          <Repeat size={18} color={loopMode === 'off' ? 'rgba(255,255,255,0.5)' : colors.primary} />
+                          {loopMode === 'one' && (
+                            <View style={[styles.loopBadge, { backgroundColor: colors.primary }]}>
+                              <Text style={styles.loopBadgeText}>1</Text>
+                            </View>
+                          )}
+                        </Animated.View>
+                      </Pressable>
+
+                      <Pressable style={({ hovered, pressed }) => [styles.controlButton, { transform: [{ scale: hovered || pressed ? 1.05 : 1 }], opacity: hovered ? 0.95 : 1 }]} onPress={() => setIsFullscreen(!isFullscreen)} accessibilityLabel={isFullscreen ? 'Salir de pantalla completa' : 'Pantalla completa'}>
+                        {isFullscreen ? <Minimize2 size={20} color="#FFFFFF" /> : <Maximize2 size={20} color="#FFFFFF" />}
+                      </Pressable>
+                    </View>
+                  </View>
+
+                  {/* Progress Bar (Bottom) */}
+                  <View style={[styles.progressRow, { width: '100%' }]}>
+                    <Text style={[styles.timeText, { color: '#FFFFFF' }]}>{formatDuration(Math.floor((positionMillis || 0) / 1000))}</Text>
+                    <Pressable
+                      style={[styles.progressBar, { backgroundColor: 'rgba(255,255,255,0.2)' }]}
+                      onPress={(e) => {
+                        const { locationX } = e.nativeEvent as any;
+                        const w = progressBarWidthRef.current || 1;
+                        const ratio = Math.max(0, Math.min(1, locationX / w));
+                        seekToRatio(ratio);
+                      }}
+                      onLayout={(e) => { progressBarWidthRef.current = e.nativeEvent.layout.width; }}
+                    >
+                      <View style={[styles.progressFill, { width: durationMillis ? `${(positionMillis / durationMillis) * 100}%` : '0%', backgroundColor: colors.primary }]}>
+                        <View style={styles.progressThumb} />
+                      </View>
+                    </Pressable>
+                    <Text style={[styles.timeText, { color: '#FFFFFF' }]}>{formatDuration(Math.floor((durationMillis || 0) / 1000))}</Text>
+                  </View>
+                </Animated.View>
+              </TouchableOpacity>
 
               {!isFullscreen && (
-                <View style={styles.playlistContainer}>
+                <View style={[styles.playlistContainer, { backgroundColor: colors.surface }]}>
                   <Text style={[styles.playlistTitle, { color: colors.textSecondary }]}>Playlist</Text>
                   <FlatList
                     data={queue}
                     keyExtractor={(r) => r.id}
                     renderItem={({ item, index }) => (
                       <Pressable
-                        style={({ hovered, pressed }) => [styles.playlistRow, { borderColor: index === currentIndex ? colors.primary : colors.border, backgroundColor: colors.surface, transform: [{ scale: hovered || pressed ? 1.02 : 1 }], opacity: hovered ? 0.97 : 1 }]}
-                        onPress={() => loadAndPlay(index)}
+                        style={({ hovered, pressed }) => [
+                          styles.playlistRow,
+                          {
+                            borderColor: index === currentIndex ? colors.primary : colors.border,
+                            backgroundColor: colors.surface,
+                            transform: [{ scale: hovered || pressed ? 1.02 : 1 }],
+                            opacity: hovered ? 0.97 : 1
+                          }
+                        ]}
+                        onPress={() => loadAndPlay(index, queue)}
                       >
                         {Boolean((item as any).thumbnail_url) ? (
                           <Image source={{ uri: (item as any).thumbnail_url }} style={styles.playlistThumb} />
@@ -1612,8 +1857,12 @@ export default function RecordingsScreen() {
                           </View>
                         )}
                         <View style={{ flex: 1 }}>
-                          <Text style={[styles.playlistItemTitle, { color: colors.text }]} numberOfLines={1}>{item.title || 'Sin título'}</Text>
-                          <Text style={[styles.playlistItemMeta, { color: colors.textSecondary }]} numberOfLines={1}>{formatDuration(item.duration_seconds || 0)}</Text>
+                          <Text style={[styles.playlistItemTitle, { color: colors.text }]} numberOfLines={1}>
+                            {item.title || 'Sin título'}
+                          </Text>
+                          <Text style={[styles.playlistItemMeta, { color: colors.textSecondary }]} numberOfLines={1}>
+                            {formatDuration(item.duration_seconds || 0)}
+                          </Text>
                         </View>
                       </Pressable>
                     )}
@@ -1759,22 +2008,22 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: 20,
-    paddingVertical: 16,
+    paddingHorizontal: rp(20),
+    paddingVertical: rp(16),
     borderBottomWidth: 1,
   },
   title: {
-    fontSize: 28,
+    fontSize: rf(28),
     fontWeight: '700',
   },
   headerMenuButton: {
-    padding: 4,
+    padding: rp(4),
   },
   headerMenu: {
     position: 'absolute',
     right: HEADER_HORIZONTAL_PADDING,
     maxWidth: 280,
-    padding: 16,
+    padding: rp(16),
     borderRadius: 8,
     borderWidth: 1,
     shadowColor: '#000',
@@ -1795,8 +2044,8 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 12,
-    paddingHorizontal: 20,
-    paddingVertical: 12,
+    paddingHorizontal: rp(20),
+    paddingVertical: rp(12),
     borderBottomWidth: 1,
     position: 'relative',
     zIndex: 1000,
@@ -1810,13 +2059,18 @@ const styles = StyleSheet.create({
   },
   searchInput: {
     flex: 1,
-    fontSize: 16,
+    fontSize: rf(16),
+  },
+  closeSearchButton: {
+    padding: rp(8),
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   filtersRow: {
     flexDirection: 'row',
     alignItems: 'flex-end',
     gap: 12,
-    paddingTop: 8,
+    paddingTop: rp(8),
     flexWrap: 'wrap',
   },
   filterField: {
@@ -1826,15 +2080,15 @@ const styles = StyleSheet.create({
     minWidth: 140,
   },
   filterLabel: {
-    fontSize: 12,
+    fontSize: rf(12),
     fontWeight: '500',
   },
   filterInput: {
     borderWidth: 1,
     borderRadius: 8,
-    paddingHorizontal: 10,
-    paddingVertical: 8,
-    fontSize: 14,
+    paddingHorizontal: rp(10),
+    paddingVertical: rp(8),
+    fontSize: rf(14),
   },
   modeSegment: {
     flexDirection: 'row',
@@ -1842,8 +2096,8 @@ const styles = StyleSheet.create({
     flexWrap: 'wrap',
   },
   segmentButton: {
-    paddingHorizontal: 12,
-    paddingVertical: 6,
+    paddingHorizontal: rp(12),
+    paddingVertical: rp(6),
     borderRadius: 8,
     borderWidth: 1,
   },
@@ -1856,12 +2110,12 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: 20,
-    paddingVertical: 12,
+    paddingHorizontal: rp(20),
+    paddingVertical: rp(12),
   },
   selectionText: {
     color: '#FFFFFF',
-    fontSize: 16,
+    fontSize: rf(16),
     fontWeight: '600',
   },
   selectionActions: {
@@ -1869,24 +2123,24 @@ const styles = StyleSheet.create({
     gap: 16,
   },
   selectionButton: {
-    padding: 4,
+    padding: rp(4),
   },
   list: {
-    padding: 20,
+    padding: rp(20),
   },
   emptyState: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    paddingHorizontal: 40,
+    paddingHorizontal: rp(40),
   },
   emptyTitle: {
-    fontSize: 22,
+    fontSize: rf(22),
     fontWeight: '600',
     marginBottom: 8,
   },
   emptyText: {
-    fontSize: 16,
+    fontSize: rf(16),
     textAlign: 'center',
     lineHeight: 24,
   },
@@ -1896,13 +2150,14 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     bottom: 0,
+    backgroundColor: 'rgba(0, 0, 0, 0.3)',
     zIndex: 10,
   },
   recordingCard: {
     flexDirection: 'row',
     alignItems: 'center',
     borderRadius: 12,
-    padding: 16,
+    padding: rp(16),
     marginBottom: 12,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
@@ -1917,7 +2172,7 @@ const styles = StyleSheet.create({
     flex: 1,
     margin: 4,
     borderRadius: 12,
-    padding: 12,
+    padding: rp(12),
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.05,
@@ -1951,11 +2206,11 @@ const styles = StyleSheet.create({
     gap: 4,
   },
   recordingTitle: {
-    fontSize: 16,
+    fontSize: rf(16),
     fontWeight: '600',
   },
   gridTitle: {
-    fontSize: 13,
+    fontSize: rf(13),
     fontWeight: '600',
     textAlign: 'center',
   },
@@ -1970,18 +2225,18 @@ const styles = StyleSheet.create({
     gap: 4,
   },
   recordingDuration: {
-    fontSize: 13,
+    fontSize: rf(13),
     fontWeight: '500',
   },
   gridDuration: {
-    fontSize: 11,
+    fontSize: rf(11),
     fontWeight: '500',
   },
   gridDate: {
-    fontSize: 11,
+    fontSize: rf(11),
   },
   recordingDate: {
-    fontSize: 12,
+    fontSize: rf(12),
   },
   actions: {
     flexDirection: 'row',
@@ -2051,7 +2306,7 @@ const styles = StyleSheet.create({
     paddingVertical: MENU_ITEM_PADDING_V,
   },
   menuText: {
-    fontSize: 15,
+    fontSize: rf(15),
   },
 
   // Fullscreen overlay for player modal
@@ -2061,9 +2316,9 @@ const styles = StyleSheet.create({
     justifyContent: 'flex-end',
   },
   playerModule: {
-    backgroundColor: '#151718', // Dark background for player
-    paddingHorizontal: 24,
-    paddingBottom: 32,
+    backgroundColor: '#151718',
+    paddingTop: rp(12),
+    paddingBottom: rp(16),
     borderBottomLeftRadius: 24,
     borderBottomRightRadius: 24,
     shadowColor: '#000',
@@ -2077,8 +2332,35 @@ const styles = StyleSheet.create({
     flex: 1,
     borderBottomLeftRadius: 0,
     borderBottomRightRadius: 0,
+    justifyContent: 'space-between', // Changed from 'center' to spread content
+    paddingTop: rp(20), // More top padding
+    paddingBottom: rp(20), // Balanced bottom padding
+  },
+  visualizerContainer: {
+    flex: 1,
+    alignItems: 'center',
     justifyContent: 'center',
-    paddingBottom: 60,
+    width: '100%',
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+  },
+  staticImageContainer: {
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  controlsOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(0, 0, 0, 0.3)',
+    borderRadius: 12,
   },
   // Player modal styles
   playerContainer: {
@@ -2088,54 +2370,59 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    marginBottom: 4,
-    marginTop: 12,
+    marginBottom: 2,
+    marginTop: 0,
   },
   playerTitle: {
-    fontSize: 20,
+    fontSize: rf(18),
     fontWeight: '700',
     flex: 1,
-    marginRight: 16,
+    marginRight: 12,
   },
   closeButton: {
-    padding: 8,
+    padding: rp(8),
     backgroundColor: 'rgba(255,255,255,0.1)',
     borderRadius: 20,
   },
+  headerIconButton: {
+    padding: rp(6),
+    backgroundColor: 'rgba(255,255,255,0.1)',
+    borderRadius: 18,
+  },
   playerMeta: {
-    fontSize: 14,
-    marginBottom: 32,
+    fontSize: rf(13),
+    marginBottom: 12,
   },
   controlsRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 40,
-    marginBottom: 32,
+    gap: 32,
+    marginBottom: 0,
   },
   controlButton: {
-    padding: 12,
+    padding: rp(12),
   },
   playPauseButton: {
-    width: 72,
-    height: 72,
-    borderRadius: 36,
+    width: 64,
+    height: 64,
+    borderRadius: 32,
     alignItems: 'center',
     justifyContent: 'center',
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.4,
+    shadowRadius: 6,
     elevation: 6,
   },
   progressRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 12,
-    marginBottom: 24,
+    marginBottom: 12,
   },
   timeText: {
-    fontSize: 12,
+    fontSize: rf(12),
     fontVariant: ['tabular-nums'],
     width: 40,
     textAlign: 'center',
@@ -2170,11 +2457,11 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'flex-end',
     gap: 20,
-    paddingHorizontal: 8,
-    marginBottom: 20,
+    paddingHorizontal: rp(8),
+    marginBottom: 12,
   },
   loopWrapper: {
-    padding: 8,
+    padding: rp(8),
   },
   loopBadge: {
     position: 'absolute',
@@ -2190,16 +2477,16 @@ const styles = StyleSheet.create({
   },
   loopBadgeText: {
     color: '#FFFFFF',
-    fontSize: 9,
+    fontSize: rf(9),
     fontWeight: 'bold',
   },
   playlistContainer: {
     flex: 1,
-    paddingTop: 24,
-    paddingHorizontal: 20,
+    paddingTop: rp(24),
+    paddingHorizontal: rp(20),
   },
   playlistTitle: {
-    fontSize: 14,
+    fontSize: rf(14),
     fontWeight: '600',
     marginBottom: 16,
     textTransform: 'uppercase',
@@ -2211,7 +2498,7 @@ const styles = StyleSheet.create({
   playlistRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    padding: 12,
+    padding: rp(12),
     borderRadius: 12,
     marginBottom: 8,
     borderWidth: 1,
@@ -2223,25 +2510,25 @@ const styles = StyleSheet.create({
     marginRight: 12,
   },
   playlistItemTitle: {
-    fontSize: 15,
+    fontSize: rf(15),
     fontWeight: '500',
     marginBottom: 2,
   },
   playlistItemMeta: {
-    fontSize: 12,
+    fontSize: rf(12),
   },
   modalOverlay: {
     flex: 1,
     backgroundColor: 'rgba(0,0,0,0.5)',
     justifyContent: 'center',
     alignItems: 'center',
-    padding: 20,
+    padding: rp(20),
   },
   modalContent: {
     width: '100%',
     maxWidth: 400,
     borderRadius: 16,
-    padding: 24,
+    padding: rp(24),
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.1,
@@ -2249,16 +2536,16 @@ const styles = StyleSheet.create({
     elevation: 8,
   },
   modalTitle: {
-    fontSize: 20,
+    fontSize: rf(20),
     fontWeight: '600',
     marginBottom: 16,
   },
   modalInput: {
     borderWidth: 1,
     borderRadius: 8,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    fontSize: 16,
+    paddingHorizontal: rp(12),
+    paddingVertical: rp(10),
+    fontSize: rf(16),
   },
   modalInputRow: {
     flexDirection: 'row',
@@ -2267,7 +2554,7 @@ const styles = StyleSheet.create({
     marginBottom: 24,
   },
   modalExtSuffix: {
-    fontSize: 16,
+    fontSize: rf(16),
     fontWeight: '500',
   },
   modalButtons: {
@@ -2276,19 +2563,19 @@ const styles = StyleSheet.create({
     gap: 12,
   },
   modalButton: {
-    paddingHorizontal: 16,
-    paddingVertical: 10,
+    paddingHorizontal: rp(16),
+    paddingVertical: rp(10),
     borderRadius: 8,
     minWidth: 80,
     alignItems: 'center',
   },
   modalButtonText: {
-    fontSize: 14,
+    fontSize: rf(14),
     fontWeight: '600',
   },
   destinationItem: {
-    paddingVertical: 12,
-    paddingHorizontal: 4,
+    paddingVertical: rp(12),
+    paddingHorizontal: rp(4),
     borderBottomWidth: 1,
   },
 });
