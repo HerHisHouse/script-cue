@@ -1732,7 +1732,7 @@ export default function CastingModeScreen() {
                   Estamos mezclando tu actuación con el audio de IA de alta calidad.
                 </Text>
                 <Text style={styles.processingSubtext}>
-                  Esto puede tardar 30-60 segundos
+                  Dependiendo de tu conexión esto puede tardar varios minutos
                 </Text>
               </View>
             </View>
