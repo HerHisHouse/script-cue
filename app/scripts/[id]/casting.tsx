@@ -654,7 +654,7 @@ export default function CastingModeScreen() {
   // 2. Logic: Handle Line Change
   useEffect(() => {
     // Auto-scroll to current index - Subir hasta el margen superior
-    if (dialogueLines.length > 0 && flatListRef.current) {
+    if (configuredLines.length > 0 && flatListRef.current) {
       flatListRef.current.scrollToIndex({
         index: currentIndex,
         animated: true,
@@ -662,14 +662,32 @@ export default function CastingModeScreen() {
       });
     }
 
-    if (isPlaying && !loading && dialogueLines.length > 0) {
+    if (isPlaying && !loading && configuredLines.length > 0) {
       handleLineLogic();
     }
   }, [currentIndex, isPlaying]);
 
   async function handleLineLogic() {
-    const line = dialogueLines[currentIndex];
-    if (!line) return;
+    const item = configuredLines[currentIndex];
+    if (!item) return;
+
+    // Check if this is an action card
+    const isAction = 'afterLineId' in item;
+
+    if (isAction) {
+      // Action card: just wait for the configured duration and advance
+      const action = item as ActionCard;
+      const duration = action.duration * 1000; // Convert to ms
+      console.log(`[Casting] Action card: waiting ${action.duration}s`);
+
+      silenceTimerRef.current = setTimeout(() => {
+        nextLine();
+      }, duration) as any;
+      return;
+    }
+
+    // It's a dialogue line
+    const line = item as DialogueLine;
 
     if (line.isUserCharacter) {
       // User's turn
@@ -761,8 +779,10 @@ export default function CastingModeScreen() {
       // Fallback: Auto-advance after delay using configured timing
       // When camera is recording, iOS doesn't allow separate audio recording
       // So we use the pre-configured timing from scene setup
-      const line = dialogueLines[currentIndex];
-      if (line) {
+      const item = configuredLines[currentIndex];
+      // Only apply if it's a dialogue line (not an action)
+      if (item && !('afterLineId' in item)) {
+        const line = item as DialogueLine;
         // Get configured duration (includes any user adjustments)
         const duration = getLineDuration(line) * 1000; // Convert to ms
         console.log(`[Casting] Using configured timer: ${duration}ms for line ${currentIndex}`);
@@ -868,7 +888,7 @@ export default function CastingModeScreen() {
       }
     }
 
-    if (currentIndex < dialogueLines.length - 1) {
+    if (currentIndex < configuredLines.length - 1) {
       setCurrentIndex(prev => prev + 1);
     } else {
       // End of script reached - but DON'T stop recording
@@ -1464,51 +1484,83 @@ export default function CastingModeScreen() {
 
                 <FlatList
                   ref={flatListRef}
-                  data={dialogueLines}
-                  keyExtractor={(item) => item.id}
+                  data={configuredLines}
+                  keyExtractor={(item) => 'afterLineId' in item ? item.id : item.id}
                   contentContainerStyle={{ paddingTop: rp(20), paddingBottom: rp(100), paddingHorizontal: rp(24) }}
                   renderItem={({ item, index }) => {
                     const isActive = index === currentIndex;
+                    const isAction = 'afterLineId' in item;
 
                     // Calculate opacity: active = 1, neighbors = 0.6, others = 0.3
                     let opacity = 0.3;
                     if (isActive) opacity = 1;
                     else if (Math.abs(index - currentIndex) <= 1) opacity = 0.6;
 
+                    // Render Action Card
+                    if (isAction) {
+                      const action = item as ActionCard;
+                      // If hideActions is true, don't render action cards
+                      if (hideActions) return null;
+
+                      return (
+                        <View
+                          style={[
+                            styles.teleprompterActionCard,
+                            isActive && styles.teleprompterActionCardActive,
+                            { opacity }
+                          ]}
+                        >
+                          <View style={styles.teleprompterActionHeader}>
+                            <Clapperboard color="#F59E0B" size={rp(16)} />
+                            <Text style={styles.teleprompterActionLabel}>ACCIÓN</Text>
+                            <View style={styles.teleprompterActionDuration}>
+                              <Timer size={rp(12)} color="#F59E0B" />
+                              <Text style={styles.teleprompterActionDurationText}>{action.duration}s</Text>
+                            </View>
+                          </View>
+                          <Text style={[styles.teleprompterActionText, isActive && { fontWeight: '700' }]}>
+                            ({action.text})
+                          </Text>
+                        </View>
+                      );
+                    }
+
+                    // Render Dialogue Line
+                    const line = item as DialogueLine;
                     return (
                       <TouchableOpacity
                         onPress={() => setCurrentIndex(index)}
                         style={[
                           styles.dialogueCard,
                           isActive && styles.activeCard,
-                          { opacity, borderLeftColor: item.color }
+                          { opacity, borderLeftColor: line.color }
                         ]}
                       >
                         <View style={styles.cardHeader}>
-                          <View style={[styles.charBadge, { backgroundColor: item.color }]}>
-                            <Text style={styles.charBadgeText}>{item.characterName.charAt(0)}</Text>
+                          <View style={[styles.charBadge, { backgroundColor: line.color }]}>
+                            <Text style={styles.charBadgeText}>{line.characterName.charAt(0)}</Text>
                           </View>
-                          <Text style={[styles.cardCharName, isActive && { color: '#fff' }]}>{item.characterName}</Text>
-                          {item.isUserCharacter ? (
+                          <Text style={[styles.cardCharName, isActive && { color: '#fff' }]}>{line.characterName}</Text>
+                          {line.isUserCharacter ? (
                             <View style={styles.youBadge}>
                               <Text style={styles.youBadgeText}>TÚ</Text>
                             </View>
                           ) : (
-                            <View style={[styles.aiBadge, { backgroundColor: item.color }]}>
+                            <View style={[styles.aiBadge, { backgroundColor: line.color }]}>
                               <Text style={styles.aiBadgeText}>IA</Text>
                             </View>
                           )}
                         </View>
 
                         {/* Show hidden text placeholder or actual text */}
-                        {hideUserLines && item.isUserCharacter ? (
+                        {hideUserLines && line.isUserCharacter ? (
                           <View style={styles.hiddenTextContainer}>
                             <EyeOff size={rp(32)} color="#10B981" />
                             <Text style={styles.hiddenText}>Línea oculta</Text>
                           </View>
                         ) : (
                           <Text style={[styles.cardText, isActive && { color: '#fff', fontWeight: '600' }]}>
-                            {item.text}
+                            {line.text}
                           </Text>
                         )}
                       </TouchableOpacity>
@@ -2451,6 +2503,51 @@ const styles = StyleSheet.create({
     color: 'white',
     fontSize: rf(16),
     fontWeight: '700',
+  },
+  // Teleprompter Action Card Styles
+  teleprompterActionCard: {
+    backgroundColor: 'rgba(245, 158, 11, 0.2)',
+    borderLeftWidth: rp(4),
+    borderLeftColor: '#F59E0B',
+    padding: rp(16),
+    borderRadius: rp(12),
+    marginBottom: rp(12),
+  },
+  teleprompterActionCardActive: {
+    backgroundColor: 'rgba(245, 158, 11, 0.4)',
+    transform: [{ scale: 1.02 }],
+  },
+  teleprompterActionHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: rp(8),
+    marginBottom: rp(8),
+  },
+  teleprompterActionLabel: {
+    color: '#F59E0B',
+    fontSize: rf(11),
+    fontWeight: '700',
+    flex: 1,
+  },
+  teleprompterActionDuration: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: rp(4),
+    backgroundColor: 'rgba(245, 158, 11, 0.3)',
+    paddingHorizontal: rp(8),
+    paddingVertical: rp(4),
+    borderRadius: rp(8),
+  },
+  teleprompterActionDurationText: {
+    color: '#F59E0B',
+    fontSize: rf(12),
+    fontWeight: '600',
+  },
+  teleprompterActionText: {
+    color: '#FCD34D',
+    fontSize: rf(16),
+    fontStyle: 'italic',
+    lineHeight: rf(22),
   },
 });
 
