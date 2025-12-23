@@ -82,7 +82,7 @@ export default function CastingModeScreen() {
   const [showMenu, setShowMenu] = useState(false);
   const [hideUserLines, setHideUserLines] = useState(false);
   const [hideTeleprompter, setHideTeleprompter] = useState(false);
-  const [startDelay, setStartDelay] = useState(3); // Delay in seconds before first line (0, 3, 5, 10)
+  const [startDelay, setStartDelay] = useState(5); // Delay in seconds before first line (0, 5, 10, 15... up to 60)
   const [countdown, setCountdown] = useState<number | null>(null); // Countdown display
 
   // Teleprompter UI State
@@ -606,11 +606,15 @@ export default function CastingModeScreen() {
 
     } catch (e) {
       console.warn('[Casting] Start listening failed:', e);
-      // Fallback: Auto-advance after delay
+      // Fallback: Auto-advance after delay based on word count
+      // When camera is recording, iOS doesn't allow separate audio recording
+      // So we estimate time based on the text length
       const line = dialogueLines[currentIndex];
       if (line) {
         const words = line.text.split(' ').length;
-        const duration = Math.max(3000, words * 500);
+        // Base: 800ms per word, minimum 5s, maximum 30s for very long lines
+        const duration = Math.min(30000, Math.max(5000, words * 800));
+        console.log(`[Casting] Fallback timer: ${duration}ms for ${words} words`);
         silenceTimerRef.current = setTimeout(() => {
           nextLine();
         }, duration) as any;
@@ -1296,24 +1300,22 @@ export default function CastingModeScreen() {
                   <Timer size={rp(20)} color="white" />
                   <Text style={styles.menuText}>Espera inicial</Text>
                 </View>
-                <View style={styles.delayControlMenu}>
-                  {[0, 3, 5, 10].map((delay) => (
-                    <TouchableOpacity
-                      key={delay}
-                      onPress={() => setStartDelay(delay)}
-                      style={[
-                        styles.delayBtn,
-                        startDelay === delay && styles.delayBtnActive
-                      ]}
-                    >
-                      <Text style={[
-                        styles.delayBtnText,
-                        startDelay === delay && styles.delayBtnTextActive
-                      ]}>
-                        {delay === 0 ? 'Off' : `${delay}s`}
-                      </Text>
-                    </TouchableOpacity>
-                  ))}
+                <View style={styles.volumeControlMenu}>
+                  <TouchableOpacity
+                    onPress={() => setStartDelay(Math.max(0, startDelay - 5))}
+                    style={styles.volumeBtnMenu}
+                  >
+                    <Minus size={rp(18)} color="white" />
+                  </TouchableOpacity>
+                  <View style={styles.volumeDisplayMenu}>
+                    <Text style={styles.volumeTextMenu}>{startDelay === 0 ? 'Off' : `${startDelay}s`}</Text>
+                  </View>
+                  <TouchableOpacity
+                    onPress={() => setStartDelay(Math.min(60, startDelay + 5))}
+                    style={styles.volumeBtnMenu}
+                  >
+                    <Plus size={rp(18)} color="white" />
+                  </TouchableOpacity>
                 </View>
               </View>
             </>
