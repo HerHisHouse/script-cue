@@ -8,6 +8,7 @@ import {
   Alert,
   AppState,
   AppStateStatus,
+  ScrollView,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, useLocalSearchParams } from 'expo-router';
@@ -16,16 +17,31 @@ import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/utils/supabase';
 import { DialogueLine } from '@/utils/dialogueParser';
 import { loadDialogueLines } from '@/utils/loadDialogueLines';
-import { X, Settings, Mic, Play, SkipForward, RotateCcw } from 'lucide-react-native';
+import { X, Settings, Mic, Play, SkipForward, SkipBack, Repeat, RotateCcw, Pause, ChevronDown, Volume2, Info, Car } from 'lucide-react-native';
 import { Audio } from 'expo-av';
 import * as Speech from 'expo-speech';
+import { rf, rp } from '@/utils/responsive';
 import { transcribeAudio } from '@/services/transcription';
 import { activateKeepAwakeAsync, deactivateKeepAwake } from 'expo-keep-awake';
-import { CarModeSettings } from '@/components/CarModeSettings';
+import { generateAndCacheAudio, getCachedAudio } from '@/utils/ttsCache';
+import {
+  VoiceOption,
+  OPENAI_VOICES,
+  getElevenLabsVoices,
+  playVoicePreview,
+  stopVoicePreview,
+} from '@/utils/voiceService';
 
 import { Stack } from 'expo-router';
 
 type CarModePhase = 'idle' | 'playing_ai' | 'listening_user' | 'processing_command' | 'auto_advancing';
+type VoiceProviderType = 'openai' | 'elevenlabs' | 'system';
+
+interface CharacterVoiceConfig {
+  characterName: string;
+  provider: VoiceProviderType;
+  voiceId: string;
+}
 
 export default function CarModeScreen() {
   const router = useRouter();
@@ -42,6 +58,20 @@ export default function CarModeScreen() {
     surface: '#111111',
   };
 
+  // Configuration screen state
+  const [showConfig, setShowConfig] = useState(true);
+  const [isPreparingAudio, setIsPreparingAudio] = useState(false);
+  const [preparingProgress, setPreparingProgress] = useState(0);
+  const [characterVoiceConfigs, setCharacterVoiceConfigs] = useState<CharacterVoiceConfig[]>([]);
+  const [expandedCharacter, setExpandedCharacter] = useState<string | null>(null);
+  const [showVoiceDropdown, setShowVoiceDropdown] = useState<string | null>(null);
+
+  // Voice data
+  const [availableVoices, setAvailableVoices] = useState<Speech.Voice[]>([]);
+  const [elevenLabsVoices, setElevenLabsVoices] = useState<VoiceOption[]>([]);
+  const [loadingVoices, setLoadingVoices] = useState(false);
+  const [playingVoiceId, setPlayingVoiceId] = useState<string | null>(null);
+
   const [loading, setLoading] = useState(true);
   const [dialogueLines, setDialogueLines] = useState<DialogueLine[]>([]);
   const [currentIndex, setCurrentIndex] = useState(0);
@@ -49,6 +79,7 @@ export default function CarModeScreen() {
   const phaseRef = useRef<CarModePhase>('idle');
   const [statusText, setStatusText] = useState('Listo');
   const [isRecording, setIsRecording] = useState(false);
+  const [loopEnabled, setLoopEnabled] = useState(true); // Default: loop enabled for Car Mode
 
   // Update ref when state changes
   useEffect(() => {
@@ -56,20 +87,16 @@ export default function CarModeScreen() {
     console.log('[Car Mode] Phase changed to:', phase);
   }, [phase]);
   const [isActive, setIsActive] = useState(false);
+  const [isPaused, setIsPaused] = useState(false);
 
   // Settings
   const [speechRate, setSpeechRate] = useState(1.0);
-  const [continuousMode, setContinuousMode] = useState(false);
-  const [showSettings, setShowSettings] = useState(false);
-
-  // Voices
-  const [availableVoices, setAvailableVoices] = useState<Speech.Voice[]>([]);
-  const [aiVoiceId, setAiVoiceId] = useState<string | undefined>(undefined);
-  const [userVoiceId, setUserVoiceId] = useState<string | undefined>(undefined);
+  const [characters, setCharacters] = useState<any[]>([]);
 
   const recordingRef = useRef<Audio.Recording | null>(null);
   const silenceTimerRef = useRef<NodeJS.Timeout | null>(null);
   const appState = useRef(AppState.currentState);
+  const soundRef = useRef<Audio.Sound | null>(null);
 
   // Load Data
   useEffect(() => {
@@ -81,6 +108,28 @@ export default function CarModeScreen() {
         const lines = await loadDialogueLines(id as string);
         console.log('[Car Mode] Loaded lines:', lines.length);
         setDialogueLines(lines);
+
+        // Load characters
+        const { data: charactersData } = await supabase
+          .from('characters')
+          .select('*')
+          .eq('script_id', id);
+        setCharacters(charactersData || []);
+
+        // Extract unique character names from dialogue
+        const uniqueCharacters = [...new Set(lines.map(line => line.characterName))];
+
+        // Initialize voice configs for each character with defaults
+        const configs: CharacterVoiceConfig[] = uniqueCharacters.map(charName => {
+          // Try to get existing character voice config
+          const char = charactersData?.find(c => c.name?.toUpperCase() === charName.toUpperCase());
+          return {
+            characterName: charName,
+            provider: (char?.voice_provider as VoiceProviderType) || 'openai',
+            voiceId: char?.voice_id || 'nova',
+          };
+        });
+        setCharacterVoiceConfigs(configs);
       } catch (e) {
         console.error('[Car Mode] Error loading dialogue:', e);
         Alert.alert('Error', 'No se pudo cargar el guión');
@@ -91,41 +140,78 @@ export default function CarModeScreen() {
     loadData();
     activateKeepAwakeAsync();
 
+    // Load system voices
     Speech.getAvailableVoicesAsync().then(voices => {
       setAvailableVoices(voices);
-      // Set defaults if needed
     });
+
+    // Load ElevenLabs voices
+    loadElevenLabsVoices();
 
     return () => {
       deactivateKeepAwake();
       stopRecording();
       Speech.stop();
+      stopVoicePreview();
+      if (soundRef.current) {
+        soundRef.current.unloadAsync();
+      }
     };
   }, [id, user]);
 
+  const loadElevenLabsVoices = async () => {
+    setLoadingVoices(true);
+    try {
+      const voices = await getElevenLabsVoices();
+      setElevenLabsVoices(voices);
+    } catch (error) {
+      console.error('Error loading ElevenLabs voices:', error);
+    } finally {
+      setLoadingVoices(false);
+    }
+  };
+
   // Main Loop
   useEffect(() => {
-    if (!isActive || dialogueLines.length === 0 || loading) return;
+    if (!isActive || isPaused || dialogueLines.length === 0 || loading) return;
 
     processCurrentLine();
-  }, [currentIndex, isActive, dialogueLines, loading]);
+  }, [currentIndex, isActive, isPaused, dialogueLines, loading]);
+
+  const getVoiceConfigForCharacter = (characterName: string): CharacterVoiceConfig | undefined => {
+    return characterVoiceConfigs.find(c => c.characterName.toUpperCase() === characterName.toUpperCase());
+  };
 
   const processCurrentLine = async () => {
     console.log('[Car Mode] processCurrentLine called for index:', currentIndex);
     await stopRecording();
     Speech.stop();
+    if (soundRef.current) {
+      try {
+        await soundRef.current.stopAsync();
+        await soundRef.current.unloadAsync();
+      } catch { }
+      soundRef.current = null;
+    }
 
     const line = dialogueLines[currentIndex];
+    if (!line) return;
 
-    if (!line.isUserCharacter) {
-      // AI Turn
-      setPhase('playing_ai');
-      setStatusText(`Escuchando a ${line.characterName}...`);
+    // All lines are played with AI voice in Car Mode
+    setPhase('playing_ai');
+    setStatusText(`${line.characterName}...`);
 
+    // Get voice config for this character
+    const voiceConfig = getVoiceConfigForCharacter(line.characterName);
+    const effectiveProvider = voiceConfig?.provider || 'openai';
+    const voiceId = voiceConfig?.voiceId || 'nova';
+
+    console.log(`[Car Mode] Playing line for ${line.characterName}: provider=${effectiveProvider}, voiceId=${voiceId}`);
+
+    // Try to use cached audio
+    if (effectiveProvider === 'openai' || effectiveProvider === 'elevenlabs') {
       try {
-        const { getCachedAudio } = await import('@/utils/ttsCache');
         const Crypto = await import('expo-crypto');
-        const { Audio } = await import('expo-av');
 
         const textHash = await Crypto.digestStringAsync(
           Crypto.CryptoDigestAlgorithm.SHA256,
@@ -133,99 +219,75 @@ export default function CarModeScreen() {
         );
 
         console.log('[Car Mode] Checking cache for line:', line.id);
-        const audioUri = await getCachedAudio(line.id, 'openai', null, textHash);
+        const audioUri = await getCachedAudio(line.id, effectiveProvider, voiceId, textHash);
 
         if (audioUri) {
           console.log('[Car Mode] Playing cached audio:', audioUri);
+
+          // Configure for speaker output on iOS
+          await Audio.setAudioModeAsync({
+            allowsRecordingIOS: false,
+            playsInSilentModeIOS: true,
+            staysActiveInBackground: true,
+            shouldDuckAndroid: true,
+          });
+
           const { sound } = await Audio.Sound.createAsync(
             { uri: audioUri },
             { shouldPlay: true, rate: speechRate }
           );
 
+          soundRef.current = sound;
+
           sound.setOnPlaybackStatusUpdate((status) => {
             if (status.isLoaded && status.didJustFinish) {
-              // Audio finished
               handleAudioFinished();
             }
           });
+          return;
         } else {
-          console.log('[Car Mode] Cache miss, using System TTS');
-          // Fallback to System TTS
-          speakWithSystemTTS();
+          console.log('[Car Mode] Cache miss - falling back to System TTS');
         }
       } catch (error) {
-        console.error('[Car Mode] TTS Error:', error);
-        speakWithSystemTTS();
-      }
-
-      function handleAudioFinished() {
-        // After AI speaks, check if next line is user's
-        if (currentIndex < dialogueLines.length - 1) {
-          const nextLine = dialogueLines[currentIndex + 1];
-          if (nextLine && nextLine.isUserCharacter) {
-            // Next is user's turn - advance and start listening
-            setTimeout(() => {
-              advanceToNext();
-            }, 500);
-          } else {
-            // Next is also AI - continue automatically
-            setTimeout(() => {
-              advanceToNext();
-            }, 500);
-          }
-        } else {
-          // End of script
-          setPhase('idle');
-          setStatusText('Fin del guión');
-        }
-      }
-
-      function speakWithSystemTTS() {
-        Speech.speak(line.text, {
-          language: 'es-ES',
-          rate: speechRate,
-          voice: aiVoiceId,
-          onDone: handleAudioFinished
-        });
-      }
-    } else {
-      // User Turn
-      if (continuousMode) {
-        // In continuous mode, user just listens (or we skip user lines? Req says: "Se simula como si fueran dos actores... El usuario no habla")
-        // So we should speak user lines too?
-        // Req 5: "El usuario no habla, solo escucha." -> So AI speaks user lines too.
-        setPhase('playing_ai'); // Treat as AI for continuous
-        setStatusText(`(Auto) ${line.characterName}...`);
-        Speech.speak(line.text, {
-          language: 'es-ES',
-          rate: speechRate,
-          voice: userVoiceId, // Use user voice preference
-          onDone: () => { setTimeout(advanceToNext, 500); }
-        });
-      } else {
-        // Normal mode: User speaks
-        setPhase('listening_user');
-        setStatusText('TU TURNO');
-        startListening();
+        console.error('[Car Mode] TTS Cache Error:', error);
       }
     }
-  };
 
-  // Debug: Log phase changes
-  useEffect(() => {
-    console.log('[Car Mode] Phase changed to:', phase);
-  }, [phase]);
+    // Fallback to System TTS
+    speakWithSystemTTS();
+
+    function handleAudioFinished() {
+      setTimeout(() => {
+        advanceToNext();
+      }, 500);
+    }
+
+    function speakWithSystemTTS() {
+      // Find a Spanish voice for system TTS
+      const spanishVoice = availableVoices.find(v =>
+        v.language.startsWith('es') && v.identifier.includes('enhanced')
+      ) || availableVoices.find(v => v.language.startsWith('es'));
+
+      Speech.speak(line.text, {
+        language: 'es-ES',
+        rate: speechRate,
+        voice: spanishVoice?.identifier,
+        onDone: handleAudioFinished
+      });
+    }
+  };
 
   const advanceToNext = () => {
     console.log('[Car Mode] advanceToNext called, current:', currentIndex);
     if (currentIndex < dialogueLines.length - 1) {
       setCurrentIndex(p => p + 1);
     } else {
-      if (continuousMode) {
+      if (loopEnabled) {
         setCurrentIndex(0); // Loop
       } else {
         setStatusText('Fin del guión');
         setPhase('idle');
+        setIsActive(false);
       }
     }
   };
@@ -241,167 +303,385 @@ export default function CarModeScreen() {
     if (silenceTimerRef.current) clearTimeout(silenceTimerRef.current);
   };
 
-  const startListening = async () => {
-    console.log('[Car Mode] startListening called');
-    try {
-      await Audio.requestPermissionsAsync();
-      await Audio.setAudioModeAsync({ allowsRecordingIOS: true, playsInSilentModeIOS: true });
-
-      const { recording } = await Audio.Recording.createAsync(
-        Audio.RecordingOptionsPresets.HIGH_QUALITY
-      );
-      recordingRef.current = recording;
-      setIsRecording(true);
-
-      // VAD Logic
-      recording.setOnRecordingStatusUpdate((status) => {
-        if (status.isRecording && status.metering !== undefined) {
-          const level = status.metering;
-          if (level > -35) { // Speech detected
-            console.log('[Car Mode] Voice detected, level:', level);
-            if (silenceTimerRef.current) clearTimeout(silenceTimerRef.current);
-            silenceTimerRef.current = setTimeout(() => {
-              // Silence after speech -> Process Command or Next
-              console.log('[Car Mode] Silence after speech detected');
-              handleSilenceDetected();
-            }, 1500) as any;
-          }
-        }
-      });
-
-      // Initial timeout (if no speech at all)
-      silenceTimerRef.current = setTimeout(() => {
-        // Just advance if they don't say anything? Or maybe they are thinking.
-        // Let's assume they read it silently or we missed it.
-        // But we also need to check for commands.
-        // Let's try to transcribe whatever we have.
-        handleSilenceDetected();
-      }, 8000) as any;
-
-    } catch (e) {
-      console.error('Error recording:', e);
-      Alert.alert('Error', 'No se pudo acceder al micrófono');
-    }
-  };
-
-  const handleSilenceDetected = async () => {
-    const currentPhase = phaseRef.current;
-    console.log('[Car Mode] handleSilenceDetected called, phaseRef:', currentPhase);
-
-    if (currentPhase !== 'listening_user') {
-      console.log('[Car Mode] Skipping - not in listening_user phase');
-      return;
-    }
-
-    setPhase('processing_command');
-    setStatusText('Analizando...');
-
-    const uri = recordingRef.current?.getURI();
-    await stopRecording();
-
-    if (!uri) {
-      advanceToNext();
-      return;
-    }
-
-    try {
-      // Transcribe audio
-      const text = await transcribeAudio(uri);
-      const lower = text.toLowerCase().trim();
-      console.log('[Car Mode] Transcribed:', text);
-
-      // Get current line (should be user's line)
-      const currentLine = dialogueLines[currentIndex];
-
-      if (currentLine && currentLine.isUserCharacter) {
-        // Calculate similarity with expected line
-        const s1 = text.toLowerCase().replace(/[^\w\s]/g, '').trim();
-        const s2 = currentLine.text.toLowerCase().replace(/[^\w\s]/g, '').trim();
-
-        let similarity = 0;
-        if (s1 && s2) {
-          if (s1 === s2) {
-            similarity = 1;
-          } else {
-            const words1 = s1.split(/\s+/);
-            const words2 = s2.split(/\s+/);
-            const intersection = words1.filter(w => words2.includes(w));
-            similarity = intersection.length / Math.max(words1.length, words2.length);
-          }
-        }
-
-        console.log('[Car Mode] Similarity:', similarity);
-
-        if (similarity > 0.6) {
-          // User said their line correctly -> Auto advance
-          console.log('[Car Mode] ✅ Line matched! Auto-advancing...');
-          advanceToNext();
-          return;
-        }
-      }
-
-      // If not a line match, check for voice commands
-      if (lower.includes('siguiente') || lower.includes('next')) {
-        advanceToNext();
-      } else if (lower.includes('repetir') || lower.includes('repeat')) {
-        if (currentIndex > 0) setCurrentIndex(p => p - 1);
-        else processCurrentLine();
-      } else if (lower.includes('atrás') || lower.includes('back') || lower.includes('anterior')) {
-        if (currentIndex > 0) setCurrentIndex(p => p - 1);
-      } else if (lower.includes('parar') || lower.includes('stop') || lower.includes('salir')) {
-        router.back();
-      } else {
-        // No command and no line match -> Still advance (assume they tried)
-        advanceToNext();
-      }
-    } catch (e) {
-      console.error('[Car Mode] Command processing error:', e);
-      // Fallback: just next
-      advanceToNext();
-    }
-  };
-
   const handleManualNext = () => {
     stopRecording();
     Speech.stop();
+    if (soundRef.current) {
+      soundRef.current.stopAsync().catch(() => { });
+    }
     advanceToNext();
   };
 
   const handleManualPrev = () => {
     stopRecording();
     Speech.stop();
+    if (soundRef.current) {
+      soundRef.current.stopAsync().catch(() => { });
+    }
     if (currentIndex > 0) setCurrentIndex(p => p - 1);
   };
 
   const handleManualReplay = () => {
     stopRecording();
     Speech.stop();
+    if (soundRef.current) {
+      soundRef.current.stopAsync().catch(() => { });
+    }
     processCurrentLine();
   };
 
-  const handleStart = () => {
-    console.log('[Car Mode] handleStart called');
-    console.log('[Car Mode] dialogueLines.length:', dialogueLines.length);
-    console.log('[Car Mode] currentIndex:', currentIndex);
-    setIsActive(true);
-    // useEffect will trigger processCurrentLine when isActive becomes true
+  const handleRestart = () => {
+    stopRecording();
+    Speech.stop();
+    if (soundRef.current) {
+      soundRef.current.stopAsync().catch(() => { });
+    }
+    setCurrentIndex(0);
   };
 
   const handlePause = () => {
-    setIsActive(false);
+    setIsPaused(true);
     stopRecording();
     Speech.stop();
+    if (soundRef.current) {
+      soundRef.current.pauseAsync().catch(() => { });
+    }
     setStatusText('Pausado');
     setPhase('idle');
   };
 
+  const handleResume = () => {
+    setIsPaused(false);
+    processCurrentLine();
+  };
+
+  // =============================================
+  // CONFIGURATION SCREEN FUNCTIONS
+  // =============================================
+
+  const updateCharacterVoice = (characterName: string, provider: VoiceProviderType, voiceId: string) => {
+    setCharacterVoiceConfigs(prev =>
+      prev.map(config =>
+        config.characterName === characterName
+          ? { ...config, provider, voiceId }
+          : config
+      )
+    );
+  };
+
+  const getVoicesForProvider = (provider: VoiceProviderType) => {
+    switch (provider) {
+      case 'openai':
+        return OPENAI_VOICES.map(v => ({ id: v.id, name: v.name }));
+      case 'elevenlabs':
+        return elevenLabsVoices.map(v => ({ id: v.id, name: v.name }));
+      case 'system':
+        return availableVoices
+          .filter(v => v.language.startsWith('es'))
+          .map(v => ({ id: v.identifier, name: v.name }));
+      default:
+        return [];
+    }
+  };
+
+  const getVoiceName = (provider: VoiceProviderType, voiceId: string) => {
+    const voices = getVoicesForProvider(provider);
+    const voice = voices.find(v => v.id === voiceId);
+    return voice?.name || 'Seleccionar voz';
+  };
+
+  const getProviderEmoji = (provider: VoiceProviderType) => {
+    switch (provider) {
+      case 'openai': return '🤖';
+      case 'elevenlabs': return '🎭';
+      case 'system': return '📱';
+    }
+  };
+
+  const handlePreview = async (provider: VoiceProviderType, voiceId: string) => {
+    if (playingVoiceId === voiceId) {
+      await stopVoicePreview();
+      await Speech.stop();
+      setPlayingVoiceId(null);
+      return;
+    }
+
+    setPlayingVoiceId(voiceId);
+
+    try {
+      if (provider === 'system') {
+        await Speech.speak('Hola, esta es mi voz. ¿Qué te parece?', {
+          voice: voiceId,
+          language: 'es-ES',
+          onDone: () => setPlayingVoiceId(null),
+          onError: () => setPlayingVoiceId(null),
+        });
+      } else if (provider === 'openai') {
+        const voice = OPENAI_VOICES.find(v => v.id === voiceId);
+        if (voice) {
+          await playVoicePreview(voice);
+          setTimeout(() => setPlayingVoiceId(null), 5000);
+        }
+      } else if (provider === 'elevenlabs') {
+        const voice = elevenLabsVoices.find(v => v.id === voiceId);
+        if (voice) {
+          await playVoicePreview(voice);
+          setTimeout(() => setPlayingVoiceId(null), 5000);
+        }
+      }
+    } catch (error) {
+      console.error('Error playing preview:', error);
+      setPlayingVoiceId(null);
+    }
+  };
+
+  const handleStartCarMode = async () => {
+    setIsPreparingAudio(true);
+    setPreparingProgress(0);
+
+    try {
+      // Pre-cache all audio for all lines
+      const { data: { user: currentUser } } = await supabase.auth.getUser();
+      if (!currentUser) throw new Error('No user');
+
+      const totalLines = dialogueLines.length;
+      let cached = 0;
+
+      for (const line of dialogueLines) {
+        const voiceConfig = getVoiceConfigForCharacter(line.characterName);
+        if (!voiceConfig) continue;
+
+        // Skip system voices - they don't need caching
+        if (voiceConfig.provider === 'system') {
+          cached++;
+          setPreparingProgress(Math.round((cached / totalLines) * 100));
+          continue;
+        }
+
+        try {
+          console.log(`[Car Mode] Pre-caching: ${line.characterName} - ${voiceConfig.provider}/${voiceConfig.voiceId}`);
+
+          await generateAndCacheAudio(
+            id as string,
+            line.id,
+            line.characterName,
+            line.text,
+            {
+              provider: voiceConfig.provider,
+              voiceId: voiceConfig.voiceId,
+            },
+            currentUser.id
+          );
+        } catch (e) {
+          console.warn(`[Car Mode] Failed to cache line ${line.id}:`, e);
+        }
+
+        cached++;
+        setPreparingProgress(Math.round((cached / totalLines) * 100));
+      }
+
+      console.log('[Car Mode] Audio pre-caching complete!');
+
+      // Start the mode
+      setShowConfig(false);
+      setIsActive(true);
+    } catch (error) {
+      console.error('[Car Mode] Error preparing audio:', error);
+      Alert.alert('Error', 'Hubo un problema preparando el audio. ¿Continuar sin precarga?', [
+        { text: 'Cancelar', style: 'cancel' },
+        { text: 'Continuar', onPress: () => { setShowConfig(false); setIsActive(true); } },
+      ]);
+    } finally {
+      setIsPreparingAudio(false);
+    }
+  };
+
+  // =============================================
+  // RENDER
+  // =============================================
+
   if (loading) return (
     <View style={[styles.container, { backgroundColor: colors.background, justifyContent: 'center', alignItems: 'center' }]}>
       <ActivityIndicator size="large" color={colors.primary} />
-      <Text style={{ color: colors.text, marginTop: 20 }}>Cargando Modo Coche...</Text>
+      <Text style={{ color: colors.text, marginTop: rp(20) }}>Cargando Modo Coche...</Text>
     </View>
   );
 
+  // Configuration Screen
+  if (showConfig) {
+    return (
+      <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
+        <Stack.Screen options={{ headerShown: false }} />
+
+        {/* Header */}
+        <View style={styles.configHeader}>
+          <TouchableOpacity onPress={() => router.back()} style={styles.closeButton}>
+            <X size={28} color={colors.error} />
+          </TouchableOpacity>
+          <View style={styles.configTitleContainer}>
+            <Car size={24} color={colors.primary} />
+            <Text style={[styles.configTitle, { color: colors.text }]}>Modo Coche</Text>
+          </View>
+          <View style={{ width: 28 }} />
+        </View>
+
+        <ScrollView style={styles.configContent} showsVerticalScrollIndicator={false}>
+          {/* Info Banner */}
+          <View style={styles.infoBanner}>
+            <Info size={20} color="#F59E0B" />
+            <Text style={styles.infoBannerText}>
+              El modo coche está diseñado para que escuches la secuencia en bucle interpretada exclusivamente por voces IA. Configura las voces según los personajes.
+            </Text>
+          </View>
+
+          {/* Character Voice Configurations */}
+          <Text style={styles.sectionTitle}>Configurar voces</Text>
+
+          {characterVoiceConfigs.map((config, index) => (
+            <View key={config.characterName} style={styles.characterCard}>
+              <Text style={styles.characterName}>{config.characterName}</Text>
+
+              {/* Provider Selector */}
+              <View style={styles.dropdownContainer}>
+                <TouchableOpacity
+                  style={styles.dropdownHeader}
+                  onPress={() => {
+                    setExpandedCharacter(expandedCharacter === config.characterName ? null : config.characterName);
+                    setShowVoiceDropdown(null);
+                  }}
+                >
+                  <Text style={styles.dropdownHeaderText}>
+                    {getProviderEmoji(config.provider)} {config.provider === 'openai' ? 'OpenAI' : config.provider === 'elevenlabs' ? 'ElevenLabs' : 'Voces del sistema'}
+                  </Text>
+                  <ChevronDown size={20} color="#AAA" />
+                </TouchableOpacity>
+
+                {expandedCharacter === config.characterName && (
+                  <View style={styles.dropdownList}>
+                    <TouchableOpacity
+                      style={[styles.dropdownItem, config.provider === 'openai' && styles.dropdownItemSelected]}
+                      onPress={() => {
+                        updateCharacterVoice(config.characterName, 'openai', 'nova');
+                        setExpandedCharacter(null);
+                      }}
+                    >
+                      <Text style={styles.dropdownItemText}>🤖 OpenAI</Text>
+                      <Text style={styles.providerDescription}>Voces de alta calidad</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={[styles.dropdownItem, config.provider === 'elevenlabs' && styles.dropdownItemSelected]}
+                      onPress={() => {
+                        const defaultEL = elevenLabsVoices[0]?.id || '';
+                        updateCharacterVoice(config.characterName, 'elevenlabs', defaultEL);
+                        setExpandedCharacter(null);
+                      }}
+                    >
+                      <Text style={styles.dropdownItemText}>🎭 ElevenLabs</Text>
+                      <Text style={styles.providerDescription}>Voces ultra realistas</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={[styles.dropdownItem, config.provider === 'system' && styles.dropdownItemSelected]}
+                      onPress={() => {
+                        const spanishVoice = availableVoices.find(v => v.language.startsWith('es'));
+                        updateCharacterVoice(config.characterName, 'system', spanishVoice?.identifier || '');
+                        setExpandedCharacter(null);
+                      }}
+                    >
+                      <Text style={styles.dropdownItemText}>📱 Voces del sistema</Text>
+                      <Text style={styles.providerDescription}>Voces integradas del dispositivo</Text>
+                    </TouchableOpacity>
+                  </View>
+                )}
+              </View>
+
+              {/* Voice Selector */}
+              <View style={[styles.dropdownContainer, { marginTop: rp(12) }]}>
+                <TouchableOpacity
+                  style={styles.dropdownHeader}
+                  onPress={() => {
+                    setShowVoiceDropdown(showVoiceDropdown === config.characterName ? null : config.characterName);
+                    setExpandedCharacter(null);
+                  }}
+                >
+                  <Text style={styles.dropdownHeaderText}>
+                    {getVoiceName(config.provider, config.voiceId)}
+                  </Text>
+                  <ChevronDown size={20} color="#AAA" />
+                </TouchableOpacity>
+
+                {showVoiceDropdown === config.characterName && (
+                  <View style={styles.dropdownListLarge}>
+                    {loadingVoices && config.provider === 'elevenlabs' ? (
+                      <View style={styles.loadingContainer}>
+                        <ActivityIndicator size="small" color="#3B82F6" />
+                        <Text style={styles.loadingText}>Cargando voces...</Text>
+                      </View>
+                    ) : (
+                      <ScrollView style={{ maxHeight: 250 }} nestedScrollEnabled>
+                        {getVoicesForProvider(config.provider).map(voice => (
+                          <TouchableOpacity
+                            key={voice.id}
+                            style={[
+                              styles.voiceItem,
+                              voice.id === config.voiceId && styles.voiceItemSelected
+                            ]}
+                            onPress={() => {
+                              updateCharacterVoice(config.characterName, config.provider, voice.id);
+                              setShowVoiceDropdown(null);
+                            }}
+                          >
+                            <Text style={styles.voiceName}>{voice.name}</Text>
+                            <TouchableOpacity
+                              style={styles.previewBtn}
+                              onPress={(e) => {
+                                e.stopPropagation();
+                                handlePreview(config.provider, voice.id);
+                              }}
+                            >
+                              <Volume2
+                                size={18}
+                                color={playingVoiceId === voice.id ? '#3B82F6' : '#AAA'}
+                              />
+                            </TouchableOpacity>
+                          </TouchableOpacity>
+                        ))}
+                      </ScrollView>
+                    )}
+                  </View>
+                )}
+              </View>
+            </View>
+          ))}
+
+          <View style={{ height: rp(100) }} />
+        </ScrollView>
+
+        {/* Start Button */}
+        <View style={styles.startButtonContainer}>
+          {isPreparingAudio ? (
+            <View style={styles.preparingContainer}>
+              <ActivityIndicator size="large" color={colors.primary} />
+              <Text style={styles.preparingText}>Preparando audio... {preparingProgress}%</Text>
+              <View style={styles.progressBar}>
+                <View style={[styles.progressFill, { width: `${preparingProgress}%` }]} />
+              </View>
+            </View>
+          ) : (
+            <TouchableOpacity
+              style={styles.startBtn}
+              onPress={handleStartCarMode}
+              disabled={characterVoiceConfigs.length === 0}
+            >
+              <Play size={32} color="#000" fill="#000" />
+              <Text style={styles.startBtnText}>EMPEZAR</Text>
+            </TouchableOpacity>
+          )}
+        </View>
+      </SafeAreaView>
+    );
+  }
+
+  // Main Car Mode Screen
   const currentLine = dialogueLines[currentIndex];
 
   return (
@@ -414,66 +694,50 @@ export default function CarModeScreen() {
           <X size={32} color={colors.error} />
           <Text style={[styles.closeText, { color: colors.error }]}>SALIR</Text>
         </TouchableOpacity>
-        <TouchableOpacity style={styles.settingsButton} onPress={() => setShowSettings(true)}>
-          <Settings size={28} color={colors.textSecondary} />
+        <TouchableOpacity
+          style={[styles.controlBtn, loopEnabled && { backgroundColor: colors.primary }]}
+          onPress={() => setLoopEnabled(!loopEnabled)}
+        >
+          <Repeat size={24} color={loopEnabled ? '#000' : colors.text} />
         </TouchableOpacity>
       </View>
 
       {/* Main Content */}
       <View style={styles.content}>
-        {!isActive ? (
-          <>
-            <TouchableOpacity
-              style={[styles.startBtn, dialogueLines.length === 0 && { opacity: 0.5 }]}
-              onPress={handleStart}
-              disabled={dialogueLines.length === 0}
-            >
-              <Play size={64} color="#000" fill="#000" />
-              <Text style={styles.startBtnText}>
-                {dialogueLines.length === 0 ? 'CARGANDO...' : 'EMPEZAR'}
-              </Text>
-            </TouchableOpacity>
-            {dialogueLines.length === 0 && (
-              <Text style={{ color: colors.textSecondary, marginTop: 20, fontSize: 14 }}>
-                Cargando diálogos del guión...
-              </Text>
-            )}
-          </>
-        ) : (
-          <>
-            <Text style={[styles.statusText, { color: phase === 'listening_user' ? colors.success : colors.primary }]}>
-              {statusText}
-            </Text>
+        <>
+          <Text style={[styles.statusText, { color: colors.primary }]}>
+            {statusText}
+          </Text>
 
-            {currentLine && (
-              <View style={styles.lineInfo}>
-                <Text style={[styles.charName, { color: currentLine.color || colors.primary }]}>
-                  {currentLine.characterName}
-                </Text>
-                <Text style={[styles.lineText, { color: colors.text }]} numberOfLines={3}>
-                  {currentLine.text}
-                </Text>
-              </View>
-            )}
-          </>
-        )}
+          {currentLine && (
+            <View style={styles.lineInfo}>
+              <Text style={[styles.charName, { color: currentLine.color || colors.primary }]}>
+                {currentLine.characterName}
+              </Text>
+              <Text style={[styles.lineText, { color: colors.text }]}>
+                {currentLine.text}
+              </Text>
+            </View>
+          )}
+        </>
       </View>
 
-      {/* Controls (Large touch targets for backup) */}
-      {isActive && (
-        <View style={styles.controls}>
+      {/* Controls */}
+      <View style={styles.controlsContainer}>
+        {/* Primera fila: Retroceder, Play/Pause, Avanzar */}
+        <View style={styles.controlsRow}>
           <TouchableOpacity onPress={handleManualPrev} style={styles.controlBtn}>
-            <RotateCcw size={40} color={colors.text} />
+            <SkipBack size={40} color={colors.text} />
           </TouchableOpacity>
 
-          <TouchableOpacity onPress={isActive ? handlePause : handleStart} style={[styles.controlBtn, styles.playBtn]}>
-            {isActive ? (
-              <View style={{ width: 40, height: 40, flexDirection: 'row', justifyContent: 'space-between' }}>
-                <View style={{ width: 14, height: '100%', backgroundColor: '#000' }} />
-                <View style={{ width: 14, height: '100%', backgroundColor: '#000' }} />
-              </View>
-            ) : (
+          <TouchableOpacity
+            onPress={isPaused ? handleResume : handlePause}
+            style={[styles.controlBtn, styles.playBtn]}
+          >
+            {isPaused ? (
               <Play size={50} color="#000" fill="#000" />
+            ) : (
+              <Pause size={50} color="#000" fill="#000" />
             )}
           </TouchableOpacity>
 
@@ -481,39 +745,190 @@ export default function CarModeScreen() {
             <SkipForward size={40} color={colors.text} />
           </TouchableOpacity>
         </View>
-      )}
 
-      <CarModeSettings
-        visible={showSettings}
-        onClose={() => setShowSettings(false)}
-        speechRate={speechRate}
-        setSpeechRate={setSpeechRate}
-        continuousMode={continuousMode}
-        setContinuousMode={setContinuousMode}
-        availableVoices={availableVoices}
-        aiVoiceId={aiVoiceId}
-        setAiVoiceId={setAiVoiceId}
-        userVoiceId={userVoiceId}
-        setUserVoiceId={setUserVoiceId}
-      />
+        {/* Segunda fila: Reiniciar */}
+        <View style={styles.controlsRow}>
+          <TouchableOpacity onPress={handleRestart} style={styles.controlBtn}>
+            <RotateCcw size={36} color={colors.text} />
+          </TouchableOpacity>
+        </View>
+      </View>
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
-  header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 20 },
-  closeButton: { flexDirection: 'row', alignItems: 'center', backgroundColor: 'rgba(239, 68, 68, 0.2)', padding: 12, borderRadius: 16 },
-  closeText: { fontSize: 20, fontWeight: 'bold', marginLeft: 8 },
-  settingsButton: { padding: 12 },
-  content: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 20 },
-  statusText: { fontSize: 24, fontWeight: 'bold', marginBottom: 40, textTransform: 'uppercase', letterSpacing: 2 },
+  header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: rp(20) },
+  closeButton: { flexDirection: 'row', alignItems: 'center', backgroundColor: 'rgba(239, 68, 68, 0.2)', padding: rp(12), borderRadius: 16 },
+  closeText: { fontSize: rf(20), fontWeight: 'bold', marginLeft: rp(8) },
+  settingsButton: { padding: rp(12) },
+  content: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: rp(20) },
+  statusText: { fontSize: rf(24), fontWeight: 'bold', marginBottom: rp(40), textTransform: 'uppercase', letterSpacing: 2 },
   lineInfo: { alignItems: 'center', width: '100%' },
-  charName: { fontSize: 32, fontWeight: '800', marginBottom: 20, textTransform: 'uppercase' },
-  lineText: { fontSize: 28, textAlign: 'center', fontWeight: '500', lineHeight: 38 },
-  controls: { flexDirection: 'row', justifyContent: 'space-evenly', alignItems: 'center', paddingBottom: 40, paddingTop: 20 },
-  controlBtn: { padding: 20, backgroundColor: '#222', borderRadius: 50 },
-  playBtn: { backgroundColor: '#FFF', padding: 25 },
-  startBtn: { backgroundColor: '#10B981', paddingVertical: 30, paddingHorizontal: 60, borderRadius: 20, alignItems: 'center', gap: 10 },
-  startBtnText: { fontSize: 32, fontWeight: '900', color: '#000', textTransform: 'uppercase' },
+  charName: { fontSize: rf(32), fontWeight: '800', marginBottom: rp(20), textTransform: 'uppercase' },
+  lineText: { fontSize: rf(28), textAlign: 'center', fontWeight: '500', lineHeight: rp(38) },
+  controlsContainer: { paddingBottom: rp(40), paddingTop: rp(20), gap: rp(20) },
+  controlsRow: { flexDirection: 'row', justifyContent: 'space-evenly', alignItems: 'center' },
+  controlBtn: { padding: rp(20), backgroundColor: '#222', borderRadius: 50 },
+  playBtn: { backgroundColor: '#FFF', padding: rp(25) },
+  startBtn: { backgroundColor: '#10B981', paddingVertical: rp(20), paddingHorizontal: rp(60), borderRadius: 20, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: rp(12) },
+  startBtnText: { fontSize: rf(24), fontWeight: '900', color: '#000', textTransform: 'uppercase' },
+
+  // Configuration Screen Styles
+  configHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    padding: rp(20),
+    borderBottomWidth: 1,
+    borderBottomColor: '#222',
+  },
+  configTitleContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: rp(8),
+  },
+  configTitle: {
+    fontSize: rf(20),
+    fontWeight: '700',
+  },
+  configContent: {
+    flex: 1,
+    padding: rp(20),
+  },
+  infoBanner: {
+    backgroundColor: 'rgba(245, 158, 11, 0.15)',
+    borderLeftWidth: 4,
+    borderLeftColor: '#F59E0B',
+    padding: rp(16),
+    borderRadius: rp(8),
+    flexDirection: 'row',
+    gap: rp(12),
+    marginBottom: rp(24),
+  },
+  infoBannerText: {
+    color: '#F59E0B',
+    fontSize: rf(14),
+    lineHeight: rf(20),
+    flex: 1,
+  },
+  sectionTitle: {
+    color: '#FFF',
+    fontSize: rf(18),
+    fontWeight: '700',
+    marginBottom: rp(16),
+  },
+  characterCard: {
+    backgroundColor: '#1A1A1A',
+    borderRadius: rp(12),
+    padding: rp(16),
+    marginBottom: rp(16),
+    borderWidth: 1,
+    borderColor: '#333',
+  },
+  characterName: {
+    color: '#FFF',
+    fontSize: rf(16),
+    fontWeight: '700',
+    marginBottom: rp(12),
+  },
+  dropdownContainer: {
+    backgroundColor: '#222',
+    borderRadius: 8,
+    overflow: 'hidden',
+  },
+  dropdownHeader: {
+    padding: rp(12),
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  dropdownHeaderText: {
+    color: '#FFF',
+    fontSize: rf(15),
+  },
+  dropdownList: {
+    maxHeight: 200,
+    borderTopWidth: 1,
+    borderTopColor: '#333',
+  },
+  dropdownListLarge: {
+    maxHeight: 300,
+    borderTopWidth: 1,
+    borderTopColor: '#333',
+  },
+  dropdownItem: {
+    padding: rp(12),
+    borderBottomWidth: 1,
+    borderBottomColor: '#333',
+  },
+  dropdownItemSelected: {
+    backgroundColor: '#3B82F6',
+  },
+  dropdownItemText: {
+    color: '#FFF',
+    fontSize: rf(14),
+  },
+  providerDescription: {
+    fontSize: rf(12),
+    color: '#888',
+    marginTop: rp(2),
+  },
+  voiceItem: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    padding: rp(12),
+    borderBottomWidth: 1,
+    borderBottomColor: '#333',
+  },
+  voiceItemSelected: {
+    backgroundColor: 'rgba(59, 130, 246, 0.2)',
+  },
+  voiceName: {
+    color: '#FFF',
+    fontSize: rf(14),
+    flex: 1,
+  },
+  previewBtn: {
+    padding: rp(8),
+  },
+  loadingContainer: {
+    padding: rp(20),
+    alignItems: 'center',
+  },
+  loadingText: {
+    color: '#AAA',
+    marginTop: rp(8),
+    fontSize: rf(14),
+  },
+  startButtonContainer: {
+    padding: rp(20),
+    paddingBottom: rp(30),
+    borderTopWidth: 1,
+    borderTopColor: '#222',
+    alignItems: 'center',
+  },
+  preparingContainer: {
+    alignItems: 'center',
+    gap: rp(12),
+  },
+  preparingText: {
+    color: '#FFF',
+    fontSize: rf(16),
+    fontWeight: '600',
+  },
+  progressBar: {
+    width: '100%',
+    height: 8,
+    backgroundColor: '#333',
+    borderRadius: 4,
+    overflow: 'hidden',
+  },
+  progressFill: {
+    height: '100%',
+    backgroundColor: '#3B82F6',
+    borderRadius: 4,
+  },
 });

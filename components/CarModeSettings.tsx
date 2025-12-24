@@ -6,22 +6,27 @@ import {
     Modal,
     TouchableOpacity,
     Switch,
+    ScrollView,
 } from 'react-native';
 import Slider from '@react-native-community/slider';
 import { X } from 'lucide-react-native';
+import { rf, rp } from '@/utils/responsive';
 
 interface CarModeSettingsProps {
     visible: boolean;
     onClose: () => void;
     speechRate: number;
     setSpeechRate: (rate: number) => void;
-    continuousMode: boolean;
-    setContinuousMode: (enabled: boolean) => void;
-    availableVoices: any[];
-    aiVoiceId: string | undefined;
-    setAiVoiceId: (id: string) => void;
-    userVoiceId: string | undefined;
-    setUserVoiceId: (id: string) => void;
+    voiceRecognitionEnabled: boolean;
+    setVoiceRecognitionEnabled: (enabled: boolean) => void;
+    voiceCommands: {
+        siguiente: boolean;
+        atras: boolean;
+        pause: boolean;
+        play: boolean;
+        stop: boolean;
+    };
+    setVoiceCommands: (commands: any) => void;
 }
 
 export function CarModeSettings({
@@ -29,28 +34,11 @@ export function CarModeSettings({
     onClose,
     speechRate,
     setSpeechRate,
-    continuousMode,
-    setContinuousMode,
-    availableVoices,
-    aiVoiceId,
-    setAiVoiceId,
-    userVoiceId,
-    setUserVoiceId,
+    voiceRecognitionEnabled,
+    setVoiceRecognitionEnabled,
+    voiceCommands,
+    setVoiceCommands,
 }: CarModeSettingsProps) {
-    const getVoiceName = (id: string | undefined) => {
-        if (!id) return 'Por defecto';
-        const v = availableVoices.find(v => v.identifier === id);
-        return v ? v.name : 'Desconocida';
-    };
-
-    // Helper to cycle voices for simplicity in this minimal UI
-    const cycleVoice = (currentId: string | undefined, setter: (id: string) => void) => {
-        if (!availableVoices.length) return;
-        const currentIndex = availableVoices.findIndex(v => v.identifier === currentId);
-        const nextIndex = (currentIndex + 1) % availableVoices.length;
-        setter(availableVoices[nextIndex].identifier);
-    };
-
     return (
         <Modal
             visible={visible}
@@ -67,96 +55,116 @@ export function CarModeSettings({
                         </TouchableOpacity>
                     </View>
 
-                    <View style={styles.settingRow}>
-                        <Text style={styles.label}>Velocidad de voz ({speechRate.toFixed(1)}x)</Text>
-                        <Slider
-                            style={{ width: '100%', height: 40 }}
-                            minimumValue={0.5}
-                            maximumValue={1.5}
-                            step={0.1}
-                            value={speechRate}
-                            onValueChange={setSpeechRate}
-                            minimumTrackTintColor="#3B82F6"
-                            maximumTrackTintColor="#555"
-                            thumbTintColor="#3B82F6"
-                        />
-                    </View>
-
-                    <View style={styles.settingRow}>
-                        <View style={styles.switchRow}>
-                            <Text style={styles.label}>Modo Repaso Continuo</Text>
-                            <Switch
-                                value={continuousMode}
-                                onValueChange={setContinuousMode}
-                                trackColor={{ false: '#767577', true: '#3B82F6' }}
-                                thumbColor={continuousMode ? '#fff' : '#f4f3f4'}
+                    <ScrollView style={styles.scrollContent} showsVerticalScrollIndicator={true}>
+                        {/* Velocidad de voz (solo para fallback sistema) */}
+                        <View style={styles.settingRow}>
+                            <Text style={styles.label}>Velocidad de voz ({speechRate.toFixed(1)}x)</Text>
+                            <Text style={styles.description}>
+                                Ajusta la velocidad de las voces del sistema (fallback)
+                            </Text>
+                            <Slider
+                                style={{ width: '100%', height: 40, marginTop: rp(8) }}
+                                minimumValue={0.5}
+                                maximumValue={1.5}
+                                step={0.1}
+                                value={speechRate}
+                                onValueChange={setSpeechRate}
+                                minimumTrackTintColor="#3B82F6"
+                                maximumTrackTintColor="#555"
+                                thumbTintColor="#3B82F6"
                             />
                         </View>
-                        <Text style={styles.description}>
-                            La escena se reproduce completa en bucle sin pausas. Ideal para escuchar pasivamente.
-                        </Text>
-                    </View>
 
-                    {continuousMode && (
-                        <>
-                            <View style={styles.settingRow}>
-                                <Text style={styles.label}>Voz Personaje IA</Text>
-                                <VoiceDropdown
-                                    selectedId={aiVoiceId}
-                                    onSelect={setAiVoiceId}
-                                    voices={availableVoices}
+                        {/* Reconocimiento por Voz */}
+                        <View style={styles.settingRow}>
+                            <View style={styles.switchRow}>
+                                <Text style={styles.label}>Reconocimiento por Voz</Text>
+                                <Switch
+                                    value={voiceRecognitionEnabled}
+                                    onValueChange={setVoiceRecognitionEnabled}
+                                    trackColor={{ false: '#767577', true: '#3B82F6' }}
+                                    thumbColor={voiceRecognitionEnabled ? '#fff' : '#f4f3f4'}
                                 />
                             </View>
+                            <Text style={styles.description}>
+                                Permite controlar el modo coche con comandos de voz
+                            </Text>
+                        </View>
 
+                        {voiceRecognitionEnabled && (
                             <View style={styles.settingRow}>
-                                <Text style={styles.label}>Voz Tu Personaje</Text>
-                                <VoiceDropdown
-                                    selectedId={userVoiceId}
-                                    onSelect={setUserVoiceId}
-                                    voices={availableVoices}
-                                />
+                                <Text style={styles.label}>Comandos Activos</Text>
+
+                                <TouchableOpacity
+                                    style={styles.checkboxRow}
+                                    onPress={() => setVoiceCommands({ ...voiceCommands, siguiente: !voiceCommands.siguiente })}
+                                >
+                                    <View style={[styles.checkbox, voiceCommands.siguiente && styles.checkboxChecked]}>
+                                        {voiceCommands.siguiente && <Text style={styles.checkmark}>✓</Text>}
+                                    </View>
+                                    <View style={{ flex: 1 }}>
+                                        <Text style={styles.commandLabel}>"Siguiente"</Text>
+                                        <Text style={styles.commandDescription}>Avanza a la siguiente línea</Text>
+                                    </View>
+                                </TouchableOpacity>
+
+                                <TouchableOpacity
+                                    style={styles.checkboxRow}
+                                    onPress={() => setVoiceCommands({ ...voiceCommands, atras: !voiceCommands.atras })}
+                                >
+                                    <View style={[styles.checkbox, voiceCommands.atras && styles.checkboxChecked]}>
+                                        {voiceCommands.atras && <Text style={styles.checkmark}>✓</Text>}
+                                    </View>
+                                    <View style={{ flex: 1 }}>
+                                        <Text style={styles.commandLabel}>"Atrás"</Text>
+                                        <Text style={styles.commandDescription}>Retrocede a la línea anterior</Text>
+                                    </View>
+                                </TouchableOpacity>
+
+                                <TouchableOpacity
+                                    style={styles.checkboxRow}
+                                    onPress={() => setVoiceCommands({ ...voiceCommands, pause: !voiceCommands.pause })}
+                                >
+                                    <View style={[styles.checkbox, voiceCommands.pause && styles.checkboxChecked]}>
+                                        {voiceCommands.pause && <Text style={styles.checkmark}>✓</Text>}
+                                    </View>
+                                    <View style={{ flex: 1 }}>
+                                        <Text style={styles.commandLabel}>"Pause"</Text>
+                                        <Text style={styles.commandDescription}>Pausa la escena</Text>
+                                    </View>
+                                </TouchableOpacity>
+
+                                <TouchableOpacity
+                                    style={styles.checkboxRow}
+                                    onPress={() => setVoiceCommands({ ...voiceCommands, play: !voiceCommands.play })}
+                                >
+                                    <View style={[styles.checkbox, voiceCommands.play && styles.checkboxChecked]}>
+                                        {voiceCommands.play && <Text style={styles.checkmark}>✓</Text>}
+                                    </View>
+                                    <View style={{ flex: 1 }}>
+                                        <Text style={styles.commandLabel}>"Play"</Text>
+                                        <Text style={styles.commandDescription}>Reanuda la escena</Text>
+                                    </View>
+                                </TouchableOpacity>
+
+                                <TouchableOpacity
+                                    style={styles.checkboxRow}
+                                    onPress={() => setVoiceCommands({ ...voiceCommands, stop: !voiceCommands.stop })}
+                                >
+                                    <View style={[styles.checkbox, voiceCommands.stop && styles.checkboxChecked]}>
+                                        {voiceCommands.stop && <Text style={styles.checkmark}>✓</Text>}
+                                    </View>
+                                    <View style={{ flex: 1 }}>
+                                        <Text style={styles.commandLabel}>"Stop"</Text>
+                                        <Text style={styles.commandDescription}>Finaliza la escena</Text>
+                                    </View>
+                                </TouchableOpacity>
                             </View>
-                        </>
-                    )}
+                        )}
+                    </ScrollView>
                 </View>
             </View>
         </Modal>
-    );
-}
-
-function VoiceDropdown({ selectedId, onSelect, voices }: { selectedId: string | undefined, onSelect: (id: string) => void, voices: any[] }) {
-    const [isOpen, setIsOpen] = React.useState(false);
-    const selectedVoice = voices.find(v => v.identifier === selectedId);
-
-    return (
-        <View style={styles.dropdownContainer}>
-            <TouchableOpacity style={styles.dropdownHeader} onPress={() => setIsOpen(!isOpen)}>
-                <Text style={styles.dropdownHeaderText}>
-                    {selectedVoice ? selectedVoice.name : 'Por defecto'}
-                </Text>
-                <Text style={{ color: '#AAA' }}>{isOpen ? '▲' : '▼'}</Text>
-            </TouchableOpacity>
-
-            {isOpen && (
-                <View style={styles.dropdownList}>
-                    <TouchableOpacity
-                        style={[styles.dropdownItem, !selectedId && styles.dropdownItemSelected]}
-                        onPress={() => { onSelect(''); setIsOpen(false); }}
-                    >
-                        <Text style={styles.dropdownItemText}>Por defecto</Text>
-                    </TouchableOpacity>
-                    {voices.map(v => (
-                        <TouchableOpacity
-                            key={v.identifier}
-                            style={[styles.dropdownItem, v.identifier === selectedId && styles.dropdownItemSelected]}
-                            onPress={() => { onSelect(v.identifier); setIsOpen(false); }}
-                        >
-                            <Text style={styles.dropdownItemText}>{v.name} ({v.language})</Text>
-                        </TouchableOpacity>
-                    ))}
-                </View>
-            )}
-        </View>
     );
 }
 
@@ -170,30 +178,34 @@ const styles = StyleSheet.create({
         backgroundColor: '#111',
         borderTopLeftRadius: 20,
         borderTopRightRadius: 20,
-        padding: 20,
-        paddingBottom: 40,
+        padding: rp(20),
+        paddingBottom: rp(40),
+        maxHeight: '80%',
+    },
+    scrollContent: {
+        maxHeight: '80%',
     },
     header: {
         flexDirection: 'row',
         justifyContent: 'space-between',
         alignItems: 'center',
-        marginBottom: 30,
+        marginBottom: rp(30),
     },
     title: {
-        fontSize: 20,
+        fontSize: rf(20),
         fontWeight: 'bold',
         color: '#FFF',
     },
     closeBtn: {
-        padding: 8,
+        padding: rp(8),
     },
     settingRow: {
-        marginBottom: 30,
+        marginBottom: rp(30),
     },
     label: {
-        fontSize: 16,
+        fontSize: rf(16),
         color: '#FFF',
-        marginBottom: 10,
+        marginBottom: rp(6),
         fontWeight: '600',
     },
     switchRow: {
@@ -202,52 +214,42 @@ const styles = StyleSheet.create({
         alignItems: 'center',
     },
     description: {
-        fontSize: 14,
+        fontSize: rf(14),
         color: '#AAA',
-        marginTop: 8,
+        marginTop: rp(4),
     },
-    voiceBtn: {
-        backgroundColor: '#333',
-        padding: 12,
-        borderRadius: 8,
-        marginTop: 8,
-    },
-    voiceBtnText: {
-        color: '#FFF',
-        fontSize: 16,
-        textAlign: 'center',
-    },
-    dropdownContainer: {
-        marginTop: 8,
-        backgroundColor: '#222',
-        borderRadius: 8,
-        overflow: 'hidden',
-    },
-    dropdownHeader: {
-        padding: 12,
+    checkboxRow: {
         flexDirection: 'row',
-        justifyContent: 'space-between',
         alignItems: 'center',
+        paddingVertical: rp(12),
+        gap: 12,
     },
-    dropdownHeaderText: {
-        color: '#FFF',
-        fontSize: 16,
+    checkbox: {
+        width: 24,
+        height: 24,
+        borderWidth: 2,
+        borderColor: '#555',
+        borderRadius: 6,
+        alignItems: 'center',
+        justifyContent: 'center',
     },
-    dropdownList: {
-        maxHeight: 200, // Limit height if many voices
-        borderTopWidth: 1,
-        borderTopColor: '#333',
-    },
-    dropdownItem: {
-        padding: 12,
-        borderBottomWidth: 1,
-        borderBottomColor: '#333',
-    },
-    dropdownItemSelected: {
+    checkboxChecked: {
         backgroundColor: '#3B82F6',
+        borderColor: '#3B82F6',
     },
-    dropdownItemText: {
+    checkmark: {
         color: '#FFF',
-        fontSize: 14,
+        fontSize: rf(16),
+        fontWeight: 'bold',
+    },
+    commandLabel: {
+        color: '#FFF',
+        fontSize: rf(16),
+        fontWeight: '600',
+    },
+    commandDescription: {
+        color: '#AAA',
+        fontSize: rf(13),
+        marginTop: rp(2),
     },
 });
