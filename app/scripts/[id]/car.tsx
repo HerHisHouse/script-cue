@@ -694,12 +694,6 @@ export default function CarModeScreen() {
           <X size={32} color={colors.error} />
           <Text style={[styles.closeText, { color: colors.error }]}>SALIR</Text>
         </TouchableOpacity>
-        <TouchableOpacity
-          style={[styles.controlBtn, loopEnabled && { backgroundColor: colors.primary }]}
-          onPress={() => setLoopEnabled(!loopEnabled)}
-        >
-          <Repeat size={24} color={loopEnabled ? '#000' : colors.text} />
-        </TouchableOpacity>
       </View>
 
       {/* Main Content */}
@@ -746,10 +740,17 @@ export default function CarModeScreen() {
           </TouchableOpacity>
         </View>
 
-        {/* Segunda fila: Reiniciar */}
+        {/* Segunda fila: Reiniciar y Loop */}
         <View style={styles.controlsRow}>
           <TouchableOpacity onPress={handleRestart} style={styles.controlBtn}>
             <RotateCcw size={36} color={colors.text} />
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            onPress={() => setLoopEnabled(!loopEnabled)}
+            style={[styles.controlBtn, loopEnabled && { backgroundColor: colors.primary }]}
+          >
+            <Repeat size={36} color={loopEnabled ? '#000' : colors.text} />
           </TouchableOpacity>
         </View>
       </View>
