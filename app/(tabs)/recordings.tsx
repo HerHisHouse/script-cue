@@ -662,9 +662,27 @@ export default function RecordingsScreen() {
     loadAndPlay(0, q);
   }
 
-  function openPlayerWithPlaylist(recordingId: string, playlistIds: string[]) {
+  async function openPlayerWithPlaylist(recordingId: string, playlistIds: string[]) {
+    console.log('[Recordings] openPlayerWithPlaylist called');
     // Filter recordings to only include those in the playlist
-    const playlistRecordings = recordings.filter(r => playlistIds.includes(r.id));
+    let playlistRecordings = recordings.filter(r => playlistIds.includes(r.id));
+
+    console.log('[Recordings] Found in current array:', playlistRecordings.length);
+
+    // If not found, fetch from database (for project recordings)
+    if (playlistRecordings.length === 0 && user) {
+      console.log('[Recordings] Fetching from database...');
+      const { data, error } = await supabase
+        .from('recordings')
+        .select('*')
+        .eq('user_id', user.id)
+        .in('id', playlistIds);
+
+      if (!error && data) {
+        playlistRecordings = data as Recording[];
+        console.log('[Recordings] Fetched:', playlistRecordings.length);
+      }
+    }
 
     if (playlistRecordings.length === 0) {
       console.warn('No recordings found in playlist');
