@@ -75,14 +75,30 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       });
       if (error) {
         console.error('[Auth] Sign in error:', error);
+
+        // Check for network errors
+        if (error.message?.includes('Network request failed') ||
+          error.message?.includes('Failed to fetch') ||
+          error.name === 'AuthRetryableFetchError') {
+          throw new Error('No se pudo conectar al servidor. Por favor verifica tu conexión a internet e intenta de nuevo.');
+        }
+
         throw new Error(error.message || 'Error al iniciar sesión');
       }
     } catch (error: any) {
       console.error('[Auth] Sign in exception:', error);
+
+      // Check if it's a network error
+      if (error.message?.includes('Network request failed') ||
+        error.message?.includes('Failed to fetch')) {
+        throw new Error('No se pudo conectar al servidor. Por favor verifica tu conexión a internet e intenta de nuevo.');
+      }
+
       // Check if it's a JSON parse error
       if (error.message?.includes('JSON') || error.message?.includes('Unexpected')) {
         throw new Error('Error de conexión con el servidor. Por favor verifica tu conexión a internet.');
       }
+
       throw error;
     }
   }
