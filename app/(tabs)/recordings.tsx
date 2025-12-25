@@ -142,7 +142,7 @@ export default function RecordingsScreen() {
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
 
   // Auto-play param
-  const { playId } = useLocalSearchParams<{ playId: string }>();
+  const { playId, playlist } = useLocalSearchParams<{ playId: string; playlist?: string }>();
   const autoPlayRef = useRef<string | null>(null);
 
   useEffect(() => {
@@ -150,10 +150,21 @@ export default function RecordingsScreen() {
       autoPlayRef.current = playId;
       // Wait for recordings to be loaded
       if (recordings.length > 0) {
-        openPlayerAt(playId);
+        // If playlist is provided, use it; otherwise use all recordings
+        if (playlist) {
+          try {
+            const playlistIds = JSON.parse(playlist) as string[];
+            openPlayerWithPlaylist(playId, playlistIds);
+          } catch (error) {
+            console.error('Error parsing playlist:', error);
+            openPlayerAt(playId);
+          }
+        } else {
+          openPlayerAt(playId);
+        }
       }
     }
-  }, [playId, recordings]);
+  }, [playId, playlist, recordings]);
 
   // Advanced search & sorting state
   const [searchText, setSearchText] = useState('');
@@ -613,6 +624,41 @@ export default function RecordingsScreen() {
       Animated.timing(modalOpacity, { toValue: 1, duration: 300, easing: Easing.out(Easing.ease), useNativeDriver: true }),
       Animated.timing(modalScale, { toValue: 1, duration: 300, easing: Easing.out(Easing.ease), useNativeDriver: true }),
     ]).start();
+    loadAndPlay(0, q);
+  }
+
+  function openPlayerWithPlaylist(recordingId: string, playlistIds: string[]) {
+    // Filter recordings to only include those in the playlist
+    const playlistRecordings = recordings.filter(r => playlistIds.includes(r.id));
+
+    if (playlistRecordings.length === 0) {
+      console.warn('No recordings found in playlist');
+      return;
+    }
+
+    // Find the starting recording in the playlist
+    const idx = playlistRecordings.findIndex((r) => r.id === recordingId);
+    if (idx < 0) {
+      console.warn('Recording not found in playlist');
+      return;
+    }
+
+    // Reorder playlist to start with the selected recording
+    const next = playlistRecordings.slice(idx);
+    const prev = playlistRecordings.slice(0, idx);
+    const q = [...next, ...prev];
+
+    setQueue(q);
+    setPlayerVisible(true);
+
+    // Animación de apertura del modal (fade + scale)
+    modalOpacity.setValue(0);
+    modalScale.setValue(0.96);
+    Animated.parallel([
+      Animated.timing(modalOpacity, { toValue: 1, duration: 300, easing: Easing.out(Easing.ease), useNativeDriver: true }),
+      Animated.timing(modalScale, { toValue: 1, duration: 300, easing: Easing.out(Easing.ease), useNativeDriver: true }),
+    ]).start();
+
     loadAndPlay(0, q);
   }
 
