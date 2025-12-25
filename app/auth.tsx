@@ -143,9 +143,9 @@ export default function AuthScreen() {
         console.log('[Auth] Browser session result:', result.type);
 
         if (result.type === 'success') {
-          // Don't check session here - let the callback page handle it
-          // The callback page will extract tokens and establish session
-          console.log('[Auth] OAuth completed, callback will handle session');
+          // Navigate to callback page to handle session establishment
+          console.log('[Auth] OAuth completed, navigating to callback');
+          router.push('/auth/callback');
         } else if (result.type === 'cancel') {
           console.log('[Auth] User cancelled OAuth');
         }
