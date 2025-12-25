@@ -8,6 +8,8 @@ import {
     Alert,
     ScrollView,
     Platform,
+    TextInput,
+    Pressable,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, useLocalSearchParams, Stack, useFocusEffect } from 'expo-router';
@@ -32,6 +34,14 @@ import {
     Volume2,
     Headphones,
     Check,
+    Edit,
+    ChevronUp,
+    ChevronDown,
+    Trash2,
+    Save,
+    X,
+    Plus,
+    FileText,
 } from 'lucide-react-native';
 import { Audio, InterruptionModeIOS, InterruptionModeAndroid } from 'expo-av';
 import * as Speech from 'expo-speech';
@@ -39,6 +49,7 @@ import { transcribeAudio } from '@/services/transcription';
 import * as FileSystem from 'expo-file-system/legacy';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Modal } from 'react-native';
+import { rf, rp } from '@/utils/responsive';
 import Constants from 'expo-constants';
 import { createTTSService } from '@/utils/tts';
 import { getSettings } from '@/utils/appSettings';
@@ -63,9 +74,12 @@ export default function StudioV2Screen() {
     const [loopEnabled, setLoopEnabled] = useState(false);
     const [hideUserLines, setHideUserLines] = useState(false);
     const [showMenu, setShowMenu] = useState(false);
+    const [literalMode, setLiteralMode] = useState(false);
+    const [openEditMenuLineId, setOpenEditMenuLineId] = useState<string | null>(null);
 
     // TTS State
     const [ttsProvider, setTtsProvider] = useState<'openai' | 'elevenlabs' | 'google' | 'system'>('openai');
+    const [characterVoices, setCharacterVoices] = useState<Record<string, { provider: string; systemVoiceId?: string }>>({});
     const soundRef = useRef<Audio.Sound | null>(null);
 
     // Recording State
@@ -91,6 +105,17 @@ export default function StudioV2Screen() {
     const [showHeadphoneAlert, setShowHeadphoneAlert] = useState(false);
     const [dontShowHeadphoneAgain, setDontShowHeadphoneAgain] = useState(false);
 
+    // Editing State
+    const [editingLineId, setEditingLineId] = useState<string | null>(null);
+    const [editedText, setEditedText] = useState('');
+    const [isUpdating, setIsUpdating] = useState(false);
+
+    // Add New Line State
+    const [showAddLineModal, setShowAddLineModal] = useState(false);
+    const [characters, setCharacters] = useState<any[]>([]);
+    const [newLineText, setNewLineText] = useState('');
+    const [selectedCharacter, setSelectedCharacter] = useState<any | null>(null);
+
     // Load script data
     const loadData = useCallback(async () => {
         if (!id || !user) return;
@@ -110,6 +135,14 @@ export default function StudioV2Screen() {
             // Load dialogue lines using helper function
             const lines = await loadDialogueLines(id as string);
             setDialogueLines(lines);
+
+            // Load characters for adding new lines
+            const { data: charactersData } = await supabase
+                .from('characters')
+                .select('*')
+                .eq('script_id', id);
+
+            setCharacters(charactersData || []);
 
             console.log(`✅ Studio Mode loaded ${lines.length} dialogue lines`);
         } catch (error) {
@@ -136,9 +169,15 @@ export default function StudioV2Screen() {
             try {
                 const settings = await getSettings();
                 setTtsProvider(settings.ttsProvider || 'openai');
+
+                // Load character-specific voice settings
+                const extendedSettings = settings as any;
+                const scriptVoices = extendedSettings?.characterVoicesByScript?.[String(id)] || {};
+                setCharacterVoices(scriptVoices);
+                console.log('[Studio] Loaded character voices:', scriptVoices);
             } catch { }
         })();
-    }, []);
+    }, [id]);
 
     // Cleanup on unmount
     useEffect(() => {
@@ -212,17 +251,69 @@ export default function StudioV2Screen() {
                     line.text
                 );
 
-                // Determine provider and voice
-                const effectiveProvider = ttsProvider === 'google' ? 'openai' : ttsProvider;
+                // Determine provider and voice from character-specific settings
+                const characterName = line.characterName.toUpperCase();
+                const characterConfig = characterVoices[characterName];
+
+                // Find character in database to get voice_id and voice_provider
+                const character = characters.find(
+                    c => c.name?.toUpperCase() === characterName
+                );
+
+                // Priority: character.voice_id > characterConfig > global setting
+                let effectiveProvider: string;
+                let voiceId: string | null = null;
+
+                if (character?.voice_id && character?.voice_provider) {
+                    // Use voice from character configuration
+                    effectiveProvider = character.voice_provider;
+                    voiceId = character.voice_id;
+                    console.log(`[Studio] Using character voice: ${voiceId} (${effectiveProvider})`);
+                } else if (characterConfig?.provider) {
+                    // Use character-specific provider from settings
+                    effectiveProvider = characterConfig.provider;
+                    voiceId = characterConfig.systemVoiceId || null;
+                } else {
+                    // Fall back to global setting
+                    effectiveProvider = ttsProvider;
+                }
+
+                // Handle provider fallbacks
+                if (effectiveProvider === 'google') effectiveProvider = 'openai';
+
+                if (effectiveProvider === 'system') {
+                    // Use system TTS for this character with specific voice
+                    const systemVoiceId = voiceId || characterConfig?.systemVoiceId;
+                    console.log(`[Studio] Using system TTS for ${characterName}, voiceId: ${systemVoiceId}`);
+
+                    // Find the voice object from available voices
+                    const voices = await Speech.getAvailableVoicesAsync();
+                    const selectedVoice = voices.find(v => v.identifier === systemVoiceId);
+
+                    Speech.speak(line.text, {
+                        language: selectedVoice?.language || 'es-ES',
+                        voice: selectedVoice?.identifier,
+                        onDone: () => {
+                            setIsSpeaking(false);
+                            setTimeout(handleNext, 800);
+                        },
+                        onError: () => {
+                            setIsSpeaking(false);
+                            setTimeout(handleNext, 800);
+                        }
+                    });
+                    console.warn('[speakLine] System TTS used - no AI segment will be saved');
+                    return;
+                }
+
                 const provider: 'openai' | 'elevenlabs' = effectiveProvider as 'openai' | 'elevenlabs';
-                const voiceId = null; // Use default voice for now
 
                 // Try to get from cache first
                 let audioUri = await getCachedAudio(line.id, provider, voiceId, textHash);
 
                 // If not in cache, generate and cache
                 if (!audioUri && user) {
-                    console.log(`Generating audio for ${line.characterName}...`);
+                    console.log(`Generating audio for ${line.characterName} with voice ${voiceId || 'default'}...`);
                     audioUri = await generateAndCacheAudio(
                         id as string,
                         line.id,
@@ -415,26 +506,30 @@ export default function StudioV2Screen() {
             console.log('[StudioV2] Target:', targetLine?.text);
 
             if (spokenText && targetLine) {
-                const similarity = calculateSimilarity(spokenText, targetLine.text);
+                // Only validate text if Literal Mode is active
+                if (literalMode) {
+                    const similarity = calculateSimilarity(spokenText, targetLine.text);
+                    const threshold = 0.99; // High threshold for literal mode
 
-                if (similarity > 0.6) { // 60% match threshold
-                    // Success: advance
-
-                    // Note: In Session Recording mode, we don't save individual takes.
-                    // The audio is being recorded continuously.
-
-                    handleNext();
+                    if (similarity > threshold) {
+                        // Success: advance
+                        handleNext();
+                    } else {
+                        // Mismatch: offer retry
+                        Alert.alert(
+                            'No entendido',
+                            `Dijiste: "${spokenText}"\nEsperaba: "${targetLine.text}"`,
+                            [
+                                { text: 'Reintentar', onPress: () => { processingRef.current = false; startListening(); } },
+                                { text: 'Saltar', onPress: () => { processingRef.current = false; handleNext(); } }
+                            ]
+                        );
+                        return; // Don't reset processingRef yet
+                    }
                 } else {
-                    // Mismatch: offer retry
-                    Alert.alert(
-                        'No entendido',
-                        `Dijiste: "${spokenText}"\nEsperaba: "${targetLine.text}"`,
-                        [
-                            { text: 'Reintentar', onPress: () => { processingRef.current = false; startListening(); } },
-                            { text: 'Saltar', onPress: () => { processingRef.current = false; handleNext(); } }
-                        ]
-                    );
-                    return; // Don't reset processingRef yet
+                    // Literal Mode OFF: Accept any speech and advance
+                    console.log('[StudioV2] Literal Mode OFF - Accepting speech and advancing');
+                    handleNext();
                 }
             }
         } catch (error) {
@@ -574,6 +669,9 @@ export default function StudioV2Screen() {
             setRecordingTime(0);
             setIsRecording(true);
 
+            // Wake up Render server (runs in background, doesn't block)
+            wakeUpRenderServer();
+
             // Start timer
             recordingTimerRef.current = setInterval(() => {
                 setRecordingTime(prev => prev + 1);
@@ -589,6 +687,35 @@ export default function StudioV2Screen() {
             Alert.alert('Error', 'No se pudo iniciar la sesión');
         } finally {
             sessionStartingRef.current = false;
+        }
+    }
+
+    // Wake up Render server to avoid cold start delays
+    async function wakeUpRenderServer() {
+        try {
+            const renderUrl = process.env.EXPO_PUBLIC_RENDER_SERVER_URL || 'https://script-cue-merge-server.onrender.com';
+            console.log('[Studio] Waking up Render server:', renderUrl);
+
+            // Send a simple ping request (timeout after 5 seconds, don't wait for response)
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), 5000);
+
+            fetch(`${renderUrl}/health`, {
+                method: 'GET',
+                signal: controller.signal,
+            })
+                .then(response => {
+                    clearTimeout(timeoutId);
+                    console.log('[Studio] Render server wake-up ping sent, status:', response.status);
+                })
+                .catch(error => {
+                    clearTimeout(timeoutId);
+                    // Silently fail - this is just a wake-up call
+                    console.log('[Studio] Render server wake-up ping (expected on cold start):', error.message);
+                });
+        } catch (error) {
+            // Silently fail - this is not critical
+            console.log('[Studio] Wake-up ping error (non-critical):', error);
         }
     }
 
@@ -745,35 +872,77 @@ export default function StudioV2Screen() {
             console.log('[Merge] Sending to server:', serverSegments.length, 'segments');
 
             // Get merge server URL from env
-            const mergeServerUrl = Constants.expoConfig?.extra?.mergeServerUrl || 'http://localhost:3000';
+            const mergeServerUrl = process.env.EXPO_PUBLIC_RENDER_SERVER_URL || 'https://script-cue-merge-server.onrender.com';
+            console.log('[Merge] Server URL:', mergeServerUrl);
 
-            // Call merge server
-            const response = await fetch(`${mergeServerUrl}/merge`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    segments: serverSegments,
-                    userId: user.id,
-                    scriptId: id as string
-                })
-            });
+            let mergedPath: string | null = null;
 
-            if (!response.ok) {
-                const errorData = await response.json();
-                throw new Error(errorData.message || 'Server merge failed');
+            try {
+                // Try to merge on server with timeout
+                console.log('[Merge] Attempting server merge at:', mergeServerUrl);
+
+                const controller = new AbortController();
+                const timeoutId = setTimeout(() => controller.abort(), 30000); // 30 second timeout
+
+                const response = await fetch(`${mergeServerUrl}/merge`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        segments: serverSegments,
+                        userId: user.id,
+                        scriptId: id as string
+                    }),
+                    signal: controller.signal
+                });
+
+                clearTimeout(timeoutId);
+
+                if (!response.ok) {
+                    const errorData = await response.json().catch(() => ({ message: 'Unknown error' }));
+                    throw new Error(errorData.message || `Server error: ${response.status}`);
+                }
+
+                const result = await response.json();
+                console.log('[Merge] Server merge success:', result);
+                mergedPath = result.path;
+
+            } catch (serverError: any) {
+                console.error('[Merge] Server merge failed:', serverError);
+
+                // FALLBACK: Save segments as a playlist/collection instead of merged file
+                console.log('[Merge] Falling back to saving individual segments...');
+                setProcessingStep('Servidor no disponible, guardando segmentos...');
+
+                // Create a metadata entry that references all segments
+                const segmentPaths = serverSegments.map(s => s.path);
+
+                // We'll save the first segment as the "main" audio
+                // and store the full list in the notes field
+                mergedPath = segmentPaths[0] || null; // Use first segment as primary, null if empty
+
+                console.log('[Merge] Fallback: Using first segment as primary:', mergedPath);
+                console.log('[Merge] All segments will be listed in notes');
             }
 
-            const result = await response.json();
-            console.log('[Merge] Success:', result);
-
             // Save to recordings table
-            await supabase.from('recordings').insert({
+            const recordingData = {
                 user_id: user.id,
                 script_id: id as string,
-                audio_url: result.path,
+                audio_url: mergedPath!,
                 duration_seconds: recordingTime,
                 title: `Sesión ${new Date().toLocaleString('es-ES')}`,
-            });
+                notes: mergedPath === serverSegments[0].path
+                    ? `Grabación con ${serverSegments.length} segmentos (servidor no disponible para mezclar). Segmentos: ${JSON.stringify(serverSegments.map(s => s.path))}`
+                    : null
+            };
+
+            const { error: insertError } = await supabase
+                .from('recordings')
+                .insert(recordingData);
+
+            if (insertError) {
+                throw new Error(`Failed to save recording: ${insertError.message}`);
+            }
 
             Alert.alert('Éxito', 'Sesión guardada y procesada correctamente.');
 
@@ -825,6 +994,266 @@ export default function StudioV2Screen() {
         router.push(`/scripts/${id}/editor`);
     }
 
+    // --- INLINE EDITING FUNCTIONS ---
+
+    function startEditingLine(line: DialogueLine) {
+        if (isPlaying || isRecording || isSpeaking || isListening) {
+            Alert.alert('No disponible', 'Detén la reproducción o grabación antes de editar.');
+            return;
+        }
+        setEditingLineId(line.id);
+        setEditedText(line.text);
+    }
+
+    function cancelEditing() {
+        setEditingLineId(null);
+        setEditedText('');
+    }
+
+    async function saveEditedLine() {
+        if (!editingLineId || !editedText.trim()) return;
+
+        setIsUpdating(true);
+        try {
+            // Update in Supabase
+            const { error } = await supabase
+                .from('lines')
+                .update({ content: editedText.trim() })
+                .eq('id', editingLineId);
+
+            if (error) throw error;
+
+            // Update local state
+            setDialogueLines(prev => prev.map(line =>
+                line.id === editingLineId
+                    ? { ...line, text: editedText.trim(), cleanText: editedText.trim().replace(/\([^)]*\)/g, '').replace(/\s+/g, ' ').trim() }
+                    : line
+            ));
+
+            setEditingLineId(null);
+            setEditedText('');
+
+            Alert.alert('Éxito', 'Línea actualizada correctamente');
+        } catch (error: any) {
+            console.error('Error updating line:', error);
+            Alert.alert('Error', 'No se pudo actualizar la línea: ' + error.message);
+        } finally {
+            setIsUpdating(false);
+        }
+    }
+
+    async function moveLineUp(lineId: string) {
+        if (isPlaying || isRecording || isSpeaking || isListening) {
+            Alert.alert('No disponible', 'Detén la reproducción o grabación antes de reordenar.');
+            return;
+        }
+
+        const lineIndex = dialogueLines.findIndex(l => l.id === lineId);
+        if (lineIndex <= 0) return; // Can't move first line up
+
+        const currentLine = dialogueLines[lineIndex];
+        const previousLine = dialogueLines[lineIndex - 1];
+
+        setIsUpdating(true);
+        try {
+            // Swap order_index in database manually
+            const updates = [
+                supabase.from('lines').update({ order_index: previousLine.orderIndex }).eq('id', currentLine.id),
+                supabase.from('lines').update({ order_index: currentLine.orderIndex }).eq('id', previousLine.id)
+            ];
+            await Promise.all(updates);
+
+            // Reload data to reflect changes
+            await loadData();
+
+            // Adjust currentIndex if needed
+            if (currentIndex === lineIndex) {
+                setCurrentIndex(lineIndex - 1);
+            } else if (currentIndex === lineIndex - 1) {
+                setCurrentIndex(lineIndex);
+            }
+
+        } catch (error: any) {
+            console.error('Error moving line:', error);
+            Alert.alert('Error', 'No se pudo mover la línea: ' + error.message);
+        } finally {
+            setIsUpdating(false);
+        }
+    }
+
+    async function moveLineDown(lineId: string) {
+        if (isPlaying || isRecording || isSpeaking || isListening) {
+            Alert.alert('No disponible', 'Detén la reproducción o grabación antes de reordenar.');
+            return;
+        }
+
+        const lineIndex = dialogueLines.findIndex(l => l.id === lineId);
+        if (lineIndex >= dialogueLines.length - 1) return; // Can't move last line down
+
+        const currentLine = dialogueLines[lineIndex];
+        const nextLine = dialogueLines[lineIndex + 1];
+
+        setIsUpdating(true);
+        try {
+            // Swap order_index in database manually
+            const updates = [
+                supabase.from('lines').update({ order_index: nextLine.orderIndex }).eq('id', currentLine.id),
+                supabase.from('lines').update({ order_index: currentLine.orderIndex }).eq('id', nextLine.id)
+            ];
+            await Promise.all(updates);
+
+            // Reload data to reflect changes
+            await loadData();
+
+            // Adjust currentIndex if needed
+            if (currentIndex === lineIndex) {
+                setCurrentIndex(lineIndex + 1);
+            } else if (currentIndex === lineIndex + 1) {
+                setCurrentIndex(lineIndex);
+            }
+
+        } catch (error: any) {
+            console.error('Error moving line:', error);
+            Alert.alert('Error', 'No se pudo mover la línea: ' + error.message);
+        } finally {
+            setIsUpdating(false);
+        }
+    }
+
+    async function deleteLine(lineId: string) {
+        if (isPlaying || isRecording || isSpeaking || isListening) {
+            Alert.alert('No disponible', 'Detén la reproducción o grabación antes de eliminar.');
+            return;
+        }
+
+        const lineIndex = dialogueLines.findIndex(l => l.id === lineId);
+        const line = dialogueLines[lineIndex];
+
+        Alert.alert(
+            'Confirmar eliminación',
+            `¿Estás seguro de que quieres eliminar esta línea?\n\n"${line.text}"`,
+            [
+                { text: 'Cancelar', style: 'cancel' },
+                {
+                    text: 'Eliminar',
+                    style: 'destructive',
+                    onPress: async () => {
+                        setIsUpdating(true);
+                        try {
+                            // Delete from database
+                            const { error: deleteError } = await supabase
+                                .from('lines')
+                                .delete()
+                                .eq('id', lineId);
+
+                            if (deleteError) throw deleteError;
+
+                            // Reorder subsequent lines (decrease order_index for lines after this one)
+                            const linesToUpdate = dialogueLines.slice(lineIndex + 1);
+                            for (const lineToUpdate of linesToUpdate) {
+                                await supabase
+                                    .from('lines')
+                                    .update({ order_index: lineToUpdate.orderIndex - 1 })
+                                    .eq('id', lineToUpdate.id);
+                            }
+
+                            // Reload data
+                            await loadData();
+
+                            // Adjust currentIndex
+                            if (currentIndex >= dialogueLines.length - 1) {
+                                setCurrentIndex(Math.max(0, dialogueLines.length - 2));
+                            }
+
+                            Alert.alert('Éxito', 'Línea eliminada correctamente');
+                        } catch (error: any) {
+                            console.error('Error deleting line:', error);
+                            Alert.alert('Error', 'No se pudo eliminar la línea: ' + error.message);
+                        } finally {
+                            setIsUpdating(false);
+                        }
+                    }
+                }
+            ]
+        );
+    }
+
+    // --- ADD NEW LINE FUNCTIONS ---
+
+    function openAddLineModal() {
+        if (isPlaying || isRecording || isSpeaking || isListening) {
+            Alert.alert('No disponible', 'Detén la reproducción o grabación antes de añadir líneas.');
+            return;
+        }
+        setShowAddLineModal(true);
+        setSelectedCharacter(null);
+        setNewLineText('');
+    }
+
+    function closeAddLineModal() {
+        setShowAddLineModal(false);
+        setSelectedCharacter(null);
+        setNewLineText('');
+    }
+
+    async function createNewLine() {
+        if (!selectedCharacter || !newLineText.trim()) {
+            Alert.alert('Error', 'Selecciona un personaje y escribe el texto de la línea.');
+            return;
+        }
+
+        setIsUpdating(true);
+        try {
+            // Get the current line's scene_id and order_index
+            const currentLine = dialogueLines[currentIndex];
+            const sceneId = currentLine?.sceneId;
+
+            if (!sceneId) {
+                throw new Error('No se pudo determinar la escena actual');
+            }
+
+            // Calculate new order_index (insert after current line)
+            const newOrderIndex = currentIndex + 1;
+
+            // Shift all subsequent lines' order_index up by 1
+            const linesToUpdate = dialogueLines.slice(newOrderIndex);
+            for (const line of linesToUpdate) {
+                await supabase
+                    .from('lines')
+                    .update({ order_index: line.orderIndex + 1 })
+                    .eq('id', line.id);
+            }
+
+            // Insert new line
+            const { data: newLine, error } = await supabase
+                .from('lines')
+                .insert({
+                    scene_id: sceneId,
+                    character_name: selectedCharacter.name,
+                    content: newLineText.trim(),
+                    order_index: newOrderIndex,
+                })
+                .select()
+                .single();
+
+            if (error) throw error;
+
+            // Reload data
+            await loadData();
+
+            // Move to the new line
+            setCurrentIndex(newOrderIndex);
+
+            closeAddLineModal();
+            Alert.alert('Éxito', 'Nueva línea añadida correctamente');
+        } catch (error: any) {
+            console.error('Error creating line:', error);
+            Alert.alert('Error', 'No se pudo crear la línea: ' + error.message);
+        } finally {
+            setIsUpdating(false);
+        }
+    }
+
 
     // --- Render ---
 
@@ -852,9 +1281,17 @@ export default function StudioV2Screen() {
                 </TouchableOpacity>
 
                 <View style={styles.headerCenter}>
-                    <Text style={[styles.headerTitle, { color: colors.text }]} numberOfLines={1}>
-                        Modo Estudio 1.0
-                    </Text>
+                    <View style={styles.headerTitleRow}>
+                        <Text style={[styles.headerTitle, { color: colors.text }]} numberOfLines={1}>
+                            Modo Estudio
+                        </Text>
+                        {literalMode && (
+                            <View style={[styles.literalModeBadge, { backgroundColor: colors.primary }]}>
+                                <FileText size={12} color="#FFFFFF" />
+                                <Text style={styles.literalModeBadgeText}>LITERAL</Text>
+                            </View>
+                        )}
+                    </View>
                     <Text style={[styles.headerSubtitle, { color: colors.textSecondary }]} numberOfLines={1}>
                         {scriptTitle}
                     </Text>
@@ -870,6 +1307,13 @@ export default function StudioV2Screen() {
                     </View>
                 )}
 
+                {/* Add Line Button */}
+                {!isPlaying && !isRecording && !isSpeaking && !isListening && (
+                    <TouchableOpacity onPress={openAddLineModal} style={styles.addButton}>
+                        <Plus size={24} color={colors.primary} />
+                    </TouchableOpacity>
+                )}
+
                 <TouchableOpacity onPress={() => setShowMenu(true)} style={styles.menuButton}>
                     <MoreVertical size={24} color={colors.text} />
                 </TouchableOpacity>
@@ -877,14 +1321,13 @@ export default function StudioV2Screen() {
 
             {/* Menu Modal */}
             {showMenu && (
-                <TouchableOpacity
+                <Pressable
                     style={styles.menuOverlay}
-                    activeOpacity={1}
                     onPress={() => setShowMenu(false)}
                 >
                     <View style={[styles.menuContent, { backgroundColor: colors.surface }]}>
                         <TouchableOpacity
-                            style={[styles.menuItem, { borderBottomColor: colors.border }]}
+                            style={[styles.menuItem, { borderBottomColor: `${colors.border}99` }]}
                             onPress={handleRestart}
                         >
                             <RotateCcw size={20} color={colors.text} />
@@ -892,7 +1335,7 @@ export default function StudioV2Screen() {
                         </TouchableOpacity>
 
                         <TouchableOpacity
-                            style={[styles.menuItem, { borderBottomColor: colors.border }]}
+                            style={[styles.menuItem, { borderBottomColor: `${colors.border}99` }]}
                             onPress={toggleHideLines}
                         >
                             <EyeOff size={20} color={colors.text} />
@@ -902,14 +1345,24 @@ export default function StudioV2Screen() {
                         </TouchableOpacity>
 
                         <TouchableOpacity
-                            style={styles.menuItem}
+                            style={[styles.menuItem, { borderBottomColor: `${colors.border}99` }]}
                             onPress={handleEditScript}
                         >
                             <Edit3 size={20} color={colors.text} />
                             <Text style={[styles.menuItemText, { color: colors.text }]}>Editar guion</Text>
                         </TouchableOpacity>
+
+                        <TouchableOpacity
+                            style={[styles.menuItem, { borderBottomWidth: 0 }]}
+                            onPress={() => { setLiteralMode(p => !p); setShowMenu(false); }}
+                        >
+                            <FileText size={20} color={literalMode ? colors.primary : colors.text} />
+                            <Text style={[styles.menuItemText, { color: literalMode ? colors.primary : colors.text }]}>
+                                {literalMode ? 'Modo Texto Literal (Activo)' : 'Modo Texto Literal'}
+                            </Text>
+                        </TouchableOpacity>
                     </View>
-                </TouchableOpacity>
+                </Pressable>
             )}
 
             {/* Headphone Alert Modal */}
@@ -959,6 +1412,100 @@ export default function StudioV2Screen() {
                 </View>
             </Modal>
 
+            {/* Add New Line Modal */}
+            <Modal
+                visible={showAddLineModal}
+                transparent={true}
+                animationType="slide"
+                onRequestClose={closeAddLineModal}
+            >
+                <View style={styles.modalOverlay}>
+                    <View style={[styles.modalContent, { backgroundColor: colors.surface, width: '90%', maxHeight: '80%' }]}>
+                        <View style={styles.modalHeader}>
+                            <Text style={[styles.modalTitle, { color: colors.text }]}>Añadir Nueva Línea</Text>
+                            <TouchableOpacity onPress={closeAddLineModal} style={styles.closeButton}>
+                                <X size={24} color={colors.text} />
+                            </TouchableOpacity>
+                        </View>
+
+                        <ScrollView contentContainerStyle={{ paddingBottom: 20 }}>
+                            <Text style={[styles.modalSubtitle, { color: colors.text, marginBottom: 12 }]}>
+                                1. Selecciona el Personaje:
+                            </Text>
+
+                            <View style={styles.characterGrid}>
+                                {characters.map((char) => (
+                                    <TouchableOpacity
+                                        key={char.id}
+                                        style={[
+                                            styles.characterOption,
+                                            {
+                                                borderColor: selectedCharacter?.id === char.id ? char.color : colors.border,
+                                                backgroundColor: selectedCharacter?.id === char.id ? `${char.color}20` : 'transparent'
+                                            }
+                                        ]}
+                                        onPress={() => setSelectedCharacter(char)}
+                                    >
+                                        <View style={[styles.characterInitialCircle, { backgroundColor: char.color || colors.primary }]}>
+                                            <Text style={styles.characterInitial}>
+                                                {char.name.charAt(0).toUpperCase()}
+                                            </Text>
+                                        </View>
+                                        <Text style={[styles.characterNameOption, { color: colors.text }]}>
+                                            {char.name}
+                                        </Text>
+                                    </TouchableOpacity>
+                                ))}
+                            </View>
+
+                            {selectedCharacter && (
+                                <>
+                                    <Text style={[styles.modalSubtitle, { color: colors.text, marginBottom: 12 }]}>
+                                        2. Escribe el Diálogo:
+                                    </Text>
+                                    <TextInput
+                                        style={[styles.lineInput, {
+                                            color: colors.text,
+                                            borderColor: colors.border,
+                                            // Removing width: 100% to let padding handle layout preventing overflow
+                                        }]}
+                                        placeholder="Escribe aquí lo que dice el personaje..."
+                                        placeholderTextColor={colors.textSecondary}
+                                        multiline
+                                        value={newLineText}
+                                        onChangeText={setNewLineText}
+                                    />
+
+                                    <View style={{ flexDirection: 'row', gap: 10, marginTop: 10 }}>
+                                        <TouchableOpacity
+                                            style={[styles.button, { backgroundColor: colors.border, flex: 1 }]}
+                                            onPress={closeAddLineModal}
+                                        >
+                                            <Text style={[styles.buttonText, { color: colors.text }]}>Cancelar</Text>
+                                        </TouchableOpacity>
+
+                                        <TouchableOpacity
+                                            style={[
+                                                styles.button,
+                                                { backgroundColor: selectedCharacter.color || colors.primary, flex: 1 }
+                                            ]}
+                                            onPress={createNewLine}
+                                            disabled={isUpdating || !newLineText.trim()}
+                                        >
+                                            {isUpdating ? (
+                                                <ActivityIndicator size="small" color="#FFFFFF" />
+                                            ) : (
+                                                <Text style={styles.buttonText}>Añadir</Text>
+                                            )}
+                                        </TouchableOpacity>
+                                    </View>
+                                </>
+                            )}
+                        </ScrollView>
+                    </View>
+                </View>
+            </Modal>
+
             {/* Processing Overlay */}
             {isProcessing && (
                 <View style={styles.loadingOverlay}>
@@ -982,7 +1529,7 @@ export default function StudioV2Screen() {
                                 backgroundColor: colors.primary
                             }} />
                         </View>
-                        <Text style={{ fontSize: 12, color: colors.textSecondary }}>
+                        <Text style={{ fontSize: rf(12), color: colors.textSecondary }}>
                             {uploadProgress}%
                         </Text>
                     </View>
@@ -1004,7 +1551,6 @@ export default function StudioV2Screen() {
                                     backgroundColor: colors.background,
                                     borderColor: currentLine.isUserCharacter ? '#10B981' : currentLine.color || colors.primary,
                                     borderWidth: 4,
-                                    opacity: (currentLine.isUserCharacter && hideUserLines) ? 0.3 : 1,
                                     padding: 0, // Remove padding to let header fill width
                                     overflow: 'hidden', // Ensure header stays inside border
                                 }
@@ -1017,29 +1563,156 @@ export default function StudioV2Screen() {
                                     backgroundColor: currentLine.isUserCharacter ? '#10B981' : currentLine.color || colors.primary,
                                 }
                             ]}>
-                                <Text style={[styles.characterName, { color: colors.background }]}>
-                                    {currentLine.characterName}
-                                </Text>
-                                <View style={[
-                                    styles.badge,
-                                    {
-                                        backgroundColor: 'rgba(0,0,0,0.2)', // Semi-transparent black for contrast on colored banner
-                                    }
-                                ]}>
-                                    <Text style={[styles.badgeText, { color: colors.background }]}>
-                                        {currentLine.isUserCharacter ? 'TÚ' : 'IA'}
-                                    </Text>
-                                </View>
+                                {/* Menu Button - Always on the right */}
+                                {!isPlaying && !isRecording && !isSpeaking && !isListening && (
+                                    <TouchableOpacity
+                                        onPress={() => setOpenEditMenuLineId(
+                                            openEditMenuLineId === currentLine.id ? null : currentLine.id
+                                        )}
+                                        style={styles.menuButtonAbsolute}
+                                    >
+                                        <MoreVertical size={20} color={colors.background} />
+                                    </TouchableOpacity>
+                                )}
+
+                                {/* Content - Either Name+Badge or Edit Buttons */}
+                                {openEditMenuLineId === currentLine.id ? (
+                                    // Edit Menu - Replaces name and badge
+                                    <View style={styles.editMenuInHeader}>
+                                        {/* Move Up */}
+                                        {currentIndex > 0 && (
+                                            <TouchableOpacity
+                                                onPress={() => {
+                                                    moveLineUp(currentLine.id);
+                                                    setOpenEditMenuLineId(null);
+                                                }}
+                                                style={styles.editButtonHorizontal}
+                                                disabled={isUpdating}
+                                            >
+                                                <ChevronUp size={18} color={colors.background} />
+                                            </TouchableOpacity>
+                                        )}
+
+                                        {/* Move Down */}
+                                        {currentIndex < dialogueLines.length - 1 && (
+                                            <TouchableOpacity
+                                                onPress={() => {
+                                                    moveLineDown(currentLine.id);
+                                                    setOpenEditMenuLineId(null);
+                                                }}
+                                                style={styles.editButtonHorizontal}
+                                                disabled={isUpdating}
+                                            >
+                                                <ChevronDown size={18} color={colors.background} />
+                                            </TouchableOpacity>
+                                        )}
+
+                                        {/* Edit */}
+                                        <TouchableOpacity
+                                            onPress={() => {
+                                                startEditingLine(currentLine);
+                                                setOpenEditMenuLineId(null);
+                                            }}
+                                            style={styles.editButtonHorizontal}
+                                            disabled={isUpdating}
+                                        >
+                                            <Edit size={18} color={colors.background} />
+                                        </TouchableOpacity>
+
+                                        {/* Delete */}
+                                        <TouchableOpacity
+                                            onPress={() => {
+                                                deleteLine(currentLine.id);
+                                                setOpenEditMenuLineId(null);
+                                            }}
+                                            style={styles.editButtonHorizontal}
+                                            disabled={isUpdating}
+                                        >
+                                            <Trash2 size={18} color={colors.background} />
+                                        </TouchableOpacity>
+                                    </View>
+                                ) : (
+                                    // Normal view - Name and Badge centered
+                                    <View style={styles.headerCenteredContent}>
+                                        <Text style={[styles.characterName, { color: colors.background }]}>
+                                            {currentLine.characterName}
+                                        </Text>
+
+                                        <View style={[
+                                            styles.badge,
+                                            {
+                                                backgroundColor: 'rgba(0,0,0,0.2)',
+                                            }
+                                        ]}>
+                                            <Text style={[styles.badgeText, { color: colors.background }]}>
+                                                {currentLine.isUserCharacter ? 'TÚ' : 'IA'}
+                                            </Text>
+                                        </View>
+                                    </View>
+                                )}
                             </View>
 
                             <View style={styles.cardContent}>
-                                <Text style={[
-                                    styles.dialogueText,
-                                    { color: colors.text },
-                                    (currentLine.isUserCharacter && hideUserLines) && { opacity: 0 }
-                                ]}>
-                                    {currentLine.text}
-                                </Text>
+                                {editingLineId === currentLine.id ? (
+                                    // Edit Mode
+                                    <View>
+                                        <TextInput
+                                            style={[
+                                                styles.editInput,
+                                                {
+                                                    color: colors.text,
+                                                    borderColor: colors.border,
+                                                    backgroundColor: colors.surface
+                                                }
+                                            ]}
+                                            value={editedText}
+                                            onChangeText={setEditedText}
+                                            multiline
+                                            autoFocus
+                                            placeholder="Escribe el texto de la línea..."
+                                            placeholderTextColor={colors.textSecondary}
+                                        />
+                                        <View style={styles.editActions}>
+                                            <TouchableOpacity
+                                                onPress={cancelEditing}
+                                                style={[styles.editActionButton, { backgroundColor: colors.border }]}
+                                            >
+                                                <X size={16} color={colors.text} />
+                                                <Text style={[styles.editActionText, { color: colors.text }]}>Cancelar</Text>
+                                            </TouchableOpacity>
+                                            <TouchableOpacity
+                                                onPress={saveEditedLine}
+                                                style={[styles.editActionButton, { backgroundColor: '#10B981' }]}
+                                                disabled={isUpdating || !editedText.trim()}
+                                            >
+                                                <Save size={16} color="#FFFFFF" />
+                                                <Text style={[styles.editActionText, { color: '#FFFFFF' }]}>
+                                                    {isUpdating ? 'Guardando...' : 'Guardar'}
+                                                </Text>
+                                            </TouchableOpacity>
+                                        </View>
+                                    </View>
+                                ) : (
+                                    // Display Mode
+                                    <>
+                                        {currentLine.isUserCharacter && hideUserLines ? (
+                                            // Show EyeOff icon when user lines are hidden
+                                            <View style={styles.hiddenLineContainer}>
+                                                <EyeOff size={48} color={colors.textSecondary} />
+                                                <Text style={[styles.hiddenLineText, { color: colors.textSecondary }]}>
+                                                    Línea oculta
+                                                </Text>
+                                            </View>
+                                        ) : (
+                                            <Text style={[
+                                                styles.dialogueText,
+                                                { color: colors.text }
+                                            ]}>
+                                                {currentLine.text}
+                                            </Text>
+                                        )}
+                                    </>
+                                )}
                             </View>
 
                             {/* Status indicators */}
@@ -1066,30 +1739,32 @@ export default function StudioV2Screen() {
                             )}
                         </View>
 
-                        {/* Next Card (Cascade Effect) */}
-                        {dialogueLines[currentIndex + 1] && (
+                        {/* Next Cards (Cascade Effect - All remaining cards) */}
+                        {dialogueLines.slice(currentIndex + 1).map((line, index) => (
                             <View
+                                key={line.id}
                                 style={[
                                     styles.card,
                                     styles.nextCard,
                                     {
                                         backgroundColor: colors.background,
-                                        borderColor: dialogueLines[currentIndex + 1].isUserCharacter ? '#10B981' : dialogueLines[currentIndex + 1].color || colors.primary,
+                                        borderColor: line.isUserCharacter ? '#10B981' : line.color || colors.primary,
                                         borderWidth: 4,
                                         opacity: 0.5,
                                         padding: 0,
                                         overflow: 'hidden',
+                                        marginTop: index === 0 ? 16 : 12,
                                     }
                                 ]}
                             >
                                 <View style={[
                                     styles.cardHeaderBanner,
                                     {
-                                        backgroundColor: dialogueLines[currentIndex + 1].isUserCharacter ? '#10B981' : dialogueLines[currentIndex + 1].color || colors.primary,
+                                        backgroundColor: line.isUserCharacter ? '#10B981' : line.color || colors.primary,
                                     }
                                 ]}>
                                     <Text style={[styles.characterName, { color: colors.background }]}>
-                                        {dialogueLines[currentIndex + 1].characterName}
+                                        {line.characterName}
                                     </Text>
                                     <View style={[
                                         styles.badge,
@@ -1098,18 +1773,28 @@ export default function StudioV2Screen() {
                                         }
                                     ]}>
                                         <Text style={[styles.badgeText, { color: colors.background }]}>
-                                            {dialogueLines[currentIndex + 1].isUserCharacter ? 'TÚ' : 'IA'}
+                                            {line.isUserCharacter ? 'TÚ' : 'IA'}
                                         </Text>
                                     </View>
                                 </View>
 
                                 <View style={styles.cardContent}>
-                                    <Text style={[styles.dialogueText, { color: colors.text }]} numberOfLines={2}>
-                                        {dialogueLines[currentIndex + 1].text}
-                                    </Text>
+                                    {line.isUserCharacter && hideUserLines ? (
+                                        // Show EyeOff icon for user lines when hidden
+                                        <View style={styles.hiddenLineContainer}>
+                                            <EyeOff size={32} color={colors.textSecondary} />
+                                            <Text style={[styles.hiddenLineText, { color: colors.textSecondary, fontSize: rf(12) }]}>
+                                                Oculta
+                                            </Text>
+                                        </View>
+                                    ) : (
+                                        <Text style={[styles.dialogueText, { color: colors.text }]} numberOfLines={2}>
+                                            {line.text}
+                                        </Text>
+                                    )}
                                 </View>
                             </View>
-                        )}
+                        ))}
                     </View>
                 )}
             </ScrollView>
@@ -1213,16 +1898,35 @@ const styles = StyleSheet.create({
         alignItems: 'center',
         paddingHorizontal: 8,
     },
+    headerTitleRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 8,
+    },
     headerTitle: {
         fontSize: 16,
         fontWeight: '700',
+    },
+    literalModeBadge: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        paddingHorizontal: 8,
+        paddingVertical: 4,
+        borderRadius: 12,
+        gap: 4,
+    },
+    literalModeBadgeText: {
+        color: '#FFFFFF',
+        fontSize: 10,
+        fontWeight: '700',
+        letterSpacing: 0.5,
     },
     headerSubtitle: {
         fontSize: 12,
         marginTop: 2,
     },
     menuButton: {
-        padding: 8,
+        padding: rp(8),
     },
     menuOverlay: {
         position: 'absolute',
@@ -1230,6 +1934,7 @@ const styles = StyleSheet.create({
         left: 0,
         right: 0,
         bottom: 0,
+        backgroundColor: 'rgba(0, 0, 0, 0.3)',
         zIndex: 1000,
         justifyContent: 'flex-start',
         alignItems: 'flex-end',
@@ -1248,12 +1953,12 @@ const styles = StyleSheet.create({
     menuItem: {
         flexDirection: 'row',
         alignItems: 'center',
-        padding: 16,
-        gap: 12,
+        padding: rp(16),
+        gap: rp(12),
         borderBottomWidth: 1,
     },
     menuItemText: {
-        fontSize: 15,
+        fontSize: rf(15),
         fontWeight: '500',
     },
     content: {
@@ -1261,76 +1966,95 @@ const styles = StyleSheet.create({
     },
     contentContainer: {
         flexGrow: 1,
-        padding: 20,
+        padding: rp(20),
         justifyContent: 'center',
     },
     cardContainer: {
-        gap: 16,
+        gap: rp(16),
         alignItems: 'center', // Center cards horizontally
     },
     card: {
-        borderRadius: 20,
-        padding: 32, // Increased padding for better spacing
+        borderRadius: rp(20),
+        padding: rp(32), // Increased padding for better spacing
         shadowColor: '#000',
-        shadowOffset: { width: 0, height: 4 },
+        shadowOffset: { width: 0, height: rp(4) },
         shadowOpacity: 0.1,
-        shadowRadius: 12,
-        elevation: 5,
-        minHeight: 250, // Increased height
+        shadowRadius: rp(12),
+        elevation: rp(5),
+        minHeight: rp(250), // Increased height
         width: '100%',
         alignItems: 'center', // Center content horizontally
         justifyContent: 'center', // Center content vertically
         overflow: 'hidden', // Ensure header stays inside border
     },
     nextCard: {
-        marginTop: -20, // Overlap slightly
-        transform: [{ scale: 0.9 }, { translateY: 20 }], // Scale down and move down
+        marginTop: rp(-20), // Overlap slightly
+        transform: [{ scale: 0.9 }, { translateY: rp(20) }], // Scale down and move down
         zIndex: -1, // Behind main card
-        minHeight: 150, // Smaller height for next card
+        minHeight: rp(150), // Smaller height for next card
     },
     cardHeaderBanner: {
         flexDirection: 'row',
         alignItems: 'center',
         justifyContent: 'center',
-        gap: 12,
+        position: 'relative', // Para posicionar el botón de menú absoluto
         width: '100%',
-        paddingVertical: 12,
-        marginBottom: 24,
-        position: 'absolute', // Fix to top
+        paddingVertical: rp(10),
+        paddingHorizontal: rp(40), // Espacio para el botón de menú
+        marginBottom: rp(12),
         top: 0,
         left: 0,
         right: 0,
     },
+    headerCenteredContent: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'center',
+        gap: rp(12),
+        flex: 1,
+    },
+    menuButtonAbsolute: {
+        position: 'absolute',
+        right: rp(12),
+        padding: rp(4),
+        borderRadius: rp(6),
+        backgroundColor: 'rgba(0, 0, 0, 0.15)',
+        justifyContent: 'center',
+        alignItems: 'center',
+        zIndex: 10,
+    },
+    editMenuInHeader: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'center',
+        gap: rp(8),
+        flex: 1,
+    },
+    characterName: {
+        fontSize: rf(18),
+        fontWeight: '700',
+    },
+    badge: {
+        paddingHorizontal: rp(12),
+        paddingVertical: rp(4),
+        borderRadius: rp(12),
+    },
+    badgeText: {
+        fontSize: rf(12),
+        fontWeight: '700',
+    },
     cardContent: {
-        marginTop: 60, // Add margin to account for absolute header
-        paddingHorizontal: 24,
-        paddingBottom: 24,
+        paddingTop: rp(12),
+        paddingHorizontal: rp(24),
+        paddingBottom: rp(24),
         width: '100%',
         alignItems: 'center',
         justifyContent: 'center',
         flex: 1, // Fill remaining space
     },
-    characterName: {
-        fontSize: 18,
-        fontWeight: '700',
-        color: '#FFFFFF',
-        textTransform: 'uppercase',
-        letterSpacing: 1,
-        textAlign: 'center',
-    },
-    badge: {
-        paddingHorizontal: 16,
-        paddingVertical: 6,
-        borderRadius: 20,
-    },
-    badgeText: {
-        fontSize: 12,
-        fontWeight: '700',
-        color: '#FFFFFF',
-    },
     dialogueText: {
-        fontSize: 24,
-        lineHeight: 36,
+        fontSize: rf(24),
+        lineHeight: rp(36),
         color: '#FFFFFF',
         fontWeight: '500',
         textAlign: 'center',
@@ -1338,41 +2062,41 @@ const styles = StyleSheet.create({
     statusRow: {
         flexDirection: 'row',
         alignItems: 'center',
-        gap: 8,
-        marginTop: 24,
-        padding: 8,
+        gap: rp(8),
+        marginTop: rp(24),
+        padding: rp(8),
         // Removed background color for cleaner look
-        borderRadius: 12,
+        borderRadius: rp(12),
         justifyContent: 'center', // Ensure centering
     },
     statusText: {
-        fontSize: 14,
+        fontSize: rf(14),
         fontWeight: '500',
         color: '#FFFFFF',
     },
     footer: {
-        paddingHorizontal: 20,
-        paddingVertical: 16,
+        paddingHorizontal: rp(20),
+        paddingVertical: rp(16),
         borderTopWidth: 1,
-        paddingBottom: Platform.OS === 'ios' ? 24 : 16,
+        paddingBottom: Platform.OS === 'ios' ? rp(24) : rp(16),
     },
     progressContainer: {
         alignItems: 'center',
-        marginBottom: 12,
+        marginBottom: rp(12),
     },
     progressText: {
-        fontSize: 12,
+        fontSize: rf(12),
         fontWeight: '500',
     },
     controls: {
         flexDirection: 'row',
         alignItems: 'center',
         justifyContent: 'center',
-        gap: 16,
+        gap: rp(16),
     },
     controlButton: {
-        width: 44,
-        height: 44,
+        width: rp(44),
+        height: rp(44),
         alignItems: 'center',
         justifyContent: 'center',
     },
@@ -1380,57 +2104,57 @@ const styles = StyleSheet.create({
         opacity: 0.3,
     },
     playButton: {
-        width: 64,
-        height: 64,
-        borderRadius: 32,
+        width: rp(64),
+        height: rp(64),
+        borderRadius: rp(32),
         alignItems: 'center',
         justifyContent: 'center',
         shadowColor: '#000',
-        shadowOffset: { width: 0, height: 4 },
+        shadowOffset: { width: 0, height: rp(4) },
         shadowOpacity: 0.2,
-        shadowRadius: 8,
-        elevation: 4,
+        shadowRadius: rp(8),
+        elevation: rp(4),
     },
     loopButton: {
-        width: 40,
-        height: 40,
-        borderRadius: 20,
+        width: rp(40),
+        height: rp(40),
+        borderRadius: rp(20),
         alignItems: 'center',
         justifyContent: 'center',
     },
     recButton: {
-        width: 48,
-        height: 48,
-        borderRadius: 24,
+        width: rp(48),
+        height: rp(48),
+        borderRadius: rp(24),
         alignItems: 'center',
         justifyContent: 'center',
     },
     recSquare: {
-        width: 16,
-        height: 16,
+        width: rp(16),
+        height: rp(16),
         backgroundColor: '#FFFFFF',
-        borderRadius: 3,
+        borderRadius: rp(3),
     },
     recordingTime: {
         textAlign: 'center',
-        fontSize: 14,
+        fontSize: rf(14),
         fontWeight: '600',
-        marginTop: 8,
+        marginTop: rp(8),
     },
     recordingIndicator: {
         flexDirection: 'row',
         alignItems: 'center',
-        gap: 8,
-        marginLeft: 16,
+        gap: rp(8),
+        marginLeft: rp(16),
     },
     recordingDot: {
-        width: 10,
-        height: 10,
-        borderRadius: 5,
+        width: rp(10),
+        height: rp(10),
+        borderRadius: rp(5),
         backgroundColor: '#EF4444',
     },
     recordingText: {
-        fontSize: 14,
+        fontSize: rf(14),
         fontWeight: '600',
         fontVariant: ['tabular-nums'],
     },
@@ -1440,67 +2164,73 @@ const styles = StyleSheet.create({
         backgroundColor: 'rgba(0,0,0,0.5)',
         justifyContent: 'center',
         alignItems: 'center',
-        padding: 20,
+        padding: rp(20),
     },
     modalContent: {
-        borderRadius: 20,
-        padding: 24,
+        borderRadius: rp(20),
+        padding: rp(24),
         width: '100%',
-        maxWidth: 340,
+        maxWidth: rp(340),
         alignItems: 'center',
         shadowColor: '#000',
-        shadowOffset: { width: 0, height: 4 },
+        shadowOffset: { width: 0, height: rp(4) },
         shadowOpacity: 0.25,
-        shadowRadius: 12,
-        elevation: 10,
+        shadowRadius: rp(12),
+        elevation: rp(10),
     },
     modalHeader: {
+        flexDirection: 'row',
         alignItems: 'center',
-        marginBottom: 16,
-        gap: 12,
+        justifyContent: 'space-between',
+        marginBottom: rp(16),
+        width: '100%',
     },
     modalTitle: {
-        fontSize: 18,
+        fontSize: rf(18),
         fontWeight: '700',
+        flex: 1,
         textAlign: 'center',
     },
+    closeButton: {
+        padding: rp(4),
+    },
     modalText: {
-        fontSize: 15,
+        fontSize: rf(15),
         textAlign: 'center',
-        marginBottom: 24,
-        lineHeight: 22,
+        marginBottom: rp(24),
+        lineHeight: rp(22),
     },
     checkboxContainer: {
         flexDirection: 'row',
         alignItems: 'center',
-        marginBottom: 24,
-        gap: 8,
+        marginBottom: rp(24),
+        gap: rp(8),
     },
     checkbox: {
-        width: 20,
-        height: 20,
-        borderRadius: 4,
-        borderWidth: 2,
+        width: rp(20),
+        height: rp(20),
+        borderRadius: rp(4),
+        borderWidth: rp(2),
         alignItems: 'center',
         justifyContent: 'center',
     },
     checkboxText: {
-        fontSize: 14,
+        fontSize: rf(14),
     },
     modalButtons: {
         flexDirection: 'row',
-        gap: 12,
+        gap: rp(12),
         width: '100%',
     },
     modalButton: {
         flex: 1,
-        paddingVertical: 12,
-        borderRadius: 12,
+        paddingVertical: rp(12),
+        borderRadius: rp(12),
         alignItems: 'center',
         justifyContent: 'center',
     },
     modalButtonText: {
-        fontSize: 15,
+        fontSize: rf(15),
         fontWeight: '600',
     },
     // Loading Overlay
@@ -1516,15 +2246,144 @@ const styles = StyleSheet.create({
         zIndex: 2000,
     },
     loadingCard: {
-        padding: 24,
-        borderRadius: 16,
+        padding: rp(24),
+        borderRadius: rp(16),
         alignItems: 'center',
-        gap: 16,
-        minWidth: 200,
+        gap: rp(16),
+        minWidth: rp(200),
     },
     loadingText: {
-        fontSize: 16,
+        fontSize: rf(16),
         fontWeight: '600',
         textAlign: 'center',
+    },
+    // Edit Button Styles
+    editButton: {
+        padding: rp(6),
+        borderRadius: rp(6),
+        backgroundColor: 'rgba(0, 0, 0, 0.15)',
+        justifyContent: 'center',
+        alignItems: 'center',
+    },
+    editMenuHorizontal: {
+        flexDirection: 'row',
+        justifyContent: 'center',
+        alignItems: 'center',
+        gap: rp(8),
+        paddingVertical: rp(8),
+        paddingHorizontal: rp(12),
+    },
+    editButtonHorizontal: {
+        padding: rp(8),
+        borderRadius: rp(6),
+        backgroundColor: 'rgba(0, 0, 0, 0.15)',
+        justifyContent: 'center',
+        alignItems: 'center',
+    },
+    editInput: {
+        minHeight: rp(100),
+        borderWidth: rp(2),
+        borderRadius: rp(12),
+        padding: rp(16),
+        fontSize: rf(18),
+        lineHeight: rp(26),
+        textAlignVertical: 'top',
+        width: '100%',
+    },
+    editActions: {
+        flexDirection: 'row',
+        gap: rp(12),
+        marginTop: rp(16),
+        justifyContent: 'flex-end',
+        width: '100%',
+    },
+    editActionButton: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: rp(8),
+        paddingVertical: rp(12),
+        paddingHorizontal: rp(20),
+        borderRadius: rp(10),
+    },
+    editActionText: {
+        fontSize: rf(16),
+        fontWeight: '600',
+    },
+    // Add/Header Button Styles
+    addButton: {
+        padding: rp(8),
+        marginRight: rp(8),
+    },
+    // Add Line Modal Styles
+    characterGrid: {
+        flexDirection: 'row',
+        flexWrap: 'wrap',
+        gap: rp(12),
+        marginBottom: rp(20),
+        justifyContent: 'center',
+    },
+    characterOption: {
+        width: rp(100), // Fixed width for grid item
+        padding: rp(12),
+        borderRadius: rp(12),
+        borderWidth: rp(2),
+        alignItems: 'center',
+        gap: rp(8),
+    },
+    characterInitialCircle: {
+        width: rp(40),
+        height: rp(40),
+        borderRadius: rp(20),
+        justifyContent: 'center',
+        alignItems: 'center',
+    },
+    characterInitial: {
+        fontSize: rf(18),
+        fontWeight: '700',
+        color: '#FFFFFF',
+    },
+    characterNameOption: {
+        fontSize: rf(14),
+        fontWeight: '600',
+        textAlign: 'center',
+    },
+    lineInput: {
+        minHeight: rp(100),
+        borderWidth: rp(1),
+        borderRadius: rp(12),
+        padding: rp(16),
+        fontSize: rf(16),
+        textAlignVertical: 'top',
+        marginBottom: rp(20),
+        width: '100%',
+    },
+    modalSubtitle: {
+        fontSize: rf(16),
+        fontWeight: '600',
+        marginBottom: rp(8),
+        width: '100%',
+    },
+    button: {
+        paddingVertical: rp(16),
+        borderRadius: rp(12),
+        alignItems: 'center',
+        justifyContent: 'center',
+        width: '100%',
+    },
+    buttonText: {
+        color: '#FFFFFF',
+        fontSize: 16,
+        fontWeight: '700',
+    },
+    hiddenLineContainer: {
+        flex: 1,
+        alignItems: 'center',
+        justifyContent: 'center',
+        paddingVertical: rp(60),
+    },
+    hiddenLineText: {
+        marginTop: rp(12),
+        fontSize: rf(14),
+        fontWeight: '500',
     },
 });

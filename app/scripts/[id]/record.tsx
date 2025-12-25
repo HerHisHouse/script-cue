@@ -34,6 +34,7 @@ import { Audio } from 'expo-av';
 import { MENU_ITEM_PADDING_H, MENU_ITEM_PADDING_V, HEADER_HORIZONTAL_PADDING } from '@/utils/ui';
 import { getSettings } from '@/utils/appSettings';
 import { makeHeaderMenuStyles } from '@/components/HeaderMenu';
+import { rf, rp } from '@/utils/responsive';
 
 interface DialogueLine {
   id: string;
@@ -590,7 +591,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingHorizontal: HEADER_HORIZONTAL_PADDING,
-    paddingVertical: 16,
+    paddingVertical: rp(16),
     borderBottomWidth: 1,
   },
   backButton: {
@@ -600,7 +601,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   headerTitle: {
-    fontSize: 18,
+    fontSize: rf(18),
     fontWeight: '600',
   },
   menuButton: {
@@ -613,8 +614,8 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: 20,
-    paddingVertical: 12,
+    paddingHorizontal: rp(20),
+    paddingVertical: rp(12),
   },
   recordingIndicator: {
     flexDirection: 'row',
@@ -622,13 +623,13 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   recordingText: {
-    fontSize: 14,
+    fontSize: rf(14),
     fontWeight: '700',
     color: '#FFFFFF',
     letterSpacing: 1,
   },
   recordingTime: {
-    fontSize: 16,
+    fontSize: rf(16),
     fontWeight: '700',
     color: '#FFFFFF',
     fontVariant: ['tabular-nums'],
@@ -655,38 +656,38 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
   },
   menuItemText: {
-    fontSize: 15,
+    fontSize: rf(15),
   },
   content: {
     flex: 1,
   },
   contentContainer: {
-    padding: 20,
+    padding: rp(20),
     alignItems: 'center',
   },
   contextLine: {
     borderRadius: 8,
-    padding: 12,
+    padding: rp(12),
     marginBottom: 12,
     width: '100%',
     maxWidth: 600,
     alignItems: 'center',
   },
   contextLabel: {
-    fontSize: 11,
+    fontSize: rf(11),
     fontWeight: '600',
     textTransform: 'uppercase',
     letterSpacing: 0.5,
     marginBottom: 4,
   },
   contextCharacter: {
-    fontSize: 12,
+    fontSize: rf(12),
     fontWeight: '600',
     marginBottom: 4,
     textAlign: 'center',
   },
   contextText: {
-    fontSize: 13,
+    fontSize: rf(13),
     lineHeight: 18,
     textAlign: 'center',
   },
@@ -709,7 +710,7 @@ const styles = StyleSheet.create({
   },
   lineContent: {
     flex: 1,
-    padding: 20,
+    padding: rp(20),
     alignItems: 'center',
   },
   characterHeader: {
@@ -718,36 +719,36 @@ const styles = StyleSheet.create({
     marginBottom: 12,
   },
   characterName: {
-    fontSize: 16,
+    fontSize: rf(16),
     fontWeight: '700',
     letterSpacing: 0.5,
   },
   youBadge: {
     backgroundColor: '#10B981',
-    paddingHorizontal: 8,
-    paddingVertical: 4,
+    paddingHorizontal: rp(8),
+    paddingVertical: rp(4),
     borderRadius: 6,
     marginLeft: 8,
   },
   youBadgeText: {
-    fontSize: 11,
+    fontSize: rf(11),
     fontWeight: '700',
     color: '#FFFFFF',
     letterSpacing: 0.5,
   },
   dialogueText: {
-    fontSize: 18,
+    fontSize: rf(18),
     lineHeight: 28,
     textAlign: 'center',
   },
   hiddenTextContainer: {
     alignItems: 'center',
-    paddingVertical: 32,
+    paddingVertical: rp(32),
     borderRadius: 8,
     width: '100%',
   },
   hiddenText: {
-    fontSize: 14,
+    fontSize: rf(14),
     fontWeight: '500',
     marginTop: 8,
   },
@@ -758,31 +759,31 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   listeningText: {
-    fontSize: 13,
+    fontSize: rf(13),
     color: '#10B981',
     fontWeight: '500',
   },
   playingText: {
-    fontSize: 13,
+    fontSize: rf(13),
     color: '#3B82F6',
     fontWeight: '500',
   },
   pausedText: {
-    fontSize: 13,
+    fontSize: rf(13),
     color: '#F59E0B',
     fontWeight: '500',
   },
   footer: {
-    paddingHorizontal: 20,
-    paddingTop: 16,
-    paddingBottom: 20,
+    paddingHorizontal: rp(20),
+    paddingTop: rp(16),
+    paddingBottom: rp(20),
     borderTopWidth: 1,
   },
   progressContainer: {
     marginBottom: 16,
   },
   progressText: {
-    fontSize: 12,
+    fontSize: rf(12),
     fontWeight: '500',
     marginBottom: 8,
     textAlign: 'center',

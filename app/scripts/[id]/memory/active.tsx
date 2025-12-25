@@ -6,7 +6,6 @@ import {
   TouchableOpacity,
   ScrollView,
   ActivityIndicator,
-  Switch,
   Alert,
   Platform,
 } from 'react-native';
@@ -25,10 +24,17 @@ import {
   EyeOff,
   Volume2,
   Settings,
+  Check,
+  Repeat,
 } from 'lucide-react-native';
 import * as Speech from 'expo-speech';
 import { FixedFooter } from '@/components/FixedFooter';
-import { ScreenHeader } from '@/components/ScreenHeader';
+import { getSettings } from '@/utils/appSettings';
+import { getCachedAudio } from '@/utils/ttsCache';
+import * as Crypto from 'expo-crypto';
+import { Audio } from 'expo-av';
+import { getIntroPreferences, setIntroPreference } from '@/utils/introPreferences';
+import { rf, rp } from '@/utils/responsive';
 
 export default function MemoryModeScreen() {
   const router = useRouter();
@@ -41,15 +47,20 @@ export default function MemoryModeScreen() {
   const [scriptTitle, setScriptTitle] = useState('');
   const [dialogueLines, setDialogueLines] = useState<DialogueLine[]>([]);
   const [userCharacterName, setUserCharacterName] = useState<string>('');
+  const [characters, setCharacters] = useState<any[]>([]);
 
   // Session State
+  const [gameStarted, setGameStarted] = useState(false);
+  const [dontShowAgain, setDontShowAgain] = useState(false);
   const [currentIndex, setCurrentIndex] = useState(0);
   const [isUserLineVisible, setIsUserLineVisible] = useState(false);
-  const [autoAdvance, setAutoAdvance] = useState(false);
   const [isPlaying, setIsPlaying] = useState(false);
 
   // Refs
   const scrollViewRef = useRef<ScrollView>(null);
+
+  // TTS Provider
+  const [ttsProvider, setTtsProvider] = useState<'openai' | 'elevenlabs' | 'google' | 'system'>('openai');
 
   // Load Data
   useEffect(() => {
@@ -79,6 +90,7 @@ export default function MemoryModeScreen() {
 
         const userChar = characters?.find(c => c.is_user_character);
         setUserCharacterName(userChar?.name || 'Tu personaje');
+        setCharacters(characters || []);
 
         const lines = await loadDialogueLines(id as string);
         setDialogueLines(lines);
@@ -92,6 +104,24 @@ export default function MemoryModeScreen() {
 
     loadData();
   }, [id, user]);
+
+  // Load TTS Settings
+  useEffect(() => {
+    (async () => {
+      try {
+        const settings = await getSettings();
+        setTtsProvider(settings.ttsProvider || 'openai');
+
+        // Check if user wants to skip intro
+        const prefs = await getIntroPreferences();
+        if (prefs.active) {
+          setGameStarted(true);
+        }
+      } catch (e) {
+        console.error('Error loading TTS settings:', e);
+      }
+    })();
+  }, []);
 
   // Navigation Handlers
   const goToNext = useCallback(() => {
@@ -121,20 +151,40 @@ export default function MemoryModeScreen() {
       setIsPlaying(true);
       const textToSpeak = currentLine.cleanText || currentLine.text;
 
-      // Try to use cached audio first
-      const { getCachedAudio } = await import('@/utils/ttsCache');
-      const Crypto = await import('expo-crypto');
-      const { Audio } = await import('expo-av');
-
       const textHash = await Crypto.digestStringAsync(
         Crypto.CryptoDigestAlgorithm.SHA256,
         textToSpeak
       );
 
-      // Try cache with OpenAI (default provider)
-      const audioUri = await getCachedAudio(currentLine.id, 'openai', null, textHash);
+      // Find character to get voice_id
+      const characterName = currentLine.characterName.toUpperCase();
+      const character = characters.find(
+        c => c.name?.toUpperCase() === characterName
+      );
+
+      // Determine provider and voiceId
+      let effectiveProvider = ttsProvider === 'google' ? 'openai' : ttsProvider;
+      let voiceId: string | null = null;
+
+      if (character?.voice_id && character?.voice_provider) {
+        effectiveProvider = character.voice_provider;
+        voiceId = character.voice_id;
+        console.log(`[Memory Active] Using character voice: ${voiceId} (${effectiveProvider})`);
+      }
+
+      const provider: 'openai' | 'elevenlabs' = effectiveProvider === 'system' ? 'openai' : effectiveProvider as 'openai' | 'elevenlabs';
+
+      // Try cache with configured provider
+      const audioUri = await getCachedAudio(currentLine.id, provider, voiceId, textHash);
 
       if (audioUri) {
+        // Configurar audio mode para reproducir por altavoz (no auricular)
+        await Audio.setAudioModeAsync({
+          allowsRecordingIOS: false,
+          playsInSilentModeIOS: true,
+          staysActiveInBackground: false,
+        });
+
         // Play from cache
         const { sound } = await Audio.Sound.createAsync(
           { uri: audioUri },
@@ -144,9 +194,6 @@ export default function MemoryModeScreen() {
         sound.setOnPlaybackStatusUpdate((status) => {
           if (status.isLoaded && status.didJustFinish) {
             setIsPlaying(false);
-            if (autoAdvance) {
-              goToNext();
-            }
           }
         });
       } else {
@@ -155,9 +202,6 @@ export default function MemoryModeScreen() {
           language: 'es-ES',
           onDone: () => {
             setIsPlaying(false);
-            if (autoAdvance) {
-              goToNext();
-            }
           },
           onStopped: () => setIsPlaying(false),
           onError: () => setIsPlaying(false),
@@ -171,9 +215,6 @@ export default function MemoryModeScreen() {
         language: 'es-ES',
         onDone: () => {
           setIsPlaying(false);
-          if (autoAdvance) {
-            goToNext();
-          }
         },
         onStopped: () => setIsPlaying(false),
         onError: () => setIsPlaying(false),
@@ -202,9 +243,66 @@ export default function MemoryModeScreen() {
     );
   }
 
+  if (!gameStarted) {
+    return (
+      <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
+        <View style={[styles.header, { borderBottomColor: colors.border, backgroundColor: colors.surface }]}>
+          <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
+            <ArrowLeft size={24} color={colors.text} />
+          </TouchableOpacity>
+          <Text style={[styles.headerTitle, { color: colors.text }]}>Memorización Activa</Text>
+          <View style={{ width: 40 }} />
+        </View>
+        <View style={[styles.content, styles.center]}>
+          <Text style={[styles.instructions, { color: colors.text }]}>
+            Practica tu guion revelando y ocultando tus líneas.
+            {' \n\n'}
+            Las líneas de la IA se reproducirán automáticamente.
+            {' \n\n'}
+            Usa los botones de navegación para moverte por el guion.
+          </Text>
+
+          <TouchableOpacity
+            style={styles.checkboxContainer}
+            onPress={() => setDontShowAgain(!dontShowAgain)}
+          >
+            <View style={[styles.checkbox, { borderColor: colors.border }]}>
+              {dontShowAgain && <Check size={16} color={colors.primary} />}
+            </View>
+            <Text style={[styles.checkboxLabel, { color: colors.textSecondary }]}>
+              No volver a mostrar este mensaje
+            </Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[styles.startButton, { backgroundColor: colors.primary }]}
+            onPress={async () => {
+              if (dontShowAgain) {
+                await setIntroPreference('active', true);
+              }
+              setGameStarted(true);
+            }}
+          >
+            <Text style={styles.startButtonText}>Comenzar</Text>
+          </TouchableOpacity>
+        </View>
+      </SafeAreaView>
+    );
+  }
+
   const currentLine = dialogueLines[currentIndex];
   const isUserTurn = currentLine?.isUserCharacter;
   const progressText = `Línea ${currentIndex + 1} de ${dialogueLines.length}`;
+  const headerTitle = `Memorización activa Personaje: ${userCharacterName}`;
+
+  const handleRestart = () => {
+    setCurrentIndex(0);
+    setIsUserLineVisible(false);
+  };
+
+  const handleFinish = () => {
+    router.back();
+  };
 
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
@@ -215,24 +313,11 @@ export default function MemoryModeScreen() {
         </TouchableOpacity>
         <View style={styles.headerInfo}>
           <Text style={[styles.headerTitle, { color: colors.text }]} numberOfLines={1}>
-            Memorización Activa
+            Memorización activa
           </Text>
-          <Text style={[styles.headerSubtitle, { color: colors.textSecondary }]}>
-            {userCharacterName}
+          <Text style={[styles.headerSubtitle, { color: colors.textSecondary }]} numberOfLines={1}>
+            Personaje: {userCharacterName}
           </Text>
-        </View>
-        <View style={styles.headerRight}>
-          {/* Auto-advance Toggle */}
-          <View style={styles.autoAdvanceContainer}>
-            <Text style={[styles.autoAdvanceLabel, { color: colors.textSecondary }]}>Auto</Text>
-            <Switch
-              value={autoAdvance}
-              onValueChange={setAutoAdvance}
-              trackColor={{ false: colors.border, true: colors.primary }}
-              thumbColor={'#fff'}
-              style={{ transform: [{ scaleX: 0.8 }, { scaleY: 0.8 }] }}
-            />
-          </View>
         </View>
       </View>
 
@@ -334,34 +419,46 @@ export default function MemoryModeScreen() {
           <Text style={[styles.progressText, { color: colors.textSecondary }]}>{progressText}</Text>
         </View>
 
-        <View style={styles.buttonsRow}>
-          <TouchableOpacity
-            style={[styles.navButton, { backgroundColor: colors.input }]}
-            onPress={goToPrev}
-            disabled={currentIndex === 0}
-          >
-            <ChevronLeft size={24} color={currentIndex === 0 ? colors.textSecondary : colors.text} />
-            <Text style={[styles.navButtonText, { color: currentIndex === 0 ? colors.textSecondary : colors.text }]}>Anterior</Text>
-          </TouchableOpacity>
-
-          {isUserTurn && (
+        {currentIndex === dialogueLines.length - 1 ? (
+          // Last Line Controls
+          <View style={styles.buttonsRow}>
             <TouchableOpacity
-              style={[styles.toggleButton, { backgroundColor: colors.primary }]}
-              onPress={toggleVisibility}
+              style={[styles.navButton, { backgroundColor: colors.input }]}
+              onPress={handleRestart}
             >
-              {isUserLineVisible ? <EyeOff size={24} color="#fff" /> : <Eye size={24} color="#fff" />}
+              <Repeat size={24} color={colors.text} />
+              <Text style={[styles.navButtonText, { color: colors.text }]}>Reiniciar</Text>
             </TouchableOpacity>
-          )}
 
-          <TouchableOpacity
-            style={[styles.navButton, { backgroundColor: colors.input }]}
-            onPress={goToNext}
-            disabled={currentIndex === dialogueLines.length - 1}
-          >
-            <Text style={[styles.navButtonText, { color: currentIndex === dialogueLines.length - 1 ? colors.textSecondary : colors.text }]}>Siguiente</Text>
-            <ChevronRight size={24} color={currentIndex === dialogueLines.length - 1 ? colors.textSecondary : colors.text} />
-          </TouchableOpacity>
-        </View>
+            <TouchableOpacity
+              style={[styles.navButton, { backgroundColor: colors.primary }]}
+              onPress={handleFinish}
+            >
+              <Check size={24} color="#FFFFFF" />
+              <Text style={[styles.navButtonText, { color: "#FFFFFF" }]}>Finalizar</Text>
+            </TouchableOpacity>
+          </View>
+        ) : (
+          // Normal Navigation Controls
+          <View style={styles.buttonsRow}>
+            <TouchableOpacity
+              style={[styles.navButton, { backgroundColor: colors.input }]}
+              onPress={goToPrev}
+              disabled={currentIndex === 0}
+            >
+              <ChevronLeft size={24} color={currentIndex === 0 ? colors.textSecondary : colors.text} />
+              <Text style={[styles.navButtonText, { color: currentIndex === 0 ? colors.textSecondary : colors.text }]}>Anterior</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[styles.navButton, { backgroundColor: colors.input }]}
+              onPress={goToNext}
+            >
+              <Text style={[styles.navButtonText, { color: colors.text }]}>Siguiente</Text>
+              <ChevronRight size={24} color={colors.text} />
+            </TouchableOpacity>
+          </View>
+        )}
       </View>
     </SafeAreaView>
   );
@@ -378,23 +475,46 @@ const styles = StyleSheet.create({
   header: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 16,
-    paddingVertical: 12,
+    paddingHorizontal: rp(16),
+    paddingVertical: rp(12),
     borderBottomWidth: 1,
   },
   backButton: {
-    padding: 8,
+    padding: rp(8),
     marginRight: 8,
+  },
+  instructions: {
+    fontSize: rf(18),
+    textAlign: 'center',
+    marginBottom: 32,
+    lineHeight: 28,
+    paddingHorizontal: rp(20),
+  },
+  checkboxContainer: { flexDirection: 'row', alignItems: 'center', marginBottom: 20, gap: 12 },
+  checkbox: { width: 24, height: 24, borderWidth: 2, borderRadius: 6, alignItems: 'center', justifyContent: 'center' },
+  checkboxLabel: { fontSize: rf(14) },
+  startButton: {
+    paddingVertical: rp(16),
+    paddingHorizontal: rp(48),
+    borderRadius: 32,
+  },
+  startButtonText: {
+    color: '#FFF',
+    fontSize: rf(18),
+    fontWeight: '700',
   },
   headerInfo: {
     flex: 1,
+    alignItems: 'center', // Centered
   },
   headerTitle: {
-    fontSize: 16,
+    fontSize: rf(16),
     fontWeight: '700',
+    textAlign: 'center', // Centered
   },
   headerSubtitle: {
-    fontSize: 12,
+    fontSize: rf(12),
+    textAlign: 'center', // Centered
   },
   headerRight: {
     flexDirection: 'row',
@@ -405,15 +525,15 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   autoAdvanceLabel: {
-    fontSize: 10,
+    fontSize: rf(10),
     marginBottom: 2,
   },
   content: {
     flex: 1,
   },
   contentContainer: {
-    padding: 20,
-    paddingBottom: 40,
+    padding: rp(20),
+    paddingBottom: rp(40),
     minHeight: '100%',
     justifyContent: 'center', // Center content vertically
   },
@@ -422,70 +542,77 @@ const styles = StyleSheet.create({
   },
   card: {
     borderRadius: 16,
-    padding: 24,
+    padding: rp(24),
     borderWidth: 1,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.1,
     shadowRadius: 8,
     elevation: 3,
+    alignItems: 'center', // Center content
   },
   userCard: {
     borderRadius: 16,
-    padding: 24,
+    padding: rp(24),
     borderWidth: 1,
     minHeight: 200,
     justifyContent: 'center',
+    alignItems: 'center', // Center content
   },
   contextCard: {
-    padding: 12,
+    padding: rp(12),
     borderWidth: 1,
     borderRadius: 8,
     opacity: 0.7,
     marginBottom: -12,
+    alignItems: 'center', // Center
   },
   contextLabel: {
-    fontSize: 10,
+    fontSize: rf(10),
     textTransform: 'uppercase',
     marginBottom: 4,
+    textAlign: 'center',
   },
   contextText: {
-    fontSize: 14,
+    fontSize: rf(14),
     fontStyle: 'italic',
+    textAlign: 'center',
   },
   characterName: {
-    fontSize: 14,
+    fontSize: rf(14),
     fontWeight: '700',
     textTransform: 'uppercase',
     marginBottom: 12,
     letterSpacing: 1,
+    textAlign: 'center', // Centered
   },
   dialogueText: {
-    fontSize: 24,
+    fontSize: rf(24),
     lineHeight: 32,
     fontWeight: '500',
+    textAlign: 'center', // Centered
   },
   hiddenContent: {
     alignItems: 'center',
     justifyContent: 'center',
     gap: 12,
-    paddingVertical: 20,
+    paddingVertical: rp(20),
   },
   hiddenText: {
-    fontSize: 16,
+    fontSize: rf(16),
     fontWeight: '500',
   },
   ttsButton: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    padding: 12,
+    padding: rp(12),
     borderRadius: 8,
     marginTop: 20,
     gap: 8,
   },
   ttsButtonText: {
-    fontSize: 14,
+    fontSize: rf(14),
     fontWeight: '600',
   },
   nextHint: {
@@ -493,7 +620,7 @@ const styles = StyleSheet.create({
     marginTop: 12,
   },
   nextHintText: {
-    fontSize: 12,
+    fontSize: rf(12),
     textTransform: 'uppercase',
     letterSpacing: 1,
   },
@@ -503,7 +630,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   controls: {
-    padding: 16,
+    padding: rp(16),
     paddingBottom: Platform.OS === 'ios' ? 0 : 16,
     borderTopWidth: 1,
   },
@@ -512,7 +639,7 @@ const styles = StyleSheet.create({
     marginBottom: 12,
   },
   progressText: {
-    fontSize: 12,
+    fontSize: rf(12),
     fontWeight: '500',
   },
   buttonsRow: {
@@ -524,14 +651,14 @@ const styles = StyleSheet.create({
   navButton: {
     flexDirection: 'row',
     alignItems: 'center',
-    padding: 12,
+    padding: rp(12),
     borderRadius: 12,
     flex: 1,
     justifyContent: 'center',
     gap: 4,
   },
   navButtonText: {
-    fontSize: 14,
+    fontSize: rf(14),
     fontWeight: '600',
   },
   toggleButton: {

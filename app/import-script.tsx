@@ -2,7 +2,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, TextInput, ActivityIndicator, Alert, ScrollView, Platform } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, useLocalSearchParams } from 'expo-router';
-import { Upload, ArrowLeft, Check, ChevronDown, Camera } from 'lucide-react-native';
+import { Upload, ArrowLeft, Check, ChevronDown, Camera, Info } from 'lucide-react-native';
 import * as DocumentPicker from 'expo-document-picker';
 import * as FileSystem from 'expo-file-system/legacy';
 import { useAuth } from '@/contexts/AuthContext';
@@ -11,6 +11,10 @@ import { supabase } from '@/utils/supabase';
 import { logger } from '@/utils/logger';
 import { getSettings, setSettings, AppSettings } from '@/utils/appSettings';
 import * as Speech from 'expo-speech';
+import { rf, rp } from '@/utils/responsive';
+import { clearScriptCache, preGenerateScriptAudio } from '@/utils/ttsCache';
+import { VoiceSelector } from '@/components/VoiceSelector';
+import { VoiceOption, VoiceProvider, OPENAI_VOICES, getDefaultVoiceForGender } from '@/utils/voiceService';
 
 // Tipo extendido para incluir propiedades dinámicas de configuración de personajes
 type ExtendedAppSettings = {
@@ -35,8 +39,10 @@ interface CharacterConfig {
   id: string;
   name: string;
   isMyCharacter: boolean;
-  gender: 'male' | 'female';
+  gender: 'male' | 'female' | 'neutral'; // Mantenemos para compatibilidad
   color: string;
+  voiceId?: string; // ID de la voz seleccionada
+  voiceProvider?: 'openai' | 'elevenlabs' | 'system'; // Incluye 'system'
   provider?: 'openai' | 'elevenlabs' | 'google' | 'system';
   systemVoiceId?: string;
 }
@@ -55,6 +61,7 @@ export default function ImportScriptScreen() {
   const [defaultSystemVoiceId, setDefaultSystemVoiceId] = useState<string>('');
   const [openOperatorIndex, setOpenOperatorIndex] = useState<number | null>(null);
   const [openVoiceIndex, setOpenVoiceIndex] = useState<number | null>(null);
+  const [openGenderIndex, setOpenGenderIndex] = useState<number | null>(null);
   const scrollRef = useRef<ScrollView | null>(null);
   const [configSectionY, setConfigSectionY] = useState<number>(0);
   const [showConfigOnly, setShowConfigOnly] = useState<boolean>(false);
@@ -108,14 +115,25 @@ export default function ImportScriptScreen() {
               id: String(c.id),
               name: nameUpper,
               isMyCharacter: !!c.is_user_character,
-              gender: (c.voice_gender === 'female' ? 'female' : 'male'),
+              gender: (c.voice_gender === 'female' ? 'female' : c.voice_gender === 'neutral' ? 'neutral' : 'male'),
               color: c.color || CHARACTER_COLORS[idx % CHARACTER_COLORS.length].value,
+              voiceId: c.voice_id || undefined,
+              voiceProvider: (c.voice_provider as 'openai' | 'elevenlabs' | 'system') || undefined,
               provider: c.is_user_character ? undefined : ((per.provider as any) || 'system'),
               systemVoiceId: c.is_user_character ? undefined : (per.systemVoiceId || defaultSystemVoiceId || ''),
             };
           });
           setCharacters(mapped);
-          setCharacterCount(mapped.length);
+          // Asegurar que haya al menos 1 personaje para configurar
+          const finalCount = mapped.length > 0 ? mapped.length : 1;
+          setCharacterCount(finalCount);
+
+          // Si no hay personajes, crear uno por defecto
+          if (mapped.length === 0) {
+            setCharacters([
+              { id: `${Date.now()}-${Math.random().toString(36).slice(2)}`, name: '', isMyCharacter: true, gender: 'male', color: GREEN_COLOR }
+            ]);
+          }
 
           const firstNonUserIndex = mapped.findIndex((c) => !c.isMyCharacter);
           if (firstNonUserIndex >= 0) setOpenOperatorIndex(firstNonUserIndex);
@@ -225,22 +243,33 @@ export default function ImportScriptScreen() {
       // Guardar cambios sobre guión existente (sin importar PDF)
       try {
         setUploading(true);
+
+        // Primero, eliminar todos los personajes existentes
+        await supabase
+          .from('characters')
+          .delete()
+          .eq('script_id', scriptId);
+
+        // Luego, insertar todos los personajes (nuevos o actualizados)
         for (let i = 0; i < characters.length; i++) {
           const char = characters[i];
           const voiceGender = char.isMyCharacter ? 'neutral' : char.gender;
-          const { error: updErr } = await supabase
+
+          const { error: insertErr } = await supabase
             .from('characters')
-            .update({
+            .insert({
+              script_id: scriptId,
               name: char.name.toUpperCase(),
               is_user_character: char.isMyCharacter,
               voice_gender: voiceGender,
               voice_preset: 'natural',
               color: char.color,
               manually_added: true,
-            })
-            .eq('id', char.id)
-            .eq('script_id', scriptId);
-          if (updErr) throw new Error(`No se pudo actualizar el personaje "${char.name}": ${updErr.message || updErr}`);
+              voice_id: char.voiceId || null,
+              voice_provider: char.voiceProvider || null,
+            });
+
+          if (insertErr) throw new Error(`No se pudo guardar el personaje "${char.name}": ${insertErr.message || insertErr}`);
         }
 
         try {
@@ -263,7 +292,55 @@ export default function ImportScriptScreen() {
           await setSettings(mergeSettings(currentSettings as AppSettings, extendedSettings));
         } catch { }
 
-        Alert.alert('Guardado', 'Se actualizaron los personajes y voces.');
+        // Limpiar caché de audio antiguo y regenerar con nuevas voces
+        try {
+          logger.log('[Config] Clearing old audio cache...');
+          await clearScriptCache(String(scriptId));
+
+          logger.log('[Config] Regenerating audio with new voice settings...');
+
+          // Preparar configuración de voces para regeneración
+          const characterVoices: Record<string, { provider: 'openai' | 'elevenlabs' | 'system'; voiceId?: string }> = {};
+
+          for (const c of characters) {
+            if (!c.isMyCharacter) {
+              const characterName = (c.name || '').toUpperCase();
+              const provider = (c.provider || 'system') as 'openai' | 'elevenlabs' | 'system';
+
+              // Solo incluir voiceId para sistema (offline)
+              // OpenAI usa género automáticamente
+              // ElevenLabs necesitaría su propio voiceId (no implementado aún)
+              const voiceConfig: { provider: 'openai' | 'elevenlabs' | 'system'; voiceId?: string } = {
+                provider,
+              };
+
+              if (provider === 'system' && c.systemVoiceId) {
+                voiceConfig.voiceId = c.systemVoiceId;
+              }
+              // Para OpenAI, no enviamos voiceId - se determina por género en ttsCache
+              // Para ElevenLabs, por ahora usamos voz por defecto
+
+              characterVoices[characterName] = voiceConfig;
+            }
+          }
+
+          // Regenerar audio en segundo plano (no bloquear UI)
+          preGenerateScriptAudio(
+            String(scriptId),
+            user!.id,
+            characterVoices
+          ).catch(err => {
+            logger.error('[Config] Error regenerating audio:', err);
+            // No mostrar error al usuario, es proceso en segundo plano
+          });
+
+          logger.log('[Config] Audio regeneration started in background');
+        } catch (cacheError: any) {
+          logger.error('[Config] Error managing audio cache:', cacheError);
+          // No bloquear el guardado por errores de caché
+        }
+
+        Alert.alert('Guardado', 'Se actualizaron los personajes y voces. El audio se está regenerando en segundo plano.');
         router.replace(`/scripts/${scriptId}`);
       } catch (error: any) {
         logger.error('Error updating characters:', error);
@@ -346,6 +423,8 @@ export default function ImportScriptScreen() {
             line_count: 0,
             occurrence_percentage: 0,
             manually_added: true,
+            voice_id: char.voiceId || null,
+            voice_provider: char.voiceProvider || null,
           })
           .select()
           .maybeSingle();
@@ -391,9 +470,10 @@ export default function ImportScriptScreen() {
         // 1. Leer el archivo localmente con timeout
         logger.log('[Upload] Fetching file from URI:', uri);
 
-        let arrayBuffer: ArrayBuffer;
+        let uploadData: Blob | string;
+        let isBase64 = false;
 
-        // En Android, usar FileSystem en lugar de fetch para mejor compatibilidad
+        // En Android, usar base64 directamente (Blob no es soportado desde ArrayBuffer)
         if (Platform.OS === 'android') {
           try {
             logger.log('[Upload] Using FileSystem for Android...');
@@ -401,64 +481,157 @@ export default function ImportScriptScreen() {
               encoding: FileSystem.EncodingType.Base64,
             });
 
-            // Convertir base64 a ArrayBuffer
-            const binaryString = atob(base64);
-            const bytes = new Uint8Array(binaryString.length);
-            for (let i = 0; i < binaryString.length; i++) {
-              bytes[i] = binaryString.charCodeAt(i);
-            }
-            arrayBuffer = bytes.buffer;
-
-            const fileSizeMB = (arrayBuffer.byteLength / 1024 / 1024).toFixed(2);
+            // Calcular tamaño del archivo
+            const sizeInBytes = (base64.length * 3) / 4;
+            const fileSizeMB = (sizeInBytes / 1024 / 1024).toFixed(2);
             logger.log(`[Upload] File size: ${fileSizeMB} MB`);
 
-            if (arrayBuffer.byteLength > 50 * 1024 * 1024) {
+            if (sizeInBytes > 50 * 1024 * 1024) {
               throw new Error('El archivo es demasiado grande (máximo 50MB)');
             }
+
+            // Decodificar base64 a binary string para Supabase
+            uploadData = base64;
+            isBase64 = true;
           } catch (e: any) {
             logger.error('[Upload] FileSystem error:', e);
             throw new Error(`Error al leer el archivo: ${e.message}`);
           }
         } else {
-          // iOS y Web: usar fetch con timeout
-          const controller = new AbortController();
-          const timeoutId = setTimeout(() => controller.abort(), 60000); // 60 segundos
+          // iOS: usar FileSystem igual que Android (más confiable)
+          try {
+            logger.log('[Upload] Using FileSystem for iOS...');
+            const base64 = await FileSystem.readAsStringAsync(uri, {
+              encoding: FileSystem.EncodingType.Base64,
+            });
 
-          const response = await fetch(uri, { signal: controller.signal }).catch(e => {
-            clearTimeout(timeoutId);
-            if (e.name === 'AbortError') {
-              throw new Error('La lectura del archivo tardó demasiado. Intenta con un archivo más pequeño.');
+            // Calcular tamaño del archivo
+            const sizeInBytes = (base64.length * 3) / 4;
+            const fileSizeMB = (sizeInBytes / 1024 / 1024).toFixed(2);
+            logger.log(`[Upload] File size: ${fileSizeMB} MB`);
+
+            if (sizeInBytes > 50 * 1024 * 1024) {
+              throw new Error('El archivo es demasiado grande (máximo 50MB)');
             }
-            throw new Error(`Error de red al leer el archivo: ${e.message}`);
-          });
-          clearTimeout(timeoutId);
 
-          if (!response.ok) {
-            throw new Error(`Error al leer el archivo: ${response.status}`);
-          }
-
-          logger.log('[Upload] Converting to ArrayBuffer...');
-          arrayBuffer = await response.arrayBuffer();
-          const fileSizeMB = (arrayBuffer.byteLength / 1024 / 1024).toFixed(2);
-          logger.log(`[Upload] File size: ${fileSizeMB} MB`);
-
-          if (arrayBuffer.byteLength > 50 * 1024 * 1024) {
-            throw new Error('El archivo es demasiado grande (máximo 50MB)');
+            uploadData = base64;
+            isBase64 = true;
+          } catch (e: any) {
+            logger.error('[Upload] FileSystem error:', e);
+            throw new Error(`Error al leer el archivo: ${e.message}`);
           }
         }
 
-        // 2. Subir a Supabase Storage (Bucket 'scripts')
+        // 2. Subir a Supabase Storage con método específico para Android
         logger.log('[Upload] Uploading to Supabase Storage...');
-        const { error: uploadError } = await supabase.storage
-          .from('scripts') // <--- Unificado: usar el bucket 'scripts'
-          .upload(path, arrayBuffer, {
-            contentType: 'application/pdf',
-            upsert: true,
-          });
+
+        let uploadError: any = null;
+        let retries = 3;
+
+        for (let attempt = 1; attempt <= retries; attempt++) {
+          logger.log(`[Upload] Attempt ${attempt}/${retries}`);
+
+          try {
+            if (Platform.OS === 'android' && isBase64 && typeof uploadData === 'string') {
+              // Para Android: usar XMLHttpRequest directamente (más confiable que fetch)
+              logger.log('[Upload] Using XMLHttpRequest for Android...');
+
+              // Convertir base64 a Uint8Array
+              const binaryString = atob(uploadData);
+              const bytes = new Uint8Array(binaryString.length);
+              for (let i = 0; i < binaryString.length; i++) {
+                bytes[i] = binaryString.charCodeAt(i);
+              }
+
+              // Obtener token de autenticación
+              const { data: sessionData } = await supabase.auth.getSession();
+              const token = sessionData.session?.access_token;
+
+              if (!token) {
+                throw new Error('No se pudo obtener el token de autenticación');
+              }
+
+              // Subir usando XMLHttpRequest
+              await new Promise<void>((resolve, reject) => {
+                const xhr = new XMLHttpRequest();
+                const uploadUrl = `${process.env.EXPO_PUBLIC_SUPABASE_URL}/storage/v1/object/scripts/${path}`;
+
+                xhr.open('POST', uploadUrl, true);
+                xhr.setRequestHeader('Authorization', `Bearer ${token}`);
+                xhr.setRequestHeader('Content-Type', 'application/pdf');
+                xhr.setRequestHeader('x-upsert', 'true');
+
+                xhr.timeout = 300000; // 5 minutos
+
+                xhr.onload = () => {
+                  if (xhr.status >= 200 && xhr.status < 300) {
+                    logger.log('[Upload] XMLHttpRequest success');
+                    resolve();
+                  } else {
+                    logger.error('[Upload] XMLHttpRequest error:', xhr.status, xhr.responseText);
+                    reject(new Error(`Upload failed with status ${xhr.status}: ${xhr.responseText}`));
+                  }
+                };
+
+                xhr.onerror = () => {
+                  logger.error('[Upload] XMLHttpRequest network error');
+                  reject(new Error('Network error during upload'));
+                };
+
+                xhr.ontimeout = () => {
+                  logger.error('[Upload] XMLHttpRequest timeout');
+                  reject(new Error('Upload timeout'));
+                };
+
+                xhr.upload.onprogress = (event) => {
+                  if (event.lengthComputable) {
+                    const percentComplete = (event.loaded / event.total) * 100;
+                    logger.log(`[Upload] Progress: ${percentComplete.toFixed(1)}%`);
+                  }
+                };
+
+                xhr.send(bytes);
+              });
+
+            } else {
+              // Para iOS/Web: usar el cliente de Supabase normal
+              let dataToUpload: any = uploadData;
+              if (isBase64 && typeof uploadData === 'string') {
+                const binaryString = atob(uploadData);
+                const bytes = new Uint8Array(binaryString.length);
+                for (let i = 0; i < binaryString.length; i++) {
+                  bytes[i] = binaryString.charCodeAt(i);
+                }
+                dataToUpload = bytes;
+              }
+
+              const { error } = await supabase.storage
+                .from('scripts')
+                .upload(path, dataToUpload, {
+                  contentType: 'application/pdf',
+                  upsert: true,
+                });
+
+              if (error) throw error;
+            }
+
+            // Si llegamos aquí, la subida fue exitosa
+            uploadError = null;
+            break;
+
+          } catch (error: any) {
+            uploadError = error;
+            logger.error(`[Upload] Attempt ${attempt} failed:`, error);
+
+            // Esperar antes de reintentar (excepto en el último intento)
+            if (attempt < retries) {
+              await new Promise(resolve => setTimeout(resolve, 2000 * attempt));
+            }
+          }
+        }
 
         if (uploadError) {
-          logger.error('[Upload] Supabase error:', uploadError);
-          throw uploadError;
+          throw new Error(`Error de subida después de ${retries} intentos: ${uploadError.message || 'Error desconocido'}`);
         }
 
         logger.log('[Upload] Upload successful!');
@@ -519,8 +692,8 @@ export default function ImportScriptScreen() {
             // skipCharacterDetection: true  -> keep current behavior (skip auto detect) 
             // skipCharacterDetection: false -> run detection in backend 
             skipCharacterDetection: true,
-            // new flag (optional) to request preserving formatting if backend supports it 
-            preserveFormatting: true,
+            // preserveFormatting: false -> generate full HTML with descriptions/actions for editor
+            preserveFormatting: false,
           }),
         });
 
@@ -599,12 +772,12 @@ export default function ImportScriptScreen() {
       {uploading && (
         <View style={[styles.backdrop, { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.7)', alignItems: 'center', justifyContent: 'center', zIndex: 2000 }]}>
           <ActivityIndicator size="large" color={colors.primary} style={{ marginBottom: 20 }} />
-          <Text style={{ color: '#FFFFFF', fontSize: 18, fontWeight: '600', marginBottom: 10 }}>Importando el guion...</Text>
+          <Text style={{ color: '#FFFFFF', fontSize: rf(18), fontWeight: '600', marginBottom: 10 }}>Importando el guion...</Text>
           <View style={{ width: '80%', height: 8, backgroundColor: 'rgba(255,255,255,0.2)', borderRadius: 4, overflow: 'hidden' }}>
             <View style={{ width: `${uploadProgress}%`, height: '100%', backgroundColor: colors.primary }} />
           </View>
-          <Text style={{ color: 'rgba(255,255,255,0.8)', marginTop: 8, fontSize: 14 }}>{Math.round(uploadProgress)}%</Text>
-          <Text style={{ color: 'rgba(255,255,255,0.6)', marginTop: 16, fontSize: 13, textAlign: 'center', paddingHorizontal: 40 }}>
+          <Text style={{ color: 'rgba(255,255,255,0.8)', marginTop: 8, fontSize: rf(14) }}>{Math.round(uploadProgress)}%</Text>
+          <Text style={{ color: 'rgba(255,255,255,0.6)', marginTop: 16, fontSize: rf(13), textAlign: 'center', paddingHorizontal: rp(40) }}>
             Generando voces IA en segundo plano, este proceso puede tardar unos minutos...
           </Text>
         </View>
@@ -681,7 +854,7 @@ export default function ImportScriptScreen() {
                 <ChevronDown size={20} color={colors.textSecondary} />
               </TouchableOpacity>
 
-              {showConfigOnly ? null : showCountPicker && (
+              {showCountPicker && (
                 <View style={[styles.pickerOptions, { backgroundColor: colors.surface, borderColor: colors.border }]}>
                   {[1, 2, 3, 4].map((count) => {
                     const isSelected = count === characterCount;
@@ -714,7 +887,19 @@ export default function ImportScriptScreen() {
                     )}
                   </View>
 
-                  <Text style={[styles.label, { color: colors.text }]}>Nombre</Text>
+                  <View style={styles.labelWithInfo}>
+                    <Text style={[styles.label, { color: colors.text }]}>Nombre</Text>
+                    <TouchableOpacity
+                      onPress={() => Alert.alert(
+                        'Nombre del personaje',
+                        'Escribe el nombre exactamente como aparece en el guión.\n\n• Si lleva tildes, escríbelas\n• Si lleva comillas, inclúyelas\n• Si tiene caracteres especiales, cópialos\n\nEsto permite que la app detecte correctamente los diálogos.',
+                        [{ text: 'Entendido', style: 'default' }]
+                      )}
+                      style={styles.infoButton}
+                    >
+                      <Info size={16} color={colors.primary} />
+                    </TouchableOpacity>
+                  </View>
                   <TextInput
                     style={[styles.input, { backgroundColor: colors.input, color: colors.text, borderColor: colors.border }]}
                     value={char.name}
@@ -739,50 +924,92 @@ export default function ImportScriptScreen() {
                     <Text style={[styles.checkboxLabel, { color: colors.text }]}>Este es mi personaje</Text>
                   </TouchableOpacity>
 
-                  <Text style={[styles.label, { color: colors.text }]}>Género</Text>
-                  <View style={styles.genderButtons}>
-                    <TouchableOpacity
-                      style={[
-                        styles.genderButton,
-                        char.gender === 'male'
-                          ? { backgroundColor: colors.primary, borderColor: colors.primary }
-                          : { backgroundColor: colors.input, borderColor: colors.border }
-                      ]}
-                      onPress={() => updateCharacter(index, { gender: 'male' })}
-                    >
-                      <Text style={[
-                        styles.genderButtonText,
-                        char.gender === 'male'
-                          ? { color: '#FFFFFF', fontWeight: '600' }
-                          : { color: colors.textSecondary }
-                      ]}>
-                        Masculino
-                      </Text>
-                    </TouchableOpacity>
-
-                    <TouchableOpacity
-                      style={[
-                        styles.genderButton,
-                        char.gender === 'female'
-                          ? { backgroundColor: colors.primary, borderColor: colors.primary }
-                          : { backgroundColor: colors.input, borderColor: colors.border }
-                      ]}
-                      onPress={() => updateCharacter(index, { gender: 'female' })}
-                    >
-                      <Text style={[
-                        styles.genderButtonText,
-                        char.gender === 'female'
-                          ? { color: '#FFFFFF', fontWeight: '600' }
-                          : { color: colors.textSecondary }
-                      ]}>
-                        Femenino
-                      </Text>
-                    </TouchableOpacity>
-                  </View>
-
                   {!char.isMyCharacter && (
                     <>
-                      <Text style={[styles.label, { color: colors.text }]}>Color</Text>
+                      {/* Operador de voces - PRIMERO */}
+                      <Text style={[styles.label, { color: colors.text }]}>Operador de voces</Text>
+                      <TouchableOpacity
+                        style={[styles.picker, { backgroundColor: colors.surface, borderColor: colors.border }]}
+                        onPress={() => setOpenOperatorIndex(openOperatorIndex === index ? null : index)}
+                      >
+                        <Text style={[styles.pickerText, { color: colors.text }]}>
+                          {(() => {
+                            const prov = char.provider || 'openai';
+                            return prov === 'openai'
+                              ? 'OpenAI'
+                              : prov === 'elevenlabs'
+                                ? 'ElevenLabs'
+                                : 'Sistema (offline)';
+                          })()}
+                        </Text>
+                        <ChevronDown size={20} color={colors.textSecondary} />
+                      </TouchableOpacity>
+                      {openOperatorIndex === index && (
+                        <View style={[styles.pickerOptions, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+                          {(['openai', 'elevenlabs', 'system'] as const).map((prov) => {
+                            const isSelected = (char.provider || 'openai') === prov;
+                            return (
+                              <TouchableOpacity
+                                key={prov}
+                                style={styles.pickerOption}
+                                onPress={() => {
+                                  // Al cambiar de provider, limpiar la voz seleccionada
+                                  updateCharacter(index, {
+                                    provider: prov,
+                                    voiceId: undefined,
+                                    voiceProvider: prov === 'system' ? undefined : prov as any,
+                                  });
+                                  setOpenOperatorIndex(null);
+                                }}
+                              >
+                                <Text style={[
+                                  styles.pickerOptionText,
+                                  isSelected ? styles.pickerOptionTextSelected : { color: colors.textSecondary }
+                                ]}>
+                                  {prov === 'openai' ? 'OpenAI' : prov === 'elevenlabs' ? 'ElevenLabs' : 'Sistema (offline)'}
+                                </Text>
+                              </TouchableOpacity>
+                            );
+                          })}
+                        </View>
+                      )}
+
+                      {/* Selector de voz - DESPUÉS del operador */}
+                      <Text style={[styles.label, { color: colors.text, marginTop: 12 }]}>Voz del personaje</Text>
+                      <VoiceSelector
+                        selectedVoiceId={char.voiceId || char.systemVoiceId}
+                        provider={(char.voiceProvider || char.provider || 'openai') as 'openai' | 'elevenlabs' | 'system'}
+                        onVoiceSelect={(voiceId, provider) => {
+                          if (provider === 'system') {
+                            updateCharacter(index, {
+                              systemVoiceId: voiceId,
+                              voiceId: voiceId,
+                              voiceProvider: 'system',  // ← FIX: Guardar 'system' en lugar de undefined
+                            });
+                          } else {
+                            updateCharacter(index, {
+                              voiceId: voiceId,
+                              voiceProvider: provider,
+                              systemVoiceId: undefined,
+                            });
+                          }
+                        }}
+                      />
+
+                      {/* Color */}
+                      <View style={[styles.labelWithInfo, { marginTop: 12 }]}>
+                        <Text style={[styles.label, { color: colors.text }]}>Color</Text>
+                        <TouchableOpacity
+                          onPress={() => Alert.alert(
+                            'Color del personaje',
+                            'Selecciona el color de las tarjetas con los diálogos de este personaje.\n\nEsto te ayudará a identificar visualmente quién habla en cada momento durante los modos de estudio.',
+                            [{ text: 'Entendido', style: 'default' }]
+                          )}
+                          style={styles.infoButton}
+                        >
+                          <Info size={16} color={colors.primary} />
+                        </TouchableOpacity>
+                      </View>
                       <View style={styles.colorPicker}>
                         {CHARACTER_COLORS.map((colorOption) => {
                           const isSelected = char.color === colorOption.value;
@@ -803,103 +1030,6 @@ export default function ImportScriptScreen() {
                           );
                         })}
                       </View>
-
-                      {/* Operador de voces por personaje */}
-                      <Text style={[styles.label, { color: colors.text }]}>Operador de voces</Text>
-                      <TouchableOpacity
-                        style={[styles.picker, { backgroundColor: colors.surface, borderColor: colors.border }]}
-                        onPress={() => setOpenOperatorIndex(openOperatorIndex === index ? null : index)}
-                      >
-                        <Text style={[styles.pickerText, { color: colors.text }]}>
-                          {(() => {
-                            const prov = char.provider || 'system';
-                            return prov === 'openai'
-                              ? 'OpenAI'
-                              : prov === 'elevenlabs'
-                                ? 'ElevenLabs'
-                                : prov === 'google'
-                                  ? 'Google'
-                                  : 'Sistema (offline)';
-                          })()}
-                        </Text>
-                        <ChevronDown size={20} color={colors.textSecondary} />
-                      </TouchableOpacity>
-                      {openOperatorIndex === index && (
-                        <View style={[styles.pickerOptions, { backgroundColor: colors.surface, borderColor: colors.border }]}
-                        >
-                          {(['openai', 'elevenlabs', 'google', 'system'] as const).map((prov) => {
-                            const isSelected = (char.provider || 'system') === prov;
-                            return (
-                              <TouchableOpacity
-                                key={prov}
-                                style={styles.pickerOption}
-                                onPress={() => {
-                                  updateCharacter(index, { provider: prov });
-                                  setOpenOperatorIndex(null);
-                                }}
-                              >
-                                <Text style={[
-                                  styles.pickerOptionText,
-                                  isSelected ? styles.pickerOptionTextSelected : { color: colors.textSecondary }
-                                ]}>
-                                  {prov === 'openai' ? 'OpenAI' : prov === 'elevenlabs' ? 'ElevenLabs' : prov === 'google' ? 'Google' : 'Sistema (offline)'}
-                                </Text>
-                              </TouchableOpacity>
-                            );
-                          })}
-                        </View>
-                      )}
-
-                      {/* Voz del sistema por personaje */}
-                      {(char.provider || 'system') === 'system' && (
-                        <>
-                          <Text style={[styles.label, { color: colors.text }]}>Voz del sistema</Text>
-                          <TouchableOpacity
-                            style={[styles.picker, { backgroundColor: colors.surface, borderColor: colors.border }]}
-                            onPress={() => setOpenVoiceIndex(openVoiceIndex === index ? null : index)}
-                          >
-                            <Text style={[styles.pickerText, { color: colors.text }]}>
-                              {(() => {
-                                const current = (availableVoices || []).find((v) => v.identifier === char.systemVoiceId);
-                                return current ? current.name : 'Selecciona voz';
-                              })()}
-                            </Text>
-                            <ChevronDown size={20} color={colors.textSecondary} />
-                          </TouchableOpacity>
-                          {openVoiceIndex === index && (
-                            <View style={[styles.pickerOptions, { backgroundColor: colors.surface, borderColor: colors.border }]}
-                            >
-                              {(availableVoices || []).map((voice) => {
-                                const isSelected = char.systemVoiceId === voice.identifier;
-                                return (
-                                  <TouchableOpacity
-                                    key={voice.identifier}
-                                    style={styles.pickerOption}
-                                    onPress={() => {
-                                      updateCharacter(index, { systemVoiceId: voice.identifier });
-                                      setOpenVoiceIndex(null);
-                                    }}
-                                  >
-                                    <Text style={[
-                                      styles.pickerOptionText,
-                                      isSelected ? styles.pickerOptionTextSelected : { color: colors.textSecondary }
-                                    ]}>
-                                      {voice.name}
-                                    </Text>
-                                    <Text style={[styles.pickerOptionText, { color: colors.textSecondary, fontSize: 12 }]}>
-                                      {voice.language}
-                                    </Text>
-                                  </TouchableOpacity>
-                                );
-                              })}
-                            </View>
-                          )}
-                          <Text style={[styles.label, { color: colors.textSecondary, marginTop: 4 }]}>
-                            Los parámetros de voz se ajustan en
-                            <Text style={{ color: colors.primary, textDecorationLine: 'underline' }} onPress={() => router.push('/(tabs)/settings')}>Ajustes</Text>.
-                          </Text>
-                        </>
-                      )}
                     </>
                   )}
 
@@ -944,8 +1074,8 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: 20,
-    paddingVertical: 16,
+    paddingHorizontal: rp(20),
+    paddingVertical: rp(16),
     borderBottomWidth: 1,
   },
   backButton: {
@@ -955,26 +1085,35 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   title: {
-    fontSize: 20,
+    fontSize: rf(20),
     fontWeight: '600',
   },
   content: {
     flex: 1,
   },
   form: {
-    padding: 20,
+    padding: rp(20),
   },
   label: {
-    fontSize: 14,
+    fontSize: rf(14),
     fontWeight: '600',
     marginBottom: 8,
     marginTop: 12,
   },
+  labelWithInfo: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginBottom: 8,
+  },
+  infoButton: {
+    padding: 4,
+  },
   input: {
     height: 48,
     borderRadius: 8,
-    paddingHorizontal: 16,
-    fontSize: 16,
+    paddingHorizontal: rp(16),
+    fontSize: rf(16),
     borderWidth: 1,
   },
   uploadButton: {
@@ -982,7 +1121,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     borderRadius: 8,
-    paddingVertical: 16,
+    paddingVertical: rp(16),
     marginBottom: 8,
     borderWidth: 2,
     borderStyle: 'dashed',
@@ -991,7 +1130,7 @@ const styles = StyleSheet.create({
   uploadButtonSuccess: {
   },
   uploadText: {
-    fontSize: 16,
+    fontSize: rf(16),
     fontWeight: '500',
   },
   uploadTextSuccess: {
@@ -1007,7 +1146,7 @@ const styles = StyleSheet.create({
     height: 1,
   },
   dividerText: {
-    fontSize: 14,
+    fontSize: rf(14),
     fontWeight: '500',
   },
   scanButton: {
@@ -1015,17 +1154,17 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     borderRadius: 8,
-    paddingVertical: 16,
+    paddingVertical: rp(16),
     marginBottom: 8,
     borderWidth: 2,
     gap: 12,
   },
   scanButtonText: {
-    fontSize: 16,
+    fontSize: rf(16),
     fontWeight: '600',
   },
   sectionTitle: {
-    fontSize: 18,
+    fontSize: rf(18),
     fontWeight: '700',
     color: '#111827',
     marginTop: 24,
@@ -1038,12 +1177,12 @@ const styles = StyleSheet.create({
     height: 48,
     backgroundColor: '#FFFFFF',
     borderRadius: 8,
-    paddingHorizontal: 16,
+    paddingHorizontal: rp(16),
     borderWidth: 1,
     borderColor: '#E5E7EB',
   },
   pickerText: {
-    fontSize: 16,
+    fontSize: rf(16),
     color: '#111827',
   },
   pickerOptions: {
@@ -1056,13 +1195,13 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
   },
   pickerOption: {
-    paddingVertical: 12,
-    paddingHorizontal: 16,
+    paddingVertical: rp(12),
+    paddingHorizontal: rp(16),
     borderBottomWidth: 1,
     borderBottomColor: '#F3F4F6',
   },
   pickerOptionText: {
-    fontSize: 16,
+    fontSize: rf(16),
     color: '#374151',
   },
   pickerOptionTextSelected: {
@@ -1072,7 +1211,7 @@ const styles = StyleSheet.create({
   characterCard: {
     backgroundColor: '#FFFFFF',
     borderRadius: 12,
-    padding: 16,
+    padding: rp(16),
     marginBottom: 16,
     borderWidth: 1,
     borderColor: '#E5E7EB',
@@ -1084,18 +1223,18 @@ const styles = StyleSheet.create({
     marginBottom: 12,
   },
   characterNumber: {
-    fontSize: 16,
+    fontSize: rf(16),
     fontWeight: '700',
     color: '#111827',
   },
   myCharacterBadge: {
     backgroundColor: '#10B981',
-    paddingHorizontal: 12,
-    paddingVertical: 6,
+    paddingHorizontal: rp(12),
+    paddingVertical: rp(6),
     borderRadius: 6,
   },
   myCharacterBadgeText: {
-    fontSize: 12,
+    fontSize: rf(12),
     fontWeight: '600',
     color: '#FFFFFF',
   },
@@ -1120,7 +1259,7 @@ const styles = StyleSheet.create({
     borderColor: '#3B82F6',
   },
   checkboxLabel: {
-    fontSize: 14,
+    fontSize: rf(14),
     color: '#374151',
   },
   genderButtons: {
@@ -1129,8 +1268,8 @@ const styles = StyleSheet.create({
   },
   genderButton: {
     flex: 1,
-    paddingVertical: 12,
-    paddingHorizontal: 16,
+    paddingVertical: rp(12),
+    paddingHorizontal: rp(16),
     borderRadius: 8,
     backgroundColor: '#F3F4F6',
     borderWidth: 2,
@@ -1142,7 +1281,7 @@ const styles = StyleSheet.create({
     borderColor: '#3B82F6',
   },
   genderButtonText: {
-    fontSize: 14,
+    fontSize: rf(14),
     fontWeight: '600',
     color: '#6B7280',
   },
@@ -1175,7 +1314,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     marginTop: 12,
-    padding: 12,
+    padding: rp(12),
     backgroundColor: '#F0FDF4',
     borderRadius: 8,
   },
@@ -1186,13 +1325,13 @@ const styles = StyleSheet.create({
     marginRight: 8,
   },
   colorInfoText: {
-    fontSize: 13,
+    fontSize: rf(13),
     color: '#059669',
   },
   submitButton: {
     backgroundColor: '#3B82F6',
     borderRadius: 12,
-    paddingVertical: 16,
+    paddingVertical: rp(16),
     alignItems: 'center',
     marginTop: 24,
   },
@@ -1200,7 +1339,7 @@ const styles = StyleSheet.create({
     opacity: 0.6,
   },
   submitText: {
-    fontSize: 16,
+    fontSize: rf(16),
     fontWeight: '600',
     color: '#FFFFFF',
   },
@@ -1214,5 +1353,34 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     zIndex: 2000,
+  },
+  dropdown: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: rp(16),
+    paddingVertical: rp(12),
+    borderRadius: 8,
+    borderWidth: 1,
+    marginBottom: 12,
+  },
+  dropdownText: {
+    fontSize: rf(14),
+  },
+  dropdownMenu: {
+    borderRadius: 8,
+    borderWidth: 1,
+    marginBottom: 12,
+    overflow: 'hidden',
+  },
+  dropdownItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: rp(16),
+    paddingVertical: rp(12),
+  },
+  dropdownItemText: {
+    fontSize: rf(14),
   },
 });

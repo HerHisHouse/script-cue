@@ -5,6 +5,7 @@ import { Trash2 } from 'lucide-react-native';
 import { Script } from '@/types/database';
 import { ScriptCard } from './ScriptCard';
 import { ConfirmDialog } from './ConfirmDialog';
+import { rf, rp } from '@/utils/responsive';
 
 interface SwipeableScriptCardProps {
   script: Script;
@@ -102,7 +103,7 @@ const styles = StyleSheet.create({
   deleteAction: {
     justifyContent: 'center',
     alignItems: 'flex-end',
-    marginBottom: 12,
+    marginBottom: rp(12),
   },
   deleteButton: {
     backgroundColor: '#EF4444',
@@ -112,12 +113,12 @@ const styles = StyleSheet.create({
     height: '100%',
     borderTopRightRadius: 12,
     borderBottomRightRadius: 12,
-    paddingHorizontal: 16,
+    paddingHorizontal: rp(16),
   },
   deleteText: {
     color: '#FFFFFF',
-    fontSize: 12,
+    fontSize: rf(12),
     fontWeight: '600',
-    marginTop: 4,
+    marginTop: rp(4),
   },
 });

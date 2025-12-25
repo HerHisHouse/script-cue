@@ -1,0 +1,522 @@
+import React, { useState, useEffect } from 'react';
+import {
+    View,
+    Text,
+    StyleSheet,
+    TouchableOpacity,
+    ScrollView,
+    ActivityIndicator,
+    Modal,
+} from 'react-native';
+import { Volume2, VolumeX, Check, ChevronDown, X } from 'lucide-react-native';
+import { useTheme } from '@/contexts/ThemeContext';
+import { rf, rp } from '@/utils/responsive';
+import {
+    VoiceOption,
+    VoiceProvider,
+    OPENAI_VOICES,
+    getElevenLabsVoices,
+    playVoicePreview,
+    stopVoicePreview,
+} from '@/utils/voiceService';
+import * as Speech from 'expo-speech';
+
+interface SystemVoice {
+    id: string;
+    name: string;
+    language: string;
+}
+
+interface VoiceSelectorProps {
+    selectedVoiceId?: string;
+    provider: 'openai' | 'elevenlabs' | 'system'; // Provider seleccionado en "Operador de voces"
+    onVoiceSelect: (voiceId: string, provider: 'openai' | 'elevenlabs' | 'system') => void;
+    disabled?: boolean;
+    systemLanguage?: string; // Para filtrar voces del sistema por idioma
+}
+
+export function VoiceSelector({
+    selectedVoiceId,
+    provider,
+    onVoiceSelect,
+    disabled = false,
+    systemLanguage = 'es-ES',
+}: VoiceSelectorProps) {
+    const { colors } = useTheme();
+    const [modalVisible, setModalVisible] = useState(false);
+    const [elevenLabsVoices, setElevenLabsVoices] = useState<VoiceOption[]>([]);
+    const [systemVoices, setSystemVoices] = useState<SystemVoice[]>([]);
+    const [loadingVoices, setLoadingVoices] = useState(false);
+    const [playingVoiceId, setPlayingVoiceId] = useState<string | null>(null);
+    const [loadingPreview, setLoadingPreview] = useState(false);
+
+    // Cargar voces según el provider
+    useEffect(() => {
+        if (modalVisible) {
+            if (provider === 'elevenlabs' && elevenLabsVoices.length === 0) {
+                loadElevenLabsVoices();
+            } else if (provider === 'system' && systemVoices.length === 0) {
+                loadSystemVoices();
+            }
+        }
+    }, [modalVisible, provider]);
+
+    const loadElevenLabsVoices = async () => {
+        setLoadingVoices(true);
+        try {
+            const voices = await getElevenLabsVoices();
+            setElevenLabsVoices(voices);
+        } catch (error) {
+            console.error('Error loading ElevenLabs voices:', error);
+        } finally {
+            setLoadingVoices(false);
+        }
+    };
+
+    const loadSystemVoices = async () => {
+        setLoadingVoices(true);
+        try {
+            const voices = await Speech.getAvailableVoicesAsync();
+            // Filtrar voces por idioma
+            const filtered = voices
+                .filter(v => v.language.startsWith(systemLanguage.split('-')[0]))
+                .map(v => ({
+                    id: v.identifier,
+                    name: v.name || v.identifier,
+                    language: v.language,
+                }));
+            setSystemVoices(filtered.length > 0 ? filtered : voices.map(v => ({
+                id: v.identifier,
+                name: v.name || v.identifier,
+                language: v.language,
+            })));
+        } catch (error) {
+            console.error('Error loading system voices:', error);
+        } finally {
+            setLoadingVoices(false);
+        }
+    };
+
+    const handlePreview = async (voiceId: string) => {
+        if (playingVoiceId === voiceId) {
+            await stopVoicePreview();
+            if (provider === 'system') {
+                await Speech.stop();
+            }
+            setPlayingVoiceId(null);
+            return;
+        }
+
+        setLoadingPreview(true);
+        setPlayingVoiceId(voiceId);
+
+        try {
+            if (provider === 'system') {
+                // Preview de voz del sistema
+                await Speech.speak('Hola, esta es mi voz. ¿Qué te parece?', {
+                    voice: voiceId,
+                    language: systemLanguage,
+                    onDone: () => setPlayingVoiceId(null),
+                    onError: () => setPlayingVoiceId(null),
+                });
+            } else {
+                // Preview de OpenAI o ElevenLabs
+                const voice = provider === 'openai'
+                    ? OPENAI_VOICES.find(v => v.id === voiceId)
+                    : elevenLabsVoices.find(v => v.id === voiceId);
+
+                if (voice) {
+                    await playVoicePreview(voice);
+                    setTimeout(() => setPlayingVoiceId(null), 5000);
+                }
+            }
+        } catch (error) {
+            console.error('Error playing preview:', error);
+            setPlayingVoiceId(null);
+        } finally {
+            setLoadingPreview(false);
+        }
+    };
+
+    const handleSelect = (voiceId: string) => {
+        stopVoicePreview();
+        if (provider === 'system') {
+            Speech.stop();
+        }
+        setPlayingVoiceId(null);
+        onVoiceSelect(voiceId, provider);
+        setModalVisible(false);
+    };
+
+    const handleClose = () => {
+        stopVoicePreview();
+        if (provider === 'system') {
+            Speech.stop();
+        }
+        setPlayingVoiceId(null);
+        setModalVisible(false);
+    };
+
+    // Obtener nombre de la voz seleccionada
+    const getSelectedVoiceName = (): string => {
+        if (!selectedVoiceId) return 'Seleccionar voz';
+
+        if (provider === 'openai') {
+            const voice = OPENAI_VOICES.find(v => v.id === selectedVoiceId);
+            return voice?.name || selectedVoiceId;
+        } else if (provider === 'elevenlabs') {
+            const voice = elevenLabsVoices.find(v => v.id === selectedVoiceId);
+            return voice?.name || selectedVoiceId;
+        } else {
+            const voice = systemVoices.find(v => v.id === selectedVoiceId);
+            return voice?.name || selectedVoiceId;
+        }
+    };
+
+    // Obtener lista de voces según provider
+    const getVoiceList = () => {
+        if (provider === 'openai') {
+            return OPENAI_VOICES;
+        } else if (provider === 'elevenlabs') {
+            return elevenLabsVoices;
+        } else {
+            return systemVoices;
+        }
+    };
+
+    const voiceList = getVoiceList();
+
+    const getProviderTitle = () => {
+        switch (provider) {
+            case 'openai': return 'Voces de OpenAI';
+            case 'elevenlabs': return 'Voces de ElevenLabs';
+            case 'system': return 'Voces del Sistema';
+        }
+    };
+
+    const getProviderEmoji = () => {
+        switch (provider) {
+            case 'openai': return '🎯';
+            case 'elevenlabs': return '🎭';
+            case 'system': return '📱';
+        }
+    };
+
+    return (
+        <>
+            {/* Botón selector */}
+            <TouchableOpacity
+                style={[
+                    styles.selectorButton,
+                    { backgroundColor: colors.input, borderColor: colors.border },
+                    disabled && { opacity: 0.5 },
+                ]}
+                onPress={() => !disabled && setModalVisible(true)}
+                disabled={disabled}
+            >
+                <View style={styles.selectorContent}>
+                    <Text style={[styles.selectorLabel, { color: colors.textSecondary }]}>
+                        Voz del personaje
+                    </Text>
+                    <Text style={[styles.selectorValue, { color: colors.text }]}>
+                        {getSelectedVoiceName()}
+                    </Text>
+                </View>
+                <ChevronDown size={20} color={colors.textSecondary} />
+            </TouchableOpacity>
+
+            {/* Modal de selección */}
+            <Modal
+                visible={modalVisible}
+                animationType="slide"
+                transparent={true}
+                onRequestClose={handleClose}
+            >
+                <View style={styles.modalOverlay}>
+                    <View style={[styles.modalContent, { backgroundColor: colors.background }]}>
+                        {/* Header */}
+                        <View style={[styles.modalHeader, { borderBottomColor: colors.border }]}>
+                            <Text style={[styles.modalTitle, { color: colors.text }]}>
+                                {getProviderTitle()}
+                            </Text>
+                            <TouchableOpacity onPress={handleClose} style={styles.closeButton}>
+                                <X size={24} color={colors.text} />
+                            </TouchableOpacity>
+                        </View>
+
+                        {/* Lista de voces */}
+                        <ScrollView style={styles.voiceList} contentContainerStyle={styles.voiceListContent}>
+                            {loadingVoices ? (
+                                <View style={styles.loadingContainer}>
+                                    <ActivityIndicator size="large" color={colors.primary} />
+                                    <Text style={[styles.loadingText, { color: colors.textSecondary }]}>
+                                        Cargando voces...
+                                    </Text>
+                                </View>
+                            ) : voiceList.length === 0 ? (
+                                <View style={styles.emptyContainer}>
+                                    <Text style={[styles.emptyText, { color: colors.textSecondary }]}>
+                                        {provider === 'elevenlabs'
+                                            ? 'No se pudieron cargar las voces de ElevenLabs.\nVerifica tu API key.'
+                                            : provider === 'system'
+                                                ? 'No hay voces del sistema disponibles.'
+                                                : 'No hay voces disponibles.'}
+                                    </Text>
+                                </View>
+                            ) : (
+                                voiceList.map((voice: any, index: number) => {
+                                    const voiceId = voice.id;
+                                    const isSelected = selectedVoiceId === voiceId;
+
+                                    // Mostrar separador cuando cambia la categoría (solo para ElevenLabs)
+                                    const prevVoice = index > 0 ? voiceList[index - 1] : null;
+                                    const showCategorySeparator = provider === 'elevenlabs' &&
+                                        prevVoice &&
+                                        (prevVoice as any).category !== voice.category;
+
+                                    return (
+                                        <React.Fragment key={voiceId}>
+                                            {showCategorySeparator && (
+                                                <View style={styles.categorySeparator}>
+                                                    <View style={[styles.separatorLine, { backgroundColor: colors.border }]} />
+                                                    <Text style={[styles.categoryLabel, { color: colors.textSecondary }]}>
+                                                        {voice.category === 'premade' ? '📢 Voces Públicas' :
+                                                            voice.category === 'cloned' ? '🎭 Voces Clonadas' : ''}
+                                                    </Text>
+                                                    <View style={[styles.separatorLine, { backgroundColor: colors.border }]} />
+                                                </View>
+                                            )}
+
+                                            {/* Mostrar etiqueta "Mis Voces" al inicio si la primera es generated */}
+                                            {index === 0 && provider === 'elevenlabs' && voice.category === 'generated' && (
+                                                <View style={styles.categorySeparator}>
+                                                    <View style={[styles.separatorLine, { backgroundColor: colors.border }]} />
+                                                    <Text style={[styles.categoryLabel, { color: colors.primary }]}>
+                                                        ⭐ Mis Voces
+                                                    </Text>
+                                                    <View style={[styles.separatorLine, { backgroundColor: colors.border }]} />
+                                                </View>
+                                            )}
+
+                                            <TouchableOpacity
+                                                style={[
+                                                    styles.voiceItem,
+                                                    { backgroundColor: colors.surface, borderColor: colors.border },
+                                                    isSelected && {
+                                                        borderColor: colors.primary,
+                                                        borderWidth: 2,
+                                                    },
+                                                ]}
+                                                onPress={() => handleSelect(voiceId)}
+                                            >
+                                                <View style={styles.voiceInfo}>
+                                                    <Text style={[styles.voiceName, { color: colors.text }]}>
+                                                        {voice.name}
+                                                    </Text>
+                                                    {voice.description && (
+                                                        <Text style={[styles.voiceDescription, { color: colors.textSecondary }]}>
+                                                            {voice.description}
+                                                        </Text>
+                                                    )}
+                                                    {voice.gender && provider !== 'system' && (
+                                                        <Text style={[styles.voiceGender, { color: colors.textSecondary }]}>
+                                                            {voice.gender === 'male' ? '♂️ Masculina' : voice.gender === 'female' ? '♀️ Femenina' : '⚪ Neutra'}
+                                                        </Text>
+                                                    )}
+                                                    {voice.language && provider === 'system' && (
+                                                        <Text style={[styles.voiceGender, { color: colors.textSecondary }]}>
+                                                            🌐 {voice.language}
+                                                        </Text>
+                                                    )}
+                                                </View>
+
+                                                <View style={styles.voiceActions}>
+                                                    {/* Botón de preview */}
+                                                    <TouchableOpacity
+                                                        style={[
+                                                            styles.previewButton,
+                                                            { backgroundColor: colors.primary + '20' },
+                                                            playingVoiceId === voiceId && { backgroundColor: colors.primary },
+                                                        ]}
+                                                        onPress={(e) => {
+                                                            e.stopPropagation();
+                                                            handlePreview(voiceId);
+                                                        }}
+                                                    >
+                                                        {loadingPreview && playingVoiceId === voiceId ? (
+                                                            <ActivityIndicator size="small" color={playingVoiceId === voiceId ? '#FFFFFF' : colors.primary} />
+                                                        ) : playingVoiceId === voiceId ? (
+                                                            <VolumeX size={18} color="#FFFFFF" />
+                                                        ) : (
+                                                            <Volume2 size={18} color={colors.primary} />
+                                                        )}
+                                                    </TouchableOpacity>
+
+                                                    {/* Check si está seleccionada */}
+                                                    {isSelected && (
+                                                        <View style={[styles.checkIcon, { backgroundColor: colors.primary }]}>
+                                                            <Check size={16} color="#FFFFFF" />
+                                                        </View>
+                                                    )}
+                                                </View>
+                                            </TouchableOpacity>
+                                        </React.Fragment>
+                                    );
+                                })
+                            )}
+                        </ScrollView>
+
+                        {/* Footer con info */}
+                        <View style={[styles.footer, { borderTopColor: colors.border }]}>
+                            <Text style={[styles.footerText, { color: colors.textSecondary }]}>
+                                {getProviderEmoji()} {provider === 'openai'
+                                    ? 'Voces de alta calidad optimizadas para múltiples idiomas'
+                                    : provider === 'elevenlabs'
+                                        ? 'Voces expresivas con personalización avanzada'
+                                        : 'Voces offline del dispositivo'}
+                            </Text>
+                        </View>
+                    </View>
+                </View>
+            </Modal>
+        </>
+    );
+}
+
+const styles = StyleSheet.create({
+    selectorButton: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        padding: rp(12),
+        borderRadius: 12,
+        borderWidth: 1,
+    },
+    selectorContent: {
+        flex: 1,
+    },
+    selectorLabel: {
+        fontSize: rf(12),
+        marginBottom: 2,
+    },
+    selectorValue: {
+        fontSize: rf(15),
+        fontWeight: '600',
+    },
+    modalOverlay: {
+        flex: 1,
+        backgroundColor: 'rgba(0,0,0,0.5)',
+        justifyContent: 'flex-end',
+    },
+    modalContent: {
+        height: '70%',
+        minHeight: 400,
+        borderTopLeftRadius: 24,
+        borderTopRightRadius: 24,
+        overflow: 'hidden',
+    },
+    modalHeader: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        padding: rp(20),
+        borderBottomWidth: 1,
+    },
+    modalTitle: {
+        fontSize: rf(20),
+        fontWeight: '700',
+    },
+    closeButton: {
+        padding: rp(4),
+    },
+    voiceList: {
+        flex: 1,
+    },
+    voiceListContent: {
+        padding: rp(16),
+        paddingBottom: rp(20),
+        gap: rp(12),
+    },
+    loadingContainer: {
+        padding: rp(40),
+        alignItems: 'center',
+        gap: rp(16),
+    },
+    loadingText: {
+        fontSize: rf(14),
+    },
+    emptyContainer: {
+        padding: rp(40),
+        alignItems: 'center',
+    },
+    emptyText: {
+        fontSize: rf(14),
+        textAlign: 'center',
+    },
+    voiceItem: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        padding: rp(16),
+        borderRadius: 12,
+        borderWidth: 1,
+    },
+    voiceInfo: {
+        flex: 1,
+        marginRight: rp(12),
+    },
+    voiceName: {
+        fontSize: rf(16),
+        fontWeight: '600',
+        marginBottom: 4,
+    },
+    voiceDescription: {
+        fontSize: rf(13),
+        marginBottom: 2,
+    },
+    voiceGender: {
+        fontSize: rf(12),
+    },
+    voiceActions: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: rp(8),
+    },
+    previewButton: {
+        width: 40,
+        height: 40,
+        borderRadius: 20,
+        alignItems: 'center',
+        justifyContent: 'center',
+    },
+    checkIcon: {
+        width: 28,
+        height: 28,
+        borderRadius: 14,
+        alignItems: 'center',
+        justifyContent: 'center',
+    },
+    footer: {
+        padding: rp(16),
+        borderTopWidth: 1,
+    },
+    footerText: {
+        fontSize: rf(13),
+        textAlign: 'center',
+    },
+    categorySeparator: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        marginVertical: rp(12),
+        gap: rp(8),
+    },
+    separatorLine: {
+        flex: 1,
+        height: 1,
+    },
+    categoryLabel: {
+        fontSize: rf(12),
+        fontWeight: '600',
+        paddingHorizontal: rp(8),
+    },
+});

@@ -47,14 +47,25 @@ function AppRoot() {
   }, []);
 
   return (
-    <Stack>
+    <Stack
+      screenOptions={{
+        headerShown: false,
+      }}
+    >
       <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
       <Stack.Screen name="auth" options={{ headerShown: false }} />
       <Stack.Screen name="scan-script" options={{ headerShown: false }} />
       <Stack.Screen name="import-script" options={{ headerShown: false }} />
       <Stack.Screen name="scripts/[id]/index" options={{ headerShown: false }} />
-      <Stack.Screen name="scripts/[id]/record" options={{ title: 'Grabar' }} />
+      <Stack.Screen name="scripts/[id]/record" options={{ headerShown: false }} />
       <Stack.Screen name="scripts/[id]/memory" options={{ headerShown: false }} />
+      <Stack.Screen name="scripts/[id]/studio-v2" options={{ headerShown: false }} />
+      <Stack.Screen name="scripts/[id]/coach" options={{ headerShown: false }} />
+      <Stack.Screen name="scripts/[id]/casting" options={{ headerShown: false }} />
+      <Stack.Screen name="scripts/[id]/car" options={{ headerShown: false }} />
+      <Stack.Screen name="scripts/[id]/analysis" options={{ headerShown: false }} />
+      <Stack.Screen name="scripts/[id]/chubbuck-guide" options={{ headerShown: false }} />
+      <Stack.Screen name="scripts/[id]/editor" options={{ headerShown: false }} />
     </Stack>
   );
 }

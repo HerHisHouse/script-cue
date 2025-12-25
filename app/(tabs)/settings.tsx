@@ -1,9 +1,9 @@
 import React, { useMemo, useState, useEffect } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, Alert, Image, Switch, ScrollView, Platform } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ScreenHeader } from '@/components/ScreenHeader';
 import { useRouter } from 'expo-router';
-import { User, LogOut, Sun, Moon, ChevronDown } from 'lucide-react-native';
+import { User, LogOut, Sun, Moon, ChevronDown, Smartphone } from 'lucide-react-native';
 import { useAuth } from '@/contexts/AuthContext';
 import { useTheme } from '@/contexts/ThemeContext';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
@@ -11,11 +11,13 @@ import appConfig from '../../app.json';
 import { getSettings, setSettings } from '@/utils/appSettings';
 import * as Speech from 'expo-speech';
 import * as ScreenOrientation from 'expo-screen-orientation';
+import { rf, rp } from '@/utils/responsive';
 
 export default function SettingsScreen() {
   const router = useRouter();
   const { user, profile, signOut } = useAuth();
   const { mode, isDark, colors, setThemeMode } = useTheme();
+  const insets = useSafeAreaInsets();
   const [showSignOutConfirm, setShowSignOutConfirm] = useState(false);
   const [localOnly, setLocalOnly] = useState(false);
   const [ttsProvider, setTtsProvider] = useState<'openai' | 'elevenlabs' | 'google' | 'system'>('openai');
@@ -142,7 +144,7 @@ export default function SettingsScreen() {
         'Preferencia actualizada',
         next
           ? 'Usar sólo almacenamiento local: activado. Las nuevas grabaciones se guardarán sólo en local.'
-          : 'Usar sólo almacenamiento local: desactivado. Las nuevas grabaciones se sincronizarán con Supabase.'
+          : 'Usar sólo almacenamiento local: desactivado. Las nuevas grabaciones se sincronizarán con la Nube.'
       );
     } catch (e: any) {
       Alert.alert('Error', e?.message || 'No se pudo actualizar la preferencia');
@@ -166,10 +168,10 @@ export default function SettingsScreen() {
   }
 
   return (
-    <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
+    <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]} edges={['top', 'left', 'right']}>
       <ScreenHeader title="Ajustes" />
 
-      <ScrollView style={styles.content} contentContainerStyle={{ padding: 20 }}>
+      <ScrollView style={styles.content} contentContainerStyle={{ paddingHorizontal: 12, paddingVertical: 20, paddingBottom: 100 + insets.bottom }}>
         <ConfirmDialog
           visible={showSignOutConfirm}
           title="¿Cerrar sesión?"
@@ -204,7 +206,12 @@ export default function SettingsScreen() {
                 <Text style={[styles.storageTitle, { color: colors.text }]}>Rotación de pantalla</Text>
                 <Text style={[styles.storageDesc, { color: colors.textSecondary }]}>Permitir que la pantalla gire al rotar el dispositivo.</Text>
               </View>
-              <Switch value={rotationEnabled} onValueChange={toggleRotation} />
+              <Switch
+                value={rotationEnabled}
+                onValueChange={toggleRotation}
+                trackColor={{ false: isDark ? '#374151' : '#9CA3AF', true: colors.primary }}
+                thumbColor={rotationEnabled ? '#FFFFFF' : (isDark ? '#9CA3AF' : '#FFFFFF')}
+              />
             </View>
           </View>
         </View>
@@ -228,6 +235,14 @@ export default function SettingsScreen() {
               <Moon size={24} color={mode === 'dark' ? colors.primary : colors.textSecondary} />
               <Text style={[styles.themeOptionText, { color: mode === 'dark' ? colors.primary : colors.textSecondary }]}>Oscuro</Text>
             </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[styles.themeOption, mode === 'auto' && { backgroundColor: colors.input }]}
+              onPress={() => setThemeMode('auto')}
+            >
+              <Smartphone size={24} color={mode === 'auto' ? colors.primary : colors.textSecondary} />
+              <Text style={[styles.themeOptionText, { color: mode === 'auto' ? colors.primary : colors.textSecondary }]}>Sistema</Text>
+            </TouchableOpacity>
           </View>
         </View>
 
@@ -238,9 +253,14 @@ export default function SettingsScreen() {
             <View style={styles.storageRow}>
               <View style={{ flex: 1 }}>
                 <Text style={[styles.storageTitle, { color: colors.text }]}>Usar sólo almacenamiento local</Text>
-                <Text style={[styles.storageDesc, { color: colors.textSecondary }]}>Guarda grabaciones en el dispositivo para reproducción offline. No se suben a Supabase mientras esté activo.</Text>
+                <Text style={[styles.storageDesc, { color: colors.textSecondary }]}>Guarda grabaciones en el dispositivo para reproducción offline. No se suben a la Nube mientras esté activo.</Text>
               </View>
-              <Switch value={localOnly} onValueChange={toggleLocalOnly} />
+              <Switch
+                value={localOnly}
+                onValueChange={toggleLocalOnly}
+                trackColor={{ false: isDark ? '#374151' : '#9CA3AF', true: colors.primary }}
+                thumbColor={localOnly ? '#FFFFFF' : (isDark ? '#9CA3AF' : '#FFFFFF')}
+              />
             </View>
           </View>
         </View>
@@ -254,6 +274,58 @@ export default function SettingsScreen() {
               <Text style={[styles.appVersion, { color: colors.textSecondary }]}>{appVersion}</Text>
             </View>
           </View>
+        </View>
+
+        <View style={styles.section}>
+          <Text style={[styles.sectionTitle, { color: colors.textSecondary }]}>Ayuda</Text>
+
+          <TouchableOpacity
+            style={[styles.legalCard, { backgroundColor: colors.surface, borderColor: colors.border }]}
+            onPress={() => router.push('/faqs')}
+          >
+            <View style={styles.legalCardContent}>
+              <Text style={[styles.legalCardTitle, { color: colors.text }]}>Preguntas Frecuentes</Text>
+              <Text style={[styles.legalCardDesc, { color: colors.textSecondary }]}>Aprende cómo usar la app</Text>
+            </View>
+            <Text style={[styles.legalCardArrow, { color: colors.textSecondary }]}>›</Text>
+          </TouchableOpacity>
+        </View>
+
+        <View style={styles.section}>
+          <Text style={[styles.sectionTitle, { color: colors.textSecondary }]}>Aviso Legal</Text>
+
+          <TouchableOpacity
+            style={[styles.legalCard, { backgroundColor: colors.surface, borderColor: colors.border }]}
+            onPress={() => router.push('/legal/terms')}
+          >
+            <View style={styles.legalCardContent}>
+              <Text style={[styles.legalCardTitle, { color: colors.text }]}>Términos y Condiciones</Text>
+              <Text style={[styles.legalCardDesc, { color: colors.textSecondary }]}>Lee nuestros términos de uso</Text>
+            </View>
+            <Text style={[styles.legalCardArrow, { color: colors.textSecondary }]}>›</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[styles.legalCard, { backgroundColor: colors.surface, borderColor: colors.border }]}
+            onPress={() => router.push('/legal/privacy')}
+          >
+            <View style={styles.legalCardContent}>
+              <Text style={[styles.legalCardTitle, { color: colors.text }]}>Política de Privacidad</Text>
+              <Text style={[styles.legalCardDesc, { color: colors.textSecondary }]}>Cómo protegemos tus datos</Text>
+            </View>
+            <Text style={{ color: colors.textSecondary }}>›</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[styles.legalCard, { backgroundColor: colors.surface, borderColor: colors.border }]}
+            onPress={() => router.push('/legal/ai-usage')}
+          >
+            <View style={styles.legalCardContent}>
+              <Text style={[styles.legalCardTitle, { color: colors.text }]}>Uso de Inteligencia Artificial</Text>
+              <Text style={[styles.legalCardDesc, { color: colors.textSecondary }]}>Información sobre el uso de IA</Text>
+            </View>
+            <Text style={{ color: colors.textSecondary }}>›</Text>
+          </TouchableOpacity>
         </View>
 
         <TouchableOpacity style={[styles.signOutButton, { backgroundColor: colors.surface, borderColor: isDark ? '#7F1D1D' : '#FEE2E2' }]} onPress={() => setShowSignOutConfirm(true)}>
@@ -275,50 +347,49 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
   },
   title: {
-    fontSize: 28,
+    fontSize: rf(28),
     fontWeight: '700',
   },
   themeCard: {
     borderRadius: 12,
-    padding: 8,
+    padding: rp(8),
     borderWidth: 1,
     flexDirection: 'row',
-    gap: 8,
+    gap: rp(8),
   },
   themeOption: {
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: 16,
+    paddingVertical: rp(16),
     borderRadius: 8,
-    gap: 8,
+    gap: rp(8),
   },
   themeOptionText: {
-    fontSize: 13,
+    fontSize: rf(13),
     fontWeight: '600',
   },
   ratePitchCard: {
     borderRadius: 12,
     borderWidth: 1,
-    padding: 12,
-    marginTop: 8,
+    padding: rp(12),
+    marginTop: rp(8),
   },
   ratePitchTitle: {
-    fontSize: 13,
+    fontSize: rf(13),
     fontWeight: '600',
-    marginBottom: 8,
+    marginBottom: rp(8),
     textTransform: 'none',
   },
-  // Dropdown styles
   dropdown: {
     borderRadius: 12,
     borderWidth: 1,
-    marginBottom: 12,
+    marginBottom: rp(12),
     overflow: 'hidden',
   },
   dropdownButton: {
-    paddingVertical: 14,
-    paddingHorizontal: 16,
+    paddingVertical: rp(14),
+    paddingHorizontal: rp(16),
     borderBottomWidth: 1,
     borderTopLeftRadius: 12,
     borderTopRightRadius: 12,
@@ -327,42 +398,42 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
   },
   dropdownButtonText: {
-    fontSize: 15,
+    fontSize: rf(15),
     fontWeight: '600',
   },
   dropdownList: {
     borderTopWidth: 0,
   },
   dropdownItem: {
-    paddingVertical: 12,
-    paddingHorizontal: 16,
+    paddingVertical: rp(12),
+    paddingHorizontal: rp(16),
   },
   dropdownItemText: {
-    fontSize: 14,
+    fontSize: rf(14),
     fontWeight: '600',
   },
   dropdownItemSubText: {
-    fontSize: 12,
+    fontSize: rf(12),
     marginTop: 2,
   },
   content: {
     flex: 1,
-    padding: 20,
+    padding: rp(20),
   },
   section: {
-    marginBottom: 32,
+    marginBottom: rp(32),
   },
   sectionTitle: {
-    fontSize: 14,
+    fontSize: rf(14),
     fontWeight: '600',
     textTransform: 'uppercase',
     letterSpacing: 0.5,
-    marginBottom: 12,
+    marginBottom: rp(12),
   },
   profileCard: {
     flexDirection: 'row',
     borderRadius: 12,
-    padding: 16,
+    padding: rp(16),
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.05,
@@ -375,25 +446,25 @@ const styles = StyleSheet.create({
     borderRadius: 28,
     alignItems: 'center',
     justifyContent: 'center',
-    marginRight: 16,
+    marginRight: rp(16),
   },
   profileInfo: {
     flex: 1,
     justifyContent: 'center',
   },
   profileName: {
-    fontSize: 18,
+    fontSize: rf(18),
     fontWeight: '600',
     marginBottom: 4,
   },
   profileEmail: {
-    fontSize: 14,
+    fontSize: rf(14),
   },
   infoCard: {
     flexDirection: 'row',
     alignItems: 'center',
     borderRadius: 12,
-    padding: 16,
+    padding: rp(16),
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.05,
@@ -401,38 +472,38 @@ const styles = StyleSheet.create({
     elevation: 2,
   },
   infoText: {
-    marginLeft: 12,
+    marginLeft: rp(12),
   },
   appName: {
-    fontSize: 16,
+    fontSize: rf(16),
     fontWeight: '600',
     marginBottom: 2,
   },
   appVersion: {
-    fontSize: 13,
+    fontSize: rf(13),
   },
   storageCard: {
     borderRadius: 12,
-    padding: 16,
+    padding: rp(16),
     borderWidth: 1,
   },
   storageRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 12,
+    gap: rp(12),
   },
   storageTitle: {
-    fontSize: 15,
+    fontSize: rf(15),
     fontWeight: '600',
     marginBottom: 4,
   },
   storageDesc: {
-    fontSize: 13,
+    fontSize: rf(13),
   },
   segmented: {
     flexDirection: 'row',
-    gap: 8,
-    marginBottom: 8,
+    gap: rp(8),
+    marginBottom: rp(8),
   },
   segmentedButton: {
     flex: 1,
@@ -440,11 +511,11 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     borderRadius: 8,
     borderWidth: 1,
-    paddingVertical: 10,
-    paddingHorizontal: 8,
+    paddingVertical: rp(10),
+    paddingHorizontal: rp(8),
   },
   segmentedText: {
-    fontSize: 13,
+    fontSize: rf(13),
     fontWeight: '600',
   },
   controlRow: {
@@ -454,35 +525,35 @@ const styles = StyleSheet.create({
     marginTop: 4,
   },
   controlLabel: {
-    fontSize: 14,
+    fontSize: rf(14),
     fontWeight: '600',
   },
   controlButtons: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
+    gap: rp(8),
   },
   controlButton: {
     borderWidth: 1,
     borderRadius: 8,
-    paddingVertical: 6,
-    paddingHorizontal: 10,
+    paddingVertical: rp(6),
+    paddingHorizontal: rp(10),
   },
   controlValue: {
-    fontSize: 14,
+    fontSize: rf(14),
     fontWeight: '600',
     minWidth: 48,
     textAlign: 'center',
   },
   previewButton: {
-    marginTop: 10,
+    marginTop: rp(10),
     borderWidth: 1,
     borderRadius: 8,
-    paddingVertical: 10,
+    paddingVertical: rp(10),
     alignItems: 'center',
   },
   previewButtonText: {
-    fontSize: 14,
+    fontSize: rf(14),
     fontWeight: '600',
   },
   signOutButton: {
@@ -490,13 +561,37 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     borderRadius: 12,
-    padding: 16,
-    marginTop: 'auto',  // No necesario dentro de ScrollView; se mantiene al final del contenido
+    padding: rp(16),
+    marginTop: 'auto',
     borderWidth: 1,
-    gap: 8,
+    gap: rp(8),
   },
   signOutText: {
-    fontSize: 16,
+    fontSize: rf(16),
     fontWeight: '600',
+  },
+  legalCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    padding: rp(16),
+    borderRadius: 12,
+    borderWidth: 1,
+    marginBottom: rp(12),
+  },
+  legalCardContent: {
+    flex: 1,
+  },
+  legalCardTitle: {
+    fontSize: rf(15),
+    fontWeight: '600',
+    marginBottom: 4,
+  },
+  legalCardDesc: {
+    fontSize: rf(13),
+  },
+  legalCardArrow: {
+    fontSize: rf(20),
+    fontWeight: '300',
   },
 });

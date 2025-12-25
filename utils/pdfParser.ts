@@ -246,6 +246,8 @@ export function parseScreenplay(text: string): ParsedScript {
       color: data.color,
       line_count: data.count,
       occurrence_percentage: totalLines > 0 ? (data.count / totalLines) * 100 : 0,
+      voice_id: null,
+      voice_provider: null,
     })
   );
 

@@ -2,6 +2,7 @@ import React from 'react';
 import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
 import { User, Check } from 'lucide-react-native';
 import { Character } from '@/types/database';
+import { rf, rp } from '@/utils/responsive';
 
 interface CharacterItemProps {
   character: Character;
@@ -39,8 +40,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     backgroundColor: '#FFFFFF',
     borderRadius: 12,
-    padding: 16,
-    marginBottom: 8,
+    padding: rp(16),
+    marginBottom: rp(8),
     borderWidth: 2,
     borderColor: 'transparent',
   },
@@ -54,19 +55,19 @@ const styles = StyleSheet.create({
     borderRadius: 20,
     alignItems: 'center',
     justifyContent: 'center',
-    marginRight: 12,
+    marginRight: rp(12),
   },
   content: {
     flex: 1,
   },
   name: {
-    fontSize: 16,
+    fontSize: rf(16),
     fontWeight: '600',
     color: '#111827',
-    marginBottom: 4,
+    marginBottom: rp(4),
   },
   stats: {
-    fontSize: 13,
+    fontSize: rf(13),
     color: '#6B7280',
   },
   checkContainer: {

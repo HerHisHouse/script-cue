@@ -1,6 +1,7 @@
 import React from 'react';
 import { View, Text, StyleSheet, ViewProps } from 'react-native';
 import { useTheme } from '@/contexts/ThemeContext';
+import { rf, rp } from '@/utils/responsive';
 import {
   HEADER_HORIZONTAL_PADDING,
   HEADER_VERTICAL_PADDING,
@@ -55,7 +56,7 @@ const styles = StyleSheet.create({
     gap: 12,
   },
   leftAction: {
-    marginRight: 4,
+    marginRight: rp(4),
   },
   leftCol: {
     flexDirection: 'column',

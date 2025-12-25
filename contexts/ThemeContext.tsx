@@ -35,7 +35,7 @@ const lightColors: ThemeColors = {
   text: '#111827',
   textSecondary: '#6B7280',
   border: '#E5E7EB',
-  primary: '#3B82F6',
+  primary: '#683a79',         // Morado en lugar de azul
   error: '#EF4444',
   success: '#10B981',
   warning: '#F59E0B',
@@ -52,7 +52,7 @@ const darkColors: ThemeColors = {
   text: '#F1F5F9',
   textSecondary: '#94A3B8',
   border: '#334155',
-  primary: '#3B82F6',
+  primary: '#8B5FA8',         // Morado claro para mejor contraste en dark
   error: '#EF4444',
   success: '#10B981',
   warning: '#F59E0B',
@@ -102,7 +102,7 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
           localStorage.setItem(THEME_STORAGE_KEY, newMode);
         }
       } else {
-        AsyncStorage.setItem(THEME_STORAGE_KEY, newMode).catch(() => {});
+        AsyncStorage.setItem(THEME_STORAGE_KEY, newMode).catch(() => { });
       }
     } catch (error) {
       console.error('Error saving theme preference:', error);

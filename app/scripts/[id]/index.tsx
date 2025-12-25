@@ -10,7 +10,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, useLocalSearchParams, Link } from 'expo-router';
-import { ArrowLeft, Play, Users, Trash2, Brain, Car, Clapperboard, UserCog, User, ArrowLeftRight } from 'lucide-react-native';
+import { ArrowLeft, Play, Users, Trash2, Brain, Car, Clapperboard, UserCog, User, ArrowLeftRight, FileText } from 'lucide-react-native';
 import { supabase } from '@/utils/supabase';
 import { Script, Character } from '@/types/database';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
@@ -20,6 +20,7 @@ import { deleteScript } from '@/utils/scripts';
 import { getSettings, setSettings } from '@/utils/appSettings';
 import * as Speech from 'expo-speech';
 import { FixedFooter, FixedFooterSpacer } from '@/components/FixedFooter';
+import { rf, rp } from '@/utils/responsive';
 
 export default function ScriptDetailScreen() {
   const router = useRouter();
@@ -244,81 +245,96 @@ export default function ScriptDetailScreen() {
       />
 
       <ScrollView style={styles.content} contentContainerStyle={styles.contentContainer}>
-        {/* Banner 1: Nombre del guión */}
-        <View style={[styles.infoCard, { backgroundColor: colors.surface }]}>
-          <View style={styles.bannerRow}>
-            <View style={[styles.summaryBadgeSmall, { backgroundColor: colors.input }]}>
-              <Clapperboard size={18} color={colors.text} />
+        {/* Módulo unificado de información del guión */}
+        <View style={[styles.summaryCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+          {/* Título del guión */}
+          <View style={styles.summaryTopRow}>
+            <View style={[styles.summaryBadgeLarge, { backgroundColor: colors.input }]}>
+              <Clapperboard size={22} color={colors.primary} />
             </View>
-            <View style={{ flex: 1 }}>
-              <Text style={[styles.infoLabel, { color: colors.textSecondary }]}>Nombre del guión</Text>
-              <Text style={[styles.infoValue, { color: colors.text }]} numberOfLines={1}>{script?.title || '-'}</Text>
-            </View>
+            <Text style={[styles.summaryTitle, { color: colors.text }]} numberOfLines={2}>
+              {script?.title || '-'}
+            </Text>
           </View>
-        </View>
 
-        {/* Banner 2: Número de personajes */}
-        <View style={[styles.infoCard, { backgroundColor: colors.surface }]}>
-          <View style={styles.bannerRow}>
-            <View style={[styles.summaryBadgeSmall, { backgroundColor: colors.input }]}>
-              <Users size={18} color={colors.text} />
-            </View>
-            <View style={{ flex: 1 }}>
-              <Text style={[styles.infoLabel, { color: colors.textSecondary }]}>Número de personajes</Text>
-              <Text style={[styles.infoValue, { color: colors.text }]} numberOfLines={1}>{characterCountDisplay}</Text>
-            </View>
-          </View>
-        </View>
+          {/* Separador sutil */}
+          <View style={{ height: 1, backgroundColor: colors.border, marginVertical: 16, opacity: 0.3 }} />
 
-        {/* Banner 3: Tu personaje */}
-        <View style={[styles.infoCard, { backgroundColor: colors.surface }]}>
-          <View style={styles.bannerRow}>
-            <View style={[styles.summaryBadgeSmall, { backgroundColor: colors.input }]}>
-              <User size={18} color={colors.text} />
-            </View>
-            <View style={{ flex: 1 }}>
-              <Text style={[styles.infoLabel, { color: colors.textSecondary }]}>Tu personaje</Text>
-              <Text style={[styles.infoValue, { color: colors.text }]} numberOfLines={1}>{userCharacter?.name || '-'}</Text>
-            </View>
-          </View>
-        </View>
-
-        {/* Banner agrupado: Resto de personajes y sus voces */}
-        {((characters || []).filter((c) => !c.is_user_character).length > 0) && (
-          <View style={[styles.infoCard, { backgroundColor: colors.surface }]}>
-            <View style={styles.bannerRow}>
-              <View style={[styles.summaryBadgeSmall, { backgroundColor: colors.input }]}>
-                <Users size={18} color={colors.text} />
+          {/* Información en columnas */}
+          <View style={styles.summaryColumns}>
+            {/* Columna 1: Número de personajes */}
+            <View style={styles.summaryColumn}>
+              <View style={{ alignItems: 'center' }}>
+                <View style={[styles.summaryBadgeSmall, { backgroundColor: colors.input, marginBottom: 8 }]}>
+                  <Users size={16} color={colors.primary} />
+                </View>
+                <Text style={[styles.summaryColumnLabel, { color: colors.textSecondary }]}>
+                  Personajes
+                </Text>
+                <Text style={[styles.summaryColumnValue, { color: colors.text }]}>
+                  {characterCountDisplay}
+                </Text>
               </View>
-              <View style={{ flex: 1 }}>
-                <Text style={[styles.infoLabel, { color: colors.textSecondary }]}>Resto de personajes</Text>
+            </View>
+
+            {/* Columna 2: Tu personaje */}
+            <View style={styles.summaryColumn}>
+              <View style={{ alignItems: 'center' }}>
+                <View style={[styles.summaryBadgeSmall, { backgroundColor: colors.input, marginBottom: 8 }]}>
+                  <User size={16} color={colors.primary} />
+                </View>
+                <Text style={[styles.summaryColumnLabel, { color: colors.textSecondary }]}>
+                  Tu personaje
+                </Text>
+                <Text style={[styles.summaryColumnValue, { color: colors.text }]} numberOfLines={1}>
+                  {userCharacter?.name || '-'}
+                </Text>
+              </View>
+            </View>
+          </View>
+
+          {/* Resto de personajes (si existen) */}
+          {((characters || []).filter((c) => !c.is_user_character).length > 0) && (
+            <>
+              <View style={{ height: 1, backgroundColor: colors.border, marginVertical: 16, opacity: 0.3 }} />
+              <View style={{ alignItems: 'center' }}>
+                <Text style={[styles.summaryColumnLabel, { color: colors.textSecondary, marginBottom: 8 }]}>
+                  Otros personajes
+                </Text>
                 {(characters || []).filter((c) => !c.is_user_character).map((c) => (
-                  <Text key={c.id} style={{ color: colors.text, fontSize: 13, marginTop: 4 }} numberOfLines={1}>
+                  <Text
+                    key={c.id}
+                    style={{
+                      color: colors.text,
+                      fontSize: rf(13),
+                      marginTop: 4,
+                      textAlign: 'center'
+                    }}
+                    numberOfLines={1}
+                  >
                     {(c.name || '-')} · {getCharacterVoiceText(c)}
                   </Text>
                 ))}
               </View>
-            </View>
-          </View>
-        )}
+            </>
+          )}
+        </View>
 
         {charactersLoadError && (
-          <Text style={{ color: colors.error, marginTop: 4, marginBottom: 8, fontSize: 12 }}>
+          <Text style={{ color: colors.error, marginTop: 4, marginBottom: 8, fontSize: rf(12), textAlign: 'center' }}>
             {charactersLoadError}
           </Text>
         )}
 
         {/* Aviso: solo enlace a Configuración de personajes */}
-        <Text style={[styles.hintText, { color: colors.textSecondary, marginBottom: 16 }]}>
+        <Text style={[styles.hintText, { color: colors.textSecondary, marginBottom: 16, textAlign: 'center' }]}>
           Modificar personajes y voces: abre
-          <Text style={[styles.hintLink, { color: colors.primary }]} onPress={goToCharacterConfig}>Configuración de personajes</Text>.
+          <Text style={[styles.hintLink, { color: colors.primary }]} onPress={goToCharacterConfig}> Configuración de personajes</Text>.
         </Text>
-
-
-
 
         <View style={[styles.actionsRow, { marginTop: 'auto' }]}>
           <View style={styles.actionsColumn}>
+            {/* 1. Modo Estudio */}
             <TouchableOpacity
               style={styles.actionButton}
               onPress={() => router.push(`/scripts/${id}/studio-v2`)}
@@ -327,6 +343,7 @@ export default function ScriptDetailScreen() {
               <Text style={styles.actionText}>Modo Estudio</Text>
             </TouchableOpacity>
 
+            {/* 2. Modo Memory */}
             <TouchableOpacity
               style={styles.actionButton}
               onPress={() => router.push(`/scripts/${id}/memory`)}
@@ -335,16 +352,18 @@ export default function ScriptDetailScreen() {
               <Text style={styles.actionText}>Modo Memory</Text>
             </TouchableOpacity>
 
+            {/* 3. Modo Análisis */}
             <TouchableOpacity
               style={styles.actionButton}
-              onPress={() => router.push(`/scripts/${id}/car`)}
+              onPress={() => router.push(`/scripts/${id}/analysis`)}
             >
-              <Car size={24} color="#FFFFFF" />
-              <Text style={styles.actionText}>Modo Coche</Text>
+              <FileText size={24} color="#FFFFFF" />
+              <Text style={styles.actionText}>Modo Análisis</Text>
             </TouchableOpacity>
           </View>
 
           <View style={styles.actionsColumn}>
+            {/* 4. Modo Coach */}
             <TouchableOpacity
               style={styles.actionButton}
               onPress={() => router.push(`/scripts/${id}/coach`)}
@@ -353,6 +372,7 @@ export default function ScriptDetailScreen() {
               <Text style={styles.actionText}>Modo Coach</Text>
             </TouchableOpacity>
 
+            {/* 5. Modo Casting */}
             <TouchableOpacity
               style={styles.actionButton}
               onPress={() => router.push(`/scripts/${id}/casting`)}
@@ -361,14 +381,13 @@ export default function ScriptDetailScreen() {
               <Text style={styles.actionText}>Modo Casting</Text>
             </TouchableOpacity>
 
-            {/* Redirigir a Configuración de personajes en Importar Guión */
-            }
+            {/* 6. Modo Coche */}
             <TouchableOpacity
-              style={[styles.actionButton, styles.actionButtonOutline, { borderColor: colors.border }]}
-              onPress={goToCharacterConfig}
+              style={styles.actionButton}
+              onPress={() => router.push(`/scripts/${id}/car`)}
             >
-              <ArrowLeftRight size={20} color={colors.text} />
-              <Text style={[styles.actionText, styles.actionTextOutline, { color: colors.text }]}>Cambia personaje</Text>
+              <Car size={24} color="#FFFFFF" />
+              <Text style={styles.actionText}>Modo Coche</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -392,8 +411,8 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: 20,
-    paddingVertical: 16,
+    paddingHorizontal: rp(20),
+    paddingVertical: rp(16),
     borderBottomWidth: 1,
   },
   backButton: {
@@ -404,7 +423,7 @@ const styles = StyleSheet.create({
   },
   headerTitle: {
     flex: 1,
-    fontSize: 18,
+    fontSize: rf(18),
     fontWeight: '600',
     textAlign: 'center',
     marginHorizontal: 8,
@@ -417,14 +436,14 @@ const styles = StyleSheet.create({
   },
   content: {
     flex: 1,
-    padding: 20,
+    padding: rp(20),
   },
   contentContainer: {
-    paddingBottom: 40,
+    paddingBottom: rp(40),
   },
   infoCard: {
     borderRadius: 12,
-    padding: 12,
+    padding: rp(12),
     marginBottom: 12,
     alignItems: 'center',
     shadowColor: '#000',
@@ -434,12 +453,12 @@ const styles = StyleSheet.create({
     elevation: 2,
   },
   infoLabel: {
-    fontSize: 12,
+    fontSize: rf(12),
     fontWeight: '500',
     marginBottom: 8,
   },
   infoValue: {
-    fontSize: 16,
+    fontSize: rf(16),
     fontWeight: '700',
   },
   bannerRow: {
@@ -452,7 +471,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     borderRadius: 12,
-    padding: 16,
+    padding: rp(16),
     marginBottom: 24,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
@@ -472,21 +491,21 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   characterLabel: {
-    fontSize: 12,
+    fontSize: rf(12),
     fontWeight: '500',
     textTransform: 'uppercase',
     letterSpacing: 0.5,
     marginBottom: 4,
   },
   characterName: {
-    fontSize: 20,
+    fontSize: rf(20),
     fontWeight: '700',
   },
   // Tarjeta unificada de resumen
   summaryCard: {
     borderRadius: 12,
     borderWidth: 1,
-    padding: 16,
+    padding: rp(16),
     marginBottom: 20,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
@@ -509,7 +528,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   summaryTitle: {
-    fontSize: 20,
+    fontSize: rf(20),
     fontWeight: '700',
     textAlign: 'center',
     flexShrink: 1,
@@ -536,14 +555,14 @@ const styles = StyleSheet.create({
     minWidth: 0,
   },
   summaryColumnLabel: {
-    fontSize: 11,
+    fontSize: rf(11),
     fontWeight: '500',
     textTransform: 'uppercase',
     letterSpacing: 0.5,
     marginBottom: 2,
   },
   summaryColumnValue: {
-    fontSize: 16,
+    fontSize: rf(16),
     fontWeight: '700',
   },
   actionsRow: {
@@ -554,22 +573,22 @@ const styles = StyleSheet.create({
   voiceSection: {
     borderRadius: 12,
     borderWidth: 1,
-    padding: 12,
+    padding: rp(12),
     marginBottom: 16,
   },
   voiceSectionTitle: {
-    fontSize: 14,
+    fontSize: rf(14),
     fontWeight: '600',
     textTransform: 'uppercase',
     letterSpacing: 0.5,
     marginBottom: 12,
   },
   hintText: {
-    fontSize: 12,
+    fontSize: rf(12),
     marginBottom: 8,
   },
   hintLink: {
-    fontSize: 12,
+    fontSize: rf(12),
     fontWeight: '600',
     textDecorationLine: 'underline',
   },
@@ -581,18 +600,18 @@ const styles = StyleSheet.create({
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: 12,
+    paddingVertical: rp(12),
     borderRadius: 8,
   },
   voiceProviderText: {
-    fontSize: 13,
+    fontSize: rf(13),
     fontWeight: '600',
   },
   systemVoiceSection: {
     marginBottom: 24,
   },
   systemVoiceTitle: {
-    fontSize: 14,
+    fontSize: rf(14),
     fontWeight: '600',
     textTransform: 'uppercase',
     letterSpacing: 0.5,
@@ -605,8 +624,8 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
   },
   dropdownButton: {
-    paddingVertical: 14,
-    paddingHorizontal: 16,
+    paddingVertical: rp(14),
+    paddingHorizontal: rp(16),
     borderBottomWidth: 1,
     borderTopLeftRadius: 12,
     borderTopRightRadius: 12,
@@ -615,22 +634,22 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
   },
   dropdownButtonText: {
-    fontSize: 15,
+    fontSize: rf(15),
     fontWeight: '600',
   },
   dropdownList: {
     borderTopWidth: 0,
   },
   dropdownItem: {
-    paddingVertical: 12,
-    paddingHorizontal: 16,
+    paddingVertical: rp(12),
+    paddingHorizontal: rp(16),
   },
   dropdownItemText: {
-    fontSize: 14,
+    fontSize: rf(14),
     fontWeight: '600',
   },
   dropdownItemSubText: {
-    fontSize: 12,
+    fontSize: rf(12),
     marginTop: 2,
   },
   actionsColumn: {
@@ -638,20 +657,35 @@ const styles = StyleSheet.create({
     gap: 12,
   },
   actionButton: {
+    flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#3B82F6',
-    borderRadius: 12,
-    paddingVertical: 16,
-    paddingHorizontal: 16,
     gap: 8,
-    height: 56,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
+    paddingVertical: rp(16),
+    paddingHorizontal: rp(12),
+    borderRadius: 12,
+    backgroundColor: '#683a79',
+    shadowColor: '#683a79',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
     shadowRadius: 8,
-    elevation: 3,
+    elevation: 4,
+    marginBottom: 12,
+    position: 'relative',
+    minHeight: rp(56),
+  },
+  infoIcon: {
+    position: 'absolute',
+    top: 8,
+    right: 8,
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    backgroundColor: 'rgba(0, 0, 0, 0.3)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    zIndex: 10,
   },
   actionButtonTwoLine: {
     // Mantener misma altura que los otros botones; no ajustar padding
@@ -666,15 +700,15 @@ const styles = StyleSheet.create({
     elevation: 0,
   },
   actionText: {
-    fontSize: 16,
+    fontSize: rf(16),
     fontWeight: '600',
     color: '#FFFFFF',
   },
   actionTextSmall: {
-    fontSize: 14,
+    fontSize: rf(14),
   },
   actionTextTwoLine: {
-    fontSize: 12,
+    fontSize: rf(12),
     lineHeight: 14,
   },
   actionTextOutline: {

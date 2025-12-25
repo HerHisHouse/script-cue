@@ -7,6 +7,11 @@
     "icon": "./assets/images/icon.png",
     "scheme": "scriptcue",
     "userInterfaceStyle": "automatic",
+    "splash": {
+      "image": "./assets/images/splash.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#000000"
+    },
     "newArchEnabled": true,
     "ios": {
       "supportsTablet": true,
@@ -24,29 +29,41 @@
     "plugins": [
       "expo-router",
       "expo-font",
-      "expo-web-browser"
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "Necesitamos acceso a la cámara para grabar tus sesiones en modo casting.",
+          "microphonePermission": "Necesitamos acceso al micrófono para grabar tus sesiones de estudio y detectar la lectura de tus líneas."
+        }
+      ],
+      "./plugins/withAndroidNetworkConfig.js"
     ],
     "experiments": {
       "typedRoutes": true
     },
     "android": {
-      "package": "com.alexdiaz.scriptcue"
+      "package": "com.alexdiaz.scriptcue",
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/images/adaptive-icon.png",
+        "backgroundColor": "#000000"
+      },
+      "permissions": [
+        "INTERNET",
+        "ACCESS_NETWORK_STATE",
+        "CAMERA",
+        "RECORD_AUDIO",
+        "READ_EXTERNAL_STORAGE",
+        "WRITE_EXTERNAL_STORAGE",
+        "READ_MEDIA_IMAGES",
+        "READ_MEDIA_VIDEO",
+        "READ_MEDIA_AUDIO"
+      ]
     },
     "extra": {
       "router": {},
       "eas": {
         "projectId": "7084f548-a9ac-4d2a-844d-86d8ecfa06bd"
-      },
-      "appIdBase": {
-        "ios": "com.alexdiaz.scriptcue",
-        "android": "com.alexdiaz.scriptcue"
-      },
-      "appIdEffective": {
-        "ios": "com.alexdiaz.scriptcue",
-        "android": "com.alexdiaz.scriptcue"
-      },
-      "appIdSuffix": "",
-      "mergeServerUrl": "https://script-cue-merge-server.onrender.com"
+      }
     },
     "owner": "alexx223",
     "runtimeVersion": {

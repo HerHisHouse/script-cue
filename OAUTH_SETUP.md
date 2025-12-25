@@ -39,7 +39,7 @@ Este documento explica cómo configurar el inicio de sesión con Google y Apple 
 4. Configura:
    - **Name**: Script Cue Web Client
    - **Authorized redirect URIs**: 
-     - `https://<tu-proyecto>.supabase.co/auth/v1/callback`
+     - .
      - Para desarrollo local: `http://localhost:8081/auth/v1/callback`
 
 5. Guarda el **Client ID** y **Client Secret**

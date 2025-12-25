@@ -1,5 +1,6 @@
 import React from 'react';
 import { View, StyleSheet, Platform, Text } from 'react-native';
+import { rf, rp } from '@/utils/responsive';
 
 interface PdfViewerProps {
   url: string;
@@ -44,12 +45,12 @@ const styles = StyleSheet.create({
   },
   
   placeholder: {
-    padding: 20,
+    padding: rp(20),
     alignItems: 'center',
   },
   placeholderText: {
     color: '#666',
-    fontSize: 14,
+    fontSize: rf(14),
     textAlign: 'center',
   },
 });

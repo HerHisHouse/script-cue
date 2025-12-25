@@ -8,6 +8,7 @@ import {
   Pressable,
 } from 'react-native';
 import { AlertTriangle } from 'lucide-react-native';
+import { rf, rp } from '@/utils/responsive';
 
 interface ConfirmDialogProps {
   visible: boolean;
@@ -76,12 +77,12 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(0, 0, 0, 0.5)',
     justifyContent: 'center',
     alignItems: 'center',
-    padding: 20,
+    padding: rp(20),
   },
   dialog: {
     backgroundColor: '#FFFFFF',
     borderRadius: 16,
-    padding: 24,
+    padding: rp(24),
     width: '100%',
     maxWidth: 400,
     shadowColor: '#000',
@@ -92,21 +93,21 @@ const styles = StyleSheet.create({
   },
   iconContainer: {
     alignItems: 'center',
-    marginBottom: 16,
+    marginBottom: rp(16),
   },
   title: {
-    fontSize: 20,
+    fontSize: rf(20),
     fontWeight: '700',
     color: '#111827',
     textAlign: 'center',
-    marginBottom: 8,
+    marginBottom: rp(8),
   },
   message: {
-    fontSize: 16,
+    fontSize: rf(16),
     color: '#6B7280',
     textAlign: 'center',
     lineHeight: 24,
-    marginBottom: 24,
+    marginBottom: rp(24),
   },
   buttons: {
     flexDirection: 'row',
@@ -114,7 +115,7 @@ const styles = StyleSheet.create({
   },
   button: {
     flex: 1,
-    paddingVertical: 14,
+    paddingVertical: rp(14),
     borderRadius: 12,
     alignItems: 'center',
     justifyContent: 'center',
@@ -129,12 +130,12 @@ const styles = StyleSheet.create({
     backgroundColor: '#EF4444',
   },
   cancelText: {
-    fontSize: 16,
+    fontSize: rf(16),
     fontWeight: '600',
     color: '#6B7280',
   },
   confirmText: {
-    fontSize: 16,
+    fontSize: rf(16),
     fontWeight: '600',
     color: '#FFFFFF',
   },

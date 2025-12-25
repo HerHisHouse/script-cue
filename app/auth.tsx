@@ -459,11 +459,9 @@ export default function AuthScreen() {
               accessibilityRole="button"
               accessibilityLabel="Iniciar sesión con Google"
             >
-              <Image
-                source={require('@/assets/images/google-logo.png')}
-                style={styles.googleLogo}
-                resizeMode="contain"
-              />
+              <View style={styles.googleIconContainer}>
+                <Text style={styles.googleG}>G</Text>
+              </View>
               <Text style={[styles.googleButtonText, { color: colors.text }]}>
                 Continuar con Google
               </Text>
@@ -651,9 +649,17 @@ const styles = StyleSheet.create({
     borderColor: '#E5E7EB',
     gap: 12,
   },
-  googleLogo: {
-    width: 20,
-    height: 20,
+  googleIconContainer: {
+    width: 24,
+    height: 24,
+    borderRadius: 4,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  googleG: {
+    fontSize: rf(20),
+    fontWeight: '700',
+    color: '#4285F4', // Google blue
   },
   googleButtonText: {
     fontSize: rf(15),

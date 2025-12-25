@@ -14,6 +14,7 @@ import { useTheme } from '@/contexts/ThemeContext';
 import { useAuth } from '@/contexts/AuthContext';
 import { X, Folder, ChevronRight, Check } from 'lucide-react-native';
 import { Project } from '@/types/database';
+import { rf, rp } from '@/utils/responsive';
 
 interface SendToModalProps {
     visible: boolean;
@@ -159,7 +160,7 @@ export function SendToModal({ visible, onClose, onMove, currentProjectId }: Send
                                     style={[
                                         styles.item,
                                         {
-                                            paddingLeft: 16 + (item.level * 20),
+                                            paddingLeft: rp(16) + (item.level * 20),
                                             backgroundColor: selectedId === item.id ? colors.input : 'transparent'
                                         }
                                     ]}
@@ -222,11 +223,11 @@ const styles = StyleSheet.create({
         flexDirection: 'row',
         justifyContent: 'space-between',
         alignItems: 'center',
-        padding: 16,
+        padding: rp(16),
         borderBottomWidth: 1,
     },
     title: {
-        fontSize: 18,
+        fontSize: rf(18),
         fontWeight: '600',
     },
     center: {
@@ -235,16 +236,16 @@ const styles = StyleSheet.create({
         alignItems: 'center',
     },
     list: {
-        padding: 16,
+        padding: rp(16),
     },
     item: {
         flexDirection: 'row',
         alignItems: 'center',
         justifyContent: 'space-between',
-        paddingVertical: 12,
-        paddingRight: 16,
+        paddingVertical: rp(12),
+        paddingRight: rp(16),
         borderRadius: 8,
-        marginBottom: 4,
+        marginBottom: rp(4),
     },
     itemRow: {
         flexDirection: 'row',
@@ -252,22 +253,22 @@ const styles = StyleSheet.create({
         gap: 12,
     },
     itemText: {
-        fontSize: 16,
+        fontSize: rf(16),
     },
     emptyText: {
         textAlign: 'center',
-        marginTop: 20,
-        fontSize: 16,
+        marginTop: rp(20),
+        fontSize: rf(16),
     },
     footer: {
         flexDirection: 'row',
-        padding: 16,
+        padding: rp(16),
         borderTopWidth: 1,
         gap: 12,
     },
     button: {
         flex: 1,
-        padding: 16,
+        padding: rp(16),
         borderRadius: 12,
         alignItems: 'center',
         justifyContent: 'center',

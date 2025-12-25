@@ -3,6 +3,7 @@ import client from './openaiClient';
 import { generateElevenLabsAudio } from './elevenLabsClient';
 import * as FileSystem from 'expo-file-system/legacy';
 import * as Crypto from 'expo-crypto';
+import { Platform } from 'react-native';
 
 interface TTSCacheEntry {
     id: string;
@@ -20,6 +21,22 @@ interface TTSCacheEntry {
 interface VoiceConfig {
     provider: 'openai' | 'elevenlabs' | 'system';
     voiceId?: string; // OpenAI voice or ElevenLabs voice ID
+}
+
+/**
+ * Map voice gender to appropriate OpenAI voice
+ * OpenAI voices: alloy, echo, fable, onyx, nova, shimmer
+ */
+function getOpenAIVoiceByGender(gender: 'male' | 'female' | 'neutral' | null | undefined): string {
+    if (gender === 'male') {
+        // Male voices: echo (deeper), fable (British accent)
+        return 'echo';
+    } else if (gender === 'female') {
+        // Female voices: nova (warm), shimmer (soft)
+        return 'nova';
+    }
+    // Neutral or undefined: alloy (neutral)
+    return 'alloy';
 }
 
 /**
@@ -42,6 +59,76 @@ function arrayBufferToBase64(buffer: ArrayBuffer): string {
         binary += String.fromCharCode(bytes[i]);
     }
     return btoa(binary);
+}
+
+/**
+ * Upload audio to Supabase Storage using XMLHttpRequest for Android
+ */
+async function uploadAudioToStorage(
+    storagePath: string,
+    arrayBuffer: ArrayBuffer,
+    userId: string
+): Promise<boolean> {
+    if (Platform.OS === 'android') {
+        // Android: usar XMLHttpRequest
+        try {
+            const { data: sessionData } = await supabase.auth.getSession();
+            const token = sessionData.session?.access_token;
+            
+            if (!token) {
+                console.error('No auth token available');
+                return false;
+            }
+
+            const bytes = new Uint8Array(arrayBuffer);
+            
+            await new Promise<void>((resolve, reject) => {
+                const xhr = new XMLHttpRequest();
+                const uploadUrl = `${process.env.EXPO_PUBLIC_SUPABASE_URL}/storage/v1/object/tts-cache/${storagePath}`;
+                
+                xhr.open('POST', uploadUrl, true);
+                xhr.setRequestHeader('Authorization', `Bearer ${token}`);
+                xhr.setRequestHeader('Content-Type', 'audio/mpeg');
+                xhr.setRequestHeader('x-upsert', 'true');
+                
+                xhr.timeout = 60000; // 1 minuto para audio
+                
+                xhr.onload = () => {
+                    if (xhr.status >= 200 && xhr.status < 300) {
+                        resolve();
+                    } else {
+                        console.error('XMLHttpRequest error:', xhr.status, xhr.responseText);
+                        reject(new Error(`Upload failed with status ${xhr.status}`));
+                    }
+                };
+                
+                xhr.onerror = () => reject(new Error('Network error during upload'));
+                xhr.ontimeout = () => reject(new Error('Upload timeout'));
+                
+                xhr.send(bytes);
+            });
+            
+            return true;
+        } catch (error) {
+            console.error('Error uploading with XMLHttpRequest:', error);
+            return false;
+        }
+    } else {
+        // iOS/Web: usar cliente de Supabase normal
+        const { error } = await supabase.storage
+            .from('tts-cache')
+            .upload(storagePath, arrayBuffer, {
+                contentType: 'audio/mpeg',
+                upsert: true
+            });
+        
+        if (error) {
+            console.error('Error uploading to storage:', error);
+            return false;
+        }
+        
+        return true;
+    }
 }
 
 /**
@@ -159,17 +246,12 @@ export async function generateAndCacheAudio(
             return null;
         }
 
-        // Upload to Supabase Storage
+        // Upload to Supabase Storage using platform-specific method
         const storagePath = `${userId}/${scriptId}/${lineId}_${provider}_${voiceId || 'default'}.mp3`;
-        const { error: uploadError } = await supabase.storage
-            .from('tts-cache')
-            .upload(storagePath, arrayBuffer, {
-                contentType: 'audio/mpeg',
-                upsert: true
-            });
+        const uploadSuccess = await uploadAudioToStorage(storagePath, arrayBuffer, userId);
 
-        if (uploadError) {
-            console.error('Error uploading to storage:', uploadError);
+        if (!uploadSuccess) {
+            console.error('Failed to upload audio to storage');
             return null;
         }
 
@@ -254,7 +336,35 @@ export async function preGenerateScriptAudio(
 
         for (const line of aiLines) {
             const characterName = line.character_name.toUpperCase();
-            const voiceConfig = characterVoices[characterName] || { provider: 'openai' as const };
+            
+            // Get character info to determine voice
+            const character = characters?.find(
+                c => c.name.toLowerCase().trim() === line.character_name.toLowerCase().trim()
+            );
+            
+            // Get voice config: priority is voice_id > characterVoices config > gender-based default
+            let voiceConfig = characterVoices[characterName];
+            
+            // Si el personaje tiene voice_id configurado, usarlo directamente
+            if (character?.voice_id && character?.voice_provider) {
+                voiceConfig = {
+                    provider: character.voice_provider as 'openai' | 'elevenlabs',
+                    voiceId: character.voice_id
+                };
+            } else if (!voiceConfig) {
+                // No specific config, use OpenAI with gender-appropriate voice
+                const voiceId = getOpenAIVoiceByGender(character?.voice_gender);
+                voiceConfig = { 
+                    provider: 'openai' as const,
+                    voiceId
+                };
+            } else if (voiceConfig.provider === 'openai' && !voiceConfig.voiceId) {
+                // OpenAI selected but no specific voice, use gender-appropriate voice
+                voiceConfig = {
+                    ...voiceConfig,
+                    voiceId: getOpenAIVoiceByGender(character?.voice_gender)
+                };
+            }
 
             // Skip system TTS
             if (voiceConfig.provider === 'system') {

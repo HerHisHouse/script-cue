@@ -24,6 +24,24 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
   global: {
     headers: {
       'Content-Type': 'application/json',
+      'Accept': 'application/json',
+      'X-Client-Info': 'supabase-js-react-native',
     },
+    fetch: (url, options = {}) => {
+      // Configuración específica para Android con timeout de 5 minutos para archivos grandes
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 300000); // 5 minutos
+      
+      return fetch(url, {
+        ...options,
+        signal: controller.signal,
+      }).finally(() => clearTimeout(timeoutId));
+    },
+  },
+  db: {
+    schema: 'public',
+  },
+  realtime: {
+    timeout: 30000,
   },
 });

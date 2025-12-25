@@ -2,7 +2,8 @@ import { Tabs } from 'expo-router';
 import { FileText, Mic, Settings, Folder } from 'lucide-react-native';
 import { useTheme } from '@/contexts/ThemeContext';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Platform } from 'react-native';
+import { Platform, View } from 'react-native';
+import { rf, rp } from '@/utils/responsive';
 
 export default function TabLayout() {
   const { colors } = useTheme();
@@ -12,6 +13,27 @@ export default function TabLayout() {
   const verticalLift = Platform.OS === 'android' ? 5 : 0;
   const bottomInset = insets.bottom || 0;
   const baseHeight = Platform.OS === 'ios' ? 49 : 56; // Altura base recomendada por plataforma
+
+  // Component for tab icon with background highlight when focused
+  const TabIcon = ({ Icon, size, color, focused }: { Icon: any; size: number; color: string; focused: boolean }) => (
+    <View
+      style={{
+        width: 56,
+        height: 40,
+        borderRadius: 20,
+        backgroundColor: focused ? `${colors.primary}15` : 'transparent',
+        justifyContent: 'center',
+        alignItems: 'center',
+        shadowColor: focused ? colors.primary : 'transparent',
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: focused ? 0.2 : 0,
+        shadowRadius: 4,
+        elevation: focused ? 3 : 0,
+      }}
+    >
+      <Icon size={size} color={color} />
+    </View>
+  );
 
   return (
     <Tabs
@@ -26,15 +48,15 @@ export default function TabLayout() {
           // Altura ajustada para no reducir la viewarea en iOS
           height: baseHeight + bottomInset + 10, // Increased height for labels
           paddingBottom: bottomInset + 4,
-          paddingTop: 8,
+          paddingTop: rp(8),
         },
         tabBarItemStyle: {
           marginTop: Platform.OS === 'android' ? 0 : 4, // Adjusted for better centering
         },
         tabBarLabelStyle: {
-          fontSize: 11,
+          fontSize: rf(11),
           fontWeight: '500',
-          marginTop: 2,
+          marginTop: rp(2),
         },
         tabBarShowLabel: true,
       }}>
@@ -42,8 +64,8 @@ export default function TabLayout() {
         name="index"
         options={{
           title: 'Mis Guiones',
-          tabBarIcon: ({ size, color }) => (
-            <FileText size={size} color={color} />
+          tabBarIcon: ({ size, color, focused }) => (
+            <TabIcon Icon={FileText} size={size} color={color} focused={focused} />
           ),
         }}
       />
@@ -51,8 +73,8 @@ export default function TabLayout() {
         name="recordings"
         options={{
           title: 'Grabaciones',
-          tabBarIcon: ({ size, color }) => (
-            <Mic size={size} color={color} />
+          tabBarIcon: ({ size, color, focused }) => (
+            <TabIcon Icon={Mic} size={size} color={color} focused={focused} />
           ),
         }}
       />
@@ -60,8 +82,8 @@ export default function TabLayout() {
         name="projects"
         options={{
           title: 'Mis proyectos',
-          tabBarIcon: ({ size, color }) => (
-            <Folder size={size} color={color} />
+          tabBarIcon: ({ size, color, focused }) => (
+            <TabIcon Icon={Folder} size={size} color={color} focused={focused} />
           ),
         }}
       />
@@ -69,8 +91,8 @@ export default function TabLayout() {
         name="settings"
         options={{
           title: 'Ajustes',
-          tabBarIcon: ({ size, color }) => (
-            <Settings size={size} color={color} />
+          tabBarIcon: ({ size, color, focused }) => (
+            <TabIcon Icon={Settings} size={size} color={color} focused={focused} />
           ),
         }}
       />

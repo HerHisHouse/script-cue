@@ -29,10 +29,11 @@ export function makeHeaderMenuStyles(colors: ReturnType<typeof useTheme>['colors
       paddingVertical: 10,
     },
     separator: {
-      height: StyleSheet.hairlineWidth,
+      height: 1,
       alignSelf: 'stretch',
       backgroundColor: colors.border,
-      marginVertical: 6,
+      marginVertical: 8,
+      opacity: 0.6,
     },
     text: {
       fontSize: 15,

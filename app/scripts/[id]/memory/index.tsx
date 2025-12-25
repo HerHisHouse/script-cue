@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 import {
     View,
     Text,
@@ -8,7 +8,7 @@ import {
     ActivityIndicator,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useRouter, useLocalSearchParams } from 'expo-router';
+import { useRouter, useLocalSearchParams, useFocusEffect } from 'expo-router';
 import { useTheme } from '@/contexts/ThemeContext';
 import {
     Brain,
@@ -23,6 +23,7 @@ import {
 } from 'lucide-react-native';
 import { getStreak, getTotalScore } from '@/utils/gamification';
 import { ScreenHeader } from '@/components/ScreenHeader';
+import { rf, rp } from '@/utils/responsive';
 
 const GAMES = [
     {
@@ -49,14 +50,7 @@ const GAMES = [
         color: '#10B981', // Green
         route: '/echo'
     },
-    {
-        id: 'call-repeat',
-        title: 'Llamada y Respuesta',
-        description: 'Entrena ritmo y entonación con el TTS.',
-        icon: Repeat,
-        color: '#F59E0B', // Amber
-        route: '/call-repeat'
-    },
+
     {
         id: 'quiz',
         title: 'Quiz Memory',
@@ -83,9 +77,11 @@ export default function MemoryMenuScreen() {
     const [streak, setStreak] = useState(0);
     const [totalScore, setTotalScore] = useState(0);
 
-    useEffect(() => {
-        loadStats();
-    }, []);
+    useFocusEffect(
+        useCallback(() => {
+            loadStats();
+        }, [id])
+    );
 
     const loadStats = async () => {
         if (typeof id === 'string') {
@@ -158,24 +154,24 @@ const styles = StyleSheet.create({
         flexDirection: 'row',
         alignItems: 'center',
         justifyContent: 'space-between',
-        paddingHorizontal: 16,
-        paddingVertical: 12,
+        paddingHorizontal: rp(16),
+        paddingVertical: rp(12),
         borderBottomWidth: 1,
     },
     backButton: {
-        padding: 8,
+        padding: rp(8),
     },
     headerTitle: {
-        fontSize: 18,
+        fontSize: rf(18),
         fontWeight: '700',
     },
     content: {
-        padding: 20,
+        padding: rp(20),
     },
     statsContainer: {
         flexDirection: 'row',
         borderRadius: 16,
-        padding: 16,
+        padding: rp(16),
         marginBottom: 24,
         shadowColor: '#000',
         shadowOffset: { width: 0, height: 2 },
@@ -196,30 +192,31 @@ const styles = StyleSheet.create({
         marginHorizontal: 8,
     },
     statLabel: {
-        fontSize: 12,
+        fontSize: rf(12),
         fontWeight: '500',
         textTransform: 'uppercase',
     },
     statValue: {
-        fontSize: 20,
+        fontSize: rf(20),
         fontWeight: '700',
     },
     sectionTitle: {
-        fontSize: 14,
+        fontSize: rf(14),
         fontWeight: '600',
         textTransform: 'uppercase',
         marginBottom: 16,
         letterSpacing: 1,
+        textAlign: 'center',
     },
     grid: {
         gap: 16,
     },
     card: {
         borderRadius: 16,
-        padding: 20,
+        padding: rp(20),
         borderWidth: 1,
         flexDirection: 'column',
-        alignItems: 'flex-start',
+        alignItems: 'center',
         gap: 12,
         shadowColor: '#000',
         shadowOffset: { width: 0, height: 2 },
@@ -236,11 +233,13 @@ const styles = StyleSheet.create({
         marginBottom: 4,
     },
     cardTitle: {
-        fontSize: 18,
+        fontSize: rf(18),
         fontWeight: '700',
+        textAlign: 'center',
     },
     cardDesc: {
-        fontSize: 14,
+        fontSize: rf(14),
         lineHeight: 20,
+        textAlign: 'center',
     },
 });

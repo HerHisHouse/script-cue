@@ -1,6 +1,7 @@
 import React from 'react';
 import { View, TouchableOpacity, Text, StyleSheet } from 'react-native';
 import { Mic, Square, Play, Pause } from 'lucide-react-native';
+import { rf, rp } from '@/utils/responsive';
 
 interface RecordingControlsProps {
   isRecording: boolean;
@@ -57,22 +58,22 @@ export function RecordingControls({
 const styles = StyleSheet.create({
   container: {
     alignItems: 'center',
-    paddingVertical: 20,
+    paddingVertical: rp(20),
   },
   durationContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 16,
+    marginBottom: rp(16),
   },
   recordingIndicator: {
     width: 12,
     height: 12,
     borderRadius: 6,
     backgroundColor: '#EF4444',
-    marginRight: 8,
+    marginRight: rp(8),
   },
   duration: {
-    fontSize: 18,
+    fontSize: rf(18),
     fontWeight: '600',
     color: '#111827',
   },

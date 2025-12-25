@@ -119,18 +119,23 @@ Deno.serve(async (req)=>{
         } else {
             const prompt = `Convierte el siguiente guion en un documento HTML con formato profesional de screenplay cinematográfico. Mantén la estructura exacta sin inventar contenido nuevo.
     
-    Reglas:
-    • Fuente: Courier Prime o Courier New.
-    • Título: centrado, MAYÚSCULAS, negrita y subrayado.
-    • Encabezados de escena (INT./EXT.): mayúsculas, negrita, alineados a la izquierda.
-    • Acciones: texto normal, alineado a la izquierda.
-    • Nombres de personaje: centrados, MAYÚSCULAS, negrita.
-    • Diálogos: debajo del personaje, sangría de 40px.
-    • Acotaciones: entre paréntesis, cursiva.
-    • Mantén saltos de línea y espaciado.
+    Reglas de formato:
+    • Fuente: Courier Prime o Courier New, tamaño 12pt.
+    • Título: centrado, MAYÚSCULAS, negrita y subrayado, margin-bottom: 30px.
+    • Encabezados de escena (INT./EXT.): mayúsculas, negrita, alineados a la izquierda, margin-top: 25px, margin-bottom: 15px.
+    
+    ESPACIADO CRÍTICO (muy importante):
+    • Acciones/Descripciones: texto normal, alineado a la izquierda, margin-bottom: 20px.
+    • Nombres de personaje: centrados, MAYÚSCULAS, negrita, margin-top: 20px, margin-bottom: 0px.
+    • Acotaciones (entre paréntesis): centradas, cursiva, margin-top: 0px, margin-bottom: 0px.
+    • Diálogos: centrados, max-width 70%, margin: 0 auto, margin-bottom: 5px.
+    
+    • Después de cada bloque de diálogo (antes del siguiente personaje o acción): margin-bottom: 15px.
     • Usa <hr> para separar páginas si el PDF lo indicaba.
     
-    Entrega SOLO el HTML sin comentarios.
+    IMPORTANTE: El espaciado entre elementos es CRUCIAL para la legibilidad profesional. Cada bloque de personaje+diálogo debe estar visualmente separado del siguiente.
+    
+    Entrega SOLO el HTML sin comentarios ni markdown.
     
     GUION:
     ${text}`;
@@ -203,8 +208,20 @@ Deno.serve(async (req)=>{
         parsed = parseScreenplay(text);
     }
     
+    // Create admin client for inserting scenes and lines (bypasses RLS)
+    const supabaseAdmin = createClient(
+        supabaseUrl,
+        Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
+        {
+            auth: {
+                autoRefreshToken: false,
+                persistSession: false
+            }
+        }
+    );
+    
     // Delete existing scenes (cascade delete lines)
-    const { error: deleteError } = await supabase
+    const { error: deleteError } = await supabaseAdmin
         .from('scenes')
         .delete()
         .eq('script_id', scriptId);
@@ -225,7 +242,7 @@ Deno.serve(async (req)=>{
 
         console.log(`Inserting scene ${scene.scene_number} with content length: ${sceneContentText.length}`);
 
-        const { data: sceneData, error: sceneError } = await supabase
+        const { data: sceneData, error: sceneError } = await supabaseAdmin
             .from('scenes')
             .insert({
                 script_id: scriptId,
@@ -248,7 +265,7 @@ Deno.serve(async (req)=>{
                 prosody_hints: line.prosodyHints
             }));
 
-            const { error: linesError } = await supabase
+            const { error: linesError } = await supabaseAdmin
                 .from('lines')
                 .insert(linesToInsert);
 

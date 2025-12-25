@@ -1,24 +1,18 @@
 {
   "cli": {
-    "version": ">= 16.26.0",
-    "appVersionSource": "remote"
+    "version": ">= 16.26.0"
   },
   "build": {
-    "development": {
-      "developmentClient": true,
-      "distribution": "internal",
-      "env": {
-        "APP_ID_SUFFIX": ".dev"
-      }
-    },
     "preview": {
-      "distribution": "internal",
-      "env": {
-        "APP_ID_SUFFIX": ".preview"
+      "android": {
+        "buildType": "apk",
+        "gradleCommand": ":app:assembleRelease"
       }
     },
     "production": {
-      "autoIncrement": true
+      "android": {
+        "buildType": "apk"
+      }
     }
   },
   "submit": {

@@ -2,7 +2,7 @@ import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, ActivityIndicator, Alert, Platform, PanResponder, ScrollView } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, useLocalSearchParams, Stack } from 'expo-router';
-import { ArrowLeft, Save, Edit3, PenTool, Undo, Redo, Type, Trash2, Bold, Italic, Underline, Palette, ChevronDown, ChevronUp, AlignLeft, AlignCenter, AlignRight } from 'lucide-react-native';
+import { ArrowLeft, Save, Edit3, PenTool, Undo, Redo, Type, Trash2, Bold, Italic, Underline, Strikethrough, Palette, ChevronDown, ChevronUp, AlignLeft, AlignCenter, AlignRight, Menu, ALargeSmall, Pencil, Eraser } from 'lucide-react-native';
 import { WebView } from 'react-native-webview';
 import Svg, { Path, G, Image as SvgImage } from 'react-native-svg';
 import { captureRef } from 'react-native-view-shot';
@@ -10,6 +10,7 @@ import * as FileSystem from 'expo-file-system';
 import Slider from '@react-native-community/slider';
 import { useTheme } from '@/contexts/ThemeContext';
 import { supabase } from '@/utils/supabase';
+import { rf, rp } from '@/utils/responsive';
 
 // --- Constants ---
 const COLORS = [
@@ -50,14 +51,26 @@ export default function ScriptEditorScreen() {
     const [redoStack, setRedoStack] = useState<PathData[][]>([]);
     const [strokeColor, setStrokeColor] = useState('#FF0000');
     const [strokeWidth, setStrokeWidth] = useState(2);
+    const [isErasing, setIsErasing] = useState(false);
 
     // Rich Text State
     const [textColor, setTextColor] = useState('#000000');
     const [isBold, setIsBold] = useState(false);
     const [isItalic, setIsItalic] = useState(false);
     const [isUnderline, setIsUnderline] = useState(false);
+    const [isStrikethrough, setIsStrikethrough] = useState(false);
     const [textAlign, setTextAlign] = useState<'left' | 'center' | 'right'>('left');
-    const [fontSize, setFontSize] = useState('16px');
+    const [fontSize, setFontSize] = useState('6px');
+
+    // Dropdown Menu States
+    const [showFormatMenu, setShowFormatMenu] = useState(false);
+    const [showAlignMenu, setShowAlignMenu] = useState(false);
+    const [showSizeMenu, setShowSizeMenu] = useState(false);
+    const [showColorMenu, setShowColorMenu] = useState(false);
+
+    // Drawing Mode Dropdown States
+    const [showStrokeMenu, setShowStrokeMenu] = useState(false);
+    const [showDrawColorMenu, setShowDrawColorMenu] = useState(false);
 
     // Scroll State for Drawing Sync
     const [scrollY, setScrollY] = useState(0);
@@ -68,13 +81,13 @@ export default function ScriptEditorScreen() {
 
     // Refs
     const webViewRef = useRef<WebView>(null);
-    const drawingStateRef = useRef({ paths, history, redoStack, strokeColor, strokeWidth, scrollY });
+    const drawingStateRef = useRef({ paths, history, redoStack, strokeColor, strokeWidth, scrollY, isErasing });
     const currentPathPoints = useRef<Array<{ x: number; y: number }>>([]);
 
     // Update ref when state changes
     useEffect(() => {
-        drawingStateRef.current = { paths, history, redoStack, strokeColor, strokeWidth, scrollY };
-    }, [paths, history, redoStack, strokeColor, strokeWidth, scrollY]);
+        drawingStateRef.current = { paths, history, redoStack, strokeColor, strokeWidth, scrollY, isErasing };
+    }, [paths, history, redoStack, strokeColor, strokeWidth, scrollY, isErasing]);
 
     // PanResponder for Drawing
     const panResponderRef = useRef(
@@ -83,45 +96,83 @@ export default function ScriptEditorScreen() {
             onMoveShouldSetPanResponder: () => true,
             onPanResponderGrant: (evt) => {
                 const { locationX, locationY } = evt.nativeEvent;
-                const { strokeColor, strokeWidth, scrollY } = drawingStateRef.current;
+                const { strokeColor, strokeWidth, scrollY, paths, history, isErasing } = drawingStateRef.current;
 
                 // Use document coordinates (add scrollY)
-                const startPoint = { x: locationX, y: locationY + scrollY };
-                const newPath = {
-                    d: `M ${startPoint.x} ${startPoint.y}`,
-                    color: strokeColor,
-                    width: strokeWidth,
-                    points: [startPoint]
-                };
-                setCurrentPath(`M ${startPoint.x} ${startPoint.y}`);
-                currentPathPoints.current = [startPoint];
-            },
-            onPanResponderMove: (evt) => {
-                const { locationX, locationY } = evt.nativeEvent;
-                const { scrollY } = drawingStateRef.current;
+                const touchPoint = { x: locationX, y: locationY + scrollY };
 
-                // Use document coordinates (add scrollY)
-                const newPoint = { x: locationX, y: locationY + scrollY };
-                currentPathPoints.current.push(newPoint);
+                // If erasing, check if we touched a path
+                if (isErasing) {
+                    // Find path that contains this point
+                    const pathIndex = paths.findIndex(path => {
+                        // Simple hit detection: check if touch is near any point in the path
+                        const pathPoints = path.d.split(/[ML]/).filter(p => p.trim()).map(p => {
+                            const [x, y] = p.trim().split(' ').map(Number);
+                            return { x, y };
+                        });
 
-                const pathData = currentPathPoints.current
-                    .map((p, i) => (i === 0 ? `M ${p.x} ${p.y}` : `L ${p.x} ${p.y}`))
-                    .join(' ');
-                setCurrentPath(pathData);
-            },
-            onPanResponderRelease: () => {
-                setCurrentPath((prev) => {
-                    if (prev) {
-                        const { paths, history, strokeColor, strokeWidth } = drawingStateRef.current;
-                        const newPath: PathData = { d: prev, color: strokeColor, width: strokeWidth };
-                        const newPaths = [...paths, newPath];
+                        return pathPoints.some(p => {
+                            const distance = Math.sqrt(Math.pow(p.x - touchPoint.x, 2) + Math.pow(p.y - touchPoint.y, 2));
+                            return distance < (path.width + 10); // Hit tolerance
+                        });
+                    });
 
+                    if (pathIndex !== -1) {
+                        // Remove the touched path
+                        const newPaths = paths.filter((_, i) => i !== pathIndex);
                         setHistory([...history, paths]);
                         setRedoStack([]);
                         setPaths(newPaths);
                     }
-                    return '';
-                });
+                } else {
+                    // Normal drawing mode
+                    const startPoint = touchPoint;
+                    const newPath = {
+                        d: `M ${startPoint.x} ${startPoint.y}`,
+                        color: strokeColor,
+                        width: strokeWidth,
+                        points: [startPoint]
+                    };
+                    setCurrentPath(`M ${startPoint.x} ${startPoint.y}`);
+                    currentPathPoints.current = [startPoint];
+                }
+            },
+            onPanResponderMove: (evt) => {
+                const { isErasing } = drawingStateRef.current;
+
+                // Only draw if not erasing
+                if (!isErasing) {
+                    const { locationX, locationY } = evt.nativeEvent;
+                    const { scrollY } = drawingStateRef.current;
+
+                    // Use document coordinates (add scrollY)
+                    const newPoint = { x: locationX, y: locationY + scrollY };
+                    currentPathPoints.current.push(newPoint);
+
+                    const pathData = currentPathPoints.current
+                        .map((p, i) => (i === 0 ? `M ${p.x} ${p.y}` : `L ${p.x} ${p.y}`))
+                        .join(' ');
+                    setCurrentPath(pathData);
+                }
+            },
+            onPanResponderRelease: () => {
+                const { isErasing } = drawingStateRef.current;
+
+                // Only save path if not erasing
+                if (!isErasing) {
+                    setCurrentPath((prev) => {
+                        if (prev) {
+                            const { paths, history, strokeColor, strokeWidth } = drawingStateRef.current;
+                            const newPath: PathData = { d: prev, color: strokeColor, width: strokeWidth };
+                            const newPaths = [...paths, newPath];
+
+                            setHistory([...history, paths]);
+                            setRedoStack([]);
+                            setPaths(newPaths);
+                        }
+                        return '';
+                    });
+                }
             },
         })
     ).current;
@@ -143,22 +194,33 @@ export default function ScriptEditorScreen() {
 
             if (error) throw error;
 
-            // Priority: script_html > content > script_raw > parsed_text > reconstruct
+            // Priority:
+            // 1. script_html (contains full formatting with descriptions/action lines from OpenAI)
+            // 2. Reconstruct from scenes/lines (dialogues only, for backward compatibility)
+            // 3. Raw text fallback
+
             if (data.script_html) {
-                // Use the professionally formatted HTML from OpenAI
+                // Use the full HTML from OpenAI which includes descriptions, action lines, etc.
                 setInitialHtml(data.script_html);
                 htmlContentRef.current = data.script_html;
-            } else if (data.content) {
-                setInitialHtml(data.content);
-                htmlContentRef.current = data.content;
-            } else if (data.script_raw || data.parsed_text) {
-                // Fallback: Parse locally to apply custom formatting
-                const rawText = data.script_raw || data.parsed_text;
-                const formattedHtml = parseScriptLocally(rawText, data.title);
-                setInitialHtml(formattedHtml);
-                htmlContentRef.current = formattedHtml;
             } else {
-                await reconstructScriptFromData();
+                // Try to reconstruct from scenes/lines (dialogues only)
+                const reconstructed = await reconstructScriptFromData();
+
+                if (reconstructed) {
+                    setInitialHtml(reconstructed);
+                    htmlContentRef.current = reconstructed;
+                } else if (data.content) {
+                    setInitialHtml(data.content);
+                    htmlContentRef.current = data.content;
+                } else if (data.script_raw || data.parsed_text) {
+                    const rawText = data.script_raw || data.parsed_text;
+                    const formattedHtml = parseScriptLocally(rawText, data.title);
+                    setInitialHtml(formattedHtml);
+                    htmlContentRef.current = formattedHtml;
+                } else {
+                    setInitialHtml('<p>No se encontró contenido.</p>');
+                }
             }
 
             // Load drawing layer if exists
@@ -166,8 +228,18 @@ export default function ScriptEditorScreen() {
                 setDrawingLayerImage(data.script_draw_layer);
             }
 
+            // Load saved paths (annotations) if they exist
             if (data.annotations) {
-                setPaths(data.annotations as any[]);
+                try {
+                    // Parse JSON if it's a string, otherwise use as-is
+                    const parsedPaths = typeof data.annotations === 'string'
+                        ? JSON.parse(data.annotations)
+                        : data.annotations;
+                    setPaths(parsedPaths);
+                } catch (e) {
+                    console.error('Error parsing annotations:', e);
+                    setPaths([]);
+                }
             }
         } catch (error) {
             console.error('Error loading script:', error);
@@ -179,7 +251,7 @@ export default function ScriptEditorScreen() {
 
     function parseScriptLocally(text: string, title: string) {
         const rawLines = text.split(/\r?\n/);
-        let html = `<div style="text-align: center; font-family: 'Courier New', Courier, monospace; padding: 20px; max-width: 800px; margin: 0 auto;">`;
+        let html = `<div style="text-align: center; font-family: 'Courier New', Courier, monospace; padding: rp(20)px; max-width: 800px; margin: 0 auto;">`;
 
         // Title
         html += `<h1 style="font-weight: bold; text-transform: uppercase; text-decoration: underline; font-size: 22px; margin-bottom: 40px; color: #000000;">${title || 'GUION'}</h1>`;
@@ -289,9 +361,15 @@ export default function ScriptEditorScreen() {
         return html;
     }
 
-    async function reconstructScriptFromData() {
-        // Fallback if no parsed_text
+    async function reconstructScriptFromData(): Promise<string | null> {
+        // Reconstruct script with professional screenplay formatting
         try {
+            const { data: scriptData } = await supabase
+                .from('scripts')
+                .select('title')
+                .eq('id', id)
+                .single();
+
             const { data: scenes } = await supabase
                 .from('scenes')
                 .select('*, lines(*)')
@@ -303,42 +381,92 @@ export default function ScriptEditorScreen() {
                 .select('*')
                 .eq('script_id', id);
 
-            if (!scenes || !characters) {
-                setInitialHtml('<p>No se encontró contenido.</p>');
-                return;
+            if (!scenes || scenes.length === 0) {
+                return null; // No scenes, use fallback
             }
 
-            let html = `<div style="text-align: center; font-family: 'Courier New', Courier, monospace; padding: 20px;">`;
+            // Professional screenplay HTML format
+            let html = `
+            <div style="font-family: 'Courier New', Courier, monospace; padding: 20px; max-width: 800px; margin: 0 auto; line-height: 1.4;">
+                <!-- Title -->
+                <h1 style="text-align: center; font-weight: bold; text-transform: uppercase; text-decoration: underline; font-size: 18px; margin-bottom: 40px;">
+                    ${scriptData?.title || 'GUION'}
+                </h1>
+            `;
 
-            scenes.forEach(scene => {
-                html += `<p style="font-weight: bold; text-transform: uppercase; margin-top: 20px; margin-bottom: 10px;">${scene.type} ${scene.location} - ${scene.time}</p>`;
+            scenes.forEach((scene, sceneIndex) => {
+                // Scene Heading - LEFT aligned, bold, uppercase
+                const sceneHeading = `${scene.type || 'INT.'} ${scene.location || 'LOCATION'} - ${scene.time || 'DAY'}`;
+                html += `
+                <p style="text-align: left; font-weight: bold; text-transform: uppercase; margin-top: 30px; margin-bottom: 15px; font-size: 14px;">
+                    ${sceneIndex + 1}. ${sceneHeading}
+                </p>
+                `;
+
+                // Scene Description - LEFT aligned
                 if (scene.description) {
-                    html += `<p style="margin-bottom: 10px;">${scene.description}</p>`;
+                    html += `
+                    <p style="text-align: left; margin-bottom: 15px; font-size: 14px;">
+                        ${scene.description}
+                    </p>
+                    `;
                 }
 
-                const sortedLines = scene.lines?.sort((a: any, b: any) => a.order_index - b.order_index);
+                // Sort lines by order_index
+                const sortedLines = scene.lines?.sort((a: any, b: any) => a.order_index - b.order_index) || [];
 
-                sortedLines?.forEach((line: any) => {
-                    const char = characters.find(c => c.id === line.character_id);
-                    const charName = char ? char.name : 'UNKNOWN';
+                sortedLines.forEach((line: any) => {
+                    // Use character_name directly from the line, fallback to characters table
+                    let charName = line.character_name;
 
-                    html += `<p style="margin-top: 10px; margin-bottom: 0px; font-weight: bold; text-transform: uppercase;">${charName}</p>`;
-
-                    if (line.parenthetical) {
-                        html += `<p style="margin-bottom: 0px;">(${line.parenthetical})</p>`;
+                    if (!charName && line.character_id) {
+                        const char = characters?.find(c => c.id === line.character_id);
+                        charName = char?.name;
                     }
 
-                    html += `<p style="margin-bottom: 10px;">${line.content}</p>`;
+                    charName = charName?.toUpperCase() || 'PERSONAJE';
+
+                    // Check if line is action/description (no character assigned or specific type)
+                    if (line.type === 'action' || line.type === 'description' || !line.character_name) {
+                        // Action/Description - LEFT aligned
+                        html += `
+                        <p style="text-align: left; margin-top: 10px; margin-bottom: 15px; font-size: 14px;">
+                            ${line.content}
+                        </p>
+                        `;
+                    } else {
+                        // Character Name - CENTERED, bold, uppercase
+                        html += `
+                        <p style="text-align: center; font-weight: bold; text-transform: uppercase; margin-top: 20px; margin-bottom: 0px; font-size: 14px;">
+                            ${charName}
+                        </p>
+                        `;
+
+                        // Parenthetical - CENTERED, in parentheses
+                        if (line.parenthetical) {
+                            html += `
+                            <p style="text-align: center; margin-top: 0px; margin-bottom: 0px; font-size: 13px; font-style: italic;">
+                                (${line.parenthetical})
+                            </p>
+                            `;
+                        }
+
+                        // Dialogue - CENTERED, max-width for readability
+                        html += `
+                        <p style="text-align: center; margin-top: 0px; margin-bottom: 15px; font-size: 14px; max-width: 70%; margin-left: auto; margin-right: auto;">
+                            ${line.content}
+                        </p>
+                        `;
+                    }
                 });
             });
-            html += '</div>';
 
-            setInitialHtml(html);
-            htmlContentRef.current = html;
+            html += '</div>';
+            return html;
 
         } catch (error) {
             console.error('Error reconstructing script:', error);
-            setInitialHtml('<p>Error reconstruyendo el guion.</p>');
+            return null;
         }
     }
 
@@ -480,7 +608,7 @@ export default function ScriptEditorScreen() {
                     body { 
                         font-family: 'Courier New', Courier, monospace; 
                         font-size: 16px; 
-                        padding: 20px; 
+                        padding: rp(20)px; 
                         color: #000000; 
                         background-color: #FFFFFF;
                         text-align: center; /* Default center alignment */
@@ -528,11 +656,12 @@ export default function ScriptEditorScreen() {
 
             const base64 = `data:image/png;base64,${uri}`;
 
-            // Save to database
+            // Save to database - save both the image AND the paths data
             const { error: updateError } = await supabase
                 .from('scripts')
                 .update({
                     script_draw_layer: base64,
+                    annotations: JSON.stringify(paths), // Save paths for editing
                     updated_at: new Date().toISOString(),
                 })
                 .eq('id', id);
@@ -540,10 +669,10 @@ export default function ScriptEditorScreen() {
             if (updateError) throw updateError;
 
             setDrawingLayerImage(base64);
-            // Clear current paths as they are now baked into the image
-            setPaths([]);
-            setHistory([]);
-            setRedoStack([]);
+            // DON'T clear paths - keep them editable
+            // setPaths([]);
+            // setHistory([]);
+            // setRedoStack([]);
 
             Alert.alert('Guardado', 'Anotaciones guardadas correctamente.');
 
@@ -571,17 +700,7 @@ export default function ScriptEditorScreen() {
                 }}
             >
                 <Svg height="100%" width="100%">
-                    {/* Render existing image layer */}
-                    {drawingLayerImage && (
-                        <SvgImage
-                            href={drawingLayerImage}
-                            x="0"
-                            y="0"
-                            width="100%"
-                            height="100%"
-                            preserveAspectRatio="xMidYMin slice"
-                        />
-                    )}
+                    {/* Render current paths only (no old image layer needed) */}
                     {/* Render current paths (without scroll translation as this is full height) */}
                     {paths.map((p, i) => (
                         <Path
@@ -621,7 +740,7 @@ export default function ScriptEditorScreen() {
                         onPress={() => setMode(mode === 'draw' ? 'view' : 'draw')}
                         style={[styles.iconButton, mode === 'draw' ? styles.activeModeButton : null]}
                     >
-                        <PenTool size={24} color={mode === 'draw' ? colors.primary : "#000000"} />
+                        <Pencil size={24} color={mode === 'draw' ? colors.primary : "#000000"} />
                     </TouchableOpacity>
                 </View>
 
@@ -639,114 +758,279 @@ export default function ScriptEditorScreen() {
 
             {/* Secondary Toolbar (Format / Draw) */}
             {mode !== 'view' && (
-                <View style={styles.toolbar}>
-                    {mode === 'edit' && (
-                        <View style={styles.toolsContainer}>
-                            <View style={styles.formatGroup}>
-                                <TouchableOpacity
-                                    onPress={() => { setIsBold(!isBold); formatText('bold'); }}
-                                    style={[styles.formatButton, isBold && styles.activeFormatButton]}
-                                >
-                                    <Bold size={20} color={isBold ? colors.primary : "#000000"} strokeWidth={3} />
-                                </TouchableOpacity>
-                                <TouchableOpacity
-                                    onPress={() => { setIsItalic(!isItalic); formatText('italic'); }}
-                                    style={[styles.formatButton, isItalic && styles.activeFormatButton]}
-                                >
-                                    <Italic size={20} color={isItalic ? colors.primary : "#000000"} />
-                                </TouchableOpacity>
-                                <TouchableOpacity
-                                    onPress={() => { setIsUnderline(!isUnderline); formatText('underline'); }}
-                                    style={[styles.formatButton, isUnderline && styles.activeFormatButton]}
-                                >
-                                    <Underline size={20} color={isUnderline ? colors.primary : "#000000"} />
-                                </TouchableOpacity>
+                <>
+                    {/* Overlay to close menus when clicking outside */}
+                    {(showFormatMenu || showAlignMenu || showSizeMenu || showColorMenu || showStrokeMenu || showDrawColorMenu) && (
+                        <TouchableOpacity
+                            style={styles.menuOverlay}
+                            activeOpacity={1}
+                            onPress={() => {
+                                setShowFormatMenu(false);
+                                setShowAlignMenu(false);
+                                setShowSizeMenu(false);
+                                setShowColorMenu(false);
+                                setShowStrokeMenu(false);
+                                setShowDrawColorMenu(false);
+                            }}
+                        />
+                    )}
+                    <View style={styles.toolbar}>
+                        {mode === 'edit' && (
+                            <View style={styles.toolsContainer}>
+                                <View style={styles.minimalToolbar}>
+                                    {/* Format Button (Aa) - Text Styling */}
+                                    <View style={styles.dropdownWrapper}>
+                                        <TouchableOpacity
+                                            onPress={() => {
+                                                setShowFormatMenu(!showFormatMenu);
+                                                setShowAlignMenu(false);
+                                                setShowSizeMenu(false);
+                                                setShowColorMenu(false);
+                                            }}
+                                            style={[styles.toolbarButton, showFormatMenu && styles.toolbarButtonActive]}
+                                        >
+                                            <Text style={[styles.toolbarButtonText, showFormatMenu && { color: colors.primary }]}>Aa</Text>
+                                        </TouchableOpacity>
+                                        {showFormatMenu && (
+                                            <View style={[styles.dropdownMenu, { backgroundColor: '#FFFFFF', borderColor: '#E0E0E0' }]}>
+                                                <TouchableOpacity
+                                                    onPress={() => { setIsBold(!isBold); formatText('bold'); setShowFormatMenu(false); }}
+                                                    style={[styles.dropdownItem, isBold && styles.dropdownItemActive]}
+                                                >
+                                                    <Bold size={18} color={isBold ? colors.primary : '#000000'} strokeWidth={3} />
+                                                    <Text style={[styles.dropdownItemText, isBold && { color: colors.primary, fontWeight: 'bold' }]}>Negrita</Text>
+                                                </TouchableOpacity>
+                                                <TouchableOpacity
+                                                    onPress={() => { setIsItalic(!isItalic); formatText('italic'); setShowFormatMenu(false); }}
+                                                    style={[styles.dropdownItem, isItalic && styles.dropdownItemActive]}
+                                                >
+                                                    <Italic size={18} color={isItalic ? colors.primary : '#000000'} />
+                                                    <Text style={[styles.dropdownItemText, isItalic && { color: colors.primary, fontStyle: 'italic' }]}>Cursiva</Text>
+                                                </TouchableOpacity>
+                                                <TouchableOpacity
+                                                    onPress={() => { setIsUnderline(!isUnderline); formatText('underline'); setShowFormatMenu(false); }}
+                                                    style={[styles.dropdownItem, isUnderline && styles.dropdownItemActive]}
+                                                >
+                                                    <Underline size={18} color={isUnderline ? colors.primary : '#000000'} />
+                                                    <Text style={[styles.dropdownItemText, isUnderline && { color: colors.primary, textDecorationLine: 'underline' }]}>Subrayado</Text>
+                                                </TouchableOpacity>
+                                                <TouchableOpacity
+                                                    onPress={() => { setIsStrikethrough(!isStrikethrough); formatText('strikeThrough'); setShowFormatMenu(false); }}
+                                                    style={[styles.dropdownItem, isStrikethrough && styles.dropdownItemActive]}
+                                                >
+                                                    <Strikethrough size={18} color={isStrikethrough ? colors.primary : '#000000'} />
+                                                    <Text style={[styles.dropdownItemText, isStrikethrough && { color: colors.primary, textDecorationLine: 'line-through' }]}>Tachado</Text>
+                                                </TouchableOpacity>
+                                            </View>
+                                        )}
+                                    </View>
 
-                                <View style={styles.separatorVertical} />
+                                    {/* Alignment Button (≡) */}
+                                    <View style={styles.dropdownWrapper}>
+                                        <TouchableOpacity
+                                            onPress={() => {
+                                                setShowAlignMenu(!showAlignMenu);
+                                                setShowFormatMenu(false);
+                                                setShowSizeMenu(false);
+                                                setShowColorMenu(false);
+                                            }}
+                                            style={[styles.toolbarButton, showAlignMenu && styles.toolbarButtonActive]}
+                                        >
+                                            <Menu size={20} color={showAlignMenu ? colors.primary : '#000000'} />
+                                        </TouchableOpacity>
+                                        {showAlignMenu && (
+                                            <View style={[styles.dropdownMenu, { backgroundColor: '#FFFFFF', borderColor: '#E0E0E0' }]}>
+                                                <TouchableOpacity
+                                                    onPress={() => { setTextAlign('left'); formatText('justifyLeft'); setShowAlignMenu(false); }}
+                                                    style={[styles.dropdownItem, textAlign === 'left' && styles.dropdownItemActive]}
+                                                >
+                                                    <AlignLeft size={18} color={textAlign === 'left' ? colors.primary : '#000000'} />
+                                                    <Text style={[styles.dropdownItemText, textAlign === 'left' && { color: colors.primary }]}>Izquierda</Text>
+                                                </TouchableOpacity>
+                                                <TouchableOpacity
+                                                    onPress={() => { setTextAlign('center'); formatText('justifyCenter'); setShowAlignMenu(false); }}
+                                                    style={[styles.dropdownItem, textAlign === 'center' && styles.dropdownItemActive]}
+                                                >
+                                                    <AlignCenter size={18} color={textAlign === 'center' ? colors.primary : '#000000'} />
+                                                    <Text style={[styles.dropdownItemText, textAlign === 'center' && { color: colors.primary }]}>Centrado</Text>
+                                                </TouchableOpacity>
+                                                <TouchableOpacity
+                                                    onPress={() => { setTextAlign('right'); formatText('justifyRight'); setShowAlignMenu(false); }}
+                                                    style={[styles.dropdownItem, textAlign === 'right' && styles.dropdownItemActive]}
+                                                >
+                                                    <AlignRight size={18} color={textAlign === 'right' ? colors.primary : '#000000'} />
+                                                    <Text style={[styles.dropdownItemText, textAlign === 'right' && { color: colors.primary }]}>Derecha</Text>
+                                                </TouchableOpacity>
+                                            </View>
+                                        )}
+                                    </View>
 
-                                <TouchableOpacity
-                                    onPress={() => { setTextAlign('left'); formatText('justifyLeft'); }}
-                                    style={[styles.formatButton, textAlign === 'left' && styles.activeFormatButton]}
-                                >
-                                    <AlignLeft size={20} color={textAlign === 'left' ? colors.primary : "#000000"} />
-                                </TouchableOpacity>
-                                <TouchableOpacity
-                                    onPress={() => { setTextAlign('center'); formatText('justifyCenter'); }}
-                                    style={[styles.formatButton, textAlign === 'center' && styles.activeFormatButton]}
-                                >
-                                    <AlignCenter size={20} color={textAlign === 'center' ? colors.primary : "#000000"} />
-                                </TouchableOpacity>
-                                <TouchableOpacity
-                                    onPress={() => { setTextAlign('right'); formatText('justifyRight'); }}
-                                    style={[styles.formatButton, textAlign === 'right' && styles.activeFormatButton]}
-                                >
-                                    <AlignRight size={20} color={textAlign === 'right' ? colors.primary : "#000000"} />
-                                </TouchableOpacity>
+                                    {/* Font Size Button (Tt) */}
+                                    <View style={styles.dropdownWrapper}>
+                                        <TouchableOpacity
+                                            onPress={() => {
+                                                setShowSizeMenu(!showSizeMenu);
+                                                setShowFormatMenu(false);
+                                                setShowAlignMenu(false);
+                                                setShowColorMenu(false);
+                                            }}
+                                            style={[styles.toolbarButton, showSizeMenu && styles.toolbarButtonActive]}
+                                        >
+                                            <ALargeSmall size={20} color={showSizeMenu ? colors.primary : '#000000'} />
+                                        </TouchableOpacity>
+                                        {showSizeMenu && (
+                                            <View style={[styles.dropdownMenu, { backgroundColor: '#FFFFFF', borderColor: '#E0E0E0' }]}>
+                                                {['1px', '2px', '3px', '4px', '5px', '6px', '7px', '8px', '9px', '10px', '11px', '12px'].map((size) => (
+                                                    <TouchableOpacity
+                                                        key={size}
+                                                        onPress={() => { setFontSize(size); formatText('fontSize', size.replace('px', '')); setShowSizeMenu(false); }}
+                                                        style={[styles.dropdownItem, fontSize === size && styles.dropdownItemActive]}
+                                                    >
+                                                        <Text style={[styles.dropdownItemText, { fontSize: Math.max(10, parseInt(size)) }, fontSize === size && { color: colors.primary, fontWeight: 'bold' }]}>{size}</Text>
+                                                    </TouchableOpacity>
+                                                ))}
+                                            </View>
+                                        )}
+                                    </View>
 
-                                <View style={styles.separatorVertical} />
-
-                                {/* Font Size Picker */}
-                                <View style={styles.fontSizePicker}>
-                                    <Text style={styles.fontSizeLabel}>Tamaño:</Text>
-                                    <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ flexDirection: 'row' }}>
-                                        {['12px', '14px', '16px', '18px', '20px', '24px'].map((size) => (
-                                            <TouchableOpacity
-                                                key={size}
-                                                onPress={() => { setFontSize(size); formatText('fontSize', size.replace('px', '')); }}
-                                                style={[
-                                                    styles.fontSizeButton,
-                                                    fontSize === size && styles.activeFontSizeButton
-                                                ]}
-                                            >
-                                                <Text style={[
-                                                    styles.fontSizeButtonText,
-                                                    fontSize === size && { color: colors.primary, fontWeight: 'bold' }
-                                                ]}>{size}</Text>
-                                            </TouchableOpacity>
-                                        ))}
-                                    </ScrollView>
+                                    {/* Color Button */}
+                                    <View style={styles.dropdownWrapper}>
+                                        <TouchableOpacity
+                                            onPress={() => {
+                                                setShowColorMenu(!showColorMenu);
+                                                setShowFormatMenu(false);
+                                                setShowAlignMenu(false);
+                                                setShowSizeMenu(false);
+                                            }}
+                                            style={[styles.toolbarButton, showColorMenu && styles.toolbarButtonActive]}
+                                        >
+                                            <Palette size={20} color={showColorMenu ? colors.primary : '#000000'} />
+                                        </TouchableOpacity>
+                                        {showColorMenu && (
+                                            <View style={[styles.dropdownMenu, styles.colorDropdown, { backgroundColor: '#FFFFFF', borderColor: '#E0E0E0' }]}>
+                                                <View style={styles.colorGrid}>
+                                                    {COLORS.map((color) => (
+                                                        <TouchableOpacity
+                                                            key={color}
+                                                            onPress={() => { setTextColor(color); formatText('foreColor', color); setShowColorMenu(false); }}
+                                                            style={[
+                                                                styles.colorButton,
+                                                                { backgroundColor: color },
+                                                                textColor === color && styles.colorButtonActive
+                                                            ]}
+                                                        />
+                                                    ))}
+                                                </View>
+                                            </View>
+                                        )}
+                                    </View>
                                 </View>
                             </View>
-                            <View style={styles.separator} />
-                            {renderColorPalette(textColor, (color) => {
-                                setTextColor(color);
-                                formatText('foreColor', color);
-                            })}
-                        </View>
-                    )}
+                        )}
 
-                    {mode === 'draw' && (
-                        <View style={styles.toolsContainer}>
-                            <View style={styles.sliderContainer}>
-                                <Text style={styles.label}>Grosor: {strokeWidth}</Text>
-                                <Slider
-                                    style={{ width: 150, height: 40 }}
-                                    minimumValue={1}
-                                    maximumValue={10}
-                                    step={1}
-                                    value={strokeWidth}
-                                    onValueChange={setStrokeWidth}
-                                    minimumTrackTintColor={colors.primary}
-                                    maximumTrackTintColor="#000000"
-                                />
+                        {mode === 'draw' && (
+                            <View style={styles.toolsContainer}>
+                                <View style={styles.minimalToolbar}>
+                                    {/* Stroke Width Button (Pencil with lines) */}
+                                    <View style={styles.dropdownWrapper}>
+                                        <TouchableOpacity
+                                            onPress={() => {
+                                                setShowStrokeMenu(!showStrokeMenu);
+                                                setShowDrawColorMenu(false);
+                                            }}
+                                            style={[styles.toolbarButton, showStrokeMenu && styles.toolbarButtonActive]}
+                                        >
+                                            <Pencil size={20} color={showStrokeMenu ? colors.primary : '#000000'} />
+                                        </TouchableOpacity>
+                                        {showStrokeMenu && (
+                                            <View style={[styles.dropdownMenu, { backgroundColor: '#FFFFFF', borderColor: '#E0E0E0' }]}>
+                                                <TouchableOpacity
+                                                    onPress={() => { setStrokeWidth(2); setShowStrokeMenu(false); }}
+                                                    style={[styles.dropdownItem, strokeWidth === 2 && styles.dropdownItemActive]}
+                                                >
+                                                    <View style={{ width: 30, height: 2, backgroundColor: '#000000' }} />
+                                                    <Text style={[styles.dropdownItemText, strokeWidth === 2 && { color: colors.primary }]}>Fino</Text>
+                                                </TouchableOpacity>
+                                                <TouchableOpacity
+                                                    onPress={() => { setStrokeWidth(5); setShowStrokeMenu(false); }}
+                                                    style={[styles.dropdownItem, strokeWidth === 5 && styles.dropdownItemActive]}
+                                                >
+                                                    <View style={{ width: 30, height: 5, backgroundColor: '#000000', borderRadius: 2.5 }} />
+                                                    <Text style={[styles.dropdownItemText, strokeWidth === 5 && { color: colors.primary }]}>Medio</Text>
+                                                </TouchableOpacity>
+                                                <TouchableOpacity
+                                                    onPress={() => { setStrokeWidth(10); setShowStrokeMenu(false); }}
+                                                    style={[styles.dropdownItem, strokeWidth === 10 && styles.dropdownItemActive]}
+                                                >
+                                                    <View style={{ width: 30, height: 10, backgroundColor: '#000000', borderRadius: 5 }} />
+                                                    <Text style={[styles.dropdownItemText, strokeWidth === 10 && { color: colors.primary }]}>Grueso</Text>
+                                                </TouchableOpacity>
+                                            </View>
+                                        )}
+                                    </View>
+
+                                    {/* Color Button */}
+                                    <View style={styles.dropdownWrapper}>
+                                        <TouchableOpacity
+                                            onPress={() => {
+                                                setShowDrawColorMenu(!showDrawColorMenu);
+                                                setShowStrokeMenu(false);
+                                            }}
+                                            style={[styles.toolbarButton, showDrawColorMenu && styles.toolbarButtonActive]}
+                                        >
+                                            <Palette size={20} color={showDrawColorMenu ? colors.primary : '#000000'} />
+                                        </TouchableOpacity>
+                                        {showDrawColorMenu && (
+                                            <View style={[styles.dropdownMenu, styles.colorDropdown, { backgroundColor: '#FFFFFF', borderColor: '#E0E0E0' }]}>
+                                                <View style={styles.colorGrid}>
+                                                    {COLORS.map((color) => (
+                                                        <TouchableOpacity
+                                                            key={color}
+                                                            onPress={() => { setStrokeColor(color); setShowDrawColorMenu(false); }}
+                                                            style={[
+                                                                styles.colorButton,
+                                                                { backgroundColor: color },
+                                                                strokeColor === color && styles.colorButtonActive
+                                                            ]}
+                                                        />
+                                                    ))}
+                                                </View>
+                                            </View>
+                                        )}
+                                    </View>
+
+                                    {/* Eraser Button */}
+                                    <TouchableOpacity
+                                        onPress={() => {
+                                            setIsErasing(!isErasing);
+                                            setShowStrokeMenu(false);
+                                            setShowDrawColorMenu(false);
+                                        }}
+                                        style={[styles.toolbarButton, isErasing && styles.toolbarButtonActive]}
+                                    >
+                                        <Eraser size={20} color={isErasing ? colors.primary : '#000000'} />
+                                    </TouchableOpacity>
+
+                                    {/* Trash Button */}
+                                    <TouchableOpacity
+                                        onPress={handleClear}
+                                        style={[styles.toolbarButton, { backgroundColor: '#FFF0F0' }]}
+                                    >
+                                        <Trash2 size={20} color="#FF0000" />
+                                    </TouchableOpacity>
+
+                                    {/* Save Button */}
+                                    <TouchableOpacity
+                                        onPress={handleSaveAnnotations}
+                                        style={[styles.toolbarButton, { backgroundColor: '#10B981' }]}
+                                    >
+                                        <Save size={20} color="#FFFFFF" />
+                                    </TouchableOpacity>
+                                </View>
                             </View>
-                            <View style={styles.separator} />
-                            {renderColorPalette(strokeColor, setStrokeColor)}
-                            <TouchableOpacity onPress={handleClear} style={styles.clearButton}>
-                                <Trash2 size={20} color="#FF0000" />
-                            </TouchableOpacity>
-
-                            {/* Save Annotations Button */}
-                            <TouchableOpacity
-                                onPress={handleSaveAnnotations}
-                                style={[styles.saveButton, { backgroundColor: '#10B981', marginLeft: 'auto' }]}
-                            >
-                                <Save size={16} color="#FFFFFF" />
-                                <Text style={styles.saveText}>Guardar</Text>
-                            </TouchableOpacity>
-                        </View>
-                    )}
-                </View>
+                        )}
+                    </View>
+                </>
             )}
 
             {/* Content Area */}
@@ -816,8 +1100,8 @@ export default function ScriptEditorScreen() {
                         >
                             <Svg height="100%" width="100%">
                                 <G transform={`translate(0, -${scrollY})`}>
-                                    {/* Render saved PNG layer if exists */}
-                                    {drawingLayerImage && (
+                                    {/* Render saved PNG layer if exists (hide in draw mode to allow editing) */}
+                                    {drawingLayerImage && mode !== 'draw' && (
                                         <SvgImage
                                             href={drawingLayerImage}
                                             x="0"
@@ -867,13 +1151,13 @@ const styles = StyleSheet.create({
         flexDirection: 'row',
         alignItems: 'center',
         justifyContent: 'space-between',
-        paddingHorizontal: 16,
-        paddingVertical: 12,
+        paddingHorizontal: rp(16),
+        paddingVertical: rp(12),
         borderBottomWidth: 1,
         backgroundColor: '#FFFFFF',
     },
     backButton: {
-        padding: 4,
+        padding: rp(4),
     },
     headerControls: {
         flexDirection: 'row',
@@ -881,26 +1165,26 @@ const styles = StyleSheet.create({
         gap: 16,
     },
     iconButton: {
-        padding: 8,
+        padding: rp(8),
     },
     saveButton: {
         flexDirection: 'row',
         alignItems: 'center',
-        paddingHorizontal: 12,
-        paddingVertical: 8,
+        paddingHorizontal: rp(12),
+        paddingVertical: rp(8),
         borderRadius: 20,
         gap: 6,
     },
     saveText: {
         color: '#FFFFFF',
         fontWeight: '600',
-        fontSize: 14,
+        fontSize: rf(14),
     },
     secondaryToolbar: {
         flexDirection: 'row',
         alignItems: 'center',
-        paddingHorizontal: 16,
-        paddingVertical: 8,
+        paddingHorizontal: rp(16),
+        paddingVertical: rp(8),
         backgroundColor: '#F5F5F5',
         borderBottomWidth: 1,
         borderBottomColor: '#E0E0E0',
@@ -908,7 +1192,7 @@ const styles = StyleSheet.create({
     modeButton: {
         flexDirection: 'row',
         alignItems: 'center',
-        padding: 8,
+        padding: rp(8),
         borderRadius: 8,
         marginRight: 16,
         gap: 6,
@@ -917,16 +1201,16 @@ const styles = StyleSheet.create({
         backgroundColor: '#E8F0FE',
     },
     modeText: {
-        fontSize: 14,
+        fontSize: rf(14),
         fontWeight: '500',
         color: '#666666',
     },
     expandButton: {
         marginLeft: 'auto',
-        padding: 8,
+        padding: rp(8),
     },
     tertiaryToolbar: {
-        padding: 12,
+        padding: rp(12),
         backgroundColor: '#FFFFFF',
         borderBottomWidth: 1,
         borderBottomColor: '#E0E0E0',
@@ -937,7 +1221,7 @@ const styles = StyleSheet.create({
         borderBottomColor: '#E0E0E0',
     },
     toolsContainer: {
-        padding: 12,
+        padding: rp(12),
         gap: 12,
     },
     formatGroup: {
@@ -952,18 +1236,18 @@ const styles = StyleSheet.create({
         gap: 12,
     },
     label: {
-        fontSize: 14,
+        fontSize: rf(14),
         color: '#000000',
         fontWeight: '500',
     },
     clearButton: {
-        padding: 8,
+        padding: rp(8),
         backgroundColor: '#FFF0F0',
         borderRadius: 4,
         marginLeft: 'auto',
     },
     formatButton: {
-        padding: 8,
+        padding: rp(8),
         backgroundColor: '#F5F5F5',
         borderRadius: 4,
     },
@@ -985,7 +1269,7 @@ const styles = StyleSheet.create({
     },
     paletteContainer: {
         flexDirection: 'row',
-        paddingVertical: 4,
+        paddingVertical: rp(4),
     },
     colorSwatch: {
         width: 30,
@@ -1006,13 +1290,13 @@ const styles = StyleSheet.create({
         gap: 8,
     },
     fontSizeLabel: {
-        fontSize: 12,
+        fontSize: rf(12),
         color: '#666666',
         fontWeight: '500',
     },
     fontSizeButton: {
-        paddingHorizontal: 10,
-        paddingVertical: 6,
+        paddingHorizontal: rp(10),
+        paddingVertical: rp(6),
         backgroundColor: '#F5F5F5',
         borderRadius: 4,
         marginRight: 6,
@@ -1023,7 +1307,7 @@ const styles = StyleSheet.create({
         borderWidth: 1,
     },
     fontSizeButtonText: {
-        fontSize: 12,
+        fontSize: rf(12),
         color: '#000000',
     },
     content: {
@@ -1043,5 +1327,96 @@ const styles = StyleSheet.create({
         right: 0,
         bottom: 0,
         backgroundColor: 'transparent',
+    },
+    // New Minimalist Toolbar Styles
+    menuOverlay: {
+        position: 'absolute',
+        top: 0,
+        left: 0,
+        right: 0,
+        bottom: 0,
+        zIndex: 50,
+    },
+    minimalToolbar: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'center',
+        gap: 20,
+        paddingVertical: rp(4),
+    },
+    dropdownWrapper: {
+        position: 'relative',
+        zIndex: 100,
+    },
+    toolbarButton: {
+        width: 44,
+        height: 44,
+        borderRadius: 8,
+        backgroundColor: '#F5F5F5',
+        alignItems: 'center',
+        justifyContent: 'center',
+    },
+    toolbarButtonActive: {
+        backgroundColor: '#E8F0FE',
+        borderWidth: 1,
+        borderColor: '#007AFF',
+    },
+    toolbarButtonText: {
+        fontSize: rf(16),
+        fontWeight: '600',
+        color: '#000000',
+    },
+    dropdownMenu: {
+        position: 'absolute',
+        top: 50,
+        left: 0,
+        minWidth: 150,
+        borderRadius: 12,
+        borderWidth: 1,
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.15,
+        shadowRadius: 8,
+        elevation: 8,
+        paddingVertical: 8,
+        zIndex: 1000,
+    },
+    dropdownItem: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 12,
+        paddingVertical: rp(12),
+        paddingHorizontal: rp(16),
+    },
+    dropdownItemActive: {
+        backgroundColor: '#E8F0FE',
+    },
+    dropdownItemText: {
+        fontSize: rf(14),
+        color: '#000000',
+    },
+    colorDropdown: {
+        left: '50%',
+        marginLeft: -100,  // Half of width (200px / 2)
+        width: 200,
+        padding: 12,
+    },
+    colorGrid: {
+        flexDirection: 'row',
+        flexWrap: 'wrap',
+        gap: 10,
+        justifyContent: 'center',
+    },
+    colorButton: {
+        width: 32,
+        height: 32,
+        borderRadius: 16,
+        borderWidth: 1,
+        borderColor: '#E0E0E0',
+    },
+    colorButtonActive: {
+        borderWidth: 3,
+        borderColor: '#000000',
+        transform: [{ scale: 1.1 }],
     },
 });

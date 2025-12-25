@@ -5,6 +5,7 @@ import { MENU_ITEM_PADDING_H, MENU_ITEM_PADDING_V } from '@/utils/ui';
 import { Script } from '@/types/database';
 import { useTheme } from '@/contexts/ThemeContext';
 import { makeHeaderMenuStyles } from '@/components/HeaderMenu';
+import { rf, rp } from '@/utils/responsive';
 
 interface ScriptCardProps {
   script: Script;
@@ -37,17 +38,7 @@ export function ScriptCard({ script, onPress, onLongPress, selected = false, sho
       Animated.timing(menuScale, { toValue: showMenu ? 1 : 0.98, duration: 140, easing: Easing.out(Easing.cubic), useNativeDriver: true }),
     ]).start();
   }, [showMenu]);
-  const statusColor = script.status ? {
-    processing: '#F59E0B',
-    ready: '#10B981',
-    error: '#EF4444',
-  }[script.status] : '#6B7280';
-
-  const statusText = script.status ? {
-    processing: 'Configurar personajes',
-    ready: 'Listo',
-    error: 'Error',
-  }[script.status] : 'Desconocido';
+  // Status removed - simplified view
 
   return (
     <TouchableOpacity
@@ -88,12 +79,12 @@ export function ScriptCard({ script, onPress, onLongPress, selected = false, sho
             style={[
               styles.iconContainer,
               {
-                backgroundColor: '#7C3AED',
+                backgroundColor: colors.primary,
                 width: 52,
                 height: 52,
                 borderRadius: 10,
-                marginRight: 0,
-                marginBottom: 8,
+                marginRight: rp(0),
+                marginBottom: rp(8),
               },
             ]}
           >
@@ -104,10 +95,10 @@ export function ScriptCard({ script, onPress, onLongPress, selected = false, sho
               styles.title,
               {
                 color: colors.text,
-                fontSize: 14,
+                fontSize: rf(14),
                 lineHeight: 18,
                 letterSpacing: 0.2,
-                marginBottom: 4,
+                marginBottom: rp(4),
                 textAlign: 'center',
               },
             ]}
@@ -116,23 +107,15 @@ export function ScriptCard({ script, onPress, onLongPress, selected = false, sho
           >
             {script.title || '(Sin título)'}
           </Text>
-          <View style={{ alignItems: 'center', gap: 2 }}>
-            <Text
-              style={{ color: colors.textSecondary, fontSize: 11, lineHeight: 14 }}
-              numberOfLines={1}
-            >
-              {script.created_at ? new Date(script.created_at).toLocaleDateString('es-ES', {
-                day: 'numeric',
-                month: 'short',
-              }) : 'Fecha desconocida'}
-            </Text>
-            <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-              <View style={[styles.statusDot, { backgroundColor: statusColor, marginRight: 6 }]} />
-              <Text style={{ color: colors.textSecondary, fontSize: 11, lineHeight: 14 }} numberOfLines={1}>
-                {statusText}
-              </Text>
-            </View>
-          </View>
+          <Text
+            style={{ color: colors.textSecondary, fontSize: rf(11), lineHeight: 14 }}
+            numberOfLines={1}
+          >
+            {script.created_at ? new Date(script.created_at).toLocaleDateString('es-ES', {
+              day: 'numeric',
+              month: 'short',
+            }) : 'Fecha desconocida'}
+          </Text>
         </>
       ) : (
         <>
@@ -144,7 +127,7 @@ export function ScriptCard({ script, onPress, onLongPress, selected = false, sho
                 width: 48,
                 height: 48,
                 borderRadius: 24,
-                marginRight: 12,
+                marginRight: rp(12),
               },
             ]}
           >
@@ -161,22 +144,15 @@ export function ScriptCard({ script, onPress, onLongPress, selected = false, sho
             >
               {script.title || '(Sin título)'}
             </Text>
-            <View style={styles.footer}>
-              <View style={styles.status}>
-                <View style={[styles.statusDot, { backgroundColor: statusColor }]} />
-                <Text style={[styles.statusText, { color: colors.textSecondary }]} numberOfLines={1} ellipsizeMode="tail">
-                  {statusText}
-                </Text>
-              </View>
-              <View style={styles.date}>
-                <Clock size={14} color={colors.textSecondary} />
-                <Text style={[styles.dateText, { color: colors.textSecondary }]} numberOfLines={1} ellipsizeMode="tail">
-                  {script.created_at ? new Date(script.created_at).toLocaleDateString('es-ES', {
-                    day: 'numeric',
-                    month: 'short',
-                  }) : 'Fecha desconocida'}
-                </Text>
-              </View>
+            <View style={styles.date}>
+              <Clock size={14} color={colors.textSecondary} />
+              <Text style={[styles.dateText, { color: colors.textSecondary }]} numberOfLines={1} ellipsizeMode="tail">
+                {script.created_at ? new Date(script.created_at).toLocaleDateString('es-ES', {
+                  day: 'numeric',
+                  month: 'short',
+                  year: 'numeric',
+                }) : 'Fecha desconocida'}
+              </Text>
             </View>
           </View>
         </>
@@ -269,8 +245,8 @@ const styles = StyleSheet.create({
   card: {
     flexDirection: 'row',
     borderRadius: 12,
-    padding: 16,
-    marginBottom: 12,
+    padding: rp(16),
+    marginBottom: rp(12),
     position: 'relative',
     overflow: 'visible',
     shadowColor: '#000',
@@ -295,7 +271,7 @@ const styles = StyleSheet.create({
     borderRadius: 24,
     alignItems: 'center',
     justifyContent: 'center',
-    marginRight: 12,
+    marginRight: rp(12),
   },
   content: {
     flex: 1,
@@ -332,38 +308,20 @@ const styles = StyleSheet.create({
     paddingVertical: MENU_ITEM_PADDING_V,
   },
   menuText: {
-    fontSize: 15,
+    fontSize: rf(15),
   },
   title: {
-    fontSize: 16,
+    fontSize: rf(16),
     fontWeight: '600',
-    marginBottom: 8,
+    marginBottom: rp(8),
     flexShrink: 1,
-  },
-  footer: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  status: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  statusDot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-    marginRight: 6,
-  },
-  statusText: {
-    fontSize: 13,
   },
   date: {
     flexDirection: 'row',
     alignItems: 'center',
   },
   dateText: {
-    fontSize: 13,
-    marginLeft: 4,
+    fontSize: rf(13),
+    marginLeft: rp(4),
   },
 });

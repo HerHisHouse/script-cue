@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useCallback } from 'react'; // Force rebuild
-import { StyleSheet, View, Text, Pressable, FlatList, TouchableOpacity, Animated, Easing, Modal, TextInput, Alert, Share, useWindowDimensions } from 'react-native';
+import { StyleSheet, View, Text, Pressable, FlatList, TouchableOpacity, Animated, Easing, Modal, TextInput, Alert, Share, useWindowDimensions, Keyboard } from 'react-native';
 import { supabase } from '@/utils/supabase';
 import { ScriptCard } from '@/components/ScriptCard';
 import { SendToModal } from '@/components/SendToModal';
@@ -8,13 +8,14 @@ import { useTheme } from '@/contexts/ThemeContext';
 import { Script } from '@/types/database';
 import { Plus, EyeOff, RefreshCw, Upload, Camera, ChevronRight, Search, Grid3x3, List, Circle, MoreVertical, Trash2, CheckSquare, Square, MinusSquare } from 'lucide-react-native';
 import { ScreenHeader } from '@/components/ScreenHeader';
-import { useRouter } from 'expo-router';
+import { useRouter, useFocusEffect } from 'expo-router';
 import { MENU_ITEM_PADDING_V, HEADER_HORIZONTAL_PADDING, MENU_SECTION_PADDING_V } from '@/utils/ui';
 import { makeHeaderMenuStyles } from '@/components/HeaderMenu';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Platform } from 'react-native';
 import logger from '@/utils/logger';
 import { deleteScript } from '@/utils/scripts';
+import { rf, rp } from '@/utils/responsive';
 
 export default function IndexScreen() {
   const insets = useSafeAreaInsets();
@@ -242,10 +243,22 @@ export default function IndexScreen() {
     }
   }, [showAddMenu, menuOpacity, menuScale]);
 
+  // Cerrar menús cuando se navega fuera de la pantalla
+  useFocusEffect(
+    useCallback(() => {
+      return () => {
+        // Cleanup: cerrar todos los menús cuando se pierde el foco
+        setShowHeaderMenu(false);
+        setShowAddMenu(false);
+        setShowSearch(false);
+      };
+    }, [])
+  );
+
   return (
-    <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
+    <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]} edges={['top', 'left', 'right']}>
       {/* Overlay global: cerrar header/search/add; los menús de guion usan backdrop local */}
-      {(showHeaderMenu || showSearch || showAddMenu) && (
+      {(showHeaderMenu || showAddMenu) && (
         <Pressable
           accessibilityRole="button"
           accessibilityLabel="Cerrar menús"
@@ -260,10 +273,6 @@ export default function IndexScreen() {
             }).start(({ finished }) => {
               if (finished) setShowHeaderMenu(false);
             });
-            if (showSearch) {
-              setShowSearch(false);
-              setSearchText('');
-            }
             setShowAddMenu(false);
             // Por coherencia, cerrar menú de guion si estuviera marcado
             if (openScriptMenuId !== null) setOpenScriptMenuId(null);
@@ -289,7 +298,7 @@ export default function IndexScreen() {
               ) : (
                 <MinusSquare size={18} color={colors.textSecondary} />
               )}
-              <Text style={{ color: colors.textSecondary, fontSize: 14 }}>Seleccionar todo</Text>
+              <Text style={{ color: colors.textSecondary, fontSize: rf(14) }}>Seleccionar todo</Text>
             </Pressable>
           ) : null
         }
@@ -326,13 +335,10 @@ export default function IndexScreen() {
               accessibilityRole="button"
               accessibilityLabel="Añadir guion"
               accessibilityHint="Abre el menú para importar o escanear"
-              focusable
-              onFocus={() => setFabFocused(true)}
-              onBlur={() => setFabFocused(false)}
+              style={styles.addButton}
               onPress={() => setShowAddMenu((v) => !v)}
-              style={[styles.fab, fabFocused && styles.fabFocused]}
             >
-              <Plus size={22} color="#FFFFFF" />
+              <Plus size={20} color="#FFFFFF" />
             </Pressable>
           </>
         }
@@ -384,7 +390,7 @@ export default function IndexScreen() {
               });
             }}
           >
-            <Circle size={18} color={colors.text} />
+            <CheckSquare size={18} color={colors.text} />
             <Text style={[styles.menuText, { color: colors.text }]}>Selección múltiple</Text>
           </Pressable>
 
@@ -433,22 +439,30 @@ export default function IndexScreen() {
       )}
 
       {showSearch && (
-        <View style={[styles.searchContainer, { borderColor: colors.border }]}>
+        <View style={[styles.searchContainer, { borderColor: colors.border, backgroundColor: colors.surface }]}>
           <View style={styles.searchRow}>
             <Search size={18} color={colors.textSecondary} />
             <TextInput
+              autoFocus
               style={[styles.searchInput, { color: colors.text }]}
               value={searchText}
               onChangeText={setSearchText}
               placeholder="Buscar por título"
               placeholderTextColor={colors.textSecondary}
+              blurOnSubmit={true}
+              returnKeyType="search"
+              onSubmitEditing={() => Keyboard.dismiss()}
             />
           </View>
-          {!!searchText && (
-            <Pressable onPress={() => setSearchText('')} style={styles.headerMenuButton}>
-              <Text style={[styles.menuText, { color: colors.textSecondary }]}>Limpiar</Text>
-            </Pressable>
-          )}
+          <TouchableOpacity
+            onPress={() => {
+              setShowSearch(false);
+              setSearchText('');
+            }}
+            style={styles.closeSearchButton}
+          >
+            <Text style={{ color: colors.textSecondary, fontSize: rf(24), fontWeight: '300' }}>×</Text>
+          </TouchableOpacity>
         </View>
       )}
 
@@ -494,71 +508,101 @@ export default function IndexScreen() {
       ) : scripts.length === 0 ? (
         <View style={styles.centerContainer}>
           <EyeOff size={24} color={colors.textSecondary} />
-          <Text style={[styles.emptyText, { color: colors.textSecondary }]}>No se encontraron guiones.</Text>
-        </View>
-      ) : (
-        <FlatList
-          style={{ flex: 1 }}
-          contentContainerStyle={viewMode === 'grid' ? { paddingVertical: 20 } : styles.list}
-          columnWrapperStyle={viewMode === 'grid' && gridColumns > 1 ? { paddingHorizontal: gridPadding, justifyContent: 'space-between', marginBottom: gridGap } : undefined}
-          data={searchText ? scripts.filter((s) => (s.title || '').toLowerCase().includes(searchText.toLowerCase())) : scripts}
-          keyExtractor={(item) => item.id}
-          numColumns={viewMode === 'grid' ? gridColumns : 1}
-          key={viewMode === 'grid' ? `grid-${gridColumns}` : 'list'}
-          renderItem={({ item }) => (
-            <View style={{ width: viewMode === 'grid' ? cardWidth : '100%' }}>
-              <ScriptCard
-                variant={viewMode === 'grid' ? 'grid' : 'list'}
-                script={item}
-                selected={selectedScriptIds.has(item.id)}
-                showSelectionCheckbox={scriptSelectionMode}
-                onToggleSelect={() => toggleScriptSelection(item.id)}
-                onPress={() => {
-                  if (scriptSelectionMode) {
-                    toggleScriptSelection(item.id);
-                  } else {
-                    router.push(`/scripts/${item.id}`);
-                  }
-                }}
-                onLongPress={() => {
-                  if (!scriptSelectionMode) setScriptSelectionMode(true);
-                  toggleScriptSelection(item.id);
-                }}
-                showMenuButton={!scriptSelectionMode}
-                onSendTo={() => openSendModal(item.id)}
-                onRename={() => {
-                  setRenameScriptId(item.id);
-                  setRenameScriptTitle(item.title || '');
-                  setRenameModalVisible(true);
-                }}
-                onShare={() => {
-                  Share.share({ message: `Guion: ${item.title || '(Sin título)'}\nID: ${item.id}` });
-                }}
-                onDelete={() => {
-                  Alert.alert('Eliminar guion', '¿Seguro que quieres eliminar este guion? Esta acción no se puede deshacer.', [
-                    { text: 'Cancelar', style: 'cancel' },
-                    { text: 'Eliminar', style: 'destructive', onPress: async () => { try { await deleteScript(item.id); await loadScripts(); } catch (e: any) { Alert.alert('Error', e?.message || 'No se pudo eliminar'); } } },
-                  ]);
-                }}
-                onMenuOpenChange={(open) => setOpenScriptMenuId(open ? item.id : (openScriptMenuId === item.id ? null : openScriptMenuId))}
-              />
-            </View>
+          <Text style={[styles.emptyText, { color: colors.textSecondary }]}>
+            {searchText ? 'No se encontraron guiones' : 'No se encontraron guiones.'}
+          </Text>
+          {searchText && (
+            <Text style={[styles.emptyText, { color: colors.textSecondary }]}>
+              Intenta con otro término de búsqueda
+            </Text>
           )}
-        />
-      )}
+        </View>
+      ) : (() => {
+        const filteredScripts = searchText ? scripts.filter((s) => (s.title || '').toLowerCase().includes(searchText.toLowerCase())) : scripts;
+        return filteredScripts.length === 0 ? (
+          <View style={styles.centerContainer}>
+            <EyeOff size={24} color={colors.textSecondary} />
+            <Text style={[styles.emptyText, { color: colors.textSecondary }]}>No se encontraron guiones</Text>
+            <Text style={[styles.emptyText, { color: colors.textSecondary }]}>Intenta con otro término de búsqueda</Text>
+          </View>
+        ) : (
+          <FlatList
+            style={{ flex: 1 }}
+            contentContainerStyle={viewMode === 'grid' ? { paddingVertical: 20, paddingBottom: 100 + bottomInset } : { ...styles.list, paddingBottom: 100 + bottomInset }}
+            columnWrapperStyle={viewMode === 'grid' && gridColumns > 1 ? { paddingHorizontal: gridPadding, justifyContent: 'space-between', marginBottom: gridGap } : undefined}
+            data={filteredScripts}
+            keyExtractor={(item) => item.id}
+            numColumns={viewMode === 'grid' ? gridColumns : 1}
+            key={viewMode === 'grid' ? `grid-${gridColumns}` : 'list'}
+            renderItem={({ item }) => (
+              <View style={{ width: viewMode === 'grid' ? cardWidth : '100%' }}>
+                <ScriptCard
+                  variant={viewMode === 'grid' ? 'grid' : 'list'}
+                  script={item}
+                  selected={selectedScriptIds.has(item.id)}
+                  showSelectionCheckbox={scriptSelectionMode}
+                  onToggleSelect={() => toggleScriptSelection(item.id)}
+                  onPress={() => {
+                    if (scriptSelectionMode) {
+                      toggleScriptSelection(item.id);
+                    } else {
+                      router.push(`/scripts/${item.id}`);
+                    }
+                  }}
+                  onLongPress={() => {
+                    if (!scriptSelectionMode) setScriptSelectionMode(true);
+                    toggleScriptSelection(item.id);
+                  }}
+                  showMenuButton={!scriptSelectionMode}
+                  onSendTo={() => openSendModal(item.id)}
+                  onRename={() => {
+                    setRenameScriptId(item.id);
+                    setRenameScriptTitle(item.title || '');
+                    setRenameModalVisible(true);
+                  }}
+                  onShare={() => {
+                    Share.share({ message: `Guion: ${item.title || '(Sin título)'}\nID: ${item.id}` });
+                  }}
+                  onDelete={() => {
+                    Alert.alert('Eliminar guion', '¿Seguro que quieres eliminar este guion? Esta acción no se puede deshacer.', [
+                      { text: 'Cancelar', style: 'cancel' },
+                      { text: 'Eliminar', style: 'destructive', onPress: async () => { try { await deleteScript(item.id); await loadScripts(); } catch (e: any) { Alert.alert('Error', e?.message || 'No se pudo eliminar'); } } },
+                    ]);
+                  }}
+                  onMenuOpenChange={(open) => setOpenScriptMenuId(open ? item.id : (openScriptMenuId === item.id ? null : openScriptMenuId))}
+                />
+              </View>
+            )}
+          />
+        );
+      })()}
 
       {scriptSelectionMode && selectedScriptIds.size > 0 && (
-        <View style={[styles.selectionBar, { backgroundColor: colors.primary }]}>
-          <Text style={styles.selectionText}>{selectedScriptIds.size} seleccionados</Text>
+        <View style={[styles.selectionBar, { backgroundColor: colors.surface, borderTopWidth: 1, borderTopColor: colors.border }]}>
+          <View style={styles.selectionHeader}>
+            <Text style={[styles.selectionCount, { color: colors.text }]}>
+              {selectedScriptIds.size} {selectedScriptIds.size === 1 ? 'seleccionado' : 'seleccionados'}
+            </Text>
+          </View>
           <View style={styles.selectionActions}>
-            <TouchableOpacity style={styles.selectionButton} onPress={() => setBulkDeleteModalVisible(true)}>
-              <Text style={{ color: '#FFFFFF', fontWeight: '600' }}>Eliminar</Text>
+            <TouchableOpacity
+              style={[styles.selectionActionButton, { backgroundColor: colors.error }]}
+              onPress={() => setBulkDeleteModalVisible(true)}
+            >
+              <Trash2 size={18} color="#FFFFFF" />
+              <Text style={styles.selectionActionText}>Eliminar</Text>
             </TouchableOpacity>
-            <TouchableOpacity style={styles.selectionButton} onPress={openSendModalBulk}>
-              <Text style={{ color: '#FFFFFF', fontWeight: '600' }}>Enviar a</Text>
+            <TouchableOpacity
+              style={[styles.selectionActionButton, { backgroundColor: colors.primary }]}
+              onPress={openSendModalBulk}
+            >
+              <Text style={styles.selectionActionText}>Enviar a...</Text>
             </TouchableOpacity>
-            <TouchableOpacity style={styles.selectionButton} onPress={() => { setScriptSelectionMode(false); setSelectedScriptIds(new Set()); }}>
-              <Text style={{ color: '#FFFFFF' }}>Cancelar</Text>
+            <TouchableOpacity
+              style={[styles.selectionActionButton, { backgroundColor: colors.input, borderWidth: 1, borderColor: colors.border }]}
+              onPress={() => { setScriptSelectionMode(false); setSelectedScriptIds(new Set()); }}
+            >
+              <Text style={[styles.selectionActionText, { color: colors.text }]}>Cancelar</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -625,37 +669,12 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
   },
-  backdrop: {
-    ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(0,0,0,0.3)',
-    zIndex: 10,
-  },
-  headerIconButton: {
-    padding: 8,
-    borderRadius: 8,
-  },
-  fab: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    backgroundColor: '#007AFF',
-    justifyContent: 'center',
-    alignItems: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.25,
-    shadowRadius: 3.84,
-    elevation: 5,
-  },
-  fabFocused: {
-    transform: [{ scale: 1.1 }],
-  },
   searchContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    padding: 12,
+    padding: rp(12),
     borderBottomWidth: 1,
-    gap: 12,
+    gap: rp(12),
   },
   searchRow: {
     flex: 1,
@@ -665,41 +684,78 @@ const styles = StyleSheet.create({
   },
   searchInput: {
     flex: 1,
-    fontSize: 16,
+    fontSize: rf(16),
     padding: 0,
   },
   headerMenuButton: {
-    padding: 4,
+    padding: rp(4),
   },
   menuText: {
-    fontSize: 16,
+    fontSize: rf(16),
+  },
+  backdrop: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(0,0,0,0.3)',
+    zIndex: 10,
+  },
+  headerIconButton: {
+    padding: rp(8),
+    borderRadius: 8,
+  },
+  addButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: '#683a79',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginLeft: 8,
+  },
+  fab: {
+    position: 'absolute',
+    bottom: rp(100),
+    right: rp(20),
+    width: rp(56),
+    height: rp(56),
+    borderRadius: rp(28),
+    backgroundColor: '#683a79',
+    justifyContent: 'center',
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 8,
+  },
+  fabFocused: {
+    transform: [{ scale: 1.1 }],
   },
   addMenu: {
     position: 'absolute',
-    right: 16,
+    right: rp(16),
     borderRadius: 12,
     borderWidth: 1,
-    padding: 8,
+    padding: rp(8),
     elevation: 5,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.25,
     shadowRadius: 3.84,
-    zIndex: 20,
+    zIndex: 1000,
     minWidth: 200,
   },
   addOptionsRow: {
     flexDirection: 'column',
   },
   addOption: {
-    flexDirection: 'row',
+    flexDirection: 'column',
     alignItems: 'center',
-    padding: 12,
-    gap: 12,
+    padding: rp(12),
+    gap: rp(12),
     borderBottomWidth: 1,
   },
   addOptionText: {
-    fontSize: 16,
+    fontSize: rf(16),
     fontWeight: '500',
   },
   centerContainer: {
@@ -709,60 +765,95 @@ const styles = StyleSheet.create({
     gap: 12,
   },
   emptyText: {
-    fontSize: 16,
+    fontSize: rf(16),
   },
   list: {
-    padding: 16,
-    paddingBottom: 100,
+    padding: rp(16),
   },
   selectionBar: {
     position: 'absolute',
     bottom: 0,
     left: 0,
     right: 0,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    padding: 16,
-    paddingBottom: Platform.OS === 'ios' ? 32 : 16,
+    flexDirection: 'column',
+    padding: rp(16),
+    paddingBottom: Platform.OS === 'ios' ? rp(32) : rp(16),
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: -2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    elevation: 8,
   },
   selectionText: {
     color: '#FFFFFF',
-    fontSize: 16,
+    fontSize: rf(16),
     fontWeight: '600',
   },
   selectionActions: {
-    flexDirection: 'row',
-    gap: 16,
+    flexDirection: 'column',
+    gap: rp(16),
   },
   selectionButton: {
-    padding: 8,
+    padding: rp(8),
   },
   modalOverlay: {
     flex: 1,
     backgroundColor: 'rgba(0,0,0,0.5)',
     justifyContent: 'center',
-    padding: 20,
+    padding: rp(20),
   },
   modalContent: {
     borderRadius: 12,
-    padding: 20,
-    gap: 16,
+    padding: rp(20),
+    gap: rp(16),
   },
   modalTitle: {
-    fontSize: 18,
+    fontSize: rf(18),
     fontWeight: '600',
   },
   modalButton: {
     flex: 1,
-    padding: 12,
+    padding: rp(12),
     borderRadius: 8,
     alignItems: 'center',
     justifyContent: 'center',
   },
   modalButtonText: {
-    fontSize: 16,
+    fontSize: rf(16),
     fontWeight: '600',
+  },
+  selectionHeader: {
+    marginBottom: rp(12),
+  },
+  selectionCount: {
+    fontSize: rf(16),
+    fontWeight: '700',
+    letterSpacing: 0.5,
+  },
+  selectionActionButton: {
+    flex: 1,
+    flexDirection: 'column',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: rp(8),
+    paddingVertical: rp(14),
+    paddingHorizontal: rp(16),
+    borderRadius: 12,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  selectionActionText: {
+    color: '#FFFFFF',
+    fontSize: rf(15),
+    fontWeight: '600',
+  },
+  closeSearchButton: {
+    padding: rp(8),
+    alignItems: 'center',
+    justifyContent: 'center',
   },
 });
 

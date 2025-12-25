@@ -10,6 +10,7 @@ import {
   Dimensions,
   Image,
   FlatList,
+  Modal,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, useLocalSearchParams, Stack } from 'expo-router';
@@ -27,13 +28,23 @@ import {
   ChevronRight,
   TrendingUp,
   Dumbbell,
-  RefreshCw
+  RefreshCw,
+  Info,
+  AlertCircle,
+  Square,
+  CheckSquare
 } from 'lucide-react-native';
 import { Audio, Video, ResizeMode } from 'expo-av';
 import { supabase } from '@/utils/supabase';
 import { useTheme } from '@/contexts/ThemeContext';
 import { useAuth } from '@/contexts/AuthContext';
-import { Recording, CoachFeedback } from '@/types/database';
+import type { Recording } from '@/types/database';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { getIntroPreferences, setIntroPreference } from '@/utils/introPreferences';
+import { setAudioModeForPlayback } from '@/utils/audioMode';
+import { rf, rp } from '@/utils/responsive';
+
+const COACH_DISCLAIMER_KEY = '@coach_disclaimer_shown';
 
 const SCREEN_WIDTH = Dimensions.get('window').width;
 
@@ -54,19 +65,44 @@ export default function CoachModeScreen() {
   const [activeTab, setActiveTab] = useState<TabType>('feedback');
   const [playbackStatus, setPlaybackStatus] = useState<any>(null);
   const [sound, setSound] = useState<Audio.Sound | null>(null);
+  const [showDisclaimer, setShowDisclaimer] = useState(false);
+  const [dontShowAgain, setDontShowAgain] = useState(false);
 
   const videoRef = useRef<Video>(null);
+
+  // Check if disclaimer should be shown
+  useEffect(() => {
+    checkDisclaimer();
+  }, []);
+
+  async function checkDisclaimer() {
+    try {
+      const value = await AsyncStorage.getItem(COACH_DISCLAIMER_KEY);
+      if (value !== 'true') {
+        setShowDisclaimer(true);
+      }
+    } catch (e) {
+      console.error('Error checking disclaimer:', e);
+      setShowDisclaimer(true); // Show by default if error
+    }
+  }
+
+  async function handleDisclaimerAccept() {
+    if (dontShowAgain) {
+      try {
+        await AsyncStorage.setItem(COACH_DISCLAIMER_KEY, 'true');
+      } catch (e) {
+        console.error('Error saving disclaimer preference:', e);
+      }
+    }
+    setShowDisclaimer(false);
+  }
 
   useEffect(() => {
     loadRecordings();
 
-    // Enable playback mode
-    Audio.setAudioModeAsync({
-      allowsRecordingIOS: false,
-      playsInSilentModeIOS: true,
-      staysActiveInBackground: false,
-      shouldDuckAndroid: true,
-    }).catch(console.error);
+    // Enable playback mode - FORCE SPEAKER OUTPUT
+    setAudioModeForPlayback();
 
     return () => {
       if (sound) sound.unloadAsync();
@@ -153,31 +189,43 @@ export default function CoachModeScreen() {
 
       console.log('Requesting analysis from:', renderUrl);
       console.log('Recording path:', selectedRecording.audio_url);
+      console.log('Recording ID:', selectedRecording.id);
+      console.log('User ID:', user.id);
 
       // Create abort controller for timeout
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 300000); // 5 minutes
+
+      console.log('[DEBUG] About to send fetch request...');
+      const requestBody = {
+        recordingPath: selectedRecording.audio_url,
+        recordingId: selectedRecording.id,
+        userId: user.id,
+        scriptId: id,
+        recordingType: selectedRecording.type || 'audio'
+      };
+      console.log('[DEBUG] Request body:', JSON.stringify(requestBody, null, 2));
 
       const response = await fetch(`${renderUrl}/analyze-recording`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json'
         },
-        body: JSON.stringify({
-          recordingPath: selectedRecording.audio_url, // Path in bucket
-          recordingId: selectedRecording.id,
-          userId: user.id,
-          scriptId: id,
-          recordingType: selectedRecording.type || 'audio'
-        }),
+        body: JSON.stringify(requestBody),
         signal: controller.signal
       });
 
       clearTimeout(timeoutId);
 
+      console.log('[DEBUG] Response received!');
+      console.log('[DEBUG] Response status:', response.status);
+      console.log('[DEBUG] Response ok:', response.ok);
+      console.log('[DEBUG] Response headers:', JSON.stringify([...response.headers.entries()]));
+
       if (!response.ok) {
         const status = response.status;
         const errorText = await response.text();
+        console.error('[DEBUG] Error response body:', errorText);
 
         if (status === 404) {
           throw new Error('El endpoint de análisis no existe en el servidor. Por favor, haz push de los cambios de server/index.js a Render.');
@@ -186,14 +234,28 @@ export default function CoachModeScreen() {
         throw new Error(`Error ${status}: ${errorText}`);
       }
 
-      const result = await response.json();
+      const responseText = await response.text();
+      console.log('[DEBUG] Response text:', responseText);
+
+      let result;
+      try {
+        result = JSON.parse(responseText);
+      } catch (e) {
+        console.error('[DEBUG] Failed to parse response as JSON:', e);
+        throw new Error('Respuesta inválida del servidor (no es JSON)');
+      }
+
+      console.log('[DEBUG] Parsed result:', JSON.stringify(result, null, 2));
+
       if (result.success && result.analysis) {
+        console.log('[DEBUG] Analysis received successfully!');
         setAnalysis(result.analysis);
 
         // Save to local Supabase just in case server didn't (though server code does it)
         // But server returns the savedId, so we assume it worked.
         // We can just refresh or trust the state.
       } else {
+        console.error('[DEBUG] Result does not have success=true or analysis field');
         throw new Error('Respuesta inválida del coach');
       }
 
@@ -292,7 +354,7 @@ export default function CoachModeScreen() {
       </View>
       <View style={{ flex: 1 }}>
         <Text style={[styles.recordingTitle, { color: colors.text }]}>
-          {new Date(item.created_at).toLocaleDateString()} - {new Date(item.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+          {item.title || `${new Date(item.created_at).toLocaleDateString()} - ${new Date(item.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`}
         </Text>
         <Text style={[styles.recordingSubtitle, { color: colors.textSecondary }]}>
           {item.duration_seconds ? `${Math.round(item.duration_seconds)}s` : 'Analizar duración'}
@@ -387,7 +449,12 @@ export default function CoachModeScreen() {
             <ArrowLeft size={24} color={colors.text} />
           </TouchableOpacity>
           <Text style={[styles.headerTitle, { color: colors.text }]}>Modo Coach</Text>
-          <View style={{ width: 40 }} />
+          <TouchableOpacity
+            onPress={() => Alert.alert('Modo Coach', 'Recibe feedback profesional de IA sobre tu interpretación: ritmo, dicción, emoción y sugerencias personalizadas para mejorar.')}
+            style={styles.backButton}
+          >
+            <Info size={24} color={colors.text} />
+          </TouchableOpacity>
         </View>
 
         <View style={styles.content}>
@@ -399,17 +466,66 @@ export default function CoachModeScreen() {
             data={recordings}
             renderItem={renderRecordingItem}
             keyExtractor={(item) => item.id}
-            contentContainerStyle={{ padding: 20 }}
+            contentContainerStyle={{ padding: rp(20) }}
             ListEmptyComponent={
               <View style={styles.emptyState}>
                 <Mic size={48} color={colors.textSecondary} style={{ opacity: 0.5 }} />
                 <Text style={[styles.emptyText, { color: colors.textSecondary }]}>
-                  No hay grabaciones disponibles. Ve a "Modo Casting" para grabar una escena.
+                  No hay grabaciones disponibles. Ve al "Modo Estudio" o "Modo Casting" para grabar una escena.
                 </Text>
               </View>
             }
           />
         </View>
+
+        {/* DISCLAIMER MODAL */}
+        <Modal
+          visible={showDisclaimer}
+          transparent
+          animationType="fade"
+          onRequestClose={() => { }}
+        >
+          <View style={styles.modalOverlay}>
+            <View style={[styles.modalContent, { backgroundColor: colors.surface }]}>
+              <View style={styles.modalHeader}>
+                <AlertCircle size={48} color={colors.primary} />
+                <Text style={[styles.modalTitle, { color: colors.text }]}>Aviso Importante</Text>
+              </View>
+
+              <Text style={[styles.modalText, { color: colors.text }]}>
+                El Modo Coach es una herramienta de apoyo orientada al entrenamiento personal.
+              </Text>
+              <Text style={[styles.modalText, { color: colors.text, marginTop: 12 }]}>
+                <Text style={{ fontWeight: '700' }}>No sustituye</Text> la formación ni el criterio de un coach profesional.
+              </Text>
+              <Text style={[styles.modalText, { color: colors.text, marginTop: 12 }]}>
+                Su finalidad es ofrecer estímulos, retos y sugerencias para ayudarte a explorar y mejorar tu interpretación.
+              </Text>
+
+              <TouchableOpacity
+                style={styles.checkboxRow}
+                onPress={() => setDontShowAgain(!dontShowAgain)}
+                activeOpacity={0.7}
+              >
+                {dontShowAgain ? (
+                  <CheckSquare size={24} color={colors.primary} />
+                ) : (
+                  <Square size={24} color={colors.textSecondary} />
+                )}
+                <Text style={[styles.checkboxText, { color: colors.text }]}>
+                  No volver a mostrar este mensaje
+                </Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[styles.modalButton, { backgroundColor: colors.primary }]}
+                onPress={handleDisclaimerAccept}
+              >
+                <Text style={styles.modalButtonText}>Entendido</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </Modal>
       </SafeAreaView>
     );
   }
@@ -423,8 +539,11 @@ export default function CoachModeScreen() {
           <ArrowLeft size={24} color={colors.text} />
         </TouchableOpacity>
         <Text style={[styles.headerTitle, { color: colors.text }]}>Análisis</Text>
-        <TouchableOpacity onPress={() => setSelectedRecording(null)}>
-          <Text style={{ color: colors.primary, fontSize: 16 }}>Cambiar</Text>
+        <TouchableOpacity
+          onPress={() => Alert.alert('Modo Coach', 'Recibe feedback profesional de IA sobre tu interpretación: ritmo, dicción, emoción y sugerencias personalizadas para mejorar.')}
+          style={styles.backButton}
+        >
+          <Info size={24} color={colors.text} />
         </TouchableOpacity>
       </View>
 
@@ -446,11 +565,11 @@ export default function CoachModeScreen() {
               <ActivityIndicator size="large" color={colors.primary} />
             )
           ) : (
-            <View style={[styles.audioPlayer, { backgroundColor: colors.surface }]}>
-              <TouchableOpacity onPress={togglePlayback} style={styles.playButton}>
-                {playbackStatus?.isPlaying ? <Pause size={32} color="#fff" /> : <Play size={32} color="#fff" />}
+            <View style={styles.audioPlayer}>
+              <TouchableOpacity onPress={togglePlayback} style={[styles.playButton, { backgroundColor: colors.primary }]}>
+                {playbackStatus?.isPlaying ? <Pause size={40} color="#FFFFFF" /> : <Play size={40} color="#FFFFFF" />}
               </TouchableOpacity>
-              <Text style={{ color: colors.text }}>Audio Recording</Text>
+              <Text style={styles.audioLabel}>Audio Recording</Text>
             </View>
           )}
         </View>
@@ -521,7 +640,7 @@ export default function CoachModeScreen() {
             {renderAnalysisContent()}
 
             {/* FOOTER ACTION */}
-            <View style={{ padding: 20 }}>
+            <View style={{ padding: rp(20) }}>
               <TouchableOpacity style={[styles.secondaryButton, { borderColor: colors.primary }]}>
                 <Repeat size={20} color={colors.primary} />
                 <Text style={[styles.secondaryButtonText, { color: colors.primary }]}>Nueva toma con este feedback</Text>
@@ -557,18 +676,18 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: 20,
-    paddingVertical: 16,
+    paddingHorizontal: rp(20),
+    paddingVertical: rp(16),
     borderBottomWidth: 1,
   },
-  headerTitle: { fontSize: 18, fontWeight: '600' },
-  backButton: { padding: 8 },
+  headerTitle: { fontSize: rf(18), fontWeight: '600' },
+  backButton: { padding: rp(8) },
   content: { flex: 1 },
-  subtitle: { padding: 20, fontSize: 14, textAlign: 'center' },
+  subtitle: { padding: rp(20), fontSize: rf(14), textAlign: 'center' },
   recordingCard: {
     flexDirection: 'row',
     alignItems: 'center',
-    padding: 16,
+    padding: rp(16),
     borderRadius: 12,
     borderWidth: 1,
     marginBottom: 12,
@@ -581,9 +700,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginRight: 16,
   },
-  recordingTitle: { fontSize: 16, fontWeight: '600' },
-  recordingSubtitle: { fontSize: 12, marginTop: 4 },
-  emptyState: { alignItems: 'center', marginTop: 60, padding: 40 },
+  recordingTitle: { fontSize: rf(16), fontWeight: '600' },
+  recordingSubtitle: { fontSize: rf(12), marginTop: 4 },
+  emptyState: { alignItems: 'center', marginTop: 60, padding: rp(40) },
   emptyText: { textAlign: 'center', marginTop: 16 },
 
   // Player
@@ -600,52 +719,63 @@ const styles = StyleSheet.create({
   audioPlayer: {
     width: '100%',
     height: '100%',
+    backgroundColor: '#000',
     justifyContent: 'center',
     alignItems: 'center',
   },
   playButton: {
-    width: 64,
-    height: 64,
-    borderRadius: 32,
-    backgroundColor: 'rgba(255,255,255,0.3)',
+    width: 80,
+    height: 80,
+    borderRadius: 40,
     justifyContent: 'center',
     alignItems: 'center',
-    marginBottom: 10
+    marginBottom: 12,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 8,
+  },
+  audioLabel: {
+    color: '#FFFFFF',
+    fontSize: rf(14),
+    fontWeight: '500',
+    opacity: 0.7,
   },
 
   // Intro
-  introSection: { padding: 20 },
+  introSection: { padding: rp(20) },
   introCard: {
-    padding: 30,
+    padding: rp(30),
     borderRadius: 16,
     alignItems: 'center',
     gap: 12,
   },
-  introTitle: { fontSize: 20, fontWeight: '700' },
+  introTitle: { fontSize: rf(20), fontWeight: '700' },
   introText: { textAlign: 'center', lineHeight: 20 },
   analyzeButton: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
-    paddingVertical: 14,
-    paddingHorizontal: 32,
+    paddingVertical: rp(14),
+    paddingHorizontal: rp(32),
     borderRadius: 30,
     marginTop: 20,
   },
-  analyzeButtonText: { color: '#fff', fontSize: 16, fontWeight: '600' },
+  analyzeButtonText: { color: '#fff', fontSize: rf(16), fontWeight: '600' },
 
   // Tabs
   tabsContainer: {
-    paddingHorizontal: 20,
-    paddingVertical: 12,
+    paddingHorizontal: rp(20),
+    paddingVertical: rp(12),
     borderBottomWidth: 0,
   },
   tab: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
-    paddingVertical: 8,
-    paddingHorizontal: 16,
+    paddingVertical: rp(8),
+    paddingHorizontal: rp(16),
     borderRadius: 20,
     marginRight: 8,
     borderWidth: 1,
@@ -653,52 +783,109 @@ const styles = StyleSheet.create({
   activeTab: {
     backgroundColor: 'rgba(59, 130, 246, 0.1)',
   },
-  tabText: { fontSize: 14, fontWeight: '600' },
-  tabContent: { padding: 20 },
+  tabText: { fontSize: rf(14), fontWeight: '600' },
+  tabContent: { padding: rp(20) },
 
   // Feedback
   scoreCard: {
-    padding: 20,
+    padding: rp(20),
     borderRadius: 12,
   },
-  sectionTitle: { fontSize: 18, fontWeight: '700', marginBottom: 12 },
+  sectionTitle: { fontSize: rf(18), fontWeight: '700', marginBottom: 12 },
   feedbackRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    paddingVertical: 8,
+    paddingVertical: rp(8),
     borderBottomWidth: 0.5,
     borderBottomColor: 'rgba(150,150,150,0.2)',
   },
-  feedbackLabel: { fontSize: 15 },
-  feedbackValue: { fontSize: 15, fontWeight: '600', maxWidth: '60%', textAlign: 'right' },
+  feedbackLabel: { fontSize: rf(15) },
+  feedbackValue: { fontSize: rf(15), fontWeight: '600', maxWidth: '60%', textAlign: 'right' },
 
   bulletRow: {
     flexDirection: 'row',
     gap: 10,
     marginBottom: 12,
   },
-  bulletText: { flex: 1, fontSize: 15, lineHeight: 22 },
+  bulletText: { flex: 1, fontSize: rf(15), lineHeight: 22 },
 
   // Exercises
   exerciseCard: {
-    padding: 16,
+    padding: rp(16),
     borderRadius: 12,
     marginBottom: 12,
     borderLeftWidth: 4,
     borderLeftColor: '#3B82F6',
   },
   exerciseHeader: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 6 },
-  exerciseTitle: { fontSize: 16, fontWeight: '600' },
-  exerciseDesc: { fontSize: 14, lineHeight: 20 },
+  exerciseTitle: { fontSize: rf(16), fontWeight: '600' },
+  exerciseDesc: { fontSize: rf(14), lineHeight: 20 },
 
   secondaryButton: {
     flexDirection: 'row',
     justifyContent: 'center',
     alignItems: 'center',
     gap: 8,
-    padding: 16,
+    padding: rp(16),
     borderRadius: 12,
     borderWidth: 1,
   },
-  secondaryButtonText: { fontSize: 16, fontWeight: '600' },
+  secondaryButtonText: { fontSize: rf(16), fontWeight: '600' },
+
+  // Modal styles
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.7)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: rp(20),
+  },
+  modalContent: {
+    width: '100%',
+    maxWidth: 400,
+    borderRadius: 16,
+    padding: rp(24),
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 12,
+    elevation: 8,
+  },
+  modalHeader: {
+    alignItems: 'center',
+    marginBottom: 20,
+  },
+  modalTitle: {
+    fontSize: rf(22),
+    fontWeight: '700',
+    marginTop: 12,
+    textAlign: 'center',
+  },
+  modalText: {
+    fontSize: rf(16),
+    lineHeight: 24,
+    textAlign: 'center',
+  },
+  checkboxRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    marginTop: 24,
+    marginBottom: 20,
+    paddingVertical: rp(8),
+  },
+  checkboxText: {
+    fontSize: rf(15),
+    flex: 1,
+  },
+  modalButton: {
+    paddingVertical: rp(16),
+    borderRadius: 12,
+    alignItems: 'center',
+  },
+  modalButtonText: {
+    color: '#FFFFFF',
+    fontSize: rf(17),
+    fontWeight: '700',
+  },
 });

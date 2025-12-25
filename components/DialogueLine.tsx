@@ -1,6 +1,7 @@
 import React from 'react';
 import { View, Text, StyleSheet } from 'react-native';
 import { Character, DialogueContent } from '@/types/database';
+import { rf, rp } from '@/utils/responsive';
 
 interface DialogueLineProps {
   dialogue: DialogueContent;
@@ -29,34 +30,34 @@ export function DialogueLine({ dialogue, character, isUserLine, hideText }: Dial
 
 const styles = StyleSheet.create({
   container: {
-    marginBottom: 20,
-    paddingHorizontal: 16,
+    marginBottom: rp(20),
+    paddingHorizontal: rp(16),
   },
   userContainer: {
     backgroundColor: '#EFF6FF',
-    padding: 16,
+    padding: rp(16),
     borderRadius: 12,
-    marginHorizontal: 0,
+    marginHorizontal: rp(0),
   },
   nameContainer: {
     alignSelf: 'flex-start',
-    paddingHorizontal: 12,
-    paddingVertical: 6,
+    paddingHorizontal: rp(12),
+    paddingVertical: rp(6),
     borderRadius: 6,
-    marginBottom: 8,
+    marginBottom: rp(8),
   },
   name: {
-    fontSize: 14,
+    fontSize: rf(14),
     fontWeight: '700',
     textTransform: 'uppercase',
   },
   text: {
-    fontSize: 16,
+    fontSize: rf(16),
     lineHeight: 24,
     color: '#111827',
   },
   hiddenText: {
-    fontSize: 16,
+    fontSize: rf(16),
     color: '#9CA3AF',
     letterSpacing: 4,
   },

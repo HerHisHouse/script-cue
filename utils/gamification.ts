@@ -11,7 +11,7 @@ export interface MemoryScore {
 export interface FailedLine {
   scriptId: string;
   lineId: string;
-  reason: 'timeout' | 'revealed' | 'wrong_word' | 'poor_match';
+  reason: 'timeout' | 'revealed' | 'wrong_word' | 'poor_match' | 'ghost_error' | 'echo_error' | 'quiz_error';
   timestamp: number;
   count: number;
 }

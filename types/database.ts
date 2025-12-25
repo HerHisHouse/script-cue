@@ -45,6 +45,8 @@ export interface Character {
   is_user_character: boolean;
   voice_gender: VoiceGender | null;
   color: string | null;
+  voice_id: string | null; // ID de la voz seleccionada (ej: alloy, nova, echo)
+  voice_provider: 'openai' | 'elevenlabs' | 'system' | null; // Proveedor de la voz
   // Omitimos campos que aún no hemos añadido a la DB para evitar errores
   // voice_preset: VoicePreset;
   // line_count: number;
@@ -131,6 +133,35 @@ export interface TTSCache {
   expires_at: string;
 }
 
+export interface CoachFeedback {
+  id: string;
+  recording_id: string;
+  user_id: string;
+  feedback: any; // JSONB with the analysis structure
+  created_at: string;
+}
+
+export interface ScriptAnalysis {
+  id: string;
+  script_id: string;
+  user_id: string;
+  // Los 10 puntos de análisis actoral
+  step_1_character_desire: string | null;
+  step_2_deep_need: string | null;
+  step_3_conflict: string | null;
+  step_4_relationship: string | null;
+  step_5_initial_state: string | null;
+  step_6_evolution: string | null;
+  step_7_actions: string | null;
+  step_8_subtext: string | null;
+  step_9_circumstances: string | null;
+  step_10_personal_theme: string | null;
+  is_ai_generated: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+
 // --- Tipo Principal de Base de Datos (ACTUALIZADO) ---
 // Refleja las interfaces simplificadas que SÍ tenemos en la DB
 export interface Database {
@@ -190,6 +221,18 @@ export interface Database {
         Row: TTSCache;
         Insert: Omit<TTSCache, 'id' | 'created_at'>;
         Update: Partial<Omit<TTSCache, 'id' | 'created_at'>>;
+        Relationships: [];
+      };
+      coach_feedback: {
+        Row: CoachFeedback;
+        Insert: Omit<CoachFeedback, 'id' | 'created_at'>;
+        Update: Partial<Omit<CoachFeedback, 'id' | 'created_at'>>;
+        Relationships: [];
+      };
+      script_analysis: {
+        Row: ScriptAnalysis;
+        Insert: Omit<ScriptAnalysis, 'id' | 'created_at' | 'updated_at'>;
+        Update: Partial<Omit<ScriptAnalysis, 'id' | 'script_id' | 'user_id' | 'created_at' | 'updated_at'>>;
         Relationships: [];
       };
     };
