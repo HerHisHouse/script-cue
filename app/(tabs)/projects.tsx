@@ -1,27 +1,15 @@
-import React, { useCallback, useEffect, useState } from 'react';
-import {
-  View,
-  Text,
-  StyleSheet,
-  FlatList,
-  TouchableOpacity,
-  Alert,
-  ActivityIndicator,
-  TextInput,
-  Modal,
-  RefreshControl,
-  Pressable,
-} from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
-import { useRouter } from 'expo-router';
-import { useTheme } from '@/contexts/ThemeContext';
+import React, { useEffect, useState, useCallback } from 'react';
+import { View, Text, StyleSheet, FlatList, TouchableOpacity, Modal, TextInput, Alert, Pressable, ActivityIndicator, RefreshControl, Keyboard } from 'react-native';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAuth } from '@/contexts/AuthContext';
+import { useTheme } from '@/contexts/ThemeContext';
 import { supabase } from '@/utils/supabase';
-import { Project, Script, Recording } from '@/types/database';
-import { Folder, FileText, Mic, Plus, MoreVertical, ChevronRight, Search, ArrowLeft, Trash2, Edit3, Send, X, Check, CheckSquare, List, Grid } from 'lucide-react-native';
-import { SendToModal } from '@/components/SendToModal';
-
+import { useRouter, useFocusEffect } from 'expo-router';
+import { Folder, FileText, Mic, Plus, MoreVertical, Search, CheckSquare, List, Grid, ArrowLeft, X, Trash2, Send, Edit3, ChevronRight, Check } from 'lucide-react-native';
 import { ScreenHeader } from '@/components/ScreenHeader';
+import { SendToModal } from '@/components/SendToModal';
+import { rf, rp } from '@/utils/responsive';
+import { Project, Script, Recording } from '@/types/database';
 
 // Unified type for the list
 type ListItem =
@@ -33,6 +21,7 @@ export default function ProjectsScreen() {
   const { colors } = useTheme();
   const { user } = useAuth();
   const router = useRouter();
+  const insets = useSafeAreaInsets();
 
   // State
   const [currentProjectId, setCurrentProjectId] = useState<string | null>(null);
@@ -56,6 +45,7 @@ export default function ProjectsScreen() {
   const [newFolderName, setNewFolderName] = useState('');
   const [sendToModal, setSendToModal] = useState<{ visible: boolean; item: ListItem | null }>({ visible: false, item: null });
   const [optionsModal, setOptionsModal] = useState<{ visible: boolean; item: ListItem | null }>({ visible: false, item: null });
+  const [renameModal, setRenameModal] = useState<{ visible: boolean; item: ListItem | null; newName: string }>({ visible: false, item: null, newName: '' });
 
   // Load Data
   const loadContent = useCallback(async () => {
@@ -127,7 +117,18 @@ export default function ProjectsScreen() {
     loadContent();
   }, [loadContent]);
 
-  // Search across all projects
+  // Cerrar menús cuando se navega fuera de la pantalla
+  useFocusEffect(
+    useCallback(() => {
+      return () => {
+        // Cleanup: cerrar todos los menús cuando se pierde el foco
+        setShowMenu(false);
+        setShowSearch(false);
+      };
+    }, [])
+  );
+
+  // Search across all projects with flexible partial matching
   const performSearch = useCallback(async (query: string) => {
     if (!query.trim() || !user) {
       setSearchResults([]);
@@ -137,46 +138,57 @@ export default function ProjectsScreen() {
 
     setIsSearching(true);
     try {
-      const q = query.toLowerCase();
       const results: ListItem[] = [];
+      // Split query into words for flexible matching
+      const searchTerms = query.toLowerCase().trim().split(/\s+/);
 
-      // Search folders
+      // Search folders - match any word in the query
       const { data: projectsData } = await supabase
         .from('projects')
         .select('*')
-        .eq('user_id', user.id)
-        .ilike('name', `%${query}%`);
+        .eq('user_id', user.id);
 
       if (projectsData) {
-        results.push(...projectsData.map(p => ({ type: 'folder' as const, data: p, parentName: undefined })));
+        const matchedProjects = projectsData.filter(p => {
+          const name = p.name.toLowerCase();
+          return searchTerms.some(term => name.includes(term));
+        });
+        results.push(...matchedProjects.map(p => ({ type: 'folder' as const, data: p, parentName: undefined })));
       }
 
-      // Search scripts (only within projects)
+      // Search scripts (within projects) - match any word
       const { data: scriptsData } = await supabase
         .from('scripts')
         .select('*, project:projects(name)')
         .eq('user_id', user.id)
-        .not('project_id', 'is', null)
-        .ilike('title', `%${query}%`);
+        .not('project_id', 'is', null);
 
       if (scriptsData) {
-        results.push(...scriptsData.map(s => ({
+        const matchedScripts = scriptsData.filter(s => {
+          const title = (s.title || '').toLowerCase();
+          return searchTerms.some(term => title.includes(term));
+        });
+        results.push(...matchedScripts.map(s => ({
           type: 'script' as const,
           data: s,
           parentName: s.project?.name || 'Sin carpeta'
         })));
       }
 
-      // Search recordings (only within projects)
+      // Search recordings (within projects) - match any word in title or script_title
       const { data: recordingsData } = await supabase
         .from('recordings')
         .select('*, project:projects(name)')
         .eq('user_id', user.id)
-        .not('project_id', 'is', null)
-        .or(`title.ilike.%${query}%,script_title.ilike.%${query}%`);
+        .not('project_id', 'is', null);
 
       if (recordingsData) {
-        results.push(...recordingsData.map(r => ({
+        const matchedRecordings = recordingsData.filter(r => {
+          const title = (r.title || '').toLowerCase();
+          const scriptTitle = (r.script_title || '').toLowerCase();
+          return searchTerms.some(term => title.includes(term) || scriptTitle.includes(term));
+        });
+        results.push(...matchedRecordings.map(r => ({
           type: 'recording' as const,
           data: r,
           parentName: r.project?.name || 'Sin carpeta'
@@ -232,7 +244,7 @@ export default function ProjectsScreen() {
   const handleBulkDelete = async () => {
     Alert.alert(
       'Eliminar seleccionados',
-      `¿Estás seguro de eliminar ${selectedItems.size} elementos?`,
+      `¿Estás seguro de eliminar ${selectedItems.size} elementos ? `,
       [
         { text: 'Cancelar', style: 'cancel' },
         {
@@ -390,10 +402,18 @@ export default function ProjectsScreen() {
     } else if (item.type === 'script') {
       router.push(`/scripts/${item.data.id}`);
     } else if (item.type === 'recording') {
-      // Navigate to recordings tab with playId
+      // Get all recordings in this folder for playlist
+      const folderRecordings = items
+        .filter(i => i.type === 'recording')
+        .map(i => i.data.id);
+
+      // Navigate to recordings tab with playId and playlist
       router.push({
         pathname: '/(tabs)/recordings',
-        params: { playId: item.data.id }
+        params: {
+          playId: item.data.id,
+          playlist: JSON.stringify(folderRecordings)
+        }
       });
     }
   };
@@ -429,7 +449,7 @@ export default function ProjectsScreen() {
             width: viewMode === 'grid' ? '48%' : '100%',
             flexDirection: viewMode === 'grid' ? 'column' : 'row',
             alignItems: viewMode === 'grid' ? 'center' : 'center',
-            padding: 16,
+            padding: rp(16),
             marginBottom: 8,
             marginRight: viewMode === 'grid' ? '2%' : 0,
           }
@@ -467,7 +487,7 @@ export default function ProjectsScreen() {
   };
 
   return (
-    <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
+    <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]} edges={['top', 'left', 'right']}>
       <ScreenHeader
         title={selectionMode ? `${selectedItems.size} seleccionados` : (currentProjectId ? breadcrumbs[breadcrumbs.length - 1].name : "Mis Proyectos")}
         leftAction={
@@ -493,7 +513,7 @@ export default function ProjectsScreen() {
               <Pressable
                 accessibilityRole="button"
                 accessibilityLabel="Opciones"
-                style={{ padding: 4 }}
+                style={{ padding: rp(4) }}
                 onPress={() => setShowMenu(!showMenu)}
               >
                 <MoreVertical size={20} color={colors.text} />
@@ -513,9 +533,8 @@ export default function ProjectsScreen() {
 
       {/* Menu Overlay */}
       {showMenu && (
-        <TouchableOpacity
-          style={styles.menuOverlay}
-          activeOpacity={1}
+        <Pressable
+          style={styles.menuBackdrop}
           onPress={() => setShowMenu(false)}
         >
           <View style={[styles.menuContainer, { backgroundColor: colors.surface, borderColor: colors.border }]}>
@@ -526,6 +545,7 @@ export default function ProjectsScreen() {
               <Search size={20} color={colors.text} />
               <Text style={[styles.menuText, { color: colors.text }]}>Búsqueda avanzada</Text>
             </TouchableOpacity>
+            <View style={[styles.menuSeparator, { backgroundColor: colors.border }]} />
             <TouchableOpacity
               style={styles.menuItem}
               onPress={() => { setShowMenu(false); setSelectionMode(true); }}
@@ -533,6 +553,7 @@ export default function ProjectsScreen() {
               <CheckSquare size={20} color={colors.text} />
               <Text style={[styles.menuText, { color: colors.text }]}>Selección múltiple</Text>
             </TouchableOpacity>
+            <View style={[styles.menuSeparator, { backgroundColor: colors.border }]} />
             <TouchableOpacity
               style={styles.menuItem}
               onPress={() => { setShowMenu(false); setViewMode(prev => prev === 'grid' ? 'list' : 'grid'); }}
@@ -543,7 +564,7 @@ export default function ProjectsScreen() {
               </Text>
             </TouchableOpacity>
           </View>
-        </TouchableOpacity>
+        </Pressable>
       )}
 
       {/* Search Bar */}
@@ -557,6 +578,9 @@ export default function ProjectsScreen() {
             value={searchText}
             onChangeText={setSearchText}
             autoFocus
+            returnKeyType="search"
+            blurOnSubmit={true}
+            onSubmitEditing={() => Keyboard.dismiss()}
           />
           <TouchableOpacity onPress={() => { setSearchText(''); setShowSearch(false); }}>
             <X size={20} color={colors.textSecondary} />
@@ -590,8 +614,8 @@ export default function ProjectsScreen() {
         <FlatList
           data={filteredItems}
           renderItem={renderItem}
-          keyExtractor={(item) => `${item.type}-${item.data.id}`}
-          contentContainerStyle={styles.listContent}
+          keyExtractor={(item) => `${item.type} -${item.data.id} `}
+          contentContainerStyle={{ ...styles.listContent, paddingBottom: 100 + insets.bottom }}
           numColumns={viewMode === 'grid' ? 2 : 1}
           key={viewMode} // Force re-render on mode change
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); loadContent(); }} />}
@@ -670,8 +694,15 @@ export default function ProjectsScreen() {
               style={styles.optionItem}
               onPress={() => {
                 const item = optionsModal.item;
-                // Rename logic would go here
-                Alert.alert('Renombrar', 'Funcionalidad pendiente de implementar');
+                if (item) {
+                  const currentName = item.type === 'folder'
+                    ? (item.data as Project).name
+                    : item.type === 'script'
+                      ? (item.data as Script).title
+                      : (item.data as Recording).title || 'Grabación';
+
+                  setRenameModal({ visible: true, item, newName: currentName });
+                }
                 setOptionsModal({ visible: false, item: null });
               }}
             >
@@ -701,6 +732,69 @@ export default function ProjectsScreen() {
         currentProjectId={currentProjectId}
       />
 
+      {/* Rename Modal */}
+      <Modal
+        visible={renameModal.visible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setRenameModal({ visible: false, item: null, newName: '' })}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modalContent, { backgroundColor: colors.surface }]}>
+            <Text style={[styles.modalTitle, { color: colors.text }]}>Renombrar</Text>
+            <TextInput
+              style={[styles.input, { color: colors.text, borderColor: colors.border, backgroundColor: colors.input }]}
+              placeholder="Nuevo nombre"
+              placeholderTextColor={colors.placeholder}
+              value={renameModal.newName}
+              onChangeText={(text) => setRenameModal({ ...renameModal, newName: text })}
+              autoFocus
+            />
+            <View style={styles.modalButtons}>
+              <TouchableOpacity
+                style={[styles.modalButton, { backgroundColor: colors.input }]}
+                onPress={() => setRenameModal({ visible: false, item: null, newName: '' })}
+              >
+                <Text style={{ color: colors.text }}>Cancelar</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.modalButton, { backgroundColor: colors.primary }]}
+                onPress={async () => {
+                  const item = renameModal.item;
+                  const newName = renameModal.newName.trim();
+
+                  if (!item || !newName) {
+                    Alert.alert('Error', 'Por favor ingresa un nombre válido');
+                    return;
+                  }
+
+                  try {
+                    const table = item.type === 'folder' ? 'projects' : item.type === 'script' ? 'scripts' : 'recordings';
+                    const field = item.type === 'folder' ? 'name' : 'title';
+
+                    const { error } = await supabase
+                      .from(table)
+                      .update({ [field]: newName })
+                      .eq('id', item.data.id);
+
+                    if (error) throw error;
+
+                    setRenameModal({ visible: false, item: null, newName: '' });
+                    loadContent();
+                    Alert.alert('Éxito', 'Elemento renombrado correctamente');
+                  } catch (error) {
+                    console.error('Rename error:', error);
+                    Alert.alert('Error', 'No se pudo renombrar el elemento');
+                  }
+                }}
+              >
+                <Text style={{ color: '#fff' }}>Renombrar</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
     </SafeAreaView>
   );
 }
@@ -715,7 +809,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   listContent: {
-    padding: 16,
+    padding: rp(16),
   },
   itemCard: {
     borderRadius: 12,
@@ -728,31 +822,38 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   itemTitle: {
-    fontSize: 16,
+    fontSize: rf(16),
     fontWeight: '600',
   },
   itemSubtitle: {
-    fontSize: 12,
+    fontSize: rf(12),
     marginTop: 2,
   },
   itemOptions: {
-    padding: 8,
+    padding: rp(8),
   },
-  menuOverlay: {
+  menuBackdrop: {
     position: 'absolute',
     top: 0,
     bottom: 0,
     left: 0,
     right: 0,
+    backgroundColor: 'rgba(0, 0, 0, 0.3)',
     zIndex: 10,
+  },
+  menuSeparator: {
+    height: 1,
+    alignSelf: 'stretch',
+    marginVertical: 8,
+    opacity: 0.6,
   },
   menuContainer: {
     position: 'absolute',
     top: 100,
-    right: 16,
+    right: rp(16),
     borderRadius: 12,
     borderWidth: 1,
-    padding: 8,
+    padding: rp(8),
     elevation: 5,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
@@ -763,11 +864,11 @@ const styles = StyleSheet.create({
   menuItem: {
     flexDirection: 'row',
     alignItems: 'center',
-    padding: 12,
-    gap: 12,
+    padding: rp(12),
+    gap: rp(12),
   },
   menuText: {
-    fontSize: 16,
+    fontSize: rf(16),
   },
   searchBar: {
     flexDirection: 'row',
@@ -781,11 +882,11 @@ const styles = StyleSheet.create({
   },
   searchInput: {
     flex: 1,
-    fontSize: 16,
+    fontSize: rf(16),
     padding: 0,
   },
   selectionCheck: {
-    padding: 4,
+    padding: rp(4),
   },
   fab: {
     width: 40,
@@ -810,44 +911,43 @@ const styles = StyleSheet.create({
   },
   breadcrumbs: {
     flexDirection: 'row',
-    padding: 12,
-    borderBottomWidth: 1,
-    flexWrap: 'wrap',
     alignItems: 'center',
+    padding: rp(12),
+    borderBottomWidth: 1,
+    gap: 4,
   },
   crumb: {
-    fontSize: 14,
-    marginHorizontal: 4,
+    fontSize: rf(14),
   },
   emptyState: {
-    padding: 40,
+    flex: 1,
+    justifyContent: 'center',
     alignItems: 'center',
+    padding: rp(40),
   },
   emptyText: {
-    fontSize: 16,
+    fontSize: rf(16),
   },
   modalOverlay: {
     flex: 1,
     backgroundColor: 'rgba(0,0,0,0.5)',
     justifyContent: 'center',
-    padding: 20,
+    padding: rp(20),
   },
   modalContent: {
-    borderRadius: 16,
-    padding: 20,
+    borderRadius: 12,
+    padding: rp(20),
+    gap: rp(16),
   },
   modalTitle: {
-    fontSize: 18,
+    fontSize: rf(18),
     fontWeight: '600',
-    marginBottom: 16,
-    textAlign: 'center',
   },
   input: {
     borderWidth: 1,
     borderRadius: 8,
-    padding: 12,
-    marginBottom: 20,
-    fontSize: 16,
+    padding: rp(12),
+    fontSize: rf(16),
   },
   modalButtons: {
     flexDirection: 'row',
@@ -855,7 +955,7 @@ const styles = StyleSheet.create({
   },
   modalButton: {
     flex: 1,
-    padding: 14,
+    padding: rp(14),
     borderRadius: 8,
     alignItems: 'center',
   },
@@ -866,17 +966,16 @@ const styles = StyleSheet.create({
     right: 0,
     borderTopLeftRadius: 20,
     borderTopRightRadius: 20,
-    padding: 20,
-    paddingBottom: 40,
+    padding: rp(20),
   },
   optionItem: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: 16,
-    gap: 16,
+    padding: rp(16),
+    gap: rp(16),
   },
   optionText: {
-    fontSize: 16,
+    fontSize: rf(16),
     fontWeight: '500',
   },
 });
