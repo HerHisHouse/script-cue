@@ -10,14 +10,16 @@ import {
   KeyboardAvoidingView,
   Platform,
   ScrollView,
+  Image,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
-import { Mic } from 'lucide-react-native';
 import { useAuth } from '@/contexts/AuthContext';
 import { useTheme } from '@/contexts/ThemeContext';
 import * as WebBrowser from 'expo-web-browser';
 import { supabase } from '@/utils/supabase';
+import { rf, rp } from '@/utils/responsive';
+import { LegalModal } from '@/components/LegalModal';
 
 // Configure WebBrowser for OAuth
 WebBrowser.maybeCompleteAuthSession();
@@ -36,6 +38,16 @@ export default function AuthScreen() {
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [loading, setLoading] = useState(false);
 
+  // Legal checkboxes for signup
+  const [acceptedTerms, setAcceptedTerms] = useState(false);
+  const [acceptedPrivacy, setAcceptedPrivacy] = useState(false);
+  const [acceptedAI, setAcceptedAI] = useState(false);
+
+  // Legal modals
+  const [showTermsModal, setShowTermsModal] = useState(false);
+  const [showPrivacyModal, setShowPrivacyModal] = useState(false);
+  const [showAIModal, setShowAIModal] = useState(false);
+
   // Validaciones
   const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
   const usernameRegex = /^[a-zA-Z0-9_]{3,20}$/;
@@ -45,7 +57,7 @@ export default function AuthScreen() {
   const doPasswordsMatch = password === confirmPassword;
 
   const canSubmit = isSignUp
-    ? isUsernameValid && isEmailValid && isPasswordValid && doPasswordsMatch && !loading
+    ? isUsernameValid && isEmailValid && isPasswordValid && doPasswordsMatch && acceptedTerms && acceptedPrivacy && acceptedAI && !loading
     : !!email.trim() && !!password.trim() && isEmailValid && !loading;
 
   async function handleSubmit() {
@@ -144,8 +156,12 @@ export default function AuthScreen() {
           showsVerticalScrollIndicator={false}
         >
           <View style={styles.header}>
-            <View style={[styles.logoContainer, { backgroundColor: isDark ? '#0B1220' : colors.input }]}>
-              <Mic size={48} color={colors.primary} />
+            <View style={styles.logoContainer}>
+              <Image
+                source={require('@/assets/images/logo.png')}
+                style={styles.logoImage}
+                resizeMode="contain"
+              />
             </View>
             <Text style={[styles.title, { color: colors.text }]}>Script Cue</Text>
             <Text style={[styles.subtitle, { color: colors.textSecondary }]}>Practica tus guiones con IA</Text>
@@ -258,8 +274,88 @@ export default function AuthScreen() {
               </View>
             )}
 
+            {/* Legal Checkboxes for Signup */}
+            {isSignUp && (
+              <View style={styles.legalSection}>
+                <TouchableOpacity
+                  style={styles.checkboxRow}
+                  onPress={() => setAcceptedTerms(!acceptedTerms)}
+                  accessibilityRole="checkbox"
+                  accessibilityState={{ checked: acceptedTerms }}
+                >
+                  <View style={[styles.checkbox, { borderColor: colors.border }, acceptedTerms && { backgroundColor: colors.primary, borderColor: colors.primary }]}>
+                    {acceptedTerms && <Text style={styles.checkmark}>✓</Text>}
+                  </View>
+                  <Text style={[styles.checkboxText, { color: colors.text }]}>
+                    He leído y acepto los{' '}
+                    <Text
+                      style={[styles.link, { color: colors.primary }]}
+                      onPress={(e) => {
+                        e.stopPropagation();
+                        setShowTermsModal(true);
+                      }}
+                    >
+                      Términos y Condiciones
+                    </Text>
+                  </Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={styles.checkboxRow}
+                  onPress={() => setAcceptedPrivacy(!acceptedPrivacy)}
+                  accessibilityRole="checkbox"
+                  accessibilityState={{ checked: acceptedPrivacy }}
+                >
+                  <View style={[styles.checkbox, { borderColor: colors.border }, acceptedPrivacy && { backgroundColor: colors.primary, borderColor: colors.primary }]}>
+                    {acceptedPrivacy && <Text style={styles.checkmark}>✓</Text>}
+                  </View>
+                  <Text style={[styles.checkboxText, { color: colors.text }]}>
+                    He leído y acepto la{' '}
+                    <Text
+                      style={[styles.link, { color: colors.primary }]}
+                      onPress={(e) => {
+                        e.stopPropagation();
+                        setShowPrivacyModal(true);
+                      }}
+                    >
+                      Política de Privacidad
+                    </Text>
+                  </Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={styles.checkboxRow}
+                  onPress={() => setAcceptedAI(!acceptedAI)}
+                  accessibilityRole="checkbox"
+                  accessibilityState={{ checked: acceptedAI }}
+                >
+                  <View style={[styles.checkbox, { borderColor: colors.border }, acceptedAI && { backgroundColor: colors.primary, borderColor: colors.primary }]}>
+                    {acceptedAI && <Text style={styles.checkmark}>✓</Text>}
+                  </View>
+                  <Text style={[styles.checkboxText, { color: colors.text }]}>
+                    Acepto el{' '}
+                    <Text
+                      style={[styles.link, { color: colors.primary }]}
+                      onPress={(e) => {
+                        e.stopPropagation();
+                        setShowAIModal(true);
+                      }}
+                    >
+                      uso de IA
+                    </Text>
+                    {' '}como herramienta creativa y educativa
+                  </Text>
+                </TouchableOpacity>
+              </View>
+            )}
+
+
             <TouchableOpacity
-              style={[styles.submitButton, { backgroundColor: colors.primary }, loading && styles.submitButtonDisabled]}
+              style={[
+                styles.submitButton,
+                { backgroundColor: colors.primary },
+                !canSubmit && styles.submitButtonDisabled
+              ]}
               onPress={handleSubmit}
               disabled={!canSubmit}
               accessibilityRole="button"
@@ -290,7 +386,7 @@ export default function AuthScreen() {
               accessibilityLabel="Iniciar sesión con Google"
             >
               <View style={styles.googleIcon}>
-                <Text style={{ fontSize: 20 }}>G</Text>
+                <Text style={{ fontSize: rf(20) }}>G</Text>
               </View>
               <Text style={[styles.googleButtonText, { color: colors.text }]}>
                 Continuar con Google
@@ -310,6 +406,29 @@ export default function AuthScreen() {
           </View>
         </ScrollView>
       </KeyboardAvoidingView>
+
+      {/* Legal Modals */}
+      <LegalModal
+        visible={showTermsModal}
+        onClose={() => setShowTermsModal(false)}
+        type="terms"
+        isDark={isDark}
+        colors={colors}
+      />
+      <LegalModal
+        visible={showPrivacyModal}
+        onClose={() => setShowPrivacyModal(false)}
+        type="privacy"
+        isDark={isDark}
+        colors={colors}
+      />
+      <LegalModal
+        visible={showAIModal}
+        onClose={() => setShowAIModal(false)}
+        type="ai"
+        isDark={isDark}
+        colors={colors}
+      />
     </SafeAreaView>
   );
 }
@@ -325,36 +444,38 @@ const styles = StyleSheet.create({
   scrollContent: {
     flexGrow: 1,
     justifyContent: 'center',
-    paddingHorizontal: 32,
-    paddingVertical: 20,
+    paddingHorizontal: rp(32),
+    paddingVertical: rp(20),
   },
   header: {
     alignItems: 'center',
     marginBottom: 48,
   },
   logoContainer: {
-    width: 96,
-    height: 96,
-    borderRadius: 48,
-    backgroundColor: '#EFF6FF',
+    width: 120,
+    height: 120,
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: 24,
   },
+  logoImage: {
+    width: 120,
+    height: 120,
+  },
   title: {
-    fontSize: 32,
+    fontSize: rf(32),
     fontWeight: '700',
     color: '#111827',
     marginBottom: 8,
   },
   subtitle: {
-    fontSize: 16,
+    fontSize: rf(16),
     color: '#6B7280',
   },
   form: {
     backgroundColor: '#FFFFFF',
     borderRadius: 16,
-    padding: 24,
+    padding: rp(24),
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.1,
@@ -365,7 +486,7 @@ const styles = StyleSheet.create({
     marginBottom: 20,
   },
   label: {
-    fontSize: 14,
+    fontSize: rf(14),
     fontWeight: '600',
     color: '#374151',
     marginBottom: 8,
@@ -374,8 +495,8 @@ const styles = StyleSheet.create({
     height: 48,
     backgroundColor: '#F9FAFB',
     borderRadius: 8,
-    paddingHorizontal: 16,
-    fontSize: 16,
+    paddingHorizontal: rp(16),
+    fontSize: rf(16),
     color: '#111827',
     borderWidth: 1,
     borderColor: '#E5E7EB',
@@ -385,12 +506,12 @@ const styles = StyleSheet.create({
   },
   helperText: {
     marginTop: 6,
-    fontSize: 12,
+    fontSize: rf(12),
     color: '#6B7280',
   },
   errorText: {
     marginTop: 6,
-    fontSize: 12,
+    fontSize: rf(12),
     color: '#EF4444',
   },
   inputInlineActions: {
@@ -399,14 +520,14 @@ const styles = StyleSheet.create({
     justifyContent: 'flex-end',
   },
   visibilityToggle: {
-    fontSize: 14,
+    fontSize: rf(14),
     color: '#3B82F6',
     fontWeight: '500',
   },
   submitButton: {
     backgroundColor: '#3B82F6',
     borderRadius: 12,
-    paddingVertical: 16,
+    paddingVertical: rp(16),
     alignItems: 'center',
     marginTop: 8,
   },
@@ -414,7 +535,7 @@ const styles = StyleSheet.create({
     opacity: 0.6,
   },
   submitText: {
-    fontSize: 16,
+    fontSize: rf(16),
     fontWeight: '600',
     color: '#FFFFFF',
   },
@@ -423,7 +544,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   switchText: {
-    fontSize: 14,
+    fontSize: rf(14),
     color: '#3B82F6',
     fontWeight: '500',
   },
@@ -439,7 +560,7 @@ const styles = StyleSheet.create({
   },
   dividerText: {
     marginHorizontal: 16,
-    fontSize: 14,
+    fontSize: rf(14),
     color: '#6B7280',
     fontWeight: '500',
   },
@@ -449,7 +570,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     backgroundColor: '#FFFFFF',
     borderRadius: 12,
-    paddingVertical: 14,
+    paddingVertical: rp(14),
     borderWidth: 1.5,
     borderColor: '#E5E7EB',
     gap: 12,
@@ -463,8 +584,41 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   googleButtonText: {
-    fontSize: 15,
+    fontSize: rf(15),
     fontWeight: '600',
     color: '#374151',
+  },
+  legalSection: {
+    marginTop: rp(20),
+    marginBottom: rp(12),
+    gap: rp(16),
+  },
+  checkboxRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: rp(12),
+  },
+  checkbox: {
+    width: 20,
+    height: 20,
+    borderRadius: 4,
+    borderWidth: 2,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 2,
+  },
+  checkmark: {
+    color: '#FFFFFF',
+    fontSize: rf(14),
+    fontWeight: '700',
+  },
+  checkboxText: {
+    flex: 1,
+    fontSize: rf(14),
+    lineHeight: rp(20),
+  },
+  link: {
+    fontWeight: '600',
+    textDecorationLine: 'underline',
   },
 });
