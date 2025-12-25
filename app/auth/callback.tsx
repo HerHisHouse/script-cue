@@ -1,25 +1,63 @@
 import { useEffect, useState } from 'react';
 import { View, ActivityIndicator, Text } from 'react-native';
-import { useRouter, useLocalSearchParams } from 'expo-router';
+import { useRouter } from 'expo-router';
 import { supabase } from '@/utils/supabase';
 import { useTheme } from '@/contexts/ThemeContext';
+import * as Linking from 'expo-linking';
 
 export default function AuthCallback() {
     const router = useRouter();
-    const params = useLocalSearchParams();
     const { colors } = useTheme();
     const [error, setError] = useState<string | null>(null);
+    const [status, setStatus] = useState<string>('Procesando...');
 
     useEffect(() => {
         const handleCallback = async () => {
             try {
-                console.log('[Auth Callback] Params:', params);
+                setStatus('Obteniendo URL de callback...');
 
-                // Extract tokens from URL params (for OAuth callback)
-                const access_token = params.access_token as string;
-                const refresh_token = params.refresh_token as string;
+                // Get the initial URL (for deep linking)
+                const url = await Linking.getInitialURL();
+                console.log('[Auth Callback] Initial URL:', url);
+
+                if (!url) {
+                    console.log('[Auth Callback] No URL found, checking session');
+                    // No URL, check if we already have a session
+                    const { data: { session } } = await supabase.auth.getSession();
+                    if (session) {
+                        console.log('[Auth Callback] Existing session found');
+                        router.replace('/(tabs)');
+                    } else {
+                        console.log('[Auth Callback] No session, redirecting to auth');
+                        router.replace('/auth');
+                    }
+                    return;
+                }
+
+                setStatus('Extrayendo tokens...');
+
+                // Parse the URL to extract tokens from hash fragment
+                // URL format: scriptcue://auth/callback#access_token=...&refresh_token=...
+                const hashPart = url.split('#')[1];
+
+                if (!hashPart) {
+                    console.log('[Auth Callback] No hash fragment in URL');
+                    router.replace('/auth');
+                    return;
+                }
+
+                // Parse hash parameters
+                const params = new URLSearchParams(hashPart);
+                const access_token = params.get('access_token');
+                const refresh_token = params.get('refresh_token');
+
+                console.log('[Auth Callback] Tokens extracted:', {
+                    hasAccessToken: !!access_token,
+                    hasRefreshToken: !!refresh_token
+                });
 
                 if (access_token && refresh_token) {
+                    setStatus('Estableciendo sesión...');
                     console.log('[Auth Callback] Setting session from OAuth tokens');
 
                     // Set the session using the tokens from OAuth
@@ -37,6 +75,7 @@ export default function AuthCallback() {
 
                     if (data.session) {
                         console.log('[Auth Callback] Session established successfully');
+                        setStatus('Verificando perfil...');
 
                         // Check if profile exists, create if not (for OAuth users)
                         const { data: profile } = await supabase
@@ -47,31 +86,36 @@ export default function AuthCallback() {
 
                         if (!profile) {
                             console.log('[Auth Callback] Creating profile for OAuth user');
+                            setStatus('Creando perfil...');
+
+                            const username = data.session.user.user_metadata?.full_name ||
+                                data.session.user.email?.split('@')[0] ||
+                                'user';
+
                             await supabase.from('profiles').insert({
                                 id: data.session.user.id,
-                                username: data.session.user.user_metadata?.full_name ||
-                                    data.session.user.email?.split('@')[0] ||
-                                    'user',
+                                username: username,
                                 full_name: data.session.user.user_metadata?.full_name,
                                 avatar_url: data.session.user.user_metadata?.avatar_url,
                             });
                         }
 
-                        router.replace('/(tabs)');
+                        setStatus('¡Listo! Redirigiendo...');
+                        console.log('[Auth Callback] Redirecting to app');
+
+                        // Small delay to ensure everything is saved
+                        setTimeout(() => {
+                            router.replace('/(tabs)');
+                        }, 500);
                         return;
                     }
                 }
 
-                // If no tokens in params, check if we already have a session
-                const { data: { session } } = await supabase.auth.getSession();
+                // If we get here, something went wrong
+                console.log('[Auth Callback] No valid tokens found');
+                setError('No se pudieron obtener los tokens de autenticación');
+                setTimeout(() => router.replace('/auth'), 2000);
 
-                if (session) {
-                    console.log('[Auth Callback] Existing session found');
-                    router.replace('/(tabs)');
-                } else {
-                    console.log('[Auth Callback] No session found, redirecting to auth');
-                    router.replace('/auth');
-                }
             } catch (err: any) {
                 console.error('[Auth Callback] Exception:', err);
                 setError(err.message || 'Error desconocido');
@@ -80,14 +124,17 @@ export default function AuthCallback() {
         };
 
         handleCallback();
-    }, [params]);
+    }, []);
 
     return (
-        <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: colors.background }}>
+        <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: colors.background, padding: 20 }}>
             <ActivityIndicator size="large" color={colors.primary} />
+            <Text style={{ color: colors.text, marginTop: 20, fontSize: 16, textAlign: 'center' }}>
+                {status}
+            </Text>
             {error && (
                 <Text style={{ color: colors.error, marginTop: 20, paddingHorizontal: 20, textAlign: 'center' }}>
-                    {error}
+                    Error: {error}
                 </Text>
             )}
         </View>

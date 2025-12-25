@@ -142,22 +142,10 @@ export default function AuthScreen() {
 
         console.log('[Auth] Browser session result:', result.type);
 
-        if (result.type === 'success' && result.url) {
-          // Extract the URL and let the callback page handle it
-          console.log('[Auth] OAuth success, callback URL:', result.url);
-          // The callback page will handle the session setup
-          // Just wait a moment for the session to be established
-          await new Promise(resolve => setTimeout(resolve, 1000));
-
-          // Check if session was established
-          const { data: { session } } = await supabase.auth.getSession();
-          if (session) {
-            console.log('[Auth] Session established, redirecting to app');
-            router.replace('/(tabs)');
-          } else {
-            console.log('[Auth] No session found after OAuth');
-            Alert.alert('Aviso', 'Sesión iniciada. Por favor espera un momento...');
-          }
+        if (result.type === 'success') {
+          // Don't check session here - let the callback page handle it
+          // The callback page will extract tokens and establish session
+          console.log('[Auth] OAuth completed, callback will handle session');
         } else if (result.type === 'cancel') {
           console.log('[Auth] User cancelled OAuth');
         }
