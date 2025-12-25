@@ -144,18 +144,37 @@ export default function RecordingsScreen() {
   // Auto-play param
   const { playId, playlist } = useLocalSearchParams<{ playId: string; playlist?: string }>();
   const autoPlayRef = useRef<string | null>(null);
+  const hasTriggeredRef = useRef(false);
 
+  // Use useFocusEffect to handle when screen comes into focus
+  useFocusEffect(
+    useCallback(() => {
+      console.log('[Recordings] Screen focused, params:', { playId, playlist, recordingsCount: recordings.length });
+
+      // Reset trigger flag when screen loses focus
+      return () => {
+        console.log('[Recordings] Screen unfocused');
+      };
+    }, [playId, playlist, recordings.length])
+  );
+
+  // Separate effect for opening player
   useEffect(() => {
-    console.log('[Recordings] Params received:', { playId, playlist, recordingsCount: recordings.length });
+    console.log('[Recordings] Player effect:', {
+      playId,
+      hasPlayId: !!playId,
+      isNewPlayId: playId !== autoPlayRef.current,
+      recordingsCount: recordings.length,
+      hasTriggered: hasTriggeredRef.current
+    });
 
-    if (playId && playId !== autoPlayRef.current) {
-      console.log('[Recordings] New playId detected:', playId);
+    if (playId && playId !== autoPlayRef.current && recordings.length > 0 && !hasTriggeredRef.current) {
+      console.log('[Recordings] Opening player for:', playId);
       autoPlayRef.current = playId;
+      hasTriggeredRef.current = true;
 
-      // Wait for recordings to be loaded
-      if (recordings.length > 0) {
-        console.log('[Recordings] Recordings loaded, opening player');
-
+      // Small delay to ensure recordings are fully loaded
+      setTimeout(() => {
         // If playlist is provided, use it; otherwise use all recordings
         if (playlist) {
           console.log('[Recordings] Using custom playlist');
@@ -171,11 +190,16 @@ export default function RecordingsScreen() {
           console.log('[Recordings] Using all recordings');
           openPlayerAt(playId);
         }
-      } else {
-        console.log('[Recordings] Waiting for recordings to load...');
-      }
+      }, 100);
     }
   }, [playId, playlist, recordings]);
+
+  // Reset trigger when playId changes
+  useEffect(() => {
+    if (playId !== autoPlayRef.current) {
+      hasTriggeredRef.current = false;
+    }
+  }, [playId]);
 
   // Advanced search & sorting state
   const [searchText, setSearchText] = useState('');
