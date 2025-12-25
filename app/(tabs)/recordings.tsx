@@ -146,22 +146,33 @@ export default function RecordingsScreen() {
   const autoPlayRef = useRef<string | null>(null);
 
   useEffect(() => {
+    console.log('[Recordings] Params received:', { playId, playlist, recordingsCount: recordings.length });
+
     if (playId && playId !== autoPlayRef.current) {
+      console.log('[Recordings] New playId detected:', playId);
       autoPlayRef.current = playId;
+
       // Wait for recordings to be loaded
       if (recordings.length > 0) {
+        console.log('[Recordings] Recordings loaded, opening player');
+
         // If playlist is provided, use it; otherwise use all recordings
         if (playlist) {
+          console.log('[Recordings] Using custom playlist');
           try {
             const playlistIds = JSON.parse(playlist) as string[];
+            console.log('[Recordings] Parsed playlist IDs:', playlistIds);
             openPlayerWithPlaylist(playId, playlistIds);
           } catch (error) {
-            console.error('Error parsing playlist:', error);
+            console.error('[Recordings] Error parsing playlist:', error);
             openPlayerAt(playId);
           }
         } else {
+          console.log('[Recordings] Using all recordings');
           openPlayerAt(playId);
         }
+      } else {
+        console.log('[Recordings] Waiting for recordings to load...');
       }
     }
   }, [playId, playlist, recordings]);
