@@ -112,6 +112,9 @@ export default function AuthScreen() {
   async function signInWithGoogle() {
     try {
       setLoading(true);
+
+      console.log('[Auth] Starting Google OAuth...');
+
       const { data, error } = await supabase.auth.signInWithOAuth({
         provider: 'google',
         options: {
@@ -122,22 +125,45 @@ export default function AuthScreen() {
         },
       });
 
-      if (error) throw error;
+      if (error) {
+        console.error('[Auth] OAuth error:', error);
+        throw error;
+      }
 
       // For web, the redirect happens automatically
       // For mobile, we need to open the browser
       if (Platform.OS !== 'web' && data?.url) {
+        console.log('[Auth] Opening OAuth browser session...');
+
         const result = await WebBrowser.openAuthSessionAsync(
           data.url,
           'scriptcue://auth/callback'
         );
 
-        if (result.type === 'success') {
-          // The session will be handled by Supabase automatically
-          router.replace('/(tabs)');
+        console.log('[Auth] Browser session result:', result.type);
+
+        if (result.type === 'success' && result.url) {
+          // Extract the URL and let the callback page handle it
+          console.log('[Auth] OAuth success, callback URL:', result.url);
+          // The callback page will handle the session setup
+          // Just wait a moment for the session to be established
+          await new Promise(resolve => setTimeout(resolve, 1000));
+
+          // Check if session was established
+          const { data: { session } } = await supabase.auth.getSession();
+          if (session) {
+            console.log('[Auth] Session established, redirecting to app');
+            router.replace('/(tabs)');
+          } else {
+            console.log('[Auth] No session found after OAuth');
+            Alert.alert('Aviso', 'Sesión iniciada. Por favor espera un momento...');
+          }
+        } else if (result.type === 'cancel') {
+          console.log('[Auth] User cancelled OAuth');
         }
       }
     } catch (error: any) {
+      console.error('[Auth] OAuth exception:', error);
       Alert.alert('Error', error.message || 'No se pudo iniciar sesión con Google');
     } finally {
       setLoading(false);
