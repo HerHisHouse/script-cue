@@ -142,10 +142,70 @@ export default function AuthScreen() {
 
         console.log('[Auth] Browser session result:', result.type);
 
-        if (result.type === 'success') {
-          // Navigate to callback page to handle session establishment
-          console.log('[Auth] OAuth completed, navigating to callback');
-          router.push('/auth/callback');
+        if (result.type === 'success' && result.url) {
+          console.log('[Auth] OAuth success, processing tokens...');
+
+          // Extract tokens from the callback URL
+          const callbackUrl = result.url;
+          const hashPart = callbackUrl.split('#')[1];
+
+          if (!hashPart) {
+            throw new Error('No se encontraron tokens en la respuesta de OAuth');
+          }
+
+          // Parse hash parameters
+          const params = new URLSearchParams(hashPart);
+          const access_token = params.get('access_token');
+          const refresh_token = params.get('refresh_token');
+
+          console.log('[Auth] Tokens extracted:', {
+            hasAccessToken: !!access_token,
+            hasRefreshToken: !!refresh_token
+          });
+
+          if (!access_token || !refresh_token) {
+            throw new Error('Tokens incompletos en la respuesta de OAuth');
+          }
+
+          // Set the session using the tokens
+          const { data: sessionData, error: sessionError } = await supabase.auth.setSession({
+            access_token,
+            refresh_token,
+          });
+
+          if (sessionError) {
+            console.error('[Auth] Error setting session:', sessionError);
+            throw sessionError;
+          }
+
+          if (sessionData.session) {
+            console.log('[Auth] Session established successfully');
+
+            // Check if profile exists, create if not
+            const { data: profile } = await supabase
+              .from('profiles')
+              .select('*')
+              .eq('id', sessionData.session.user.id)
+              .maybeSingle();
+
+            if (!profile) {
+              console.log('[Auth] Creating profile for OAuth user');
+
+              const username = sessionData.session.user.user_metadata?.full_name ||
+                sessionData.session.user.email?.split('@')[0] ||
+                'user';
+
+              await supabase.from('profiles').insert({
+                id: sessionData.session.user.id,
+                username: username,
+                full_name: sessionData.session.user.user_metadata?.full_name,
+                avatar_url: sessionData.session.user.user_metadata?.avatar_url,
+              });
+            }
+
+            console.log('[Auth] Redirecting to app');
+            router.replace('/(tabs)');
+          }
         } else if (result.type === 'cancel') {
           console.log('[Auth] User cancelled OAuth');
         }
@@ -399,8 +459,8 @@ export default function AuthScreen() {
               accessibilityRole="button"
               accessibilityLabel="Iniciar sesión con Google"
             >
-              <View style={styles.googleIcon}>
-                <Text style={{ fontSize: rf(20) }}>G</Text>
+              <View style={styles.googleIconContainer}>
+                <Text style={styles.googleG}>G</Text>
               </View>
               <Text style={[styles.googleButtonText, { color: colors.text }]}>
                 Continuar con Google
@@ -589,13 +649,18 @@ const styles = StyleSheet.create({
     borderColor: '#E5E7EB',
     gap: 12,
   },
-  googleIcon: {
+  googleIconContainer: {
     width: 24,
     height: 24,
     borderRadius: 4,
-    backgroundColor: '#FFFFFF',
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  googleG: {
+    fontSize: rf(20),
+    fontWeight: '700',
+    // Google's signature multi-color look approximated with a gradient effect
+    color: '#4285F4', // Google blue
   },
   googleButtonText: {
     fontSize: rf(15),
