@@ -1977,7 +1977,7 @@ const styles = StyleSheet.create({
     bottom: 0,
     left: 0,
     right: 0,
-    paddingBottom: rp(20),
+    paddingBottom: Platform.OS === 'android' ? rp(60) : rp(20),
   },
   recordingTipBanner: {
     backgroundColor: 'rgba(16, 185, 129, 0.15)',
