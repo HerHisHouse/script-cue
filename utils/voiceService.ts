@@ -112,8 +112,8 @@ export async function getElevenLabsVoices(): Promise<VoiceOption[]> {
     }));
 
     // Ordenar: primero voces prioritarias (castellano peninsular), luego personalizadas, luego públicas
-    // "Eva Dorado" primero, "Martín Osborne" segundo, luego el resto
-    const priorityNames = ['eva dorado', 'martín osborne', 'martin osborne'];
+    // "Eva Dorado" primero, "Martín Osborne" segundo, "Sara Martin" tercero, luego el resto
+    const priorityNames = ['eva dorado', 'martín osborne', 'martin osborne', 'sara martin'];
     
     voices.sort((a, b) => {
       // Normalizar nombres para comparación (quitar acentos)

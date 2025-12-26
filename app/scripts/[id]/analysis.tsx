@@ -302,13 +302,16 @@ export default function AnalysisScreen() {
                         </TouchableOpacity>
                     )}
 
-                    <TouchableOpacity
-                        style={[styles.modeButton, { backgroundColor: colors.primary }]}
-                        onPress={() => setMode('ai')}
-                    >
-                        <Sparkles size={24} color="#FFFFFF" />
-                        <Text style={styles.modeButtonText}>Análisis asistido por IA</Text>
-                    </TouchableOpacity>
+                    {/* Mostrar botón de generar IA solo si NO existe análisis de IA */}
+                    {Object.keys(aiAnalysis).length === 0 && (
+                        <TouchableOpacity
+                            style={[styles.modeButton, { backgroundColor: colors.primary }]}
+                            onPress={() => setMode('ai')}
+                        >
+                            <Sparkles size={24} color="#FFFFFF" />
+                            <Text style={styles.modeButtonText}>Análisis asistido por IA</Text>
+                        </TouchableOpacity>
+                    )}
                 </ScrollView>
             </SafeAreaView>
         );

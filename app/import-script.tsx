@@ -1051,6 +1051,7 @@ export default function ImportScriptScreen() {
           <TouchableOpacity
             style={[
               styles.submitButton,
+              { backgroundColor: colors.primary },
               ...(uploading ? [styles.submitButtonDisabled] : [])
             ]}
             onPress={handleUpload}
