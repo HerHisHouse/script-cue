@@ -31,7 +31,7 @@ const faqs: FAQ[] = [
     {
         category: 'Modos de Estudio',
         question: '¿Qué es el Modo Casting?',
-        answer: 'El Modo Casting te permite grabar video de tu actuación mientras la IA lee las líneas de los otros personajes. Es ideal para:\n\n• Crear self-tapes profesionales\n• Practicar audiciones\n• Revisar tu actuación\n\nEl video final incluye tanto tu actuación como el audio de la IA mezclado.',
+        answer: 'El Modo Casting te permite grabar video de tu actuación mientras la IA lee las líneas de los otros personajes. Es ideal para:\n\n• Crear self-tapes profesionales\n• Practicar audiciones\n• Revisar tu actuación\n\nEl video final incluye tanto tu actuación como el audio de la IA mezclado.\n\nPuedes configurar:\n• **Duración de líneas**: Ajusta cuánto tiempo aparece cada línea en pantalla antes de avanzar automáticamente\n• **Líneas de acción**: Crea líneas personalizadas con indicaciones de acción (ej: "*Se levanta y camina hacia la puerta*") que aparecerán durante la grabación',
     },
     {
         category: 'Modos de Estudio',
@@ -56,7 +56,7 @@ const faqs: FAQ[] = [
     {
         category: 'Proyectos',
         question: '¿Qué son los proyectos?',
-        answer: 'Los proyectos te ayudan a organizar tus guiones y grabaciones. Puedes:\n\n• Crear carpetas para diferentes producciones\n• Mover guiones a proyectos\n• Mover grabaciones a proyectos\n• Organizar todo tu trabajo',
+        answer: 'Los proyectos te ayudan a organizar tus guiones y grabaciones. Puedes:\n\n• Crear carpetas para diferentes producciones\n• Copiar guiones a proyectos\n• Copiar grabaciones a proyectos\n• Organizar todo tu trabajo\n\nCuando usas "Enviar a...", el archivo se copia a la carpeta de destino, manteniéndose también en su ubicación original.',
     },
     {
         category: 'Análisis',
@@ -161,6 +161,16 @@ export default function FAQScreen() {
                         <Mail size={20} color={colors.primary} />
                         <Text style={[styles.emailText, { color: colors.primary }]}>
                             scriptcue@gmail.com
+                        </Text>
+                    </TouchableOpacity>
+
+                    <TouchableOpacity
+                        style={[styles.emailButton, { marginTop: rp(12) }]}
+                        onPress={() => Linking.openURL('https://www.scriptcue.es')}
+                        activeOpacity={0.7}
+                    >
+                        <Text style={[styles.emailText, { color: colors.primary }]}>
+                            www.scriptcue.es
                         </Text>
                     </TouchableOpacity>
                 </View>
