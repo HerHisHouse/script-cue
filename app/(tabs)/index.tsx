@@ -517,8 +517,8 @@ export default function IndexScreen() {
       ) : scripts.length === 0 ? (
         <View style={styles.centerContainer}>
           <EyeOff size={24} color={colors.textSecondary} />
-          <Text style={[styles.emptyText, { color: colors.textSecondary }]}>
-            {searchText ? 'No se encontraron guiones' : 'No se encontraron guiones.'}
+          <Text style={[styles.emptyText, { color: colors.textSecondary, textAlign: 'center', paddingHorizontal: 40 }]}>
+            {searchText ? 'No se encontraron guiones' : 'Para empezar a practicar con tu primer guion pulsa el botón de "+".'}
           </Text>
           {searchText && (
             <Text style={[styles.emptyText, { color: colors.textSecondary }]}>

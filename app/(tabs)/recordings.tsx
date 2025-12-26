@@ -1661,10 +1661,10 @@ export default function RecordingsScreen() {
             <Text style={[styles.emptyTitle, { color: colors.text }]}>
               {searchText ? 'No se encontraron grabaciones' : 'No hay grabaciones'}
             </Text>
-            <Text style={[styles.emptyText, { color: colors.textSecondary }]}>
+            <Text style={[styles.emptyText, { color: colors.textSecondary, textAlign: 'center', paddingHorizontal: 40 }]}>
               {searchText
                 ? 'Intenta con otro término de búsqueda'
-                : 'Tus sesiones de práctica aparecerán aquí'}
+                : 'Tus sesiones grabadas en el Modo Estudio y Casting aparecerán aquí.'}
             </Text>
           </View>
         </View>

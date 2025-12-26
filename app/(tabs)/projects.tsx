@@ -621,8 +621,8 @@ export default function ProjectsScreen() {
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); loadContent(); }} />}
           ListEmptyComponent={
             <View style={styles.emptyState}>
-              <Text style={[styles.emptyText, { color: colors.textSecondary }]}>
-                {searchText ? 'No se encontraron resultados' : 'Carpeta vacía'}
+              <Text style={[styles.emptyText, { color: colors.textSecondary, textAlign: 'center', paddingHorizontal: 40 }]}>
+                {searchText ? 'No se encontraron resultados' : 'Aquí podrás organizar tus proyectos por carpetas y dentro de ellas copiar guiones o grabaciones.'}
               </Text>
             </View>
           }
