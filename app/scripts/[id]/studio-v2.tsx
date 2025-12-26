@@ -338,17 +338,24 @@ export default function StudioV2Screen() {
 
                 // Upload AI segment BEFORE playing (if recording)
                 if (isRecording) {
+                    // Add segment to array IMMEDIATELY
+                    const aiSegment = {
+                        uri: audioUri!,
+                        storagePath: '',
+                        type: 'ai' as const,
+                        index: currentIndex,
+                    };
+                    segmentsRef.current.push(aiSegment);
+                    console.log('[AI Segment] Added, index:', currentIndex);
+
+                    // Upload asynchronously
                     uploadingSegmentsRef.current++;
                     (async () => {
                         try {
                             const storagePath = await uploadAISegment(audioUri!, currentIndex);
                             if (storagePath) {
-                                segmentsRef.current.push({
-                                    uri: audioUri!,
-                                    storagePath,
-                                    type: 'ai',
-                                    index: currentIndex,
-                                });
+                                aiSegment.storagePath = storagePath;
+                                console.log('[AI Segment] Uploaded:', storagePath);
                             }
                         } catch (err) {
                             console.error('[uploadAISegment] Error:', err);
@@ -546,20 +553,26 @@ export default function StudioV2Screen() {
             if (!isRecording && uri) {
                 try { await FileSystem.deleteAsync(uri, { idempotent: true }); } catch { }
             } else if (isRecording && uri) {
-                // Upload user segment to Supabase and add to segments
+                // Add user segment to array IMMEDIATELY
+                const userSegment = { uri, storagePath: '', type: 'user' as const, index: currentIndex };
+                segmentsRef.current.push(userSegment);
+                console.log('[User Segment] Added, index:', currentIndex);
+
+                // Upload asynchronously
                 uploadingSegmentsRef.current++;
-                try {
-                    const storagePath = await uploadUserSegment(uri, currentIndex);
-                    if (storagePath) {
-                        segmentsRef.current.push({ uri, storagePath, type: 'user', index: currentIndex });
-                        console.log('[User Segment] Uploaded:', storagePath);
+                (async () => {
+                    try {
+                        const storagePath = await uploadUserSegment(uri, currentIndex);
+                        if (storagePath) {
+                            userSegment.storagePath = storagePath;
+                            console.log('[User Segment] Uploaded:', storagePath);
+                        }
+                    } catch (err) {
+                        console.error('Error uploading user segment:', err);
+                    } finally {
+                        uploadingSegmentsRef.current--;
                     }
-                } catch (err) {
-                    console.error('Error uploading user segment:', err);
-                } finally {
-                    uploadingSegmentsRef.current--;
-                }
-                // We don't save individual takes to Supabase in this mode, we wait for the merge.
+                })();
             }
         }
     }
@@ -840,14 +853,14 @@ export default function StudioV2Screen() {
             if (totalPending > 0) {
                 console.log(`[Merge] Waiting for ${totalPending} pending uploads...`);
 
-                // Wait loop
+                // Wait loop - increased timeout for Android
                 let retries = 0;
-                while (uploadingSegmentsRef.current > 0 && retries < 60) { // 60s timeout
+                while (uploadingSegmentsRef.current > 0 && retries < 120) { // 120s timeout (2 minutes)
                     const progress = Math.max(0, 100 - Math.round((uploadingSegmentsRef.current / totalPending) * 100));
                     setUploadProgress(progress);
                     setProcessingStep(`Subiendo audios (${uploadingSegmentsRef.current} pendientes)...`);
 
-                    await new Promise(resolve => setTimeout(resolve, 500));
+                    await new Promise(resolve => setTimeout(resolve, 1000)); // Check every second
                     retries++;
                 }
             }
