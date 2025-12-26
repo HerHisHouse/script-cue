@@ -151,11 +151,9 @@ export default function ImportScriptScreen() {
     })();
   }, [openConfig, scriptId]);
 
-  const [characterCount, setCharacterCount] = useState<number>(1);
+  const [characterCount, setCharacterCount] = useState<number>(0);
   const [showCountPicker, setShowCountPicker] = useState(false);
-  const [characters, setCharacters] = useState<CharacterConfig[]>([
-    { id: `${Date.now()}-${Math.random().toString(36).slice(2)}`, name: '', isMyCharacter: true, gender: 'male', color: GREEN_COLOR }
-  ]);
+  const [characters, setCharacters] = useState<CharacterConfig[]>([]);
 
   async function pickDocument() {
     try {
@@ -856,7 +854,7 @@ export default function ImportScriptScreen() {
 
               {showCountPicker && (
                 <View style={[styles.pickerOptions, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-                  {[1, 2, 3, 4].map((count) => {
+                  {[0, 1, 2, 3, 4].map((count) => {
                     const isSelected = count === characterCount;
                     return (
                       <TouchableOpacity
@@ -874,6 +872,10 @@ export default function ImportScriptScreen() {
                     );
                   })}
                 </View>
+              )}
+
+              {characterCount > 0 && (
+                <View style={{ marginTop: 24 }} />
               )}
 
               {characters.map((char, index) => (

@@ -118,6 +118,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     if (error) throw error;
 
     // Profile will be created automatically by database trigger
+
+    // Show verification alert
+    const { Alert } = require('react-native');
+    Alert.alert(
+      'Verifica tu cuenta',
+      'Te hemos enviado un correo electrónico de verificación. Por favor, revisa tu bandeja de entrada (y la carpeta de spam) y pulsa el enlace de verificación antes de iniciar sesión.\n\nSin verificar tu cuenta no podrás acceder a la aplicación.',
+      [{ text: 'Entendido', style: 'default' }]
+    );
   }
 
   async function signOut() {

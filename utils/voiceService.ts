@@ -111,17 +111,29 @@ export async function getElevenLabsVoices(): Promise<VoiceOption[]> {
       category: voice.category || 'generated', // 'generated' = tus voces, 'premade' = voces públicas
     }));
 
-    // Ordenar: primero voces prioritarias, luego personalizadas, luego públicas
-    // "Eva dorado" primero, "Martin Osborne" segundo, luego el resto
-    const priorityOrder = ['eva dorado', 'martin osborne'];
+    // Ordenar: primero voces prioritarias (castellano peninsular), luego personalizadas, luego públicas
+    // "Eva Dorado" primero, "Martín Osborne" segundo, luego el resto
+    const priorityNames = ['eva dorado', 'martín osborne', 'martin osborne'];
     
     voices.sort((a, b) => {
-      const aNameLower = a.name.toLowerCase();
-      const bNameLower = b.name.toLowerCase();
+      // Normalizar nombres para comparación (quitar acentos)
+      const normalize = (str: string) => str.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+      const aNameNorm = normalize(a.name);
+      const bNameNorm = normalize(b.name);
       
-      // Prioridad 1: Voces prioritarias (Eva dorado, Martin Osborne)
-      const aPriority = priorityOrder.indexOf(aNameLower);
-      const bPriority = priorityOrder.indexOf(bNameLower);
+      // Prioridad 1: Voces prioritarias (Eva Dorado, Martín Osborne)
+      let aPriority = -1;
+      let bPriority = -1;
+      
+      priorityNames.forEach((priority, index) => {
+        const priorityNorm = normalize(priority);
+        if (aNameNorm.includes(priorityNorm) && aPriority === -1) {
+          aPriority = index;
+        }
+        if (bNameNorm.includes(priorityNorm) && bPriority === -1) {
+          bPriority = index;
+        }
+      });
       
       if (aPriority !== -1 && bPriority !== -1) {
         return aPriority - bPriority; // Ordenar por posición en priorityOrder
