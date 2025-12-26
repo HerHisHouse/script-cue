@@ -21,17 +21,17 @@ const faqs: FAQ[] = [
     {
         category: 'General',
         question: '¿Cómo importo un guión?',
-        answer: 'Puedes importar guiones de dos formas:\n\n1. **Importar PDF**: Toca el botón "+" en la pantalla "Mis guiones" y selecciona "Importar guion". Elige un archivo PDF de tu dispositivo.\n\n2. **Escanear**: Usa la cámara para escanear páginas de guiones físicos, o sube imágenes desde la galería de tu terminal. La app convertirá el texto automáticamente.',
+        answer: 'Puedes importar guiones de dos formas:\n\n1. Importar PDF: Toca el botón "+" en la pantalla "Mis guiones" y selecciona "Importar guion". Elige un archivo PDF de tu dispositivo.\n\n2. Escanear: Usa la cámara para escanear páginas de guiones físicos, o sube imágenes desde la galería de tu terminal. La app convertirá el texto automáticamente.',
     },
     {
         category: 'Modos de Estudio',
         question: '¿Qué es el Modo Estudio?',
-        answer: 'El Modo Estudio es perfecto para memorizar tus líneas. La IA lee las líneas de los otros personajes mientras tú practicas las tuyas. Puedes:\n\n• Escuchar las líneas de la IA\n• Grabar tus propias líneas\n• Practicar con reconocimiento de voz\n• **Editar guion**: Un completo editor de texto que te permitirá revisar el guión completo, editar los diálogos, tomar notas y dibujos sobre el propio guión y guardar los cambios para poder consultarlos cuando lo necesites\n• **Modo texto literal**: Activa esta opción si quieres llevar tu memorización a otro nivel. Mientras practicas o grabas una sesión debes de decir tu texto literal sin poder variar ni añadir palabras, si lo haces la app te lo notificará\n• **Crear nuevas tarjetas**: Usa el botón "+" para añadir diálogos personalizados\n• **Menú de tarjeta (...)**: Cada tarjeta tiene opciones para editar el diálogo y moverla arriba o abajo',
+        answer: 'El Modo Estudio es perfecto para memorizar tus líneas. La IA lee las líneas de los otros personajes mientras tú practicas las tuyas. Puedes:\n\n• Escuchar las líneas de la IA\n• Grabar tus propias líneas\n• Practicar con reconocimiento de voz\n• Editar guion: Un completo editor de texto que te permitirá revisar el guión completo, editar los diálogos, tomar notas y dibujos sobre el propio guión y guardar los cambios para poder consultarlos cuando lo necesites\n• Modo texto literal: Activa esta opción si quieres llevar tu memorización a otro nivel. Mientras practicas o grabas una sesión debes de decir tu texto literal sin poder variar ni añadir palabras, si lo haces la app te lo notificará\n• Crear nuevas tarjetas: Usa el botón "+" para añadir diálogos personalizados\n• Menú de tarjeta (...): Cada tarjeta tiene opciones para editar el diálogo y moverla arriba o abajo',
     },
     {
         category: 'Modos de Estudio',
         question: '¿Qué es el Modo Casting?',
-        answer: 'El Modo Casting te permite grabar video de tu actuación mientras la IA lee las líneas de los otros personajes. Es ideal para:\n\n• Crear self-tapes profesionales\n• Practicar audiciones\n• Revisar tu actuación\n\nEl video final incluye tanto tu actuación como el audio de la IA mezclado.\n\nPuedes configurar:\n• **Duración de líneas**: Ajusta cuánto tiempo aparece cada línea en pantalla antes de avanzar automáticamente\n• **Líneas de acción**: Crea líneas personalizadas con indicaciones de acción (ej: "*Se levanta y camina hacia la puerta*") que aparecerán durante la grabación',
+        answer: 'El Modo Casting te permite grabar video de tu actuación mientras la IA lee las líneas de los otros personajes. Es ideal para:\n\n• Crear self-tapes profesionales\n• Practicar audiciones\n• Revisar tu actuación\n\nEl video final incluye tanto tu actuación como el audio de la IA mezclado.\n\nPuedes configurar:\n• Duración de líneas: Ajusta cuánto tiempo aparece cada línea en pantalla antes de avanzar automáticamente\n• Líneas de acción: Crea líneas personalizadas con indicaciones de acción (ej: "*Se levanta y camina hacia la puerta*") que aparecerán durante la grabación',
     },
     {
         category: 'Modos de Estudio',
@@ -66,7 +66,7 @@ const faqs: FAQ[] = [
     {
         category: 'Configuración',
         question: '¿Cómo cambio las voces de la IA?',
-        answer: 'Script Cue ofrece múltiples opciones de voces para la IA:\n\n• **Voces de OpenAI**: Voces de alta calidad con entonación natural\n• **Voces de ElevenLabs**: Voces premium con mayor realismo y expresividad\n• **Voces del sistema**: Voces por defecto de tu dispositivo\n• **Asignar voces a personajes**: Puedes asignar voces específicas a cada personaje de tu guión',
+        answer: 'Script Cue ofrece múltiples opciones de voces para la IA:\n\n• Voces de OpenAI: Voces de alta calidad con entonación natural\n• Voces de ElevenLabs: Voces premium con mayor realismo y expresividad\n• Voces del sistema: Voces por defecto de tu dispositivo\n• Asignar voces a personajes: Puedes asignar voces específicas a cada personaje de tu guión',
     },
     {
         category: 'Configuración',
