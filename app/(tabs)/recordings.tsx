@@ -762,11 +762,11 @@ export default function RecordingsScreen() {
       useNativeDriver: true,
     }).start();
 
-    // Auto-hide after 3 seconds ONLY if playing
+    // Auto-hide after 5 seconds ONLY if playing
     if (isPlaying) {
       hideControlsTimerRef.current = setTimeout(() => {
         hideControls();
-      }, 3000);
+      }, 5000);
     }
   }
 
