@@ -720,6 +720,10 @@ export default function StudioV2Screen() {
     }
 
     async function stopSessionRecording() {
+        console.log('[StopSession] Called');
+        console.log('[StopSession] Segments count:', segmentsRef.current.length);
+        console.log('[StopSession] Segments:', segmentsRef.current.map(s => ({ type: s.type, hasPath: !!s.storagePath, index: s.index })));
+
         // Stop timer
         if (recordingTimerRef.current) {
             clearInterval(recordingTimerRef.current);
@@ -734,9 +738,12 @@ export default function StudioV2Screen() {
 
         // Trigger Merge
         if (segmentsRef.current.length > 0) {
+            console.log('[StopSession] Triggering merge...');
             await mergeAndSaveSession();
         } else {
+            console.log('[StopSession] No segments to merge');
             setRecordingTime(0);
+            Alert.alert('Sin grabaciones', 'No se grabaron segmentos de audio.');
         }
     }
 
