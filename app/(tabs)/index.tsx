@@ -98,36 +98,45 @@ export default function IndexScreen() {
   async function performSendScript(target: { projectId: string; folderId: string | null; name: string }) {
     if ((!sendScriptId && bulkScriptIds.length === 0) || !user) return;
     try {
-      logger.log('[Enviar a][Guiones] Iniciando envío a:', target.name);
+      logger.log('[Enviar a][Guiones] Iniciando copia a:', target.name);
 
-      const payload: any = {
-        project_id: target.projectId,
-        user_id: user.id,
-        folder_id: target.folderId
-      };
+      const idsToProcess = bulkScriptIds.length > 0 ? bulkScriptIds : [sendScriptId!];
 
-      let error;
-      if (bulkScriptIds.length > 0) {
-        logger.log('[Enviar a][Guiones] Movimiento múltiple:', bulkScriptIds.length);
-        const res = await supabase
-          .from('scripts')
-          .update(payload)
-          .in('id', bulkScriptIds)
-          .eq('user_id', user.id);
-        error = res.error;
-      } else {
-        logger.log('[Enviar a][Guiones] Movimiento individual:', sendScriptId);
-        const res = await supabase
-          .from('scripts')
-          .update(payload)
-          .eq('id', sendScriptId!)
-          .eq('user_id', user.id);
-        error = res.error;
+      // Obtener los guiones originales
+      const { data: originalScripts, error: fetchError } = await supabase
+        .from('scripts')
+        .select('*')
+        .in('id', idsToProcess)
+        .eq('user_id', user.id);
+
+      if (fetchError) {
+        logger.error('[Enviar a][Guiones] Error al obtener guiones:', fetchError);
+        throw fetchError;
       }
 
-      if (error) {
-        logger.error('[Enviar a][Guiones] Error Supabase:', error);
-        throw error;
+      if (!originalScripts || originalScripts.length === 0) {
+        throw new Error('No se encontraron los guiones seleccionados');
+      }
+
+      // Crear copias de los guiones con el nuevo project_id
+      const scriptCopies = originalScripts.map(script => {
+        const { id, created_at, updated_at, ...scriptData } = script;
+        return {
+          ...scriptData,
+          project_id: target.projectId,
+          user_id: user.id,
+          title: `${script.title || 'Sin título'} (copia)`,
+        };
+      });
+
+      // Insertar las copias
+      const { error: insertError } = await supabase
+        .from('scripts')
+        .insert(scriptCopies);
+
+      if (insertError) {
+        logger.error('[Enviar a][Guiones] Error al copiar:', insertError);
+        throw insertError;
       }
 
       logger.log('[Enviar a][Guiones] Éxito. Refrescando lista...');
@@ -138,12 +147,12 @@ export default function IndexScreen() {
       setScriptSelectionMode(false);
       setSelectedScriptIds(new Set());
 
-      Alert.alert('Éxito', `Se ha enviado a "${target.name}" correctamente.`);
+      Alert.alert('Éxito', `Se ha copiado a "${target.name}" correctamente.`);
 
       await loadScripts();
     } catch (e: any) {
       logger.error('[Enviar a][Guiones] Excepción:', e?.message || e);
-      Alert.alert('Error', 'No se pudo enviar el guion. Verifica tu conexión.');
+      Alert.alert('Error', 'No se pudo copiar el guion. Verifica tu conexión.');
     }
   }
 

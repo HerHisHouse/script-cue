@@ -255,36 +255,45 @@ export default function RecordingsScreen() {
   const performSendRecording = async (target: { projectId: string; folderId: string | null; name: string }) => {
     if ((!sendRecordingId && bulkRecordingIds.length === 0) || !user) return;
     try {
-      logger.log('[Enviar a][Grabaciones] Iniciando envío a:', target.name);
+      logger.log('[Enviar a][Grabaciones] Iniciando copia a:', target.name);
 
-      const payload: any = {
-        project_id: target.projectId,
-        user_id: user.id,
-        folder_id: target.folderId
-      };
+      const idsToProcess = bulkRecordingIds.length > 0 ? bulkRecordingIds : [sendRecordingId!];
 
-      let error;
-      if (bulkRecordingIds.length > 0) {
-        logger.log('[Enviar a][Grabaciones] Movimiento múltiple:', bulkRecordingIds.length);
-        const res = await supabase
-          .from('recordings')
-          .update(payload)
-          .in('id', bulkRecordingIds)
-          .eq('user_id', user.id);
-        error = res.error;
-      } else {
-        logger.log('[Enviar a][Grabaciones] Movimiento individual:', sendRecordingId);
-        const res = await supabase
-          .from('recordings')
-          .update(payload)
-          .eq('id', sendRecordingId!)
-          .eq('user_id', user.id);
-        error = res.error;
+      // Obtener las grabaciones originales
+      const { data: originalRecordings, error: fetchError } = await supabase
+        .from('recordings')
+        .select('*')
+        .in('id', idsToProcess)
+        .eq('user_id', user.id);
+
+      if (fetchError) {
+        logger.error('[Enviar a][Grabaciones] Error al obtener grabaciones:', fetchError);
+        throw fetchError;
       }
 
-      if (error) {
-        logger.error('[Enviar a][Grabaciones] Error Supabase:', error);
-        throw error;
+      if (!originalRecordings || originalRecordings.length === 0) {
+        throw new Error('No se encontraron las grabaciones seleccionadas');
+      }
+
+      // Crear copias de las grabaciones con el nuevo project_id
+      const recordingCopies = originalRecordings.map(recording => {
+        const { id, created_at, ...recordingData } = recording;
+        return {
+          ...recordingData,
+          project_id: target.projectId,
+          user_id: user.id,
+          title: `${recording.title || 'Sin título'} (copia)`,
+        };
+      });
+
+      // Insertar las copias
+      const { error: insertError } = await supabase
+        .from('recordings')
+        .insert(recordingCopies);
+
+      if (insertError) {
+        logger.error('[Enviar a][Grabaciones] Error al copiar:', insertError);
+        throw insertError;
       }
 
       logger.log('[Enviar a][Grabaciones] Éxito. Refrescando lista...');
@@ -295,13 +304,13 @@ export default function RecordingsScreen() {
       setSelectionMode(false);
       setSelectedIds(new Set());
 
-      Alert.alert('Éxito', `Se ha enviado a "${target.name}" correctamente.`);
+      Alert.alert('Éxito', `Se ha copiado a "${target.name}" correctamente.`);
 
       // Forzar refresco
       await handleRefresh();
     } catch (e: any) {
       logger.error('[Enviar a][Grabaciones] Excepción:', e?.message || e);
-      Alert.alert('Error', 'No se pudo enviar la grabación. Verifica tu conexión o intenta de nuevo.');
+      Alert.alert('Error', 'No se pudo copiar la grabación. Verifica tu conexión o intenta de nuevo.');
     }
   };
   const defaultGridCols = windowWidth >= 1200 ? 5 : windowWidth >= 800 ? 4 : 3;

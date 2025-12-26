@@ -199,7 +199,7 @@ export function SendToModal({ visible, onClose, onMove, currentProjectId }: Send
                             onPress={handleConfirm}
                             disabled={!selectedId}
                         >
-                            <Text style={{ color: '#fff', fontWeight: '600' }}>Mover aquí</Text>
+                            <Text style={{ color: '#fff', fontWeight: '600' }}>Copiar aquí</Text>
                         </TouchableOpacity>
                     </View>
                 </View>

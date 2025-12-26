@@ -1,0 +1,401 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="Script Cue - Tu compañero de escena con IA. Practica tus guiones con voces de inteligencia artificial. Disponible en App Store y Google Play.">
+    <meta name="keywords" content="app para actores, practicar guiones, inteligencia artificial, voces IA, script practice, acting app">
+    <meta name="author" content="Script Cue">
+    
+    <!-- Open Graph -->
+    <meta property="og:title" content="Script Cue - Tu compañero de escena con IA">
+    <meta property="og:description" content="Practica tus guiones con voces de inteligencia artificial. La app definitiva para actores y actrices.">
+    <meta property="og:type" content="website">
+    <meta property="og:url" content="https://www.scriptcue.es">
+    <meta property="og:image" content="https://www.scriptcue.es/og-image.png">
+    
+    <!-- Twitter Card -->
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="Script Cue - Tu compañero de escena con IA">
+    <meta name="twitter:description" content="Practica tus guiones con voces de inteligencia artificial.">
+    
+    <title>Script Cue | Tu compañero de escena con IA</title>
+    
+    <!-- Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    
+    <!-- Styles -->
+    <link rel="stylesheet" href="styles.css">
+    
+    <!-- Favicon -->
+    <link rel="icon" type="image/png" href="../assets/images/favicon.png">
+</head>
+<body>
+    <!-- Navigation -->
+    <nav class="navbar" id="navbar">
+        <div class="nav-container">
+            <a href="#" class="nav-logo">
+                <img src="../assets/images/icon.png" alt="Script Cue Logo" class="logo-img">
+                <span class="logo-text">Script Cue</span>
+            </a>
+            <div class="nav-menu" id="nav-menu">
+                <a href="#features" class="nav-link">Características</a>
+                <a href="#modes" class="nav-link">Modos</a>
+                <a href="#how-it-works" class="nav-link">Cómo funciona</a>
+                <a href="#download" class="nav-link nav-cta">Descargar</a>
+            </div>
+            <button class="nav-toggle" id="nav-toggle" aria-label="Toggle menu">
+                <span class="hamburger"></span>
+            </button>
+        </div>
+    </nav>
+
+    <!-- Hero Section -->
+    <section class="hero" id="hero">
+        <div class="hero-bg"></div>
+        <div class="hero-content">
+            <div class="hero-text">
+                <span class="hero-badge">🎭 La app para actores y actrices</span>
+                <h1 class="hero-title">
+                    Tu compañero de escena <span class="gradient-text">con IA</span>
+                </h1>
+                <p class="hero-subtitle">
+                    Practica tus guiones con voces de inteligencia artificial que leen las líneas de tus compañeros de escena. Ensaya en cualquier momento, en cualquier lugar.
+                </p>
+                <div class="hero-buttons">
+                    <a href="#download" class="btn btn-primary">
+                        <svg class="btn-icon" viewBox="0 0 24 24" fill="currentColor">
+                            <path d="M17.05 20.28c-.98.95-2.05.8-3.08.35-1.09-.46-2.09-.48-3.24 0-1.44.62-2.2.44-3.06-.35C2.79 15.25 3.51 7.59 9.05 7.31c1.35.07 2.29.74 3.08.8 1.18-.24 2.31-.93 3.57-.84 1.51.12 2.65.72 3.4 1.8-3.12 1.87-2.38 5.98.48 7.13-.57 1.5-1.31 2.99-2.54 4.09l.01-.01zM12.03 7.25c-.15-2.23 1.66-4.07 3.74-4.25.29 2.58-2.34 4.5-3.74 4.25z"/>
+                        </svg>
+                        App Store
+                    </a>
+                    <a href="#download" class="btn btn-secondary">
+                        <svg class="btn-icon" viewBox="0 0 24 24" fill="currentColor">
+                            <path d="M3.609 1.814L13.792 12 3.61 22.186a.996.996 0 01-.61-.92V2.734a1 1 0 01.609-.92zm10.89 10.893l2.302 2.302-10.937 6.333 8.635-8.635zm3.199-3.198l2.807 1.626a1 1 0 010 1.73l-2.808 1.626L15.206 12l2.492-2.491zM5.864 2.658L16.8 8.99l-2.302 2.302-8.634-8.634z"/>
+                        </svg>
+                        Google Play
+                    </a>
+                </div>
+            </div>
+            <div class="hero-mockups">
+                <div class="mockup mockup-main">
+                    <img src="screenshots/studio-mode.png" alt="Script Cue - Modo Estudio" class="mockup-screen">
+                </div>
+                <div class="mockup mockup-secondary">
+                    <img src="screenshots/modes.png" alt="Script Cue - Modos disponibles" class="mockup-screen">
+                </div>
+            </div>
+        </div>
+        <div class="hero-scroll">
+            <span>Descubre más</span>
+            <div class="scroll-indicator"></div>
+        </div>
+    </section>
+
+    <!-- Features Section -->
+    <section class="features" id="features">
+        <div class="container">
+            <div class="section-header">
+                <span class="section-badge">Características</span>
+                <h2 class="section-title">Todo lo que necesitas para <span class="gradient-text">ensayar</span></h2>
+                <p class="section-subtitle">Script Cue combina tecnología de vanguardia con las necesidades reales de los actores profesionales.</p>
+            </div>
+            <div class="features-grid">
+                <div class="feature-card">
+                    <div class="feature-icon">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+                            <polyline points="14 2 14 8 20 8"></polyline>
+                            <line x1="16" y1="13" x2="8" y2="13"></line>
+                            <line x1="16" y1="17" x2="8" y2="17"></line>
+                            <polyline points="10 9 9 9 8 9"></polyline>
+                        </svg>
+                    </div>
+                    <h3 class="feature-title">Importa guiones PDF</h3>
+                    <p class="feature-description">Sube tus guiones en formato PDF y la app detecta automáticamente los personajes y diálogos.</p>
+                </div>
+                <div class="feature-card">
+                    <div class="feature-icon">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <circle cx="12" cy="12" r="10"></circle>
+                            <path d="M8 14s1.5 2 4 2 4-2 4-2"></path>
+                            <line x1="9" y1="9" x2="9.01" y2="9"></line>
+                            <line x1="15" y1="9" x2="15.01" y2="9"></line>
+                        </svg>
+                    </div>
+                    <h3 class="feature-title">Detección de personajes</h3>
+                    <p class="feature-description">Identificación automática de todos los personajes con estadísticas de líneas y apariciones.</p>
+                </div>
+                <div class="feature-card">
+                    <div class="feature-icon">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"></path>
+                            <path d="M19 10v2a7 7 0 0 1-14 0v-2"></path>
+                            <line x1="12" y1="19" x2="12" y2="23"></line>
+                            <line x1="8" y1="23" x2="16" y2="23"></line>
+                        </svg>
+                    </div>
+                    <h3 class="feature-title">Voces IA realistas</h3>
+                    <p class="feature-description">Voces de inteligencia artificial de alta calidad que leen las líneas de tus compañeros de escena.</p>
+                </div>
+                <div class="feature-card">
+                    <div class="feature-icon">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <circle cx="12" cy="12" r="10"></circle>
+                            <polygon points="10 8 16 12 10 16 10 8"></polygon>
+                        </svg>
+                    </div>
+                    <h3 class="feature-title">Graba tus ensayos</h3>
+                    <p class="feature-description">Guarda tus sesiones de práctica en audio o vídeo para revisar tu progreso.</p>
+                </div>
+                <div class="feature-card">
+                    <div class="feature-icon">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
+                        </svg>
+                    </div>
+                    <h3 class="feature-title">Feedback en tiempo real</h3>
+                    <p class="feature-description">Recibe retroalimentación instantánea sobre tu interpretación y precisión de texto.</p>
+                </div>
+                <div class="feature-card">
+                    <div class="feature-icon">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
+                            <line x1="9" y1="9" x2="15" y2="15"></line>
+                            <line x1="15" y1="9" x2="9" y2="15"></line>
+                        </svg>
+                    </div>
+                    <h3 class="feature-title">Organiza tus proyectos</h3>
+                    <p class="feature-description">Crea carpetas para organizar guiones, grabaciones y sesiones por proyecto.</p>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Modes Section -->
+    <section class="modes" id="modes">
+        <div class="container">
+            <div class="section-header">
+                <span class="section-badge">6 Modos de práctica</span>
+                <h2 class="section-title">Un modo para cada <span class="gradient-text">necesidad</span></h2>
+                <p class="section-subtitle">Desde ensayos intensivos hasta práctica relajada en el coche, Script Cue se adapta a tu estilo.</p>
+            </div>
+            <div class="modes-grid">
+                <div class="mode-card mode-estudio">
+                    <div class="mode-icon">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <polygon points="5 3 19 12 5 21 5 3"></polygon>
+                        </svg>
+                    </div>
+                    <h3 class="mode-title">Modo Estudio</h3>
+                    <p class="mode-description">Practica tus líneas con la IA respondiendo como tus compañeros. Control total sobre cada diálogo.</p>
+                </div>
+                <div class="mode-card mode-coach">
+                    <div class="mode-icon">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
+                            <circle cx="9" cy="7" r="4"></circle>
+                            <path d="M23 21v-2a4 4 0 0 0-3-3.87"></path>
+                            <path d="M16 3.13a4 4 0 0 1 0 7.75"></path>
+                        </svg>
+                    </div>
+                    <h3 class="mode-title">Modo Coach</h3>
+                    <p class="mode-description">Tu coach personal de interpretación. Recibe feedback sobre tu entonación, ritmo y emoción.</p>
+                </div>
+                <div class="mode-card mode-memory">
+                    <div class="mode-icon">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <circle cx="12" cy="12" r="10"></circle>
+                            <path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"></path>
+                            <line x1="12" y1="17" x2="12.01" y2="17"></line>
+                        </svg>
+                    </div>
+                    <h3 class="mode-title">Modo Memory</h3>
+                    <p class="mode-description">Memoriza tus líneas progresivamente. Las palabras se ocultan poco a poco hasta que las domines.</p>
+                </div>
+                <div class="mode-card mode-analisis">
+                    <div class="mode-icon">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+                            <polyline points="14 2 14 8 20 8"></polyline>
+                            <line x1="16" y1="13" x2="8" y2="13"></line>
+                            <line x1="16" y1="17" x2="8" y2="17"></line>
+                        </svg>
+                    </div>
+                    <h3 class="mode-title">Modo Análisis</h3>
+                    <p class="mode-description">Analiza tus escenas en profundidad. Entiende la estructura, objetivos y emociones de cada diálogo.</p>
+                </div>
+                <div class="mode-card mode-casting">
+                    <div class="mode-icon">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <rect x="2" y="3" width="20" height="14" rx="2" ry="2"></rect>
+                            <line x1="8" y1="21" x2="16" y2="21"></line>
+                            <line x1="12" y1="17" x2="12" y2="21"></line>
+                        </svg>
+                    </div>
+                    <h3 class="mode-title">Modo Casting</h3>
+                    <p class="mode-description">Graba tus self-tapes profesionales. La IA lee las líneas del lector mientras tú actúas ante la cámara.</p>
+                </div>
+                <div class="mode-card mode-coche">
+                    <div class="mode-icon">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M14 16H9m10 0h3v-3.15a1 1 0 0 0-.84-.99L16 11l-2.7-3.6a1 1 0 0 0-.8-.4H5.24a2 2 0 0 0-1.8 1.1l-.8 1.63A6 6 0 0 0 2 12.42V16h2"></path>
+                            <circle cx="6.5" cy="16.5" r="2.5"></circle>
+                            <circle cx="16.5" cy="16.5" r="2.5"></circle>
+                        </svg>
+                    </div>
+                    <h3 class="mode-title">Modo Coche</h3>
+                    <p class="mode-description">Practica mientras conduces de forma segura. Interfaz minimalista, control por voz y manos libres.</p>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- How It Works -->
+    <section class="how-it-works" id="how-it-works">
+        <div class="container">
+            <div class="section-header">
+                <span class="section-badge">Fácil y rápido</span>
+                <h2 class="section-title">Empieza en <span class="gradient-text">3 pasos</span></h2>
+            </div>
+            <div class="steps">
+                <div class="step">
+                    <div class="step-number">1</div>
+                    <div class="step-content">
+                        <h3 class="step-title">Sube tu guión</h3>
+                        <p class="step-description">Importa tu guión en PDF o escanéalo directamente con la cámara de tu móvil.</p>
+                    </div>
+                </div>
+                <div class="step-connector"></div>
+                <div class="step">
+                    <div class="step-number">2</div>
+                    <div class="step-content">
+                        <h3 class="step-title">Elige tu personaje</h3>
+                        <p class="step-description">Script Cue detecta automáticamente los personajes. Selecciona el tuyo y configura las voces IA.</p>
+                    </div>
+                </div>
+                <div class="step-connector"></div>
+                <div class="step">
+                    <div class="step-number">3</div>
+                    <div class="step-content">
+                        <h3 class="step-title">¡A ensayar!</h3>
+                        <p class="step-description">Elige el modo que prefieras y comienza a practicar. La IA hará de tus compañeros de escena.</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Testimonials -->
+    <section class="testimonials" id="testimonials">
+        <div class="container">
+            <div class="section-header">
+                <span class="section-badge">Testimonios</span>
+                <h2 class="section-title">Lo que dicen los <span class="gradient-text">profesionales</span></h2>
+            </div>
+            <div class="testimonials-grid">
+                <div class="testimonial-card">
+                    <div class="testimonial-content">
+                        <p>"Script Cue ha revolucionado mi forma de prepararme para los castings. Ya no necesito molestar a nadie para que me dé réplicas."</p>
+                    </div>
+                    <div class="testimonial-author">
+                        <div class="author-avatar">MC</div>
+                        <div class="author-info">
+                            <span class="author-name">María C.</span>
+                            <span class="author-role">Actriz de teatro</span>
+                        </div>
+                    </div>
+                </div>
+                <div class="testimonial-card">
+                    <div class="testimonial-content">
+                        <p>"El Modo Coche es genial. Aprovecho los trayectos para repasar mis líneas de forma segura. ¡Imprescindible!"</p>
+                    </div>
+                    <div class="testimonial-author">
+                        <div class="author-avatar">JR</div>
+                        <div class="author-info">
+                            <span class="author-name">Javier R.</span>
+                            <span class="author-role">Actor de series</span>
+                        </div>
+                    </div>
+                </div>
+                <div class="testimonial-card">
+                    <div class="testimonial-content">
+                        <p>"El Modo Memory me ayuda a memorizar mis líneas sin esfuerzo. Es como tener un profesor particular siempre disponible."</p>
+                    </div>
+                    <div class="testimonial-author">
+                        <div class="author-avatar">LP</div>
+                        <div class="author-info">
+                            <span class="author-name">Laura P.</span>
+                            <span class="author-role">Actriz de cine</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- CTA Section -->
+    <section class="cta" id="download">
+        <div class="container">
+            <div class="cta-content">
+                <div class="cta-glow"></div>
+                <h2 class="cta-title">¿Listo para llevar tu interpretación al siguiente nivel?</h2>
+                <p class="cta-subtitle">Únete a cientos de actores y actrices que ya ensayan con Script Cue.</p>
+                <div class="cta-buttons">
+                    <a href="https://apps.apple.com/app/script-cue" class="btn btn-primary btn-large" target="_blank" rel="noopener">
+                        <svg class="btn-icon" viewBox="0 0 24 24" fill="currentColor">
+                            <path d="M17.05 20.28c-.98.95-2.05.8-3.08.35-1.09-.46-2.09-.48-3.24 0-1.44.62-2.2.44-3.06-.35C2.79 15.25 3.51 7.59 9.05 7.31c1.35.07 2.29.74 3.08.8 1.18-.24 2.31-.93 3.57-.84 1.51.12 2.65.72 3.4 1.8-3.12 1.87-2.38 5.98.48 7.13-.57 1.5-1.31 2.99-2.54 4.09l.01-.01zM12.03 7.25c-.15-2.23 1.66-4.07 3.74-4.25.29 2.58-2.34 4.5-3.74 4.25z"/>
+                        </svg>
+                        Descargar en App Store
+                    </a>
+                    <a href="https://play.google.com/store/apps/details?id=com.alexdiaz.scriptcue" class="btn btn-secondary btn-large" target="_blank" rel="noopener">
+                        <svg class="btn-icon" viewBox="0 0 24 24" fill="currentColor">
+                            <path d="M3.609 1.814L13.792 12 3.61 22.186a.996.996 0 01-.61-.92V2.734a1 1 0 01.609-.92zm10.89 10.893l2.302 2.302-10.937 6.333 8.635-8.635zm3.199-3.198l2.807 1.626a1 1 0 010 1.73l-2.808 1.626L15.206 12l2.492-2.491zM5.864 2.658L16.8 8.99l-2.302 2.302-8.634-8.634z"/>
+                        </svg>
+                        Descargar en Google Play
+                    </a>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Footer -->
+    <footer class="footer">
+        <div class="container">
+            <div class="footer-content">
+                <div class="footer-brand">
+                    <a href="#" class="footer-logo">
+                        <img src="../assets/images/icon.png" alt="Script Cue Logo" class="logo-img">
+                        <span class="logo-text">Script Cue</span>
+                    </a>
+                    <p class="footer-tagline">Tu compañero de escena con IA</p>
+                </div>
+                <div class="footer-links">
+                    <div class="footer-column">
+                        <h4>Producto</h4>
+                        <a href="#features">Características</a>
+                        <a href="#modes">Modos</a>
+                        <a href="#how-it-works">Cómo funciona</a>
+                    </div>
+                    <div class="footer-column">
+                        <h4>Legal</h4>
+                        <a href="/legal/privacy">Política de privacidad</a>
+                        <a href="/legal/terms">Términos de uso</a>
+                    </div>
+                    <div class="footer-column">
+                        <h4>Contacto</h4>
+                        <a href="mailto:hola@scriptcue.es">hola@scriptcue.es</a>
+                    </div>
+                </div>
+            </div>
+            <div class="footer-bottom">
+                <p>&copy; 2025 Script Cue. Todos los derechos reservados.</p>
+            </div>
+        </div>
+    </footer>
+
+    <script src="script.js"></script>
+</body>
+</html>
