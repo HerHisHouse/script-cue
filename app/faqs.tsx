@@ -46,7 +46,7 @@ const faqs: FAQ[] = [
     {
         category: 'Grabaciones',
         question: '¿Dónde se guardan mis grabaciones?',
-        answer: 'Tus grabaciones se guardan en la pestaña "Grabaciones". Puedes:\n\n• Reproducir audio y video\n• Enviar los archivos a tus proyectos (esto mueve el archivo de la pestaña Grabaciones)\n• Compartir con otras personas\n• Eliminar las que no necesites\n\nPor defecto se sincronizan con la nube, pero puedes activar "Almacenamiento local" en Ajustes.',
+        answer: 'Tus grabaciones se guardan en la pestaña "Grabaciones". Puedes:\n\n• Reproducir audio y video\n• Copiar los archivos a tus proyectos usando "Enviar a..." (el archivo se mantiene también en Grabaciones)\n• Compartir con otras personas\n• Eliminar las que no necesites\n\nPor defecto se sincronizan con la nube, pero puedes activar "Almacenamiento local" en Ajustes.',
     },
     {
         category: 'Grabaciones',
