@@ -18,9 +18,9 @@ export default function TabLayout() {
   const TabIcon = ({ Icon, size, color, focused }: { Icon: any; size: number; color: string; focused: boolean }) => (
     <View
       style={{
-        width: 54,
-        height: 38,
-        borderRadius: 19,
+        width: 50,
+        height: 34,
+        borderRadius: 17,
         backgroundColor: focused ? `${colors.primary}15` : 'transparent',
         justifyContent: 'center',
         alignItems: 'center',
