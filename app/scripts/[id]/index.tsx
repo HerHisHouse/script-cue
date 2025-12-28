@@ -332,7 +332,7 @@ export default function ScriptDetailScreen() {
         )}
 
         {/* Nuevo texto de encabezado */}
-        <Text style={[styles.hintText, { color: colors.textSecondary, marginBottom: 16, textAlign: 'center' }]}>
+        <Text style={[styles.hintText, { color: colors.text, marginBottom: 16, textAlign: 'center', fontSize: rf(15), fontWeight: '700' }]}>
           Elige entre los seis modos disponibles
         </Text>
 
@@ -704,9 +704,10 @@ const styles = StyleSheet.create({
     elevation: 0,
   },
   actionText: {
-    fontSize: rf(16),
-    fontWeight: '600',
+    fontSize: rf(15),
+    fontWeight: '700',
     color: '#FFFFFF',
+    textAlign: 'center',
   },
   actionTextSmall: {
     fontSize: rf(14),

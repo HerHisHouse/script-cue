@@ -1446,11 +1446,18 @@ export default function CastingModeScreen() {
                 <Text style={[styles.processingText, { color: colors.text }]}>
                   Procesando tu casting...
                 </Text>
-                {processingProgress > 0 && (
-                  <View style={styles.progressContainer}>
-                    <View style={[styles.progressBar, { width: `${processingProgress}%`, backgroundColor: colors.primary }]} />
-                  </View>
-                )}
+                <Text style={[styles.processingText, { color: colors.primary, fontSize: rf(24), fontWeight: '700', marginTop: 8 }]}>
+                  {processingProgress}%
+                </Text>
+                <View style={styles.progressContainer}>
+                  <View style={[styles.progressBar, { width: `${processingProgress}%`, backgroundColor: colors.primary }]} />
+                </View>
+                <Text style={[styles.processingText, { color: colors.textSecondary, fontSize: rf(12), marginTop: 8 }]}>
+                  {processingProgress < 30 ? 'Subiendo video...' :
+                    processingProgress < 70 ? 'Mezclando audio con IA...' :
+                      processingProgress < 90 ? 'Descargando video procesado...' :
+                        'Guardando...'}
+                </Text>
               </View>
             )}
 
