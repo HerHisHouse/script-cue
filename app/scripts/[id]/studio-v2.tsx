@@ -886,7 +886,25 @@ export default function StudioV2Screen() {
                 .map(s => ({ path: s.storagePath, type: s.type }));
 
             if (serverSegments.length === 0) {
-                throw new Error('No segments uploaded to storage');
+                console.warn('[Merge] No segments uploaded - saving locally');
+                const userSegs = segmentsRef.current.filter(s => s.type === 'user');
+                if (userSegs.length > 0 && userSegs[0].uri) {
+                    await supabase.from('recordings').insert({
+                        user_id: user.id,
+                        script_id: id as string,
+                        audio_url: userSegs[0].uri,
+                        duration_seconds: recordingTime,
+                        title: `Sesión ${new Date().toLocaleString('es-ES')}`,
+                        notes: `Local (${segmentsRef.current.length} segmentos)`
+                    });
+                    Alert.alert('Sesión guardada', 'Se guardó tu grabación localmente.');
+                    setIsProcessing(false);
+                    setRecordingTime(0);
+                    segmentsRef.current = [];
+                    uploadingSegmentsRef.current = 0;
+                    return;
+                }
+                throw new Error('No segments available');
             }
 
             console.log('[Merge] Sending to server:', serverSegments.length, 'segments');
