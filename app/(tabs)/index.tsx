@@ -289,7 +289,7 @@ export default function IndexScreen() {
         />
       )}
       <ScreenHeader
-        title="Mis guiones"
+        title="Guiones"
         onLayout={(e) => setHeaderHeight(e.nativeEvent.layout.height)}
         childrenBelowTitle={
           scriptSelectionMode ? (

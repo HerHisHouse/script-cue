@@ -137,3 +137,28 @@ function initParallax() {
         }
     });
 }
+
+/**
+ * Toggle FAQ accordion
+ */
+function toggleFAQ(button) {
+    const faqItem = button.closest('.faq-item');
+    const wasActive = faqItem.classList.contains('active');
+
+    // Close all other FAQs in the same category (optional - remove if you want multiple open)
+    const category = faqItem.closest('.faq-category');
+    if (category) {
+        category.querySelectorAll('.faq-item.active').forEach(item => {
+            if (item !== faqItem) {
+                item.classList.remove('active');
+            }
+        });
+    }
+
+    // Toggle current FAQ
+    if (wasActive) {
+        faqItem.classList.remove('active');
+    } else {
+        faqItem.classList.add('active');
+    }
+}

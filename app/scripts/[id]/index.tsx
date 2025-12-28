@@ -315,6 +315,11 @@ export default function ScriptDetailScreen() {
                     {(c.name || '-')} · {getCharacterVoiceText(c)}
                   </Text>
                 ))}
+                {/* Hint dentro del recuadro */}
+                <Text style={[styles.hintText, { color: colors.textSecondary, marginTop: 12, textAlign: 'center' }]}>
+                  Modificar personajes y voces: abre
+                  <Text style={[styles.hintLink, { color: colors.primary }]} onPress={goToCharacterConfig}> Configuración de personajes</Text>.
+                </Text>
               </View>
             </>
           )}
@@ -326,10 +331,9 @@ export default function ScriptDetailScreen() {
           </Text>
         )}
 
-        {/* Aviso: solo enlace a Configuración de personajes */}
+        {/* Nuevo texto de encabezado */}
         <Text style={[styles.hintText, { color: colors.textSecondary, marginBottom: 16, textAlign: 'center' }]}>
-          Modificar personajes y voces: abre
-          <Text style={[styles.hintLink, { color: colors.primary }]} onPress={goToCharacterConfig}> Configuración de personajes</Text>.
+          Elige entre los seis modos disponibles
         </Text>
 
         <View style={[styles.actionsRow, { marginTop: 'auto' }]}>
@@ -340,7 +344,7 @@ export default function ScriptDetailScreen() {
               onPress={() => router.push(`/scripts/${id}/studio-v2`)}
             >
               <Play size={24} color="#FFFFFF" />
-              <Text style={styles.actionText}>Modo Estudio</Text>
+              <Text style={styles.actionText}>ESTUDIO</Text>
             </TouchableOpacity>
 
             {/* 2. Modo Memory */}
@@ -349,7 +353,7 @@ export default function ScriptDetailScreen() {
               onPress={() => router.push(`/scripts/${id}/memory`)}
             >
               <Brain size={24} color="#FFFFFF" />
-              <Text style={styles.actionText}>Modo Memory</Text>
+              <Text style={styles.actionText}>MEMORIA</Text>
             </TouchableOpacity>
 
             {/* 3. Modo Análisis */}
@@ -358,7 +362,7 @@ export default function ScriptDetailScreen() {
               onPress={() => router.push(`/scripts/${id}/analysis`)}
             >
               <FileText size={24} color="#FFFFFF" />
-              <Text style={styles.actionText}>Modo Análisis</Text>
+              <Text style={styles.actionText}>ANÁLISIS</Text>
             </TouchableOpacity>
           </View>
 
@@ -369,7 +373,7 @@ export default function ScriptDetailScreen() {
               onPress={() => router.push(`/scripts/${id}/coach`)}
             >
               <UserCog size={24} color="#FFFFFF" />
-              <Text style={styles.actionText}>Modo Coach</Text>
+              <Text style={styles.actionText}>COACH</Text>
             </TouchableOpacity>
 
             {/* 5. Modo Casting */}
@@ -378,7 +382,7 @@ export default function ScriptDetailScreen() {
               onPress={() => router.push(`/scripts/${id}/casting`)}
             >
               <Clapperboard size={24} color="#FFFFFF" />
-              <Text style={styles.actionText}>Modo Casting</Text>
+              <Text style={styles.actionText}>CASTING</Text>
             </TouchableOpacity>
 
             {/* 6. Modo Coche */}
@@ -387,7 +391,7 @@ export default function ScriptDetailScreen() {
               onPress={() => router.push(`/scripts/${id}/car`)}
             >
               <Car size={24} color="#FFFFFF" />
-              <Text style={styles.actionText}>Modo Coche</Text>
+              <Text style={styles.actionText}>COCHE</Text>
             </TouchableOpacity>
           </View>
         </View>

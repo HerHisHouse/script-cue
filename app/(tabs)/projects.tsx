@@ -489,7 +489,7 @@ export default function ProjectsScreen() {
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]} edges={['top', 'left', 'right']}>
       <ScreenHeader
-        title={selectionMode ? `${selectedItems.size} seleccionados` : (currentProjectId ? breadcrumbs[breadcrumbs.length - 1].name : "Mis Proyectos")}
+        title={selectionMode ? `${selectedItems.size} seleccionados` : (currentProjectId ? breadcrumbs[breadcrumbs.length - 1].name : "Proyectos")}
         leftAction={
           selectionMode ? (
             <TouchableOpacity onPress={() => { setSelectionMode(false); setSelectedItems(new Set()); }}>
