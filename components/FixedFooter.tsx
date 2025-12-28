@@ -42,7 +42,7 @@ export function FixedFooter({ activeKey }: Props) {
     <View style={[styles.container, { backgroundColor: colors.surface, borderTopColor: colors.border, height: baseHeight + bottomInset + 10, paddingBottom: bottomInset + 4, paddingTop: rp(8) }]}>
       <TouchableOpacity style={styles.item} activeOpacity={0.7} onPress={() => router.replace('/(tabs)')}>
         <TabIcon Icon={FileText} isActive={activeKey === 'index'} />
-        <Text style={[styles.label, { color: activeKey === 'index' ? active : inactive }]}>Mis Guiones</Text>
+        <Text style={[styles.label, { color: activeKey === 'index' ? active : inactive }]}>Guiones</Text>
       </TouchableOpacity>
       <TouchableOpacity style={styles.item} activeOpacity={0.7} onPress={() => router.replace('/(tabs)/recordings')}>
         <TabIcon Icon={Mic} isActive={activeKey === 'recordings'} />
@@ -50,7 +50,7 @@ export function FixedFooter({ activeKey }: Props) {
       </TouchableOpacity>
       <TouchableOpacity style={styles.item} activeOpacity={0.7} onPress={() => router.replace('/(tabs)/projects')}>
         <TabIcon Icon={Folder} isActive={activeKey === 'projects'} />
-        <Text style={[styles.label, { color: activeKey === 'projects' ? active : inactive }]}>Mis proyectos</Text>
+        <Text style={[styles.label, { color: activeKey === 'projects' ? active : inactive }]}>Proyectos</Text>
       </TouchableOpacity>
       <TouchableOpacity style={styles.item} activeOpacity={0.7} onPress={() => router.replace('/(tabs)/settings')}>
         <TabIcon Icon={Settings} isActive={activeKey === 'settings'} />
