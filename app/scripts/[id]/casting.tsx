@@ -1129,56 +1129,69 @@ export default function CastingModeScreen() {
       setProcessingProgress(70);
       console.log('[Casting] Downloading processed video...');
 
-      // Download the processed video from the server
-      const downloadResponse = await fetch(result.downloadUrl);
-      if (!downloadResponse.ok) {
-        throw new Error('Failed to download processed video');
-      }
+      // Save to local file system with progress tracking
+      const localPath = `${FileSystem.documentDirectory}casting_${Date.now()}.mp4`;
 
-      // Save to local file system
-      const localPath = `${FileSystem.documentDirectory}${result.fileName}`;
-      const downloadResumable = FileSystem.createDownloadResumable(
-        result.downloadUrl,
-        localPath
-      );
-
-      const downloadResult = await downloadResumable.downloadAsync();
-      if (!downloadResult || !downloadResult.uri) {
-        throw new Error('Download failed');
-      }
-
-      console.log('[Casting] Video downloaded to:', downloadResult.uri);
-      setProcessingProgress(90);
-
-      // Insert into DB with local path
-      const { error: dbError } = await supabase.from('recordings').insert({
-        user_id: user?.id,
-        script_id: id,
-        project_id: null,
-        title: `Casting - ${script?.title || 'Guión'}`,
-        audio_url: downloadResult.uri, // Store local path
-        type: 'video',
-        duration_seconds: recordingTimeRef.current,
-        file_size_bytes: 0,
-      });
-
-      if (dbError) throw dbError;
-
-      setProcessingProgress(100);
-      setIsProcessing(false);
-
-      Alert.alert(
-        '¡Video procesado con éxito!',
-        'Tu casting con audio de IA ha sido guardado en Grabaciones.',
-        [
-          {
-            text: 'OK',
-            onPress: () => {
-              router.replace(`/scripts/${id}`);
-            }
+      try {
+        const downloadResumable = FileSystem.createDownloadResumable(
+          result.downloadUrl,
+          localPath,
+          {},
+          (downloadProgress) => {
+            const progress = downloadProgress.totalBytesWritten / downloadProgress.totalBytesExpectedToWrite;
+            const downloadPercent = 70 + (progress * 20); // 70-90%
+            setProcessingProgress(Math.min(90, downloadPercent));
+            console.log(`[Casting] Download progress: ${(progress * 100).toFixed(1)}%`);
           }
-        ]
-      );
+        );
+
+        const downloadResult = await downloadResumable.downloadAsync();
+        if (!downloadResult || !downloadResult.uri) {
+          throw new Error('Download failed - no URI returned');
+        }
+
+        console.log('[Casting] Video downloaded to:', downloadResult.uri);
+        setProcessingProgress(90);
+
+        // Insert into DB with local path
+        const { error: dbError } = await supabase.from('recordings').insert({
+          user_id: user?.id,
+          script_id: id,
+          project_id: null,
+          title: `Casting - ${script?.title || 'Guión'}`,
+          audio_url: downloadResult.uri, // Store local path
+          type: 'video',
+          duration_seconds: recordingTimeRef.current,
+          file_size_bytes: 0,
+        });
+
+        if (dbError) {
+          console.error('[Casting] DB Error:', dbError);
+          throw new Error(`Error al guardar en base de datos: ${dbError.message}`);
+        }
+
+        setProcessingProgress(100);
+        setIsProcessing(false);
+
+        console.log('[Casting] Success! Video saved to database');
+
+        Alert.alert(
+          '¡Video procesado con éxito!',
+          'Tu casting con audio de IA ha sido guardado en Grabaciones.',
+          [
+            {
+              text: 'OK',
+              onPress: () => {
+                router.replace(`/scripts/${id}`);
+              }
+            }
+          ]
+        );
+
+      } catch (downloadError: any) {
+        console.error('[Casting] Download/Save Error:', downloadError);
+        throw new Error(`Error al descargar o guardar el video: ${downloadError.message}`);
+      }
 
     } catch (e: any) {
       console.error('[Casting] Error:', e);
