@@ -63,7 +63,7 @@ export default function TabLayout() {
       <Tabs.Screen
         name="index"
         options={{
-          title: 'Mis Guiones',
+          title: 'Guiones',
           tabBarIcon: ({ size, color, focused }) => (
             <TabIcon Icon={FileText} size={size} color={color} focused={focused} />
           ),
@@ -81,7 +81,7 @@ export default function TabLayout() {
       <Tabs.Screen
         name="projects"
         options={{
-          title: 'Mis proyectos',
+          title: 'Proyectos',
           tabBarIcon: ({ size, color, focused }) => (
             <TabIcon Icon={Folder} size={size} color={color} focused={focused} />
           ),

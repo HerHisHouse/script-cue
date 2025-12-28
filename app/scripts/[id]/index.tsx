@@ -10,7 +10,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, useLocalSearchParams, Link } from 'expo-router';
-import { ArrowLeft, Play, Users, Trash2, Brain, Car, Clapperboard, UserCog, User, ArrowLeftRight, FileText } from 'lucide-react-native';
+import { ArrowLeft, Play, Users, Trash2, Brain, Car, Clapperboard, GraduationCap, User, ArrowLeftRight, FileText } from 'lucide-react-native';
 import { supabase } from '@/utils/supabase';
 import { Script, Character } from '@/types/database';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
@@ -372,7 +372,7 @@ export default function ScriptDetailScreen() {
               style={styles.actionButton}
               onPress={() => router.push(`/scripts/${id}/coach`)}
             >
-              <UserCog size={24} color="#FFFFFF" />
+              <GraduationCap size={24} color="#FFFFFF" />
               <Text style={styles.actionText}>COACH</Text>
             </TouchableOpacity>
 
