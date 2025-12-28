@@ -21,9 +21,9 @@ export function FixedFooter({ activeKey }: Props) {
   const TabIcon = ({ Icon, isActive }: { Icon: any; isActive: boolean }) => (
     <View
       style={{
-        width: 56,
-        height: 40,
-        borderRadius: 20,
+        width: 54,
+        height: 38,
+        borderRadius: 19,
         backgroundColor: isActive ? `${colors.primary}15` : 'transparent',
         justifyContent: 'center',
         alignItems: 'center',
