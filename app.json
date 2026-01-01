@@ -17,7 +17,15 @@
       "supportsTablet": true,
       "infoPlist": {
         "NSMicrophoneUsageDescription": "Necesitamos acceso al micrófono para grabar tus sesiones de estudio y detectar la lectura de tus líneas.",
-        "ITSAppUsesNonExemptEncryption": false
+        "ITSAppUsesNonExemptEncryption": false,
+        "NSAppTransportSecurity": {
+          "NSExceptionDomains": {
+            "script-cue-merge-server.onrender.com": {
+              "NSExceptionAllowsInsecureHTTPLoads": true,
+              "NSIncludesSubdomains": true
+            }
+          }
+        }
       },
       "bundleIdentifier": "com.alexdiaz.scriptcue"
     },
