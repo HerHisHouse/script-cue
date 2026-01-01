@@ -1466,7 +1466,7 @@ export default function StudioV2Screen() {
                             </TouchableOpacity>
                         </View>
 
-                        <ScrollView contentContainerStyle={{ paddingBottom: 20 }}>
+                        <ScrollView contentContainerStyle={{ paddingBottom: 20, paddingHorizontal: 20 }} style={{ width: '100%' }}>
                             <Text style={[styles.modalSubtitle, { color: colors.text, marginBottom: 12 }]}>
                                 1. Selecciona el Personaje:
                             </Text>
@@ -1501,18 +1501,20 @@ export default function StudioV2Screen() {
                                     <Text style={[styles.modalSubtitle, { color: colors.text, marginBottom: 12 }]}>
                                         2. Escribe el Diálogo:
                                     </Text>
-                                    <TextInput
-                                        style={[styles.lineInput, {
-                                            color: colors.text,
-                                            borderColor: colors.border,
-                                            // Removing width: 100% to let padding handle layout preventing overflow
-                                        }]}
-                                        placeholder="Escribe aquí lo que dice el personaje..."
-                                        placeholderTextColor={colors.textSecondary}
-                                        multiline
-                                        value={newLineText}
-                                        onChangeText={setNewLineText}
-                                    />
+                                    <View style={{ width: '100%' }}>
+                                        <TextInput
+                                            style={[styles.lineInput, {
+                                                color: colors.text,
+                                                borderColor: colors.border,
+                                            }]}
+                                            placeholder="Escribe aquí lo que dice el personaje..."
+                                            placeholderTextColor={colors.textSecondary}
+                                            multiline
+                                            scrollEnabled={false}
+                                            value={newLineText}
+                                            onChangeText={setNewLineText}
+                                        />
+                                    </View>
 
                                     <View style={{ flexDirection: 'row', gap: 10, marginTop: 10 }}>
                                         <TouchableOpacity
@@ -2215,6 +2217,7 @@ const styles = StyleSheet.create({
         shadowOpacity: 0.25,
         shadowRadius: rp(12),
         elevation: rp(10),
+        overflow: 'hidden',
     },
     modalHeader: {
         flexDirection: 'row',
