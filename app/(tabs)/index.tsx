@@ -344,7 +344,7 @@ export default function IndexScreen() {
               accessibilityRole="button"
               accessibilityLabel="Añadir guion"
               accessibilityHint="Abre el menú para importar o escanear"
-              style={styles.addButton}
+              style={[styles.addButton, { backgroundColor: colors.primary }]}
               onPress={() => setShowAddMenu((v) => !v)}
             >
               <Plus size={20} color="#FFFFFF" />
@@ -708,14 +708,13 @@ const styles = StyleSheet.create({
     zIndex: 10,
   },
   headerIconButton: {
-    padding: rp(8),
+    padding: rp(4),
     borderRadius: 8,
   },
   addButton: {
     width: 40,
     height: 40,
     borderRadius: 20,
-    backgroundColor: '#683a79',
     justifyContent: 'center',
     alignItems: 'center',
     marginLeft: 8,
