@@ -768,14 +768,14 @@ export default function ImportScriptScreen() {
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
       {uploading && (
-        <View style={[styles.backdrop, { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.7)', alignItems: 'center', justifyContent: 'center', zIndex: 2000 }]}>
+        <View style={[styles.backdrop, { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.95)', alignItems: 'center', justifyContent: 'center', zIndex: 2000 }]}>
           <ActivityIndicator size="large" color={colors.primary} style={{ marginBottom: 20 }} />
           <Text style={{ color: '#FFFFFF', fontSize: rf(18), fontWeight: '600', marginBottom: 10 }}>Importando el guion...</Text>
           <View style={{ width: '80%', height: 8, backgroundColor: 'rgba(255,255,255,0.2)', borderRadius: 4, overflow: 'hidden' }}>
             <View style={{ width: `${uploadProgress}%`, height: '100%', backgroundColor: colors.primary }} />
           </View>
           <Text style={{ color: 'rgba(255,255,255,0.8)', marginTop: 8, fontSize: rf(14) }}>{Math.round(uploadProgress)}%</Text>
-          <Text style={{ color: 'rgba(255,255,255,0.6)', marginTop: 16, fontSize: rf(13), textAlign: 'center', paddingHorizontal: rp(40) }}>
+          <Text style={{ color: 'rgba(255,255,255,0.7)', marginTop: 16, fontSize: rf(13), textAlign: 'center', paddingHorizontal: rp(40) }}>
             Generando voces IA en segundo plano, este proceso puede tardar unos minutos...
           </Text>
         </View>
