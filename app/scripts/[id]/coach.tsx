@@ -408,7 +408,9 @@ export default function CoachModeScreen() {
             <View style={[styles.scoreCard, { backgroundColor: colors.surface }]}>
               <Text style={[styles.sectionTitle, { color: colors.primary }]}>Evolución</Text>
               <Text style={[styles.bulletText, { color: colors.text }]}>
-                {analysis.comparacion || "No hay suficientes datos para comparar aún."}
+                {typeof analysis.comparacion === 'string'
+                  ? analysis.comparacion
+                  : JSON.stringify(analysis.comparacion, null, 2) || "No hay suficientes datos para comparar aún."}
               </Text>
             </View>
           </View>
@@ -569,7 +571,7 @@ export default function CoachModeScreen() {
               <TouchableOpacity onPress={togglePlayback} style={[styles.playButton, { backgroundColor: colors.primary }]}>
                 {playbackStatus?.isPlaying ? <Pause size={40} color="#FFFFFF" /> : <Play size={40} color="#FFFFFF" />}
               </TouchableOpacity>
-              <Text style={styles.audioLabel}>Audio Recording</Text>
+              <Text style={styles.audioLabel}>Reproducir grabación</Text>
             </View>
           )}
         </View>
@@ -635,6 +637,11 @@ export default function CoachModeScreen() {
                 <Text style={[styles.tabText, { color: activeTab === 'exercises' ? colors.primary : colors.textSecondary }]}>Ejercicios</Text>
               </TouchableOpacity>
             </ScrollView>
+
+            {/* Scroll Indicator */}
+            <View style={styles.scrollIndicator}>
+              <Text style={[styles.scrollHint, { color: colors.textSecondary }]}>← Desliza para ver más →</Text>
+            </View>
 
             {/* CONTENT */}
             {renderAnalysisContent()}
@@ -887,5 +894,16 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     fontSize: rf(17),
     fontWeight: '700',
+  },
+  scrollIndicator: {
+    paddingVertical: rp(8),
+    alignItems: 'center',
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(150,150,150,0.1)',
+  },
+  scrollHint: {
+    fontSize: rf(12),
+    fontStyle: 'italic',
+    opacity: 0.6,
   },
 });
