@@ -17,7 +17,7 @@ export function validateAndNormalizeFilename(input: string, fallbackExt: string 
   if (!nameInput) throw new RenameError('EMPTY', 'Nombre requerido');
   if (nameInput.length > maxLen) throw new RenameError('TOO_LONG', `Usa hasta ${maxLen} caracteres.`);
   if (nameInput.includes('/') || nameInput.includes('\\')) throw new RenameError('INVALID_CHAR', 'No uses "/" ni "\\"');
-  const allowed = /^[A-Za-z0-9 _.-]+$/;
+  const allowed = /^[A-Za-z0-9áéíóúÁÉÍÓÚñÑüÜ _.-]+$/;
   if (!allowed.test(nameInput)) throw new RenameError('INVALID_CHAR', 'Usa letras, números, espacio, guion y punto.');
 
   const hasExt = nameInput.includes('.');

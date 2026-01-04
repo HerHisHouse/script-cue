@@ -648,7 +648,18 @@ export default function CoachModeScreen() {
 
             {/* FOOTER ACTION */}
             <View style={{ padding: rp(20) }}>
-              <TouchableOpacity style={[styles.secondaryButton, { borderColor: colors.primary }]}>
+              <TouchableOpacity
+                style={[styles.secondaryButton, { borderColor: colors.primary }]}
+                onPress={() => {
+                  if (!selectedRecording) return;
+                  // Navigate to Studio mode for audio, Casting mode for video
+                  if (selectedRecording.type === 'video') {
+                    router.push(`/scripts/${id}/casting`);
+                  } else {
+                    router.push(`/scripts/${id}/studio-v2`);
+                  }
+                }}
+              >
                 <Repeat size={20} color={colors.primary} />
                 <Text style={[styles.secondaryButtonText, { color: colors.primary }]}>Nueva toma con este feedback</Text>
               </TouchableOpacity>

@@ -265,16 +265,6 @@ export default function SettingsScreen() {
           </View>
         </View>
 
-        <View style={styles.section}>
-          <Text style={[styles.sectionTitle, { color: colors.textSecondary }]}>Acerca de</Text>
-          <View style={[styles.infoCard, { backgroundColor: colors.surface }]}>
-            <Image source={require('../../assets/images/icon.png')} style={{ width: 24, height: 24, borderRadius: 6 }} />
-            <View style={styles.infoText}>
-              <Text style={[styles.appName, { color: colors.text }]}>{appName}</Text>
-              <Text style={[styles.appVersion, { color: colors.textSecondary }]}>{appVersion}</Text>
-            </View>
-          </View>
-        </View>
 
         <View style={styles.section}>
           <Text style={[styles.sectionTitle, { color: colors.textSecondary }]}>Ayuda</Text>
@@ -324,8 +314,18 @@ export default function SettingsScreen() {
               <Text style={[styles.legalCardTitle, { color: colors.text }]}>Uso de Inteligencia Artificial</Text>
               <Text style={[styles.legalCardDesc, { color: colors.textSecondary }]}>Información sobre el uso de IA</Text>
             </View>
-            <Text style={{ color: colors.textSecondary }}>›</Text>
           </TouchableOpacity>
+        </View>
+
+        <View style={styles.section}>
+          <Text style={[styles.sectionTitle, { color: colors.textSecondary }]}>Acerca de</Text>
+          <View style={[styles.infoCard, { backgroundColor: colors.surface }]}>
+            <Image source={require('../../assets/images/icon.png')} style={{ width: 24, height: 24, borderRadius: 6 }} />
+            <View style={styles.infoText}>
+              <Text style={[styles.appName, { color: colors.text }]}>{appName}</Text>
+              <Text style={[styles.appVersion, { color: colors.textSecondary }]}>{appVersion}</Text>
+            </View>
+          </View>
         </View>
 
         <TouchableOpacity style={[styles.signOutButton, { backgroundColor: colors.surface, borderColor: isDark ? '#7F1D1D' : '#FEE2E2' }]} onPress={() => setShowSignOutConfirm(true)}>
