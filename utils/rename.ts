@@ -27,6 +27,15 @@ export function validateAndNormalizeFilename(input: string, fallbackExt: string 
   return { finalFilename, baseName };
 }
 
+// Normalize filename for storage (remove accents) while keeping original for display
+function normalizeForStorage(filename: string): string {
+  return filename
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '') // Remove diacritics
+    .replace(/ñ/g, 'n')
+    .replace(/Ñ/g, 'N');
+}
+
 export function splitPath(oldPath: string): { dir: string; file: string } {
   const file = oldPath.split('/').pop() ?? '';
   const dir = oldPath.includes('/') ? oldPath.slice(0, oldPath.lastIndexOf('/') + 1) : '';
@@ -50,11 +59,15 @@ export async function performRename(
   const oldExt = oldFile.includes('.') ? oldFile.slice(oldFile.lastIndexOf('.') + 1) : '';
 
   const { finalFilename, baseName } = validateAndNormalizeFilename(inputName, oldExt || 'm4a');
-  if (finalFilename === oldFile) {
+  
+  // Normalize filename for storage (remove accents) but keep original baseName for title
+  const normalizedFilename = normalizeForStorage(finalFilename);
+  
+  if (normalizedFilename === oldFile) {
     throw new RenameError('NO_CHANGE', 'El nombre es igual al actual.');
   }
 
-  const { newPath, dir } = buildNewPath(oldPath, finalFilename);
+  const { newPath, dir } = buildNewPath(oldPath, normalizedFilename);
 
   // Manejo de renombrado local (modo "Solo local"), sin usar Storage
   if (oldPath.startsWith('local/')) {
@@ -65,7 +78,7 @@ export async function performRename(
     // En el sistema de archivos, los archivos locales se guardan directamente en documentDirectory
     // con el nombre del archivo, sin el prefijo 'local/'. Por ello, mapeamos a filename-only.
     const oldFilename = oldPath.split('/').pop() ?? '';
-    const newFilename = finalFilename;
+    const newFilename = normalizedFilename;
     const oldFull = `${baseDir}${oldFilename}`;
     const newFull = `${baseDir}${newFilename}`;
 
@@ -104,7 +117,7 @@ export async function performRename(
     .from('recordings')
     .list(dir || '', { limit: 1000 });
   if (listErr) throw listErr;
-  if ((existingList || []).some((f: any) => f.name === finalFilename)) {
+  if ((existingList || []).some((f: any) => f.name === normalizedFilename)) {
     throw new RenameError('DUPLICATE', 'Ya existe un archivo con ese nombre.');
   }
 
