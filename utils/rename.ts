@@ -51,7 +51,7 @@ export function buildNewPath(oldPath: string, finalFilename: string): { newPath:
 // High-level rename operation to ease integration testing
 export async function performRename(
   supabase: any,
-  recording: { id: string; audio_url: string },
+  recording: { id: string; audio_url: string; title?: string },
   inputName: string
 ): Promise<{ newPath: string; newTitle: string }> {
   const oldPath = recording.audio_url;
@@ -63,7 +63,9 @@ export async function performRename(
   // Normalize filename for storage (remove accents) but keep original baseName for title
   const normalizedFilename = normalizeForStorage(finalFilename);
   
-  if (normalizedFilename === oldFile) {
+  // Compare the new title (baseName) with the current title, not the filename
+  const currentTitle = recording.title || oldFile.replace(/\.[^.]+$/, ''); // Remove extension from filename if no title
+  if (baseName === currentTitle) {
     throw new RenameError('NO_CHANGE', 'El nombre es igual al actual.');
   }
 
