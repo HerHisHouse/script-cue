@@ -409,6 +409,7 @@ export default function EchoModeScreen() {
                 setPhase('feedback');
                 setScore(s => s - 2);
                 unsavedPoints.current -= 2;
+                console.log('[Echo] Saving failed line:', currentLine.id, 'reason: echo_error');
                 addFailedLine(id as string, currentLine.id, 'echo_error');
                 animatePoints(-2);
 

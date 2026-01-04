@@ -240,6 +240,7 @@ export default function GhostModeScreen() {
             // Registrar error para Ciclos de Refuerzo
             const line = allLines[currentIndex];
             if (line) {
+                console.log('[Ghost] Saving failed line:', line.id, 'reason: ghost_error');
                 addFailedLine(id as string, line.id, 'ghost_error');
             }
 
