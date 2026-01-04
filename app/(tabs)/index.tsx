@@ -347,7 +347,7 @@ export default function IndexScreen() {
               style={[styles.addButton, { backgroundColor: colors.primary }]}
               onPress={() => setShowAddMenu((v) => !v)}
             >
-              <Plus size={20} color="#FFFFFF" />
+              <Plus size={22} color="#FFFFFF" />
             </Pressable>
           </>
         }
@@ -717,7 +717,6 @@ const styles = StyleSheet.create({
     borderRadius: 20,
     justifyContent: 'center',
     alignItems: 'center',
-    marginLeft: 8,
   },
   fab: {
     position: 'absolute',
