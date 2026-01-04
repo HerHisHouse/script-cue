@@ -53,6 +53,7 @@ import { rf, rp } from '@/utils/responsive';
 import Constants from 'expo-constants';
 import { createTTSService } from '@/utils/tts';
 import { getSettings } from '@/utils/appSettings';
+import { setAudioModeForPlayback, enableRecordingMode } from '@/utils/audioMode';
 
 export default function StudioV2Screen() {
     const router = useRouter();
@@ -328,12 +329,14 @@ export default function StudioV2Screen() {
                     throw new Error('Failed to generate audio');
                 }
 
-                // Force speaker output for playback (only if not recording)
-                if (!isRecording) {
-                    await Audio.setAudioModeAsync({
-                        allowsRecordingIOS: false,
-                        playsInSilentModeIOS: true,
-                    });
+                // IMPORTANT: Force speaker output for AI audio on iOS
+                // On iOS, allowsRecordingIOS: true causes audio to play through earpiece
+                // We switch to playback mode for speaker output before playing
+                await setAudioModeForPlayback();
+
+                // Small delay for iOS to apply audio mode change
+                if (Platform.OS === 'ios') {
+                    await new Promise(resolve => setTimeout(resolve, 100));
                 }
 
                 // Upload AI segment BEFORE playing (if recording)
@@ -424,27 +427,13 @@ export default function StudioV2Screen() {
             setIsListening(true);
 
             await Audio.requestPermissionsAsync();
-            await Audio.setAudioModeAsync({
-                allowsRecordingIOS: true,
-                playsInSilentModeIOS: true,
-                staysActiveInBackground: true,
-                interruptionModeIOS: InterruptionModeIOS.DoNotMix,
-                shouldDuckAndroid: true,
-                interruptionModeAndroid: InterruptionModeAndroid.DoNotMix,
-                playThroughEarpieceAndroid: false,
-            });
-            // Force speaker output specifically for iOS when recording
-            await Audio.setAudioModeAsync({
-                allowsRecordingIOS: true,
-                playsInSilentModeIOS: true,
-                staysActiveInBackground: true,
-                interruptionModeIOS: InterruptionModeIOS.DoNotMix,
-                shouldDuckAndroid: true,
-                interruptionModeAndroid: InterruptionModeAndroid.DoNotMix,
-                playThroughEarpieceAndroid: false,
-            });
+            // Enable recording mode
+            await enableRecordingMode();
+
             // iOS needs time to apply audio mode
-            await new Promise((resolve) => setTimeout(resolve, 300));
+            if (Platform.OS === 'ios') {
+                await new Promise((resolve) => setTimeout(resolve, 200));
+            }
 
             const { recording } = await Audio.Recording.createAsync(
                 Audio.RecordingOptionsPresets.HIGH_QUALITY
