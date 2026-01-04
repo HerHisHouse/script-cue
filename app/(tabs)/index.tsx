@@ -623,11 +623,20 @@ export default function IndexScreen() {
           <View style={[styles.modalContent, { backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border }]}>
             <Text style={[styles.modalTitle, { color: colors.text }]}>Renombrar guion</Text>
             <TextInput
-              style={[styles.searchInput, { borderWidth: 1, borderColor: colors.border, borderRadius: 8, padding: 10, color: colors.text }]}
+              style={[{
+                borderWidth: 1,
+                borderColor: colors.border,
+                borderRadius: 8,
+                padding: 12,
+                color: colors.text,
+                fontSize: rf(16),
+                backgroundColor: colors.input
+              }]}
               value={renameScriptTitle}
               onChangeText={setRenameScriptTitle}
               placeholder="Nuevo título"
               placeholderTextColor={colors.textSecondary}
+              autoFocus
             />
             <View style={{ flexDirection: 'row', gap: 12 }}>
               <TouchableOpacity style={[styles.modalButton, { backgroundColor: colors.input, borderWidth: 1, borderColor: colors.border }]} onPress={() => { setRenameModalVisible(false); setRenameScriptId(null); }}>
