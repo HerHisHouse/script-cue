@@ -3,7 +3,7 @@
     "name": "Script Cue",
     "slug": "script-cue",
     "version": "1.0.0",
-    "orientation": "portrait",
+    "orientation": "default",
     "icon": "./assets/images/icon.png",
     "scheme": "scriptcue",
     "userInterfaceStyle": "automatic",

@@ -97,6 +97,9 @@ export default function CarModeScreen() {
   const silenceTimerRef = useRef<NodeJS.Timeout | null>(null);
   const appState = useRef(AppState.currentState);
   const soundRef = useRef<Audio.Sound | null>(null);
+  // Sequence ID to cancel stale audio operations
+  const sequenceRef = useRef(0);
+  const isCleaningUpRef = useRef(false);
 
   // Load Data
   useEffect(() => {
@@ -182,55 +185,104 @@ export default function CarModeScreen() {
     return characterVoiceConfigs.find(c => c.characterName.toUpperCase() === characterName.toUpperCase());
   };
 
+  // Robust cleanup function to stop all audio
+  const cleanupAllAudio = async () => {
+    if (isCleaningUpRef.current) return;
+    isCleaningUpRef.current = true;
+
+    try {
+      Speech.stop();
+      if (soundRef.current) {
+        try {
+          const status = await soundRef.current.getStatusAsync();
+          if (status.isLoaded) {
+            await soundRef.current.stopAsync();
+            await soundRef.current.unloadAsync();
+          }
+        } catch (e) { }
+        soundRef.current = null;
+      }
+      await stopRecording();
+    } finally {
+      isCleaningUpRef.current = false;
+    }
+  };
+
   const processCurrentLine = async () => {
-    console.log('[Car Mode] processCurrentLine called for index:', currentIndex);
-    await stopRecording();
-    Speech.stop();
-    if (soundRef.current) {
-      try {
-        await soundRef.current.stopAsync();
-        await soundRef.current.unloadAsync();
-      } catch { }
-      soundRef.current = null;
+    // Increment sequence ID to invalidate any pending callbacks
+    const mySequence = ++sequenceRef.current;
+    console.log('[Car Mode] processCurrentLine called for index:', currentIndex, 'sequence:', mySequence);
+
+    await cleanupAllAudio();
+
+    if (mySequence !== sequenceRef.current) {
+      console.log('[Car Mode] Sequence mismatch, aborting processCurrentLine');
+      return;
     }
 
     const line = dialogueLines[currentIndex];
     if (!line) return;
 
-    // All lines are played with AI voice in Car Mode
     setPhase('playing_ai');
     setStatusText(`${line.characterName}...`);
 
-    // Get voice config for this character
     const voiceConfig = getVoiceConfigForCharacter(line.characterName);
     const effectiveProvider = voiceConfig?.provider || 'openai';
     const voiceId = voiceConfig?.voiceId || 'nova';
 
     console.log(`[Car Mode] Playing line for ${line.characterName}: provider=${effectiveProvider}, voiceId=${voiceId}`);
 
-    // Try to use cached audio
+    const handleAudioFinished = () => {
+      if (mySequence !== sequenceRef.current) {
+        console.log('[Car Mode] Sequence mismatch in handleAudioFinished, ignoring');
+        return;
+      }
+      setTimeout(() => {
+        if (mySequence === sequenceRef.current) {
+          advanceToNext();
+        }
+      }, 500);
+    };
+
+    const speakWithSystemTTS = () => {
+      const spanishVoice = availableVoices.find(v =>
+        v.language.startsWith('es') && v.identifier.includes('enhanced')
+      ) || availableVoices.find(v => v.language.startsWith('es'));
+
+      Speech.speak(line.text, {
+        language: 'es-ES',
+        rate: speechRate,
+        voice: spanishVoice?.identifier,
+        onDone: handleAudioFinished
+      });
+    };
+
     if (effectiveProvider === 'openai' || effectiveProvider === 'elevenlabs') {
       try {
         const Crypto = await import('expo-crypto');
-
         const textHash = await Crypto.digestStringAsync(
           Crypto.CryptoDigestAlgorithm.SHA256,
           line.text
         );
 
+        if (mySequence !== sequenceRef.current) return;
+
         console.log('[Car Mode] Checking cache for line:', line.id);
         const audioUri = await getCachedAudio(line.id, effectiveProvider, voiceId, textHash);
+
+        if (mySequence !== sequenceRef.current) return;
 
         if (audioUri) {
           console.log('[Car Mode] Playing cached audio:', audioUri);
 
-          // Configure for speaker output on iOS
           await Audio.setAudioModeAsync({
             allowsRecordingIOS: false,
             playsInSilentModeIOS: true,
             staysActiveInBackground: true,
             shouldDuckAndroid: true,
           });
+
+          if (mySequence !== sequenceRef.current) return;
 
           const { sound } = await Audio.Sound.createAsync(
             { uri: audioUri },
@@ -241,7 +293,9 @@ export default function CarModeScreen() {
 
           sound.setOnPlaybackStatusUpdate((status) => {
             if (status.isLoaded && status.didJustFinish) {
-              handleAudioFinished();
+              if (mySequence === sequenceRef.current) {
+                handleAudioFinished();
+              }
             }
           });
           return;
@@ -253,27 +307,8 @@ export default function CarModeScreen() {
       }
     }
 
-    // Fallback to System TTS
-    speakWithSystemTTS();
-
-    function handleAudioFinished() {
-      setTimeout(() => {
-        advanceToNext();
-      }, 500);
-    }
-
-    function speakWithSystemTTS() {
-      // Find a Spanish voice for system TTS
-      const spanishVoice = availableVoices.find(v =>
-        v.language.startsWith('es') && v.identifier.includes('enhanced')
-      ) || availableVoices.find(v => v.language.startsWith('es'));
-
-      Speech.speak(line.text, {
-        language: 'es-ES',
-        rate: speechRate,
-        voice: spanishVoice?.identifier,
-        onDone: handleAudioFinished
-      });
+    if (mySequence === sequenceRef.current) {
+      speakWithSystemTTS();
     }
   };
 
@@ -303,49 +338,35 @@ export default function CarModeScreen() {
     if (silenceTimerRef.current) clearTimeout(silenceTimerRef.current);
   };
 
-  const handleManualNext = () => {
-    stopRecording();
-    Speech.stop();
-    if (soundRef.current) {
-      soundRef.current.stopAsync().catch(() => { });
-    }
+
+  const handleManualNext = async () => {
+    sequenceRef.current++; // Invalidate pending callbacks
+    await cleanupAllAudio();
     advanceToNext();
   };
 
-  const handleManualPrev = () => {
-    stopRecording();
-    Speech.stop();
-    if (soundRef.current) {
-      soundRef.current.stopAsync().catch(() => { });
-    }
+  const handleManualPrev = async () => {
+    sequenceRef.current++; // Invalidate pending callbacks
+    await cleanupAllAudio();
     if (currentIndex > 0) setCurrentIndex(p => p - 1);
   };
 
-  const handleManualReplay = () => {
-    stopRecording();
-    Speech.stop();
-    if (soundRef.current) {
-      soundRef.current.stopAsync().catch(() => { });
-    }
+  const handleManualReplay = async () => {
+    sequenceRef.current++; // Invalidate pending callbacks
+    await cleanupAllAudio();
     processCurrentLine();
   };
 
-  const handleRestart = () => {
-    stopRecording();
-    Speech.stop();
-    if (soundRef.current) {
-      soundRef.current.stopAsync().catch(() => { });
-    }
+  const handleRestart = async () => {
+    sequenceRef.current++; // Invalidate pending callbacks
+    await cleanupAllAudio();
     setCurrentIndex(0);
   };
 
-  const handlePause = () => {
+  const handlePause = async () => {
+    sequenceRef.current++; // Invalidate pending callbacks
     setIsPaused(true);
-    stopRecording();
-    Speech.stop();
-    if (soundRef.current) {
-      soundRef.current.pauseAsync().catch(() => { });
-    }
+    await cleanupAllAudio();
     setStatusText('Pausado');
     setPhase('idle');
   };
