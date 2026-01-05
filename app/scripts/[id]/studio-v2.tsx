@@ -91,6 +91,8 @@ export default function StudioV2Screen() {
     const recordingRef = useRef<Audio.Recording | null>(null);
     const silenceTimerRef = useRef<NodeJS.Timeout | null>(null);
     const processingRef = useRef(false);
+    // Sequence ID to cancel stale audio operations
+    const audioSequenceRef = useRef(0);
 
     // Session Recording Refs
     const sessionRecordingRef = useRef<Audio.Recording | null>(null); // Not used for continuous anymore, but kept for types if needed
@@ -219,21 +221,34 @@ export default function StudioV2Screen() {
     }
 
     async function speakLine(line: DialogueLine) {
+        // Capture current sequence ID to detect if this operation becomes stale
+        const mySequence = ++audioSequenceRef.current;
+
         try {
             setIsSpeaking(true);
             await cleanupSound();
+
+            // Check if this operation is still valid
+            if (mySequence !== audioSequenceRef.current) {
+                console.log('[speakLine] Sequence mismatch after cleanup, aborting');
+                return;
+            }
 
             // Use system TTS provider if that's selected
             if (ttsProvider === 'system') {
                 Speech.speak(line.text, {
                     language: 'es-ES',
                     onDone: () => {
-                        setIsSpeaking(false);
-                        setTimeout(handleNext, 800);
+                        if (mySequence === audioSequenceRef.current) {
+                            setIsSpeaking(false);
+                            setTimeout(handleNext, 800);
+                        }
                     },
                     onError: () => {
-                        setIsSpeaking(false);
-                        setTimeout(handleNext, 800);
+                        if (mySequence === audioSequenceRef.current) {
+                            setIsSpeaking(false);
+                            setTimeout(handleNext, 800);
+                        }
                     }
                 });
                 // Note: System TTS doesn't generate a file, so we can't upload it
@@ -378,8 +393,13 @@ export default function StudioV2Screen() {
 
                 sound.setOnPlaybackStatusUpdate((status) => {
                     if (status.isLoaded && status.didJustFinish) {
-                        setIsSpeaking(false);
-                        setTimeout(handleNext, 800);
+                        // Only proceed if this sequence is still valid
+                        if (mySequence === audioSequenceRef.current) {
+                            setIsSpeaking(false);
+                            setTimeout(handleNext, 800);
+                        } else {
+                            console.log('[speakLine] Ignoring didJustFinish for stale sequence');
+                        }
                     }
                 });
             } catch (error) {
@@ -388,16 +408,20 @@ export default function StudioV2Screen() {
                 Speech.speak(line.text, {
                     language: 'es-ES',
                     onDone: () => {
-                        setIsSpeaking(false);
-                        setTimeout(handleNext, 800);
+                        if (mySequence === audioSequenceRef.current) {
+                            setIsSpeaking(false);
+                            setTimeout(handleNext, 800);
+                        }
                     }
                 });
             }
         } catch (error) {
             console.error('Error speaking line:', error);
-            setIsSpeaking(false);
-            // Continue anyway
-            setTimeout(handleNext, 800);
+            if (mySequence === audioSequenceRef.current) {
+                setIsSpeaking(false);
+                // Continue anyway
+                setTimeout(handleNext, 800);
+            }
         }
     }
 
@@ -618,6 +642,9 @@ export default function StudioV2Screen() {
 
     function handlePrevious() {
         if (currentIndex > 0) {
+            // Invalidate pending audio callbacks before changing line
+            audioSequenceRef.current++;
+            stopPlaying();
             setCurrentIndex(prev => prev - 1);
         }
     }
