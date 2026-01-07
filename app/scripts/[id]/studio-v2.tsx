@@ -42,6 +42,7 @@ import {
     X,
     Plus,
     FileText,
+    MessageSquare,
 } from 'lucide-react-native';
 import { Audio, InterruptionModeIOS, InterruptionModeAndroid } from 'expo-av';
 import * as Speech from 'expo-speech';
@@ -76,6 +77,7 @@ export default function StudioV2Screen() {
     const [hideUserLines, setHideUserLines] = useState(false);
     const [showMenu, setShowMenu] = useState(false);
     const [literalMode, setLiteralMode] = useState(false);
+    const [showStageDirections, setShowStageDirections] = useState(false); // Show parenthetical stage directions
     const [openEditMenuLineId, setOpenEditMenuLineId] = useState<string | null>(null);
 
     // TTS State
@@ -236,7 +238,8 @@ export default function StudioV2Screen() {
 
             // Use system TTS provider if that's selected
             if (ttsProvider === 'system') {
-                Speech.speak(line.text, {
+                // Use cleanText to avoid reading stage directions (parentheticals)
+                Speech.speak(line.cleanText, {
                     language: 'es-ES',
                     onDone: () => {
                         if (mySequence === audioSequenceRef.current) {
@@ -261,10 +264,10 @@ export default function StudioV2Screen() {
                 const { getCachedAudio, generateAndCacheAudio } = await import('@/utils/ttsCache');
                 const Crypto = await import('expo-crypto');
 
-                // Calculate text hash for cache lookup
+                // Calculate text hash for cache lookup - use cleanText (without stage directions)
                 const textHash = await Crypto.digestStringAsync(
                     Crypto.CryptoDigestAlgorithm.SHA256,
-                    line.text
+                    line.cleanText
                 );
 
                 // Determine provider and voice from character-specific settings
@@ -306,7 +309,8 @@ export default function StudioV2Screen() {
                     const voices = await Speech.getAvailableVoicesAsync();
                     const selectedVoice = voices.find(v => v.identifier === systemVoiceId);
 
-                    Speech.speak(line.text, {
+                    // Use cleanText to avoid reading stage directions
+                    Speech.speak(line.cleanText, {
                         language: selectedVoice?.language || 'es-ES',
                         voice: selectedVoice?.identifier,
                         onDone: () => {
@@ -330,11 +334,12 @@ export default function StudioV2Screen() {
                 // If not in cache, generate and cache
                 if (!audioUri && user) {
                     console.log(`Generating audio for ${line.characterName} with voice ${voiceId || 'default'}...`);
+                    // Use cleanText to avoid generating audio with stage directions
                     audioUri = await generateAndCacheAudio(
                         id as string,
                         line.id,
                         line.characterName,
-                        line.text,
+                        line.cleanText,
                         { provider: provider as any, voiceId: voiceId || undefined },
                         user.id
                     );
@@ -404,8 +409,8 @@ export default function StudioV2Screen() {
                 });
             } catch (error) {
                 console.error('Error speaking line:', error);
-                // Fallback to system TTS
-                Speech.speak(line.text, {
+                // Fallback to system TTS - use cleanText to avoid reading stage directions
+                Speech.speak(line.cleanText, {
                     language: 'es-ES',
                     onDone: () => {
                         if (mySequence === audioSequenceRef.current) {
@@ -1407,12 +1412,22 @@ export default function StudioV2Screen() {
                         </TouchableOpacity>
 
                         <TouchableOpacity
-                            style={[styles.menuItem, { borderBottomWidth: 0 }]}
+                            style={[styles.menuItem, { borderBottomColor: `${colors.border}99` }]}
                             onPress={() => { setLiteralMode(p => !p); setShowMenu(false); }}
                         >
                             <FileText size={20} color={literalMode ? colors.primary : colors.text} />
                             <Text style={[styles.menuItemText, { color: literalMode ? colors.primary : colors.text }]}>
                                 {literalMode ? 'Modo Texto Literal (Activo)' : 'Modo Texto Literal'}
+                            </Text>
+                        </TouchableOpacity>
+
+                        <TouchableOpacity
+                            style={[styles.menuItem, { borderBottomWidth: 0 }]}
+                            onPress={() => { setShowStageDirections(p => !p); setShowMenu(false); }}
+                        >
+                            <MessageSquare size={20} color={showStageDirections ? colors.primary : colors.text} />
+                            <Text style={[styles.menuItemText, { color: showStageDirections ? colors.primary : colors.text }]}>
+                                {showStageDirections ? 'Acotaciones (Activo)' : 'Acotaciones'}
                             </Text>
                         </TouchableOpacity>
                     </View>
@@ -1764,7 +1779,7 @@ export default function StudioV2Screen() {
                                                 styles.dialogueText,
                                                 { color: colors.text }
                                             ]}>
-                                                {currentLine.text}
+                                                {showStageDirections ? currentLine.text : currentLine.cleanText}
                                             </Text>
                                         )}
                                     </>
