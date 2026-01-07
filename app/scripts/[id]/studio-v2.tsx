@@ -10,6 +10,7 @@ import {
     Platform,
     TextInput,
     Pressable,
+    useColorScheme,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, useLocalSearchParams, Stack, useFocusEffect } from 'expo-router';
@@ -61,6 +62,7 @@ export default function StudioV2Screen() {
     const { id } = useLocalSearchParams();
     const { colors } = useTheme();
     const { user } = useAuth();
+    const colorScheme = useColorScheme();
 
     // Data State
     const [loading, setLoading] = useState(true);
@@ -1332,6 +1334,54 @@ export default function StudioV2Screen() {
     const currentLine = dialogueLines[currentIndex];
     const progressText = `Línea ${currentIndex + 1} / ${dialogueLines.length}`;
 
+    // Helper function to render text with colored stage directions
+    const renderTextWithStageDirections = (text: string) => {
+        if (!showStageDirections || !text.includes('(')) {
+            // No stage directions or not showing them - return plain text
+            return text;
+        }
+
+        // Color for stage directions based on theme
+        const stageDirectionColor = colorScheme === 'dark' ? '#FFA500' : '#DC2626'; // Orange for dark, Red for light
+
+        // Split text by parentheses and render with different colors
+        const parts: React.ReactNode[] = [];
+        let lastIndex = 0;
+        const regex = /\([^)]*\)/g;
+        let match;
+
+        while ((match = regex.exec(text)) !== null) {
+            // Add text before the parenthesis (dialogue)
+            if (match.index > lastIndex) {
+                parts.push(
+                    <Text key={`dialogue-${lastIndex}`} style={{ color: colors.text }}>
+                        {text.substring(lastIndex, match.index)}
+                    </Text>
+                );
+            }
+
+            // Add the parenthetical (stage direction) with different color
+            parts.push(
+                <Text key={`stage-${match.index}`} style={{ color: stageDirectionColor, fontStyle: 'italic' }}>
+                    {match[0]}
+                </Text>
+            );
+
+            lastIndex = match.index + match[0].length;
+        }
+
+        // Add remaining text after last parenthesis
+        if (lastIndex < text.length) {
+            parts.push(
+                <Text key={`dialogue-${lastIndex}`} style={{ color: colors.text }}>
+                    {text.substring(lastIndex)}
+                </Text>
+            );
+        }
+
+        return <>{parts}</>;
+    };
+
     return (
         <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
             {/* Hide System Header */}
@@ -1838,7 +1888,9 @@ export default function StudioV2Screen() {
                                                 styles.dialogueText,
                                                 { color: colors.text }
                                             ]}>
-                                                {showStageDirections ? currentLine.text : currentLine.cleanText}
+                                                {renderTextWithStageDirections(
+                                                    showStageDirections ? currentLine.text : currentLine.cleanText
+                                                )}
                                             </Text>
                                         )}
                                     </>
