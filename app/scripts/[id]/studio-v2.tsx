@@ -110,6 +110,10 @@ export default function StudioV2Screen() {
     const [showHeadphoneAlert, setShowHeadphoneAlert] = useState(false);
     const [dontShowHeadphoneAgain, setDontShowHeadphoneAgain] = useState(false);
 
+    // Stage Directions Info Alert State
+    const [showStageDirectionsInfo, setShowStageDirectionsInfo] = useState(false);
+    const [dontShowStageDirectionsAgain, setDontShowStageDirectionsAgain] = useState(false);
+
     // Editing State
     const [editingLineId, setEditingLineId] = useState<string | null>(null);
     const [editedText, setEditedText] = useState('');
@@ -1423,7 +1427,17 @@ export default function StudioV2Screen() {
 
                         <TouchableOpacity
                             style={[styles.menuItem, { borderBottomWidth: 0 }]}
-                            onPress={() => { setShowStageDirections(p => !p); setShowMenu(false); }}
+                            onPress={async () => {
+                                setShowMenu(false);
+                                // If activating, check if we should show the info modal
+                                if (!showStageDirections) {
+                                    const hidden = await AsyncStorage.getItem('hideStageDirectionsInfo');
+                                    if (hidden !== 'true') {
+                                        setShowStageDirectionsInfo(true);
+                                    }
+                                }
+                                setShowStageDirections(p => !p);
+                            }}
                         >
                             <MessageSquare size={20} color={showStageDirections ? colors.primary : colors.text} />
                             <Text style={[styles.menuItemText, { color: showStageDirections ? colors.primary : colors.text }]}>
@@ -1473,6 +1487,51 @@ export default function StudioV2Screen() {
                             <TouchableOpacity
                                 style={[styles.modalButton, { backgroundColor: colors.primary }]}
                                 onPress={confirmStartRecording}
+                            >
+                                <Text style={[styles.modalButtonText, { color: '#FFFFFF' }]}>Entendido</Text>
+                            </TouchableOpacity>
+                        </View>
+                    </View>
+                </View>
+            </Modal>
+
+            {/* Stage Directions Info Modal */}
+            <Modal
+                visible={showStageDirectionsInfo}
+                transparent={true}
+                animationType="fade"
+                onRequestClose={() => setShowStageDirectionsInfo(false)}
+            >
+                <View style={styles.modalOverlay}>
+                    <View style={[styles.modalContent, { backgroundColor: colors.surface }]}>
+                        <View style={styles.modalHeader}>
+                            <MessageSquare size={32} color={colors.primary} />
+                            <Text style={[styles.modalTitle, { color: colors.text }]}>Acotaciones</Text>
+                        </View>
+
+                        <Text style={[styles.modalText, { color: colors.textSecondary }]}>
+                            Al activar "Acotaciones" se mostrarán en las tarjetas para ofrecer más información sobre la escena. Si quieres que desaparezcan vuelve a pulsar para desactivarlas.
+                        </Text>
+
+                        <TouchableOpacity
+                            style={styles.checkboxContainer}
+                            onPress={() => setDontShowStageDirectionsAgain(!dontShowStageDirectionsAgain)}
+                        >
+                            <View style={[styles.checkbox, { borderColor: colors.textSecondary, backgroundColor: dontShowStageDirectionsAgain ? colors.primary : 'transparent' }]}>
+                                {dontShowStageDirectionsAgain && <Check size={12} color="#FFFFFF" />}
+                            </View>
+                            <Text style={[styles.checkboxText, { color: colors.textSecondary }]}>No volver a mostrar este mensaje</Text>
+                        </TouchableOpacity>
+
+                        <View style={styles.modalButtons}>
+                            <TouchableOpacity
+                                style={[styles.modalButton, { backgroundColor: colors.primary, flex: 1 }]}
+                                onPress={async () => {
+                                    if (dontShowStageDirectionsAgain) {
+                                        await AsyncStorage.setItem('hideStageDirectionsInfo', 'true');
+                                    }
+                                    setShowStageDirectionsInfo(false);
+                                }}
                             >
                                 <Text style={[styles.modalButtonText, { color: '#FFFFFF' }]}>Entendido</Text>
                             </TouchableOpacity>
