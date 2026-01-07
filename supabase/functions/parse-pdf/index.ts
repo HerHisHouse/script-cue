@@ -314,7 +314,9 @@ async function parseScreenplayWithOpenAI(text: string) {
     1. Extract ONLY dialogues - ignore ALL action lines, scene descriptions, and transitions
     2. Identify scenes by INT./EXT. headings
     3. For each scene, extract ONLY the character names and their dialogue lines
-    4. Ignore parentheticals like (whispering), (O.S.), etc.
+    4. INCLUDE parentheticals (stage directions) IN THE DIALOGUE TEXT - they provide important performance context
+       Example: "(susurrando) Esto es un secreto." should be kept as "(susurrando) Esto es un secreto."
+    5. Ignore ONLY character name modifiers like (CONT'D), (V.O.), (O.S.) that appear after the character name
     
     Output format:
     {
@@ -326,7 +328,7 @@ async function parseScreenplayWithOpenAI(text: string) {
           "content": [
             {
               "characterName": "JOHN",
-              "text": "Hello, how are you?",
+              "text": "(susurrando) Hello, how are you?",
               "prosodyHints": {
                 "emotion": "neutral",
                 "pace": "normal",
@@ -343,6 +345,7 @@ async function parseScreenplayWithOpenAI(text: string) {
     IMPORTANT: 
     - Return ONLY valid JSON
     - Include ALL dialogues from the script
+    - KEEP stage directions like (susurrando), (emocionado), (mirando a la ventana) in the dialogue text
     - Each dialogue must have characterName, text, and prosodyHints
     - Set hasQuestion=true if dialogue ends with "?"
     - Set hasExclamation=true if dialogue contains "!"`;
@@ -504,8 +507,13 @@ async function parseScreenplayWithOpenAI(text: string) {
       dialogueIndent = null;
       continue;
     }
-    // 3. Detectar Acotación
+    // 3. Detectar Acotación (stage direction): INCLUIR en el diálogo, no ignorar
+    // Las acotaciones entre paréntesis se añaden al buffer de diálogo si hay personaje activo
     if (PARENTHETICAL_REGEX.test(line)) {
+      if (lastCharacterName) {
+        // Include stage direction in dialogue buffer
+        dialogueBuffer.push(line.trim());
+      }
       continue;
     }
     // 4. Detectar Diálogo
@@ -732,9 +740,15 @@ function parseScreenplayFromLayoutAdvanced(layoutPages: Array<{ width: number; h
       continue;
     }
     
-    // 6. Acotaciones entre paréntesis (centradas)
+    // 6. Acotaciones entre paréntesis (centradas) - INCLUIR en el diálogo si hay personaje activo
     if (text.startsWith('(') && text.endsWith(')') && centered) {
-      console.log(`📝 Acotación entre paréntesis ignorada: "${text}"`);
+      if (activeCharacter) {
+        // Include stage direction in dialogue buffer
+        dialogueBuffer.push(text);
+        console.log(`📝 Acotación incluida en diálogo: "${text}"`);
+      } else {
+        console.log(`📝 Acotación sin personaje ignorada: "${text}"`);
+      }
       continue;
     }
     
