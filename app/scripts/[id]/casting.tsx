@@ -359,9 +359,8 @@ export default function CastingModeScreen() {
           // Use line.id as cache key (stable regardless of action cards)
           if (newCache.has(line.id)) continue;
 
-          // CRITICAL: Use raw text for hash to match pre-generated cache (Studio Mode logic)
-          // Pre-generation uses the raw DB content, so we must match that hash.
-          const text = line.text;
+          // Use cleanText (without stage directions) for TTS
+          const text = line.cleanText;
           if (!text) continue;
 
           const characterName = line.characterName.toUpperCase();
@@ -521,8 +520,8 @@ export default function CastingModeScreen() {
           language: settings.systemTtsLanguage || 'es-ES',
           rate: rate,
           onDone: () => {
-            // Estimate duration for System TTS
-            const words = line.text.split(' ').length;
+            // Estimate duration for System TTS - use cleanText
+            const words = line.cleanText.split(' ').length;
             const estimatedDuration = words * 0.5; // Rough estimate
 
             if (isRecording) {
@@ -641,7 +640,8 @@ export default function CastingModeScreen() {
   // Get duration for a line (calculated + adjustment)
   function getLineDuration(line: DialogueLine): number {
     const adjustment = sceneConfig?.lineTimings.find(lt => lt.lineId === line.id)?.timingAdjustment || 0;
-    return calculateLineDuration(line.text, adjustment);
+    // Use cleanText for duration calculation
+    return calculateLineDuration(line.cleanText, adjustment);
   }
 
   // Start recording (transition from config screen to camera)

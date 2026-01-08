@@ -249,7 +249,8 @@ export default function CarModeScreen() {
         v.language.startsWith('es') && v.identifier.includes('enhanced')
       ) || availableVoices.find(v => v.language.startsWith('es'));
 
-      Speech.speak(line.text, {
+      // Use cleanText to avoid reading stage directions
+      Speech.speak(line.cleanText, {
         language: 'es-ES',
         rate: speechRate,
         voice: spanishVoice?.identifier,
@@ -260,9 +261,10 @@ export default function CarModeScreen() {
     if (effectiveProvider === 'openai' || effectiveProvider === 'elevenlabs') {
       try {
         const Crypto = await import('expo-crypto');
+        // Use cleanText (without stage directions) for TTS
         const textHash = await Crypto.digestStringAsync(
           Crypto.CryptoDigestAlgorithm.SHA256,
-          line.text
+          line.cleanText
         );
 
         if (mySequence !== sequenceRef.current) return;

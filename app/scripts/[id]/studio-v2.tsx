@@ -1404,6 +1404,12 @@ export default function StudioV2Screen() {
                                 <Text style={styles.literalModeBadgeText}>LITERAL</Text>
                             </View>
                         )}
+                        {showStageDirections && (
+                            <View style={[styles.literalModeBadge, { backgroundColor: colorScheme === 'dark' ? '#FFA500' : '#DC2626' }]}>
+                                <MessageSquare size={12} color="#FFFFFF" />
+                                <Text style={styles.literalModeBadgeText}>ACOTACIONES</Text>
+                            </View>
+                        )}
                     </View>
                     <Text style={[styles.headerSubtitle, { color: colors.textSecondary }]} numberOfLines={1}>
                         {scriptTitle}
