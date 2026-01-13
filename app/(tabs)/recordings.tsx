@@ -41,7 +41,7 @@ import { LayoutAnimation, Easing } from 'react-native';
 import { computeSafeTopPadding } from '../../utils/layout';
 import { validateAndNormalizeFilename, buildNewPath, RenameError, performRename } from '@/utils/rename';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
-import { setAudioModeForPlayback } from '@/utils/audioMode';
+import { setAudioModeForPlayback, setAudioModeForBackgroundPlayback } from '@/utils/audioMode';
 import { rf, rp } from '@/utils/responsive';
 
 type ViewMode = 'list' | 'grid';
@@ -474,8 +474,16 @@ export default function RecordingsScreen() {
         // Cleanup: cerrar todos los menús cuando se pierde el foco
         setShowHeaderMenu(false);
         setShowSearch(false);
+        // Stop audio when navigating away from the screen
+        if (sound) {
+          sound.stopAsync().catch(() => { });
+          sound.unloadAsync().catch(() => { });
+          setSound(null);
+          setIsPlaying(false);
+          setPlayerVisible(false);
+        }
       };
-    }, [handleRefresh])
+    }, [handleRefresh, sound])
   );
 
   // Mantener loopModeRef actualizado
@@ -588,8 +596,8 @@ export default function RecordingsScreen() {
     }
 
     try {
-      // Force speaker output for playback
-      await setAudioModeForPlayback();
+      // Force speaker output for playback AND enable background audio (screen-off playback)
+      await setAudioModeForBackgroundPlayback();
 
       const settings = await getSettings();
       const storagePath = (recording.audio_url || (recording as any).storage_path || '').trim();
@@ -918,6 +926,12 @@ export default function RecordingsScreen() {
   }
 
   function closePlayer() {
+    // IMPORTANT: Stop audio immediately before animation
+    if (sound) {
+      sound.stopAsync().catch(() => { });
+    }
+    setIsPlaying(false);
+
     // Animación de cierre del modal y luego desmontar
     Animated.parallel([
       Animated.timing(modalOpacity, { toValue: 0, duration: 240, easing: Easing.out(Easing.ease), useNativeDriver: true }),
@@ -925,7 +939,6 @@ export default function RecordingsScreen() {
     ]).start(() => {
       setPlayerVisible(false);
       setQueue([]);
-      setIsPlaying(false);
       setPositionMillis(0);
       setDurationMillis(0);
       if (sound) {

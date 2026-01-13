@@ -4,12 +4,12 @@ import { Audio, InterruptionModeIOS, InterruptionModeAndroid } from 'expo-av';
  * Configura el modo de audio para reproducción por altavoz (speaker)
  * Esto asegura que el audio NO salga por el auricular (receiver) en iOS
  */
-export async function setAudioModeForPlayback() {
+export async function setAudioModeForPlayback(staysActiveInBackground: boolean = false) {
   try {
     await Audio.setAudioModeAsync({
       allowsRecordingIOS: false,
       playsInSilentModeIOS: true,
-      staysActiveInBackground: false,
+      staysActiveInBackground,
       shouldDuckAndroid: true,
       // CRÍTICO para iOS: Fuerza el audio a salir por el altavoz
       interruptionModeIOS: InterruptionModeIOS.DoNotMix,
@@ -17,6 +17,25 @@ export async function setAudioModeForPlayback() {
     });
   } catch (error) {
     console.error('[Audio] Error setting playback mode:', error);
+  }
+}
+
+/**
+ * Configura el modo de audio para reproducción en segundo plano
+ * Permite que el audio siga sonando con la pantalla bloqueada
+ */
+export async function setAudioModeForBackgroundPlayback() {
+  try {
+    await Audio.setAudioModeAsync({
+      allowsRecordingIOS: false,
+      playsInSilentModeIOS: true,
+      staysActiveInBackground: true,
+      shouldDuckAndroid: true,
+      interruptionModeIOS: InterruptionModeIOS.DoNotMix,
+      interruptionModeAndroid: InterruptionModeAndroid.DoNotMix,
+    });
+  } catch (error) {
+    console.error('[Audio] Error setting background playback mode:', error);
   }
 }
 
