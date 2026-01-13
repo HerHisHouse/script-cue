@@ -460,15 +460,7 @@ export default function AuthScreen() {
               accessibilityLabel="Iniciar sesión con Google"
             >
               <View style={styles.googleIconContainer}>
-                {/* Google multicolor G */}
-                <View style={styles.googleGContainer}>
-                  <Text style={styles.googleGBlue}>G</Text>
-                  <Text style={styles.googleGRed}>o</Text>
-                  <Text style={styles.googleGYellow}>o</Text>
-                  <Text style={styles.googleGBlue}>g</Text>
-                  <Text style={styles.googleGGreen}>l</Text>
-                  <Text style={styles.googleGRed}>e</Text>
-                </View>
+                <Text style={styles.googleG}>G</Text>
               </View>
               <Text style={[styles.googleButtonText, { color: colors.text }]}>
                 Continuar con Google
@@ -658,32 +650,15 @@ const styles = StyleSheet.create({
     gap: 12,
   },
   googleIconContainer: {
+    width: 24,
+    height: 24,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  googleGContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  googleGBlue: {
-    fontSize: rf(16),
+  googleG: {
+    fontSize: rf(20),
     fontWeight: '700',
     color: '#4285F4', // Google blue
-  },
-  googleGRed: {
-    fontSize: rf(16),
-    fontWeight: '700',
-    color: '#EA4335', // Google red
-  },
-  googleGYellow: {
-    fontSize: rf(16),
-    fontWeight: '700',
-    color: '#FBBC05', // Google yellow
-  },
-  googleGGreen: {
-    fontSize: rf(16),
-    fontWeight: '700',
-    color: '#34A853', // Google green
   },
   googleButtonText: {
     fontSize: rf(15),
