@@ -20,6 +20,7 @@ import * as WebBrowser from 'expo-web-browser';
 import { supabase } from '@/utils/supabase';
 import { rf, rp } from '@/utils/responsive';
 import { LegalModal } from '@/components/LegalModal';
+import Svg, { Path } from 'react-native-svg';
 
 // Configure WebBrowser for OAuth
 WebBrowser.maybeCompleteAuthSession();
@@ -460,7 +461,20 @@ export default function AuthScreen() {
               accessibilityLabel="Iniciar sesión con Google"
             >
               <View style={styles.googleIconContainer}>
-                <Text style={styles.googleG}>G</Text>
+                {/* Google multicolor G logo - SVG */}
+                <Svg width="24" height="24" viewBox="0 0 48 48">
+                  {/* Blue */}
+                  <Path
+                    fill="#4285F4"
+                    d="M44.5 20H24v8.5h11.8C34.7 33.9 30.1 37 24 37c-7.2 0-13-5.8-13-13s5.8-13 13-13c3.1 0 5.9 1.1 8.1 2.9l6.4-6.4C34.6 4.1 29.6 2 24 2 11.8 2 2 11.8 2 24s9.8 22 22 22c11 0 21-8 21-22 0-1.3-.2-2.7-.5-4z"
+                  />
+                  {/* Red */}
+                  <Path fill="#EA4335" d="M6.3 14.7l6.6 4.8C14.1 15.3 18.6 12 24 12c3.1 0 5.9 1.1 8.1 2.9l6.4-6.4C34.6 4.1 29.6 2 24 2 16.4 2 9.8 6.1 6.3 12.3z" />
+                  {/* Yellow */}
+                  <Path fill="#FBBC05" d="M24 46c5.5 0 10.5-2 14.4-5.4l-6.7-5.2c-2 1.4-4.5 2.2-7.7 2.2-6.1 0-11.3-4.1-13.2-9.6l-6.6 5.1C7.9 40 15.4 46 24 46z" />
+                  {/* Green */}
+                  <Path fill="#34A853" d="M46 24c0-1.4-.1-2.7-.4-4H24v8.5h12.4c-.5 2.7-2.1 5-4.4 6.5l6.7 5.2c3.9-3.6 6.3-8.9 6.3-16.2z" />
+                </Svg>
               </View>
               <Text style={[styles.googleButtonText, { color: colors.text }]}>
                 Continuar con Google
@@ -654,11 +668,6 @@ const styles = StyleSheet.create({
     height: 24,
     alignItems: 'center',
     justifyContent: 'center',
-  },
-  googleG: {
-    fontSize: rf(20),
-    fontWeight: '700',
-    color: '#4285F4', // Google blue
   },
   googleButtonText: {
     fontSize: rf(15),
