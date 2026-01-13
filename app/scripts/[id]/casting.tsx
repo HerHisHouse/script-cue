@@ -25,7 +25,7 @@ import { Audio, InterruptionModeIOS, InterruptionModeAndroid } from 'expo-av';
 import * as FileSystem from 'expo-file-system/legacy'; // Fix: Use legacy API
 import { transcribeAudio } from '@/services/transcription'; // Import transcription service
 import { calculateSimilarity } from '@/utils/stringUtils'; // Helper for similarity
-import { ArrowLeft, Mic, RotateCcw, Play, Pause, Square, Video, SwitchCamera, Settings2, SkipBack, SkipForward, MoreVertical, EyeOff, Eye, Minus, Plus, Volume2, GripHorizontal, X, Timer, Clapperboard, Trash2, ChevronRight } from 'lucide-react-native';
+import { ArrowLeft, Mic, RotateCcw, Play, Pause, Square, Video, SwitchCamera, Settings2, SkipBack, SkipForward, MoreVertical, EyeOff, Eye, Minus, Plus, Volume2, GripHorizontal, X, Timer, Clapperboard, Trash2, ChevronRight, MessageSquare } from 'lucide-react-native';
 import { supabase } from '@/utils/supabase';
 import client from '@/utils/openaiClient';
 import { generateElevenLabsAudio } from '@/utils/elevenLabsClient';
@@ -93,6 +93,7 @@ export default function CastingModeScreen() {
   const [hideUserLines, setHideUserLines] = useState(false);
   const [hideTeleprompter, setHideTeleprompter] = useState(false);
   const [hideActions, setHideActions] = useState(false); // Hide action cards in teleprompter
+  const [showStageDirections, setShowStageDirections] = useState(false); // Toggle for stage directions visibility
   const [startDelay, setStartDelay] = useState(5); // Delay in seconds before first line (0, 5, 10, 15... up to 60)
   const [countdown, setCountdown] = useState<number | null>(null); // Countdown display
 
@@ -643,6 +644,49 @@ export default function CastingModeScreen() {
     // Use cleanText for duration calculation
     return calculateLineDuration(line.cleanText, adjustment);
   }
+
+  // Helper function to render text with colored stage directions
+  const renderTextWithStageDirections = (text: string) => {
+    if (!showStageDirections || !text.includes('(')) {
+      return text;
+    }
+
+    // Orange for stage directions
+    const stageDirectionColor = '#FFA500';
+
+    const parts: React.ReactNode[] = [];
+    let lastIndex = 0;
+    const regex = /\([^)]*\)/g;
+    let match;
+
+    while ((match = regex.exec(text)) !== null) {
+      if (match.index > lastIndex) {
+        parts.push(
+          <Text key={`dialogue-${lastIndex}`} style={{ color: '#FFFFFF' }}>
+            {text.substring(lastIndex, match.index)}
+          </Text>
+        );
+      }
+
+      parts.push(
+        <Text key={`stage-${match.index}`} style={{ color: stageDirectionColor, fontStyle: 'italic' }}>
+          {match[0]}
+        </Text>
+      );
+
+      lastIndex = match.index + match[0].length;
+    }
+
+    if (lastIndex < text.length) {
+      parts.push(
+        <Text key={`dialogue-${lastIndex}`} style={{ color: '#FFFFFF' }}>
+          {text.substring(lastIndex)}
+        </Text>
+      );
+    }
+
+    return <>{parts}</>;
+  };
 
   // Start recording (transition from config screen to camera)
   function startCastingSession() {
@@ -1320,7 +1364,9 @@ export default function CastingModeScreen() {
 
                     {/* Line text */}
                     <Text style={[styles.configLineText, { color: colors.text }]} numberOfLines={2}>
-                      {line.text}
+                      {renderTextWithStageDirections(
+                        showStageDirections ? line.text : line.cleanText
+                      )}
                     </Text>
 
                     {/* Timing controls (only for user lines) */}
@@ -1579,7 +1625,9 @@ export default function CastingModeScreen() {
                           </View>
                         ) : (
                           <Text style={[styles.cardText, isActive && { color: '#fff', fontWeight: '600' }]}>
-                            {line.text}
+                            {renderTextWithStageDirections(
+                              showStageDirections ? line.text : line.cleanText
+                            )}
                           </Text>
                         )}
                       </TouchableOpacity>
@@ -1687,6 +1735,16 @@ export default function CastingModeScreen() {
                       )}
                       <Text style={styles.menuText}>
                         {hideActions ? 'Mostrar acciones' : 'Ocultar acciones'}
+                      </Text>
+                    </TouchableOpacity>
+                    <View style={styles.menuSeparator} />
+                    <TouchableOpacity
+                      onPress={() => { setShowStageDirections(!showStageDirections); setShowMenu(false); }}
+                      style={styles.menuItem}
+                    >
+                      <MessageSquare size={rp(20)} color={showStageDirections ? '#FFA500' : 'white'} />
+                      <Text style={[styles.menuText, showStageDirections && { color: '#FFA500' }]}>
+                        {showStageDirections ? 'Ocultar Acotaciones' : 'Mostrar Acotaciones'}
                       </Text>
                     </TouchableOpacity>
                     <View style={styles.menuSeparator} />

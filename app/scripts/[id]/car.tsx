@@ -17,7 +17,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/utils/supabase';
 import { DialogueLine } from '@/utils/dialogueParser';
 import { loadDialogueLines } from '@/utils/loadDialogueLines';
-import { X, Settings, Mic, Play, SkipForward, SkipBack, Repeat, RotateCcw, Pause, ChevronDown, Volume2, Info, Car } from 'lucide-react-native';
+import { X, Settings, Mic, Play, SkipForward, SkipBack, Repeat, RotateCcw, Pause, ChevronDown, Volume2, Info, Car, MessageSquare } from 'lucide-react-native';
 import { Audio } from 'expo-av';
 import * as Speech from 'expo-speech';
 import { rf, rp } from '@/utils/responsive';
@@ -80,6 +80,7 @@ export default function CarModeScreen() {
   const [statusText, setStatusText] = useState('Listo');
   const [isRecording, setIsRecording] = useState(false);
   const [loopEnabled, setLoopEnabled] = useState(true); // Default: loop enabled for Car Mode
+  const [showStageDirections, setShowStageDirections] = useState(false); // Toggle for stage directions
 
   // Update ref when state changes
   useEffect(() => {
@@ -458,6 +459,49 @@ export default function CarModeScreen() {
     }
   };
 
+  // Helper function to render text with colored stage directions (same as Studio Mode)
+  const renderTextWithStageDirections = (text: string) => {
+    if (!showStageDirections || !text.includes('(')) {
+      return text;
+    }
+
+    // Orange for dark mode (Car Mode is always dark)
+    const stageDirectionColor = '#FFA500';
+
+    const parts: React.ReactNode[] = [];
+    let lastIndex = 0;
+    const regex = /\([^)]*\)/g;
+    let match;
+
+    while ((match = regex.exec(text)) !== null) {
+      if (match.index > lastIndex) {
+        parts.push(
+          <Text key={`dialogue-${lastIndex}`} style={{ color: colors.text }}>
+            {text.substring(lastIndex, match.index)}
+          </Text>
+        );
+      }
+
+      parts.push(
+        <Text key={`stage-${match.index}`} style={{ color: stageDirectionColor, fontStyle: 'italic' }}>
+          {match[0]}
+        </Text>
+      );
+
+      lastIndex = match.index + match[0].length;
+    }
+
+    if (lastIndex < text.length) {
+      parts.push(
+        <Text key={`dialogue-${lastIndex}`} style={{ color: colors.text }}>
+          {text.substring(lastIndex)}
+        </Text>
+      );
+    }
+
+    return <>{parts}</>;
+  };
+
   const handleStartCarMode = async () => {
     setIsPreparingAudio(true);
     setPreparingProgress(0);
@@ -732,7 +776,9 @@ export default function CarModeScreen() {
                 {currentLine.characterName}
               </Text>
               <Text style={[styles.lineText, { color: colors.text }]}>
-                {currentLine.text}
+                {renderTextWithStageDirections(
+                  showStageDirections ? currentLine.text : currentLine.cleanText
+                )}
               </Text>
             </View>
           )}
@@ -763,7 +809,7 @@ export default function CarModeScreen() {
           </TouchableOpacity>
         </View>
 
-        {/* Segunda fila: Reiniciar y Loop */}
+        {/* Segunda fila: Reiniciar, Loop y Acotaciones */}
         <View style={styles.controlsRow}>
           <TouchableOpacity onPress={handleRestart} style={styles.controlBtn}>
             <RotateCcw size={36} color={colors.text} />
@@ -774,6 +820,13 @@ export default function CarModeScreen() {
             style={[styles.controlBtn, loopEnabled && { backgroundColor: colors.primary }]}
           >
             <Repeat size={36} color={loopEnabled ? '#000' : colors.text} />
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            onPress={() => setShowStageDirections(!showStageDirections)}
+            style={[styles.controlBtn, showStageDirections && { backgroundColor: '#FFA500' }]}
+          >
+            <MessageSquare size={36} color={showStageDirections ? '#000' : colors.text} />
           </TouchableOpacity>
         </View>
       </View>
