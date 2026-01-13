@@ -17,7 +17,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/utils/supabase';
 import { DialogueLine } from '@/utils/dialogueParser';
 import { loadDialogueLines } from '@/utils/loadDialogueLines';
-import { X, Settings, Mic, Play, SkipForward, SkipBack, Repeat, RotateCcw, Pause, ChevronDown, Volume2, Info, Car, MessageSquare } from 'lucide-react-native';
+import { X, Settings, Mic, Play, SkipForward, SkipBack, Repeat, RotateCcw, Pause, ChevronDown, Volume2, Info, Car, MessageSquare, MoreVertical, Download } from 'lucide-react-native';
 import { Audio } from 'expo-av';
 import * as Speech from 'expo-speech';
 import { rf, rp } from '@/utils/responsive';
@@ -81,6 +81,9 @@ export default function CarModeScreen() {
   const [isRecording, setIsRecording] = useState(false);
   const [loopEnabled, setLoopEnabled] = useState(true); // Default: loop enabled for Car Mode
   const [showStageDirections, setShowStageDirections] = useState(false); // Toggle for stage directions
+  const [showMenu, setShowMenu] = useState(false); // Menu visibility
+  const [isGeneratingAudio, setIsGeneratingAudio] = useState(false); // Audio generation in progress
+  const [generatingProgress, setGeneratingProgress] = useState(0); // Progress 0-100
 
   // Update ref when state changes
   useEffect(() => {
@@ -558,8 +561,166 @@ export default function CarModeScreen() {
         { text: 'Cancelar', style: 'cancel' },
         { text: 'Continuar', onPress: () => { setShowConfig(false); setIsActive(true); } },
       ]);
-    } finally {
       setIsPreparingAudio(false);
+    }
+  };
+
+  // Generate full scene audio and save to recordings
+  const generateSceneAudio = async () => {
+    if (isGeneratingAudio) return;
+
+    setIsGeneratingAudio(true);
+    setGeneratingProgress(0);
+    setShowMenu(false);
+
+    try {
+      const { data: { user: currentUser } } = await supabase.auth.getUser();
+      if (!currentUser) throw new Error('No user');
+
+      const Crypto = await import('expo-crypto');
+      const FileSystem = await import('expo-file-system/legacy');
+
+      // Collect all audio URIs
+      const audioSegments: { uri: string; index: number; characterName: string }[] = [];
+      const totalLines = dialogueLines.length;
+
+      for (let i = 0; i < dialogueLines.length; i++) {
+        const line = dialogueLines[i];
+        const voiceConfig = getVoiceConfigForCharacter(line.characterName);
+
+        if (!voiceConfig || voiceConfig.provider === 'system') {
+          // Skip system voices - can't generate files for them
+          setGeneratingProgress(Math.round(((i + 1) / totalLines) * 50));
+          continue;
+        }
+
+        // Generate hash for cache lookup
+        const textHash = await Crypto.digestStringAsync(
+          Crypto.CryptoDigestAlgorithm.SHA256,
+          line.cleanText
+        );
+
+        // Check cache first
+        let audioUri = await getCachedAudio(line.id, voiceConfig.provider, voiceConfig.voiceId, textHash);
+
+        // If not in cache, generate it
+        if (!audioUri) {
+          console.log(`[GenerateScene] Generating audio for line ${i + 1}/${totalLines}`);
+          audioUri = await generateAndCacheAudio(
+            id as string, // scriptId
+            line.id, // lineId
+            line.characterName, // characterName
+            line.cleanText, // text
+            { provider: voiceConfig.provider as 'openai' | 'elevenlabs' | 'system', voiceId: voiceConfig.voiceId }, // voiceConfig
+            currentUser.id // userId
+          );
+        }
+
+        if (audioUri) {
+          audioSegments.push({ uri: audioUri, index: i, characterName: line.characterName });
+        }
+
+        setGeneratingProgress(Math.round(((i + 1) / totalLines) * 50));
+      }
+
+      if (audioSegments.length === 0) {
+        Alert.alert('Error', 'No se pudo generar ningún segmento de audio.');
+        return;
+      }
+
+      // Upload segments to Supabase for merging
+      console.log('[GenerateScene] Uploading segments for merge...');
+      const uploadedPaths: string[] = [];
+
+      for (let i = 0; i < audioSegments.length; i++) {
+        const segment = audioSegments[i];
+        const extension = segment.uri.endsWith('.mp3') ? 'mp3' : 'm4a';
+        const fileName = `${currentUser.id}/scene-audio/${Date.now()}_${i}.${extension}`;
+        const contentType = extension === 'mp3' ? 'audio/mpeg' : 'audio/m4a';
+
+        const base64 = await FileSystem.readAsStringAsync(segment.uri, {
+          encoding: FileSystem.EncodingType.Base64,
+        });
+
+        const byteArray = Uint8Array.from(atob(base64), c => c.charCodeAt(0));
+
+        const { error } = await supabase.storage
+          .from('recordings')
+          .upload(fileName, byteArray.buffer, { contentType });
+
+        if (!error) {
+          uploadedPaths.push(fileName);
+        }
+
+        setGeneratingProgress(50 + Math.round(((i + 1) / audioSegments.length) * 30));
+      }
+
+      // Send to Render for merging
+      console.log('[GenerateScene] Calling Render to merge...');
+      const renderUrl = process.env.EXPO_PUBLIC_RENDER_SERVER_URL || 'https://script-cue-merge-server.onrender.com';
+      const mergeResponse = await fetch(`${renderUrl}/merge-audio`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          segments: uploadedPaths.map((path, idx) => ({
+            storagePath: path,
+            index: idx,
+            type: 'ai',
+          })),
+        }),
+      });
+
+      if (!mergeResponse.ok) {
+        throw new Error('Error al unir el audio');
+      }
+
+      const mergeResult = await mergeResponse.json();
+      console.log('[GenerateScene] Merge result:', mergeResult);
+
+      setGeneratingProgress(90);
+
+      // Get script title for recording name
+      const { data: scriptData } = await supabase
+        .from('scripts')
+        .select('title')
+        .eq('id', id)
+        .single();
+
+      const scriptTitle = scriptData?.title || 'Escena';
+
+      // Save to recordings table
+      const recordingData = {
+        user_id: currentUser.id,
+        title: `${scriptTitle} - Audio Escena`,
+        duration: audioSegments.length * 3, // Rough estimate
+        script_id: id,
+        audio_url: mergeResult.storagePath,
+        type: 'audio',
+        project_id: null,
+      };
+
+      const { error: insertError } = await supabase
+        .from('recordings')
+        .insert(recordingData);
+
+      if (insertError) {
+        console.error('[GenerateScene] Insert error:', insertError);
+        throw insertError;
+      }
+
+      setGeneratingProgress(100);
+      Alert.alert(
+        '¡Audio generado!',
+        'El audio de la escena se ha guardado en Grabaciones.',
+        [{ text: 'OK' }]
+      );
+
+    } catch (error) {
+      console.error('[GenerateScene] Error:', error);
+      Alert.alert('Error', 'No se pudo generar el audio de la escena.');
+    } finally {
+      setIsGeneratingAudio(false);
+      setGeneratingProgress(0);
     }
   };
 
@@ -589,7 +750,9 @@ export default function CarModeScreen() {
             <Car size={24} color={colors.primary} />
             <Text style={[styles.configTitle, { color: colors.text }]}>Modo Coche</Text>
           </View>
-          <View style={{ width: 28 }} />
+          <TouchableOpacity onPress={() => setShowMenu(true)} style={styles.menuButton}>
+            <MoreVertical size={24} color={colors.text} />
+          </TouchableOpacity>
         </View>
 
         <ScrollView style={styles.configContent} showsVerticalScrollIndicator={false}>
@@ -761,6 +924,9 @@ export default function CarModeScreen() {
           <X size={32} color={colors.error} />
           <Text style={[styles.closeText, { color: colors.error }]}>SALIR</Text>
         </TouchableOpacity>
+        <TouchableOpacity onPress={() => setShowMenu(true)} style={styles.headerMenuButton}>
+          <MoreVertical size={28} color={colors.text} />
+        </TouchableOpacity>
       </View>
 
       {/* Main Content */}
@@ -809,7 +975,7 @@ export default function CarModeScreen() {
           </TouchableOpacity>
         </View>
 
-        {/* Segunda fila: Reiniciar, Loop y Acotaciones */}
+        {/* Segunda fila: Reiniciar y Loop */}
         <View style={styles.controlsRow}>
           <TouchableOpacity onPress={handleRestart} style={styles.controlBtn}>
             <RotateCcw size={36} color={colors.text} />
@@ -821,15 +987,58 @@ export default function CarModeScreen() {
           >
             <Repeat size={36} color={loopEnabled ? '#000' : colors.text} />
           </TouchableOpacity>
-
-          <TouchableOpacity
-            onPress={() => setShowStageDirections(!showStageDirections)}
-            style={[styles.controlBtn, showStageDirections && { backgroundColor: '#FFA500' }]}
-          >
-            <MessageSquare size={36} color={showStageDirections ? '#000' : colors.text} />
-          </TouchableOpacity>
         </View>
       </View>
+
+      {/* Menu Modal */}
+      {showMenu && (
+        <TouchableOpacity
+          style={styles.menuOverlay}
+          activeOpacity={1}
+          onPress={() => setShowMenu(false)}
+        >
+          <View style={styles.menuContent}>
+            {/* Generate Audio Option */}
+            <TouchableOpacity
+              style={styles.menuItem}
+              onPress={generateSceneAudio}
+              disabled={isGeneratingAudio}
+            >
+              <Download size={20} color="#10B981" />
+              <Text style={styles.menuItemText}>Descargar audio de escena</Text>
+            </TouchableOpacity>
+
+            <View style={styles.menuDivider} />
+
+            {/* Stage Directions Toggle */}
+            <TouchableOpacity
+              style={styles.menuItem}
+              onPress={() => {
+                setShowStageDirections(!showStageDirections);
+                setShowMenu(false);
+              }}
+            >
+              <MessageSquare size={20} color={showStageDirections ? '#FFA500' : colors.text} />
+              <Text style={[styles.menuItemText, showStageDirections && { color: '#FFA500' }]}>
+                {showStageDirections ? 'Ocultar Acotaciones' : 'Mostrar Acotaciones'}
+              </Text>
+            </TouchableOpacity>
+          </View>
+        </TouchableOpacity>
+      )}
+
+      {/* Audio Generation Progress Overlay */}
+      {isGeneratingAudio && (
+        <View style={styles.generatingOverlay}>
+          <View style={styles.generatingContent}>
+            <ActivityIndicator size="large" color={colors.primary} />
+            <Text style={styles.generatingText}>Generando audio... {generatingProgress}%</Text>
+            <View style={styles.progressBar}>
+              <View style={[styles.progressFill, { width: `${generatingProgress}%` }]} />
+            </View>
+          </View>
+        </View>
+      )}
     </SafeAreaView>
   );
 }
@@ -1007,5 +1216,70 @@ const styles = StyleSheet.create({
     height: '100%',
     backgroundColor: '#3B82F6',
     borderRadius: 4,
+  },
+  // Menu styles
+  menuButton: {
+    padding: rp(8),
+  },
+  headerMenuButton: {
+    padding: rp(12),
+    backgroundColor: 'rgba(255,255,255,0.1)',
+    borderRadius: rp(12),
+  },
+  menuOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(0,0,0,0.7)',
+    justifyContent: 'flex-start',
+    alignItems: 'flex-end',
+    paddingTop: rp(80),
+    paddingRight: rp(20),
+  },
+  menuContent: {
+    backgroundColor: '#1F2937',
+    borderRadius: rp(12),
+    padding: rp(8),
+    minWidth: rp(220),
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 8,
+  },
+  menuItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: rp(14),
+    gap: rp(12),
+    borderRadius: rp(8),
+  },
+  menuItemText: {
+    color: '#FFFFFF',
+    fontSize: rf(15),
+    fontWeight: '500',
+  },
+  menuDivider: {
+    height: 1,
+    backgroundColor: 'rgba(255,255,255,0.1)',
+    marginVertical: rp(4),
+  },
+  generatingOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(0,0,0,0.85)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  generatingContent: {
+    backgroundColor: '#1F2937',
+    padding: rp(32),
+    borderRadius: rp(16),
+    alignItems: 'center',
+    width: '80%',
+    gap: rp(16),
+  },
+  generatingText: {
+    color: '#FFFFFF',
+    fontSize: rf(16),
+    fontWeight: '600',
+    textAlign: 'center',
   },
 });
