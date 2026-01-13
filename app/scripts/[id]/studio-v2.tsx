@@ -787,6 +787,28 @@ export default function StudioV2Screen() {
         }
     }
 
+    // Cancel recording session without saving (discard)
+    async function cancelSessionRecording() {
+        console.log('[CancelSession] Called - discarding recording');
+
+        // Stop timer
+        if (recordingTimerRef.current) {
+            clearInterval(recordingTimerRef.current);
+            recordingTimerRef.current = null;
+        }
+
+        // Stop any current action
+        stopPlaying();
+        await stopRecording(); // Stop user recording if active
+
+        // Clear segments without saving
+        segmentsRef.current = [];
+        setIsRecording(false);
+        setRecordingTime(0);
+
+        Alert.alert('Grabación cancelada', 'La grabación ha sido descartada.');
+    }
+
     // --- Helper Functions for Segment Upload ---
 
     async function uploadAISegment(localUri: string, index: number): Promise<string | null> {
@@ -1394,35 +1416,47 @@ export default function StudioV2Screen() {
                 </TouchableOpacity>
 
                 <View style={styles.headerCenter}>
-                    <View style={styles.headerTitleRow}>
-                        <Text style={[styles.headerTitle, { color: colors.text }]} numberOfLines={1}>
-                            Modo Estudio
-                        </Text>
-                        {literalMode && (
-                            <View style={[styles.literalModeBadge, { backgroundColor: colors.primary }]}>
-                                <FileText size={12} color="#FFFFFF" />
-                                <Text style={styles.literalModeBadgeText}>LITERAL</Text>
-                            </View>
-                        )}
-                        {showStageDirections && (
-                            <View style={[styles.literalModeBadge, { backgroundColor: colorScheme === 'dark' ? '#FFA500' : '#DC2626' }]}>
-                                <MessageSquare size={12} color="#FFFFFF" />
-                                <Text style={styles.literalModeBadgeText}>ACOTACIONES</Text>
-                            </View>
-                        )}
-                    </View>
+                    <Text style={[styles.headerTitle, { color: colors.text }]} numberOfLines={1}>
+                        Modo Estudio
+                    </Text>
                     <Text style={[styles.headerSubtitle, { color: colors.textSecondary }]} numberOfLines={1}>
                         {scriptTitle}
                     </Text>
+                    {/* Mode badges row - below script title */}
+                    {(literalMode || showStageDirections) && (
+                        <View style={styles.modeBadgesRow}>
+                            {literalMode && (
+                                <View style={[styles.literalModeBadge, { backgroundColor: colors.primary }]}>
+                                    <FileText size={12} color="#FFFFFF" />
+                                    <Text style={styles.literalModeBadgeText}>LITERAL</Text>
+                                </View>
+                            )}
+                            {showStageDirections && (
+                                <View style={[styles.literalModeBadge, { backgroundColor: colorScheme === 'dark' ? '#FFA500' : '#DC2626' }]}>
+                                    <MessageSquare size={12} color="#FFFFFF" />
+                                    <Text style={styles.literalModeBadgeText}>ACOTACIONES</Text>
+                                </View>
+                            )}
+                        </View>
+                    )}
                 </View>
 
-                {/* Recording Indicator (Overlay or integrated) */}
+                {/* Recording Indicator with Cancel button */}
                 {isRecording && (
-                    <View style={styles.recordingIndicator}>
-                        <View style={styles.recordingDot} />
-                        <Text style={[styles.recordingText, { color: colors.error }]}>
-                            {Math.floor(recordingTime / 60)}:{(recordingTime % 60).toString().padStart(2, '0')}
-                        </Text>
+                    <View style={styles.recordingIndicatorContainer}>
+                        <View style={styles.recordingIndicator}>
+                            <View style={styles.recordingDot} />
+                            <Text style={[styles.recordingText, { color: colors.error }]}>
+                                {Math.floor(recordingTime / 60)}:{(recordingTime % 60).toString().padStart(2, '0')}
+                            </Text>
+                        </View>
+                        <TouchableOpacity
+                            onPress={cancelSessionRecording}
+                            style={styles.cancelRecordingButton}
+                        >
+                            <X size={16} color="#FFFFFF" />
+                            <Text style={styles.cancelRecordingText}>Cancelar</Text>
+                        </TouchableOpacity>
                     </View>
                 )}
 
@@ -2109,6 +2143,12 @@ const styles = StyleSheet.create({
         fontWeight: '700',
         letterSpacing: 0.5,
     },
+    modeBadgesRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 6,
+        marginTop: 4,
+    },
     headerSubtitle: {
         fontSize: 12,
         marginTop: 2,
@@ -2329,11 +2369,15 @@ const styles = StyleSheet.create({
         fontWeight: '600',
         marginTop: rp(8),
     },
+    recordingIndicatorContainer: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: rp(12),
+    },
     recordingIndicator: {
         flexDirection: 'row',
         alignItems: 'center',
         gap: rp(8),
-        marginLeft: rp(16),
     },
     recordingDot: {
         width: rp(10),
@@ -2345,6 +2389,20 @@ const styles = StyleSheet.create({
         fontSize: rf(14),
         fontWeight: '600',
         fontVariant: ['tabular-nums'],
+    },
+    cancelRecordingButton: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        backgroundColor: '#EF4444',
+        paddingHorizontal: rp(10),
+        paddingVertical: rp(6),
+        borderRadius: rp(12),
+        gap: rp(4),
+    },
+    cancelRecordingText: {
+        color: '#FFFFFF',
+        fontSize: rf(12),
+        fontWeight: '600',
     },
     // Modal Styles
     modalOverlay: {
