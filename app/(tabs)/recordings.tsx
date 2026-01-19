@@ -491,6 +491,68 @@ export default function RecordingsScreen() {
     loopModeRef.current = loopMode;
   }, [loopMode]);
 
+  // Setup remote control commands for lock screen
+  useEffect(() => {
+    const setupRemoteControls = async () => {
+      try {
+        if (Platform.OS === 'ios') {
+          // Enable audio session for remote controls
+          await Audio.setIsEnabledAsync(true);
+
+          // @ts-ignore - expo-av types don't include setAudioModeAsync with this config
+          if (Audio.setAudioModeAsync) {
+            await Audio.setAudioModeAsync({
+              playsInSilentModeIOS: true,
+              staysActiveInBackground: true,
+              shouldDuckAndroid: true,
+            });
+          }
+
+          // Setup remote command handlers
+          // @ts-ignore
+          if (Audio.setRemoteControlsEnabled) {
+            // @ts-ignore
+            await Audio.setRemoteControlsEnabled(true, {
+              playCommand: async () => {
+                if (sound) {
+                  await sound.playAsync();
+                  setIsPlaying(true);
+                }
+              },
+              pauseCommand: async () => {
+                if (sound) {
+                  await sound.pauseAsync();
+                  setIsPlaying(false);
+                }
+              },
+              nextTrackCommand: () => {
+                playNext();
+              },
+              previousTrackCommand: () => {
+                playPrev();
+              },
+            });
+          }
+        }
+      } catch (error) {
+        console.log('Error setting up remote controls:', error);
+      }
+    };
+
+    setupRemoteControls();
+
+    return () => {
+      // Cleanup
+      if (Platform.OS === 'ios') {
+        // @ts-ignore
+        if (Audio.setRemoteControlsEnabled) {
+          // @ts-ignore
+          Audio.setRemoteControlsEnabled(false).catch(() => { });
+        }
+      }
+    };
+  }, [sound]);
+
   // Auto-maximize player when rotating to landscape
   useEffect(() => {
     const subscription = Dimensions.addEventListener('change', ({ window }) => {
@@ -568,6 +630,32 @@ export default function RecordingsScreen() {
     }
   }
 
+  // Update Now Playing Info for lock screen controls
+  async function updateNowPlayingInfo(recording: Recording, isPlaying: boolean, position: number = 0, duration: number = 0) {
+    try {
+      if (Platform.OS === 'ios') {
+        await Audio.setIsEnabledAsync(true);
+
+        const nowPlayingInfo = {
+          title: recording.title || 'Grabación',
+          artist: 'Script Cue',
+          albumName: recording.type === 'video' ? 'Video' : 'Audio',
+          playbackDuration: duration / 1000, // Convert to seconds
+          elapsedPlaybackTime: position / 1000, // Convert to seconds
+          playbackRate: isPlaying ? 1.0 : 0.0,
+        };
+
+        // @ts-ignore - expo-av types don't include setNowPlayingInfo yet
+        if (Audio.setNowPlayingInfo) {
+          // @ts-ignore
+          await Audio.setNowPlayingInfo(nowPlayingInfo);
+        }
+      }
+    } catch (error) {
+      console.log('Error updating Now Playing info:', error);
+    }
+  }
+
   // Gestión de reproductor modal
   async function loadAndPlay(index: number, specificQueue?: Recording[]) {
     const currentQueue = specificQueue || queue;
@@ -634,11 +722,31 @@ export default function RecordingsScreen() {
       setCurrentIndex(index);
       setIsPlaying(true);
 
+      // Get initial status to set Now Playing info
+      const initialStatus = await newSound.getStatusAsync();
+      if (initialStatus.isLoaded) {
+        await updateNowPlayingInfo(
+          recording,
+          true,
+          initialStatus.positionMillis ?? 0,
+          initialStatus.durationMillis ?? 0
+        );
+      }
+
       newSound.setOnPlaybackStatusUpdate((status) => {
         if (!status.isLoaded) return;
         setDurationMillis(status.durationMillis ?? 0);
         setPositionMillis(status.positionMillis ?? 0);
         setIsPlaying(Boolean(status.isPlaying));
+
+        // Update Now Playing info on status changes
+        updateNowPlayingInfo(
+          recording,
+          Boolean(status.isPlaying),
+          status.positionMillis ?? 0,
+          status.durationMillis ?? 0
+        );
+
         if (status.didJustFinish) {
           const currentLoop = loopModeRef.current;
           if (currentLoop === 'one') {
