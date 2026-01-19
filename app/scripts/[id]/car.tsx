@@ -580,6 +580,17 @@ export default function CarModeScreen() {
       const Crypto = await import('expo-crypto');
       const FileSystem = await import('expo-file-system/legacy');
 
+      // Helper for buffer conversion
+      const base64ToArrayBuffer = (base64: string) => {
+        const binaryString = atob(base64);
+        const len = binaryString.length;
+        const bytes = new Uint8Array(len);
+        for (let i = 0; i < len; i++) {
+          bytes[i] = binaryString.charCodeAt(i);
+        }
+        return bytes.buffer;
+      };
+
       // Collect all audio URIs
       const audioSegments: { uri: string; index: number; characterName: string }[] = [];
       const totalLines = dialogueLines.length;
@@ -642,11 +653,11 @@ export default function CarModeScreen() {
           encoding: FileSystem.EncodingType.Base64,
         });
 
-        const byteArray = Uint8Array.from(atob(base64), c => c.charCodeAt(0));
+        const arrayBuffer = base64ToArrayBuffer(base64);
 
         const { error } = await supabase.storage
           .from('recordings')
-          .upload(fileName, byteArray.buffer, { contentType });
+          .upload(fileName, arrayBuffer, { contentType });
 
         if (!error) {
           uploadedPaths.push(fileName);
@@ -658,12 +669,14 @@ export default function CarModeScreen() {
       // Send to Render for merging
       console.log('[GenerateScene] Calling Render to merge...');
       const renderUrl = process.env.EXPO_PUBLIC_RENDER_SERVER_URL || 'https://script-cue-merge-server.onrender.com';
-      const mergeResponse = await fetch(`${renderUrl}/merge-audio`, {
+      const mergeResponse = await fetch(`${renderUrl}/merge`, { // Fixed endpoint
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
+          userId: currentUser.id, // Added missing userId
+          scriptId: id, // Added missing scriptId
           segments: uploadedPaths.map((path, idx) => ({
-            storagePath: path,
+            path: path, // Changed storagePath to path
             index: idx,
             type: 'ai',
           })),
@@ -692,9 +705,9 @@ export default function CarModeScreen() {
       const recordingData = {
         user_id: currentUser.id,
         title: `${scriptTitle} - Audio Escena`,
-        duration: audioSegments.length * 3, // Rough estimate
+        duration_seconds: audioSegments.length * 3, // Rough estimate
         script_id: id,
-        audio_url: mergeResult.storagePath,
+        audio_url: mergeResult.path,
         type: 'audio',
         project_id: null,
       };
