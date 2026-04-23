@@ -430,40 +430,43 @@ export default function CoachModeScreen() {
               </Text>
               
               {hasHistory ? (
-                <View style={styles.comparisonGrid}>
-                  {Object.entries(evol).map(([key, trend]: [string, any]) => (
-                    <View key={key} style={styles.comparisonRow}>
-                      <Text style={[styles.comparisonLabel, { color: colors.textSecondary }]}>
-                        {feedbackLabels[key] || key.toUpperCase()}
-                      </Text>
-                      <View style={styles.trendContainer}>
-                        {trend === 'mejorado' && <TrendingUp size={18} color="#4ADE80" />}
-                        {trend === 'empeorado' && <TrendingDown size={18} color="#F87171" />}
-                        {trend === 'igual' && <RefreshCw size={18} color="#FBBF24" />}
-                        <Text style={[
-                            styles.trendText, 
-                            { color: trend === 'mejorado' ? "#4ADE80" : trend === 'empeorado' ? "#F87171" : "#FBBF24" }
-                        ]}>
-                          {trend.toUpperCase()}
+                <>
+                  <View style={styles.comparisonGrid}>
+                    {Object.entries(evol).map(([key, trend]: [string, any]) => (
+                      <View key={key} style={styles.comparisonRow}>
+                        <Text style={[styles.comparisonLabel, { color: colors.textSecondary }]}>
+                          {feedbackLabels[key] || key.toUpperCase()}
                         </Text>
+                        <View style={styles.trendContainer}>
+                          {trend === 'mejorado' && <TrendingUp size={18} color="#4ADE80" />}
+                          {trend === 'empeorado' && <TrendingDown size={18} color="#F87171" />}
+                          {trend === 'igual' && <RefreshCw size={18} color="#FBBF24" />}
+                          <Text style={[
+                            styles.trendText,
+                            { color: trend === 'mejorado' ? "#4ADE80" : trend === 'empeorado' ? "#F87171" : "#FBBF24" }
+                          ]}>
+                            {trend.toUpperCase()}
+                          </Text>
+                        </View>
                       </View>
-                    </View>
-                  ))}
-                </View>
+                    ))}
+                  </View>
+                  <View style={[styles.horizontalDivider, { backgroundColor: colors.border, marginVertical: 20 }]} />
+                </>
               ) : (
                 <View style={styles.emptyComparison}>
                   <Activity size={40} color={colors.textSecondary} style={{ opacity: 0.3, marginBottom: 12 }} />
                   <Text style={[styles.emptyComparisonText, { color: colors.textSecondary }]}>
-                    No hay datos de tomas anteriores para esta escena.
+                    Esta es tu primera toma analizada de esta escena.
                   </Text>
                 </View>
               )}
 
-              <View style={[styles.horizontalDivider, { backgroundColor: colors.border, marginVertical: 20 }]} />
-              
-              <Text style={[styles.comparisonText, { color: colors.text, fontStyle: hasHistory ? 'normal' : 'italic' }]}>
-                {analysis.comparacion}
-              </Text>
+              {!analysis.feedback?.error && (
+                <Text style={[styles.comparisonText, { color: colors.text, fontStyle: hasHistory ? 'normal' : 'italic' }]}>
+                  {analysis.comparacion}
+                </Text>
+              )}
             </View>
           </View>
         );

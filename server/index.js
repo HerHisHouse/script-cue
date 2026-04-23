@@ -646,7 +646,7 @@ Tu análisis se basa en estos principios:
 - Las emociones se trabajan desde la circunstancia, no desde el resultado.
 - El silencio y las pausas son parte de la interpretación, no errores a rellenar.
 
-IMPORTANTE: El audio contiene una escena con múltiples personajes. El actor interpreta SOLO a ${userCharacterName}. Las otras voces son IA. Analiza EXCLUSIVAMENTE las intervenciones de ${userCharacterName}.
+CRÍTICO: El audio contiene voces de IA intercaladas con la voz del actor. Las voces de IA suenan sintéticas y artificiales. IGNORA COMPLETAMENTE cualquier intervención que no sea la voz humana natural. Analiza EXCLUSIVAMENTE las intervenciones del personaje ${userCharacterName} interpretadas por una voz humana real. Si no puedes distinguirlas con certeza, céntrate solo en los momentos donde la voz suena claramente humana y orgánica.
 
 ${scriptContext}
 
@@ -668,6 +668,13 @@ Devuelve SOLO JSON válido con esta estructura exacta, sin markdown ni bloques d
     "Sugerencia técnica y accionable 2",
     "Sugerencia técnica y accionable 3"
   ],
+  "evolucion": {
+    "ritmo": "mejorado | igual | empeorado",
+    "diccion": "mejorado | igual | empeorado",
+    "intencion": "mejorado | igual | empeorado",
+    "emociones": "mejorado | igual | empeorado",
+    "naturalidad": "mejorado | igual | empeorado"
+  },
   "comparacion": "Si hay toma anterior: comparativa honesta ítem por ítem. Si no hay toma anterior: mensaje explicando que esta es la primera toma analizada.",
   "recomendaciones_personaje": "Consejos específicos para abordar a ${userCharacterName} basados en lo escuchado.",
   "ejercicios": [
@@ -738,16 +745,30 @@ Idioma: Español. Tono: directo, técnico, honesto. Sin eufemismos. Sin frases m
         let analysisData;
         try {
             // Remove markdown code blocks if present (just in case)
-            const jsonString = content.replace(/^```json\s*/, '').replace(/\s*```$/, '');
+            const jsonString = content
+                .replace(/```json/gi, '')
+                .replace(/```/g, '')
+                .trim();
+            
             analysisData = JSON.parse(jsonString);
         } catch (e) {
-            console.error('[Coach] Failed to parse JSON from AI, using raw text to fallback structure');
-            console.error('[Coach] Content was:', content.substring(0, 200));
-            // Fallback structure so UI doesn't crash but shows something
-            analysisData = {
-                feedback: { error: "No se pudo generar el formato correcto. Lectura raw abajo." },
-                comparacion: content
-            };
+            console.error('[Coach] Failed to parse JSON from AI, attempting brace extraction');
+            try {
+                const firstBrace = content.indexOf('{');
+                const lastBrace = content.lastIndexOf('}');
+                if (firstBrace !== -1 && lastBrace !== -1) {
+                    const extracted = content.substring(firstBrace, lastBrace + 1);
+                    analysisData = JSON.parse(extracted);
+                } else {
+                    throw new Error("No braces found");
+                }
+            } catch (fallbackError) {
+                console.error('[Coach] Brace extraction also failed.');
+                analysisData = {
+                    feedback: { error: "No se pudo generar el formato correcto. Las instrucciones markdown de la IA interfirieron con el parseo." },
+                    comparacion: "Error de formato. Por favor intenta de nuevo."
+                };
+            }
         }
 
         console.log('[Coach] Analysis complete.');
