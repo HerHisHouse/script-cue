@@ -12,6 +12,7 @@ export interface Profile {
   id: string;
   username: string | null;  // <-- AÑADIDO (coincide con la DB)
   full_name: string | null; // <-- AÑADIDO (coincide con la DB)
+  avatar_url: string | null; // <-- AÑADIDO (foto de perfil)
 }
 
 // ** SCRIPT SIMPLIFICADO **
@@ -23,6 +24,7 @@ export interface Script {
   pdf_path: string | null; // <-- CORREGIDO (antes pdf_url)
   status: ScriptStatus;
   project_id?: string | null; // <-- AÑADIDO
+  original_script_id?: string | null; // <-- AÑADIDO: Referencia al guión original si es una copia
   created_at?: string; // Opcional
 }
 
@@ -118,6 +120,7 @@ export interface Recording {
   notes?: string;
   hidden?: boolean;
   type?: 'audio' | 'video';
+  scene_id?: string | null;
   created_at: string;
 }
 

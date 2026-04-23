@@ -475,7 +475,7 @@ app.post('/analyze-recording', async (req, res) => {
     console.log('[Coach] Request received at:', new Date().toISOString());
     console.log('[Coach] Body keys:', Object.keys(req.body));
 
-    const { recordingPath, userId, scriptId, recordingType, recordingId } = req.body;
+    const { recordingPath, userId, scriptId, sceneId, recordingType, recordingId } = req.body;
 
     if (!recordingPath || !userId) {
         console.log('[Coach] ERROR: Missing required fields');
@@ -591,42 +591,94 @@ app.post('/analyze-recording', async (req, res) => {
                         })
                         .join('\n');
 
-                    scriptContext = `\n\nCONTEXTO DEL GUION "${script?.title || 'Sin título'}":\n${scriptLines}\n\nEl usuario interpreta al personaje: ${userCharacterName}`;
+                    scriptContext = `\n\nCONTEXTO DEL GUION:\n${scriptLines}\n\nEl usuario interpreta al personaje: ${userCharacterName}`;
                     console.log('[Coach] Script context added, length:', scriptContext.length);
                 }
             } catch (e) {
                 console.error('[Coach] Error fetching script context:', e);
-                // Continue without context
             }
         }
 
-        // Construct the prompt
-        // We ask for JSON for easier UI rendering
-        const systemPrompt = `You are a professional acting coach. Analyze the audio performance.
+        // 5. Fetch previous analysis for comparison
+        let previousTakeInfo = "";
+        if (scriptId && sceneId) {
+            try {
+                console.log(`[Coach] Buscando análisis previo para Escena: ${sceneId}`);
+                const { data: prevFeedbacks } = await supabase
+                    .from('coach_feedback')
+                    .select('feedback, created_at, recordings!inner(script_id, scene_id)')
+                    .eq('user_id', userId)
+                    .eq('recordings.script_id', scriptId)
+                    .eq('recordings.scene_id', sceneId)
+                    .order('created_at', { ascending: false })
+                    .limit(1);
 
-IMPORTANTE: El audio contiene una interpretación de una escena con múltiples personajes. El usuario está interpretando SOLO al personaje "${userCharacterName}". Las otras voces son generadas por IA para dar contexto.
+                if (prevFeedbacks && prevFeedbacks.length > 0) {
+                    const prev = prevFeedbacks[0].feedback;
+                    const fecha = new Date(prevFeedbacks[0].created_at).toLocaleDateString();
 
-Tu análisis debe centrarse EXCLUSIVAMENTE en las líneas interpretadas por ${userCharacterName}. Ignora las voces de IA.${scriptContext}
+                    previousTakeInfo = `
+TOMA ANTERIOR ANALIZADA (${fecha}):
+- Ritmo: ${prev.ritmo || (prev.feedback?.ritmo) || 'Sin datos'}
+- Dicción: ${prev.diccion || (prev.feedback?.diccion) || 'Sin datos'}
+- Intención: ${prev.intencion || (prev.feedback?.intencion) || 'Sin datos'}
+- Emociones: ${prev.emociones || (prev.feedback?.emociones) || 'Sin datos'}
+- Naturalidad: ${prev.naturalidad || (prev.feedback?.naturalidad) || 'Sin datos'}
 
-Return ONLY valid JSON with this exact structure:
+INSTRUCCIÓN DE COMPARACIÓN:
+Compara esta nueva toma con la anterior. En el campo 'comparacion' del JSON indica específicamente qué ha mejorado, qué ha empeorado y qué sigue igual, mencionando momentos concretos del audio. Sé honesto y técnico.`;
+                    console.log('[Coach] Análisis previo encontrado e inyectado.');
+                } else {
+                    previousTakeInfo = `\nEsta es la primera toma analizada de esta escena. En el campo 'comparacion' indica: "Esta es tu primera toma analizada de esta escena. Graba una nueva toma tras practicar con este feedback para ver tu evolución."`;
+                }
+            } catch (e) {
+                console.error('[Coach] Error buscando historial:', e);
+            }
+        }
+
+        // 6. Construct the prompt with the new professional method-coach persona
+        const systemPrompt = `Eres un coach de interpretación profesional con 20 años de experiencia formando actores en escuelas de método (Strasberg, Meisner, Adler). Tu feedback es directo, técnico y honesto. No das palmaditas en la espalda ni usas frases vacías como 'buen trabajo' o 'se nota el esfuerzo'. Si algo falla, lo dices claramente y explicas por qué falla técnicamente.
+
+Tu análisis se basa en estos principios:
+- El ritmo no es decorativo, es dramático. Un ritmo constante suele indicar falta de escucha o de verdad.
+- La dicción al servicio del personaje, no de la galería.
+- La intención debe ser específica y activa, no general.
+- Las emociones se trabajan desde la circunstancia, no desde el resultado.
+- El silencio y las pausas son parte de la interpretación, no errores a rellenar.
+
+IMPORTANTE: El audio contiene una escena con múltiples personajes. El actor interpreta SOLO a ${userCharacterName}. Las otras voces son IA. Analiza EXCLUSIVAMENTE las intervenciones de ${userCharacterName}.
+
+${scriptContext}
+
+${previousTakeInfo}
+
+Devuelve SOLO JSON válido con esta estructura exacta, sin markdown ni bloques de código:
 {
   "feedback": {
-    "ritmo": "Analysis of rhythm...",
-    "diccion": "Analysis of diction...",
-    "intencion": "Analysis of intention...",
-    "emociones": "Analysis of emotions...",
-    "proyeccion": "Analysis of projection...",
-    "naturalidad": "Analysis of naturalness...",
-    "pausas": "Analysis of pauses..."
+    "ritmo": "Análisis técnico del tempo, aceleraciones, frenadas y su relación con la dramaturgia de la escena. Sé específico.",
+    "diccion": "Análisis de articulación, vocales, consonantes finales y proyección. Indica momentos concretos donde falla.",
+    "intencion": "Análisis del objetivo activo del personaje. ¿Se percibe qué quiere conseguir en cada línea? ¿Es específico o genérico?",
+    "emociones": "Análisis de la verdad emocional. ¿Viene de la circunstancia o parece impuesto? ¿Hay momentos de quiebre o todo es plano?",
+    "proyeccion": "Análisis del uso de la voz, volumen y energía. ¿Llega? ¿Se pierde?",
+    "naturalidad": "Grado de organicidad. ¿Parece vivido o recitado? Señala líneas concretas.",
+    "pausas": "Uso del silencio. ¿Las pausas son activas o son huecos vacíos? ¿Respira el personaje?"
   },
-  "sugerencias": ["Suggestion 1", "Suggestion 2", ...],
-  "comparacion": "Comparison with previous takes (or general comment if none)...",
-  "recomendaciones_personaje": "Character specific advice for ${userCharacterName}...",
+  "sugerencias": [
+    "Sugerencia técnica y accionable 1 (no genérica)",
+    "Sugerencia técnica y accionable 2",
+    "Sugerencia técnica y accionable 3"
+  ],
+  "comparacion": "Si hay toma anterior: comparativa honesta ítem por ítem. Si no hay toma anterior: mensaje explicando que esta es la primera toma analizada.",
+  "recomendaciones_personaje": "Consejos específicos para abordar a ${userCharacterName} basados en lo escuchado.",
   "ejercicios": [
-    { "nombre": "Exercise Name", "descripcion": "Exercise Description" }
+    {
+      "nombre": "Nombre del ejercicio",
+      "descripcion": "Instrucciones detalladas y concretas"
+    }
   ]
 }
-Do not return markdown formatting like \`\`\`json. Return raw JSON only. Language: Spanish.`;
+
+Idioma: Español. Tono: directo, técnico, honesto. Sin eufemismos. Sin frases motivacionales vacías.`;
 
         const openAIResponse = await fetch('https://api.openai.com/v1/chat/completions', {
             method: 'POST',

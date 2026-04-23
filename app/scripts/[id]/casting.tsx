@@ -15,17 +15,19 @@ import {
   Pressable,
   ScrollView,
   TextInput,
+  KeyboardAvoidingView,
+  Keyboard,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter, useLocalSearchParams, Stack } from 'expo-router';
-import { CameraView, CameraType, useCameraPermissions } from 'expo-camera';
+import Constants from 'expo-constants';
 import { activateKeepAwakeAsync, deactivateKeepAwake } from 'expo-keep-awake';
 import { rf, rp } from '@/utils/responsive';
 import { Audio, InterruptionModeIOS, InterruptionModeAndroid } from 'expo-av';
 import * as FileSystem from 'expo-file-system/legacy'; // Fix: Use legacy API
 import { transcribeAudio } from '@/services/transcription'; // Import transcription service
 import { calculateSimilarity } from '@/utils/stringUtils'; // Helper for similarity
-import { ArrowLeft, Mic, RotateCcw, Play, Pause, Square, Video, SwitchCamera, Settings2, SkipBack, SkipForward, MoreVertical, EyeOff, Eye, Minus, Plus, Volume2, GripHorizontal, X, Timer, Clapperboard, Trash2, ChevronRight, MessageSquare } from 'lucide-react-native';
+import { ArrowLeft, Mic, RotateCcw, Play, Pause, Square, Video, SwitchCamera, Settings2, SkipBack, SkipForward, MoreVertical, EyeOff, Eye, Minus, Plus, Volume2, GripHorizontal, X, Timer, Clapperboard, Trash2, ChevronRight, MessageSquare, FileText, Type, Snail, Rabbit, FlipHorizontal, Bold, Italic, Underline, AlignLeft, AlignCenter, AlignRight, Keyboard as KeyboardIcon } from 'lucide-react-native';
 import { supabase } from '@/utils/supabase';
 import client from '@/utils/openaiClient';
 import { generateElevenLabsAudio } from '@/utils/elevenLabsClient';
@@ -56,13 +58,45 @@ export default function CastingModeScreen() {
   const { user } = useAuth();
   const insets = useSafeAreaInsets();
 
-  // Camera State
+  // Camera Component Loader
+  const cameraRef = useRef<any>(null);
+  const CameraComponent = useRef<React.ComponentType<any> | null>(null);
+  const [isCameraLoaded, setIsCameraLoaded] = useState(false);
+  const isExpoGo = Constants.executionEnvironment === 'storeClient';
+
+  useEffect(() => {
+    const loadCamera = () => {
+      try {
+        let component;
+        if (isExpoGo) {
+          // Use @ alias or relative path, but handle potential undefined
+          component = require('../../../components/ExpoCameraView');
+        } else {
+          component = require('../../../components/NativeCameraView');
+        }
+        
+        if (component) {
+          CameraComponent.current = component.default || component;
+          setIsCameraLoaded(true);
+        } else {
+          console.error("Camera component module is undefined. Check paths.");
+        }
+      } catch (e) {
+        console.error("Error loading camera component:", e);
+      }
+    };
+    loadCamera();
+  }, [isExpoGo]);
+
+  // Combined Camera State
   const [recordingTime, setRecordingTime] = useState(0);
   const recordingTimeRef = useRef(0);
-  const [facing, setFacing] = useState<CameraType>('front');
-  const [permission, requestPermission] = useCameraPermissions();
-  const cameraRef = useRef<CameraView>(null);
+  const [facing, setFacing] = useState<'back' | 'front'>('front');
+  const [zoom, setZoom] = useState(0.08);
   const [isRecording, setIsRecording] = useState(false);
+  // Flag to cancel the countdown loop without relying on cameraRef properties
+  // (we can't store state on cameraRef.current — useImperativeHandle recreates that object on re-renders)
+  const countdownCancelledRef = useRef(false);
 
   // Script State
   const [loading, setLoading] = useState(true);
@@ -97,8 +131,313 @@ export default function CastingModeScreen() {
   const [startDelay, setStartDelay] = useState(5); // Delay in seconds before first line (0, 5, 10, 15... up to 60)
   const [countdown, setCountdown] = useState<number | null>(null); // Countdown display
 
+  // --- New Casting Mode Flow State ---
+  type CastingMode = 'selection' | 'script_config' | 'free_input' | 'recording';
+  const [castingMode, setCastingMode] = useState<CastingMode>('selection');
+  const [castingType, setCastingType] = useState<'script' | 'free' | null>(null);
+
+  // --- Rich Text para Teleprompter Libre ---
+  // Cada segmento tiene su propio formato independiente
+  type TextSegment = {
+    id: string;
+    text: string;
+    bold: boolean;
+    italic: boolean;
+    underline: boolean;
+    align: 'left' | 'center' | 'right';
+    color: string;
+  };
+
+  const makeSegment = (text: string, overrides?: Partial<TextSegment>): TextSegment => ({
+    id: Math.random().toString(36).slice(2),
+    text,
+    bold: false,
+    italic: false,
+    underline: false,
+    align: 'center',
+    color: 'white',
+    ...overrides,
+  });
+
+  // richSegments: fuente de verdad del rich text
+  const [richSegments, setRichSegments] = useState<TextSegment[]>([makeSegment('')]);
+  // freeText: texto plano para el TextInput (se sincroniza con richSegments)
+  const [freeText, setFreeText] = useState('');
+  // Selección actual en el TextInput { start, end }
+  const [textSelection, setTextSelection] = useState<{ start: number; end: number }>({ start: 0, end: 0 });
+  // REF de selección: persiste aunque el TextInput pierda foco (solución al problema iOS/Android
+  // donde onSelectionChange se dispara con {0,0} ANTES de que onPress reciba el evento)
+  const lastSelectionRef = useRef<{ start: number; end: number }>({ start: 0, end: 0 });
+  // Formato activo del cursor/selección (para mostrar qué botones están activos)
+  const [activeFormat, setActiveFormat] = useState<Omit<TextSegment, 'id' | 'text'>>({
+    bold: false, italic: false, underline: false, align: 'center', color: 'white'
+  });
+
+  const [freeScrollSpeed, setFreeScrollSpeed] = useState(5); // 1-10
+  const [freeFontSize, setFreeFontSize] = useState(rf(36));
+  const [isMirrored, setIsMirrored] = useState(false);
+  const [isZoomMenuOpen, setIsZoomMenuOpen] = useState(false);
+  const [showColorPicker, setShowColorPicker] = useState(false);
+  const isTextInputFocusedRef = useRef(false);
+  const freeScrollViewRef = useRef<ScrollView>(null);
+  const scrollOffsetRef = useRef(0);
+  const freeTextInputRef = useRef<any>(null);
+
+  // Extrae texto plano de los segmentos
+  const getPlainText = (segs: TextSegment[]) => segs.map(s => s.text).join('');
+
+  // Dado el texto plano y la posición, devuelve qué segmento y offset local corresponde
+  const getSegmentAtPosition = (segs: TextSegment[], pos: number): { segIdx: number; localOffset: number } => {
+    let acc = 0;
+    for (let i = 0; i < segs.length; i++) {
+      if (pos <= acc + segs[i].text.length) {
+        return { segIdx: i, localOffset: pos - acc };
+      }
+      acc += segs[i].text.length;
+    }
+    return { segIdx: segs.length - 1, localOffset: segs[segs.length - 1]?.text.length ?? 0 };
+  };
+
+  // Aplica formato a los caracteres seleccionados [selStart, selEnd)
+  // IMPORTANTE: usa lastSelectionRef (no el estado textSelection) porque en iOS/Android
+  // el TextInput pierde foco al pulsar un botón, disparando onSelectionChange con {0,0}
+  // ANTES de que onPress reciba el evento. El ref guarda la última selección real.
+  const applyFormatToSelection = useCallback(
+    (key: keyof Omit<TextSegment, 'id' | 'text'>, value: any) => {
+      const { start, end } = lastSelectionRef.current; // <-- ref, no estado
+      if (start === end) {
+        // Sin selección: cambiar el formato activo (afectará al próximo texto escrito)
+        setActiveFormat(f => ({ ...f, [key]: value }));
+        return;
+      }
+
+      setRichSegments(segs => {
+        // Construimos la nueva lista dividiendo los segmentos afectados
+        const result: TextSegment[] = [];
+        let acc = 0;
+
+        for (const seg of segs) {
+          const segStart = acc;
+          const segEnd = acc + seg.text.length;
+          acc = segEnd;
+
+          // Segmento completamente fuera de la selección
+          if (segEnd <= start || segStart >= end) {
+            result.push(seg);
+            continue;
+          }
+
+          // Parte anterior a la selección
+          if (segStart < start) {
+            result.push({ ...seg, id: Math.random().toString(36).slice(2), text: seg.text.slice(0, start - segStart) });
+          }
+
+          // Parte dentro de la selección
+          const selSliceStart = Math.max(0, start - segStart);
+          const selSliceEnd = Math.min(seg.text.length, end - segStart);
+          const newVal = key === 'bold' || key === 'italic' || key === 'underline'
+            ? value  // toggle directo
+            : value; // color o align directo
+          result.push({
+            ...seg,
+            id: Math.random().toString(36).slice(2),
+            text: seg.text.slice(selSliceStart, selSliceEnd),
+            [key]: newVal,
+          });
+
+          // Parte posterior a la selección
+          if (segEnd > end) {
+            result.push({ ...seg, id: Math.random().toString(36).slice(2), text: seg.text.slice(end - segStart) });
+          }
+        }
+
+        // Eliminar segmentos vacíos
+        return result.filter(s => s.text.length > 0) as TextSegment[];
+      });
+
+      // Actualizar el formato activo para reflejo visual en la barra
+      setActiveFormat(f => ({ ...f, [key]: value }));
+
+      // IMPORTANTE: Forzar el foco de vuelta y aplicar la selección para que sea persistente visualmente
+      // Usamos un pequeño delay para asegurar que el teclado/foco no pelee con el renderizado
+      setTimeout(() => {
+        if (freeTextInputRef.current) {
+          freeTextInputRef.current.focus();
+          // Mantenemos la selección o movemos el cursor al final
+          const newSelection = { start: start, end: end };
+          freeTextInputRef.current.setNativeProps({ selection: newSelection });
+          lastSelectionRef.current = newSelection;
+          setTextSelection(newSelection);
+        }
+      }, 50);
+    },
+    [] // ya no depende de textSelection, usa el ref
+  );
+
+  // Detecta qué formato tiene el segmento bajo el cursor para mostrar botones activos
+  const updateActiveFormatFromCursor = useCallback((segs: TextSegment[], pos: number) => {
+    if (segs.length === 0) return;
+    const { segIdx } = getSegmentAtPosition(segs, pos);
+    const seg = segs[segIdx];
+    if (seg) {
+      setActiveFormat({ bold: seg.bold, italic: seg.italic, underline: seg.underline, align: seg.align, color: seg.color });
+    }
+  }, []);
+
+  // Cuando el texto plano cambia en el TextInput, reconstruimos los segmentos
+  const handleFreeTextChange = useCallback((newPlain: string) => {
+    setFreeText(newPlain);
+    setRichSegments(prev => {
+      const oldPlain = getPlainText(prev);
+      if (newPlain === oldPlain) return prev;
+
+      // Calcular dónde cambió el texto (diff simple: prefijo común y sufijo común)
+      let prefixLen = 0;
+      while (prefixLen < oldPlain.length && prefixLen < newPlain.length && oldPlain[prefixLen] === newPlain[prefixLen]) prefixLen++;
+      let oldSufLen = 0;
+      while (
+        oldSufLen < oldPlain.length - prefixLen &&
+        oldSufLen < newPlain.length - prefixLen &&
+        oldPlain[oldPlain.length - 1 - oldSufLen] === newPlain[newPlain.length - 1 - oldSufLen]
+      ) oldSufLen++;
+
+      const deletedLen = oldPlain.length - prefixLen - oldSufLen;
+      const insertedText = newPlain.slice(prefixLen, newPlain.length - oldSufLen);
+
+      // Aplicar el cambio a los segmentos
+      const result: TextSegment[] = [];
+      let acc = 0;
+      let insertDone = false;
+
+      for (const seg of prev) {
+        const segStart = acc;
+        const segEnd = acc + seg.text.length;
+        acc = segEnd;
+
+        const delStart = prefixLen;
+        const delEnd = prefixLen + deletedLen;
+
+        if (segEnd <= delStart || segStart >= delEnd) {
+          // Completamente fuera del rango borrado
+          if (!insertDone && segStart >= delEnd) {
+            // Insertar en el primer segmento DESPUÉS del borrado
+            if (insertedText) {
+              result.push({ ...activeFormat, id: Math.random().toString(36).slice(2), text: insertedText });
+            }
+            insertDone = true;
+          }
+          result.push(seg);
+        } else {
+          // Parcialmente o totalmente en el rango borrado
+          const keepBefore = seg.text.slice(0, Math.max(0, delStart - segStart));
+          const keepAfter = seg.text.slice(Math.min(seg.text.length, delEnd - segStart));
+
+          if (keepBefore) result.push({ ...seg, id: Math.random().toString(36).slice(2), text: keepBefore });
+
+          if (!insertDone) {
+            if (insertedText) {
+              result.push({ ...activeFormat, id: Math.random().toString(36).slice(2), text: insertedText });
+            }
+            insertDone = true;
+          }
+
+          if (keepAfter) result.push({ ...seg, id: Math.random().toString(36).slice(2), text: keepAfter });
+        }
+      }
+
+      if (!insertDone && insertedText) {
+        result.push({ ...activeFormat, id: Math.random().toString(36).slice(2), text: insertedText });
+      }
+
+      const filtered = result.filter(s => s.text.length > 0);
+      return filtered.length > 0 ? filtered : [makeSegment('')];
+    });
+  }, [activeFormat]);
+
+
+
+  useEffect(() => {
+    const loadFreeText = async () => {
+      try {
+        const AsyncStorage = (await import('@react-native-async-storage/async-storage')).default;
+        // Cargar richSegments guardados
+        const savedSegments = await AsyncStorage.getItem('freeTeleprompterSegments');
+        if (savedSegments) {
+          const parsed = JSON.parse(savedSegments) as TextSegment[];
+          setRichSegments(parsed);
+          setFreeText(parsed.map(s => s.text).join(''));
+          
+          // Sincronizar el formato activo con el primer segmento para corregir el bug de alineación
+          if (parsed.length > 0) {
+            const firstSeg = parsed[0];
+            setActiveFormat({
+              bold: firstSeg.bold,
+              italic: firstSeg.italic,
+              underline: firstSeg.underline,
+              align: firstSeg.align,
+              color: firstSeg.color
+            });
+          }
+        } else {
+          // Compatibilidad hacia atrás: cargar texto plano antiguo
+          const saved = await AsyncStorage.getItem('freeTeleprompterText');
+          if (saved) {
+            setFreeText(saved);
+            setRichSegments([makeSegment(saved)]);
+          }
+        }
+      } catch (e) { console.error('Error loading free text:', e); }
+    };
+    loadFreeText();
+  }, []);
+
+  // Auto-scroll loop for Free Teleprompter
+  useEffect(() => {
+    if (castingMode !== 'recording' || castingType !== 'free' || !isPlaying) return;
+
+    let isActive = true;
+    let lastTime = Date.now();
+
+    const loop = () => {
+      if (!isActive) return;
+      const now = Date.now();
+      const delta = now - lastTime;
+      lastTime = now;
+
+      // pixels per second (speed 1 = very slow, 10 = fast)
+      const pixelsPerSecond = freeScrollSpeed * 15;
+      const pixelsPerFrame = (pixelsPerSecond * delta) / 1000;
+
+      scrollOffsetRef.current += pixelsPerFrame;
+      freeScrollViewRef.current?.scrollTo({ y: scrollOffsetRef.current, animated: false });
+
+      requestAnimationFrame(loop);
+    };
+
+    const animId = requestAnimationFrame(loop);
+    return () => {
+      isActive = false;
+      cancelAnimationFrame(animId);
+    };
+  }, [castingMode, castingType, isPlaying, freeScrollSpeed]);
+
+  // --- Recording Timer ---
+  // Corre siempre que isRecording sea true, en AMBOS modos.
+  // Así el contador arranca en el momento que se pulsa "Rec", igual que el video.
+  useEffect(() => {
+    if (!isRecording) return;
+
+    const startTimestamp = Date.now() - recordingTimeRef.current * 1000;
+    const interval = setInterval(() => {
+      const elapsed = Math.floor((Date.now() - startTimestamp) / 1000);
+      setRecordingTime(elapsed);
+      recordingTimeRef.current = elapsed;
+    }, 500);
+
+    return () => clearInterval(interval);
+  }, [isRecording]);
+
   // Scene Configuration State
-  const [showConfigScreen, setShowConfigScreen] = useState(true); // Start in config mode
   const [sceneConfig, setSceneConfig] = useState<SceneConfig | null>(null);
   const [configuredLines, setConfiguredLines] = useState<Array<DialogueLine | ActionCard>>([]);
   const [newActionText, setNewActionText] = useState('');
@@ -163,8 +502,9 @@ export default function CastingModeScreen() {
 
   // 1. Load Data & Permissions
   useEffect(() => {
-    if (!permission) {
-      requestPermission();
+    // Permission handled by camera component via ref if needed
+    if (castingMode === 'recording' && cameraRef.current) {
+      cameraRef.current.requestPermissions?.();
     }
     loadScriptData();
     loadSettings();
@@ -440,121 +780,158 @@ export default function CastingModeScreen() {
     }
   }, [dialogueLines, perCharacterVoices]);
 
+  // Helper: determina proveedor y voiceId para una línea dado el personaje
+  function resolveVoiceConfig(line: DialogueLine): { provider: string; voiceId: string | null } {
+    const characterName = line.characterName.toUpperCase();
+    const character = characters.find(c => c.name?.toUpperCase() === characterName);
+
+    // Prioridad 1: la configuración de voz guardada en la tabla 'characters' (voice_id + voice_provider)
+    if (character?.voice_id && character?.voice_provider) {
+      let voiceId = character.voice_id;
+      // Sanity check: si el provider es openai pero el voice_id parece una voz del sistema (com.apple...), ignorarlo
+      if (character.voice_provider === 'openai' && voiceId.includes('com.apple')) {
+        voiceId = null as any;
+      }
+      return { provider: character.voice_provider, voiceId };
+    }
+
+    // Prioridad 2: configuración por personaje en settings (characterVoicesByScript)
+    const voiceConfig = perCharacterVoices[characterName];
+    if (voiceConfig?.provider) {
+      const voiceId = (voiceConfig as any)?.voiceId || voiceConfig?.systemVoiceId || null;
+      return { provider: voiceConfig.provider, voiceId };
+    }
+
+    // Prioridad 3: settings globales de la app
+    const globalProvider = settings?.ttsProvider || 'openai';
+    return { provider: globalProvider, voiceId: null };
+  }
+
   async function speakLine(line: DialogueLine) {
     if (speaking) return;
 
-    // Stop any active listening/transcription
     await stopListening();
-
     setSpeaking(true);
 
     const lineStartTime = isRecording ? (Date.now() - recordingStartTime.current) / 1000 : 0;
 
+    // Helper interno para reproducir un URI de audio local
+    const playLocalAudio = async (audioUri: string) => {
+      if (soundRef.current) {
+        try { await soundRef.current.unloadAsync(); } catch {}
+      }
+      const { sound } = await Audio.Sound.createAsync(
+        { uri: audioUri },
+        { shouldPlay: true, volume: ttsVolume }
+      );
+      soundRef.current = sound;
+      sound.setOnPlaybackStatusUpdate((status) => {
+        if (status.isLoaded && status.didJustFinish) {
+          const duration = (status.durationMillis || 0) / 1000;
+          if (isRecording) {
+            lineTimingsRef.current.push({
+              index: currentIndex,
+              type: 'ai',
+              startTime: lineStartTime,
+              duration,
+              audioPath: audioUri,
+            });
+            setLineTimingsCount(c => c + 1);
+          }
+          setSpeaking(false);
+          nextLine();
+        }
+      });
+    };
+
+    // Helper interno para reproducir con voz del sistema (fallback final)
+    const playSystemTTS = (voiceId?: string) => {
+      const words = line.cleanText.split(' ').length;
+      const estimatedDuration = words * 0.5;
+      const rate = Platform.OS === 'ios' ? 0.5 : 1.0;
+      Speech.speak(line.cleanText || line.text, {
+        language: settings?.systemTtsLanguage || 'es-ES',
+        rate,
+        voice: voiceId,
+        onDone: () => {
+          if (isRecording) {
+            lineTimingsRef.current.push({
+              index: currentIndex,
+              type: 'ai',
+              startTime: lineStartTime,
+              duration: estimatedDuration,
+            });
+            setLineTimingsCount(c => c + 1);
+          }
+          setSpeaking(false);
+          nextLine();
+        },
+        onError: () => { setSpeaking(false); nextLine(); }
+      });
+    };
+
     try {
-      // Check cache first using line.id (stable key regardless of action cards)
-      const audioUri = ttsCache.get(line.id);
+      // 1. Verificar si ya está en cache en memoria (pre-generado)
+      const cachedUri = ttsCache.get(line.id);
+      if (cachedUri) {
+        console.log(`[TTS] ✅ Playing from memory cache: ${line.characterName}`);
+        await playLocalAudio(cachedUri);
+        return;
+      }
+
+      // 2. Resolver la configuración de voz para este personaje
+      const { provider, voiceId } = resolveVoiceConfig(line);
+      console.log(`[TTS] Provider: ${provider}, VoiceId: ${voiceId}, Char: ${line.characterName}`);
+
+      // 3. Si el proveedor elegido es 'system', usar voz del sistema directamente
+      if (provider === 'system') {
+        const characterName = line.characterName.toUpperCase();
+        const character = characters.find(c => c.name?.toUpperCase() === characterName);
+        const sysVoiceId = character?.voice_id || perCharacterVoices[characterName]?.systemVoiceId;
+        console.log(`[TTS] Using system voice: ${sysVoiceId || 'default'}`);
+        playSystemTTS(sysVoiceId);
+        return;
+      }
+
+      // 4. Intentar obtener del cache en disco (Supabase Storage / FileSystem)
+      const { getCachedAudio, generateAndCacheAudio } = await import('@/utils/ttsCache');
+      const Crypto = await import('expo-crypto');
+      const text = line.cleanText || line.text;
+      const textHash = await Crypto.digestStringAsync(Crypto.CryptoDigestAlgorithm.SHA256, text);
+
+      const effectiveProvider = (provider === 'google' ? 'openai' : provider) as 'openai' | 'elevenlabs';
+      const effectiveVoiceId = voiceId;
+
+      let audioUri = await getCachedAudio(line.id, effectiveProvider, effectiveVoiceId, textHash);
+
+      // 5. Si no está en disco, GENERAR ahora con OpenAI / ElevenLabs
+      if (!audioUri && user) {
+        console.log(`[TTS] 🎙️ Generating on-demand with ${effectiveProvider} for: ${line.characterName}`);
+        audioUri = await generateAndCacheAudio(
+          id as string,
+          line.id,
+          line.characterName,
+          text,
+          { provider: effectiveProvider, voiceId: effectiveVoiceId || undefined },
+          user.id
+        );
+      }
 
       if (audioUri) {
-        // Play from file with volume control
-        console.log('Playing from cache:', audioUri);
-
-        // Unload previous sound if exists
-        if (soundRef.current) {
-          await soundRef.current.unloadAsync();
-        }
-
-        const { sound } = await Audio.Sound.createAsync(
-          { uri: audioUri },
-          { shouldPlay: true, volume: ttsVolume }
-        );
-
-        soundRef.current = sound;
-
-        sound.setOnPlaybackStatusUpdate((status) => {
-          if (status.isLoaded && status.didJustFinish) {
-            const duration = (status.durationMillis || 0) / 1000;
-
-            // Record timing if recording
-            if (isRecording) {
-              console.log(`[Casting] Recording AI timing: index=${currentIndex}, startTime=${lineStartTime}, duration=${duration}`);
-
-              lineTimingsRef.current.push({
-                index: currentIndex,
-                type: 'ai',
-                startTime: lineStartTime,
-                duration,
-                audioPath: audioUri,
-              });
-              setLineTimingsCount(c => c + 1); // Trigger re-render
-            }
-
-            setSpeaking(false);
-            nextLine();
-          }
-        });
-
+        // Guardar en cache de memoria para futuras repeticiones
+        setTtsCache(prev => new Map(prev).set(line.id, audioUri!));
+        console.log(`[TTS] ▶️ Playing generated audio for: ${line.characterName}`);
+        await playLocalAudio(audioUri);
       } else {
-        // Fallback to System TTS (volume won't work on iOS)
-        console.log('Audio not cached, using System TTS');
-
-        // Determine voice for System TTS
-        const characterName = line.characterName.toUpperCase();
-
-        // Find character in database to get voice_id
-        const character = characters.find(
-          c => c.name?.toUpperCase() === characterName
-        );
-
-        // Priority: character.voice_id > perCharacterVoices
-        let systemVoiceId: string | undefined;
-
-        if (character?.voice_id && character?.voice_provider === 'system') {
-          systemVoiceId = character.voice_id;
-        } else {
-          const voiceConfig = perCharacterVoices[characterName];
-          systemVoiceId = voiceConfig?.systemVoiceId;
-        }
-
-        const rate = Platform.OS === 'ios' ? 0.5 : 1.0;
-
-        const options: Speech.SpeechOptions = {
-          language: settings.systemTtsLanguage || 'es-ES',
-          rate: rate,
-          onDone: () => {
-            // Estimate duration for System TTS - use cleanText
-            const words = line.cleanText.split(' ').length;
-            const estimatedDuration = words * 0.5; // Rough estimate
-
-            if (isRecording) {
-              lineTimingsRef.current.push({
-                index: currentIndex,
-                type: 'ai',
-                startTime: lineStartTime,
-                duration: estimatedDuration,
-              });
-              setLineTimingsCount(c => c + 1);
-            }
-
-            setSpeaking(false);
-            nextLine();
-          },
-          onError: () => {
-            setSpeaking(false);
-            nextLine();
-          }
-        };
-
-        if (systemVoiceId) {
-          options.voice = systemVoiceId;
-        }
-
-        Speech.speak(line.cleanText || line.text, options);
+        // 6. Solo llegamos aquí si la red/API falló — fallback a voz del sistema
+        console.warn(`[TTS] ⚠️ Generation failed, falling back to system TTS for: ${line.characterName}`);
+        playSystemTTS();
       }
 
     } catch (e) {
-      console.warn('TTS Error:', e);
-      setSpeaking(false);
-      nextLine();
+      console.error('[TTS] Error in speakLine:', e);
+      // Fallback de emergencia: voz del sistema
+      try { playSystemTTS(); } catch { setSpeaking(false); nextLine(); }
     }
   }
 
@@ -688,10 +1065,30 @@ export default function CastingModeScreen() {
     return <>{parts}</>;
   };
 
-  // Start recording (transition from config screen to camera)
-  function startCastingSession() {
-    setShowConfigScreen(false);
+  // Start script recording
+  function startScriptCasting() {
+    setCastingMode('recording');
+    setCastingType('script');
     setCurrentIndex(0);
+  }
+
+  // Start free teleprompter recording
+  async function startFreeCasting() {
+    setCastingMode('recording');
+    setCastingType('free');
+    
+    // Guardar borrador (richSegments y texto plano para compatibilidad)
+    try {
+      const AsyncStorage = (await import('@react-native-async-storage/async-storage')).default;
+      await AsyncStorage.setItem('freeTeleprompterText', freeText);
+      await AsyncStorage.setItem('freeTeleprompterSegments', JSON.stringify(richSegments));
+    } catch (e) {
+      console.error('Error saving free text:', e);
+    }
+    
+    scrollOffsetRef.current = 0;
+    freeScrollViewRef.current?.scrollTo({ y: 0, animated: false });
+    setIsPlaying(false); // No auto-arrancar
   }
 
   // 2. Logic: Handle Line Change
@@ -705,10 +1102,10 @@ export default function CastingModeScreen() {
       });
     }
 
-    if (isPlaying && !loading && configuredLines.length > 0) {
+    if (isPlaying && !loading && configuredLines.length > 0 && castingType !== 'free') {
       handleLineLogic();
     }
-  }, [currentIndex, isPlaying]);
+  }, [currentIndex, isPlaying, castingType, loading, configuredLines.length]);
 
   async function handleLineLogic() {
     const item = configuredLines[currentIndex];
@@ -949,14 +1346,17 @@ export default function CastingModeScreen() {
     }
   }
 
-  // Practice Mode (Play/Pause without recording)
+  // Practice Mode (Play/Pause without recording for scripts, always toggleable for free mode)
   function togglePracticeMode() {
-    if (isPlaying && !isRecording) {
+    // Prevent pausing script mode while recording
+    if (castingType === 'script' && isRecording) return;
+
+    if (isPlaying) {
       // Stop practice mode
       setIsPlaying(false);
       cleanupSound();
-    } else if (!isRecording) {
-      // Start practice mode (only if not recording)
+    } else {
+      // Start practice mode
       setIsPlaying(true);
     }
   }
@@ -974,63 +1374,49 @@ export default function CastingModeScreen() {
     if (!cameraRef.current) return;
 
     try {
-      // CRITICAL: Reconfirm audio mode to ensure simultaneous mic + TTS capture
+      // CRITICAL: Reconfirm audio mode
       await Audio.setAudioModeAsync({
-        allowsRecordingIOS: true, // Enable microphone recording
-        playsInSilentModeIOS: true, // Allow TTS playback
+        allowsRecordingIOS: true,
+        playsInSilentModeIOS: true,
         staysActiveInBackground: false,
-        shouldDuckAndroid: true, // Android: allow mixing
+        shouldDuckAndroid: true,
         playThroughEarpieceAndroid: false,
-        interruptionModeIOS: InterruptionModeIOS.MixWithOthers, // Mix without ducking
+        interruptionModeIOS: InterruptionModeIOS.MixWithOthers,
       });
 
-      setIsRecording(true);
-      // DON'T start teleprompter yet - wait for countdown
-      setRecordingTime(0);
-      recordingTimeRef.current = 0;
-      recordingStartTime.current = Date.now();
-      lineTimingsRef.current = []; // Clear previous timings
-      setLineTimingsCount(0);
+      // Reset cancel flags
+      countdownCancelledRef.current = false;
+      if (cameraRef.current) (cameraRef.current as any)._cancelRecording = false;
 
-      // Start timer
-      const timer = setInterval(() => {
-        setRecordingTime(t => {
-          const newVal = t + 1;
-          recordingTimeRef.current = newVal;
-          return newVal;
-        });
-      }, 1000);
-      (cameraRef.current as any).timer = timer;
+      const started = await cameraRef.current.startRecording();
+      if (started) {
+        setIsRecording(true);
+        setRecordingTime(0);
+        recordingTimeRef.current = 0;
+        recordingStartTime.current = Date.now();
+        lineTimingsRef.current = [];
+        setLineTimingsCount(0);
+        activateKeepAwakeAsync();
 
-      // Start video recording
-      const videoPromise = cameraRef.current.recordAsync({
-        maxDuration: 600, // 10 mins limit
-      });
+        // Timer is now managed by the declarative useEffect above (tied to isPlaying/isRecording)
+        // No need to start a manual interval here
 
-      // Countdown before starting teleprompter (only if startDelay > 0)
-      if (startDelay > 0) {
-        setCountdown(startDelay);
-        for (let i = startDelay; i > 0; i--) {
-          setCountdown(i);
-          await new Promise(resolve => setTimeout(resolve, 1000));
-          // Check if recording was cancelled during countdown
-          if (!(cameraRef.current as any)?.timer) {
-            setCountdown(null);
-            return;
+        // Start teleprompter after countdown (if any)
+        if (startDelay > 0) {
+          setCountdown(startDelay);
+          for (let i = startDelay; i > 0; i--) {
+            setCountdown(i);
+            await new Promise(resolve => setTimeout(resolve, 1000));
+            // Use dedicated cancel ref — not cameraRef properties which can be recreated
+            if (countdownCancelledRef.current) {
+              setCountdown(null);
+              return;
+            }
           }
+          setCountdown(null);
         }
-        setCountdown(null);
-      }
 
-      // NOW start the teleprompter after countdown
-      setIsPlaying(true);
-
-      // Wait for video recording to finish
-      const video = await videoPromise;
-
-      // This promise resolves when recording stops
-      if (video) {
-        handleRecordingFinished(video.uri);
+        setIsPlaying(true);
       }
 
     } catch (e) {
@@ -1038,36 +1424,89 @@ export default function CastingModeScreen() {
       Alert.alert('Error', 'No se pudo iniciar la grabación');
       setIsRecording(false);
       setIsPlaying(false);
-      setCountdown(null);
     }
   }
 
-  function stopRecording() {
-    if (cameraRef.current && isRecording) {
-      cameraRef.current.stopRecording();
-      setIsRecording(false);
-      setIsPlaying(false);
-      cleanupSound();
+  async function stopRecording() {
+    if (!cameraRef.current) return;
 
-      if ((cameraRef.current as any).timer) {
-        clearInterval((cameraRef.current as any).timer);
+    // Signal countdown cancellation
+    countdownCancelledRef.current = true;
+    // Setting isRecording=false will trigger the timer useEffect cleanup automatically
+    setIsRecording(false);
+    setIsPlaying(false);
+    deactivateKeepAwake();
+
+    try {
+      const video = await cameraRef.current.stopRecording();
+      if (video && recordingTimeRef.current >= 2) {
+        if (castingType === 'free') {
+          saveFreeRecording(video.path || video.uri);
+        } else {
+          handleRecordingFinished(video.path || video.uri);
+        }
       }
+    } catch (e) {
+      console.error("Error stopping recording:", e);
+    }
+  }
+
+  async function saveFreeRecording(uri: string) {
+    if ((cameraRef.current as any)?._cancelRecording) {
+      (cameraRef.current as any)._cancelRecording = false;
+      return;
+    }
+
+    try {
+      setIsProcessing(true);
+      setProcessingProgress(20);
+      
+      const localPath = `${FileSystem.documentDirectory}free_casting_${Date.now()}.mp4`;
+      await FileSystem.copyAsync({ from: uri, to: localPath });
+      setProcessingProgress(60);
+      
+      const { error: dbError } = await supabase.from('recordings').insert({
+        user_id: user?.id,
+        script_id: id,
+        project_id: null,
+        title: `Teleprompter - Libre`,
+        audio_url: localPath, 
+        type: 'video',
+        duration_seconds: recordingTimeRef.current,
+        file_size_bytes: 0,
+      });
+
+      if (dbError) throw new Error(dbError.message);
+
+      setProcessingProgress(100);
+      setIsProcessing(false);
+      Alert.alert('¡Video guardado!', 'Tu grabación se ha guardado correctamente.', [
+        { text: 'OK', onPress: () => router.replace(`/scripts/${id}`) }
+      ]);
+    } catch (e: any) {
+      console.error(e);
+      setIsProcessing(false);
+      Alert.alert('Error', e.message || 'Error guardando');
     }
   }
 
   // Nueva función para cancelar grabación sin procesar
   function cancelRecording() {
     if (cameraRef.current && isRecording) {
-      // Detener la grabación sin procesar
+      // Signal cancellation to the countdown loop immediately
+      countdownCancelledRef.current = true;
       (cameraRef.current as any)._cancelRecording = true;
+
+      // Stop the camera recording
       cameraRef.current.stopRecording();
+
+      // setIsRecording(false) + setIsPlaying(false) will trigger the timer useEffect cleanup
       setIsRecording(false);
       setIsPlaying(false);
+      setCountdown(null);
+      setRecordingTime(0);
+      recordingTimeRef.current = 0;
       cleanupSound();
-
-      if ((cameraRef.current as any).timer) {
-        clearInterval((cameraRef.current as any).timer);
-      }
 
       // Limpiar timings
       lineTimingsRef.current = [];
@@ -1201,6 +1640,7 @@ export default function CastingModeScreen() {
         const { error: dbError } = await supabase.from('recordings').insert({
           user_id: user?.id,
           script_id: id,
+          scene_id: dialogueLines[currentIndex]?.sceneId ?? dialogueLines[0]?.sceneId,
           project_id: null,
           title: `Casting - ${script?.title || 'Guión'}`,
           audio_url: downloadResult.uri, // Store local path
@@ -1261,22 +1701,215 @@ export default function CastingModeScreen() {
     setFacing(current => (current === 'back' ? 'front' : 'back'));
   }
 
-  if (!permission) return <View />;
-  if (!permission.granted) {
-    return (
-      <View style={styles.container}>
-        <Text style={{ textAlign: 'center', marginTop: rp(50) }}>Necesitamos permiso de cámara</Text>
-        <TouchableOpacity onPress={requestPermission} style={styles.btn}><Text>Dar permiso</Text></TouchableOpacity>
-      </View>
-    );
-  }
 
   return (
     <View style={styles.container}>
       <Stack.Screen options={{ headerShown: false }} />
 
+      {/* --- SELECTION SCREEN --- */}
+      {castingMode === 'selection' && (
+        <SafeAreaView style={[styles.configContainer, { backgroundColor: colors.background }]}>
+          <View style={styles.configHeader}>
+            <TouchableOpacity onPress={() => router.replace(`/scripts/${id}`)} style={styles.configBackBtn}>
+              <ArrowLeft color={colors.text} size={rp(24)} />
+            </TouchableOpacity>
+            <View style={styles.configTitleContainer}>
+              <Video color={colors.primary} size={rp(24)} />
+              <Text style={[styles.configTitle, { color: colors.text }]}>Modo Casting</Text>
+            </View>
+            <View style={{ width: rp(44) }} />
+          </View>
+          
+          <View style={{ flex: 1, padding: rp(24), gap: rp(24), justifyContent: 'center' }}>
+            <TouchableOpacity 
+              style={[styles.btn, { backgroundColor: colors.card, padding: rp(32), borderRadius: rp(16), alignItems: 'center', width: '100%' }]}
+              onPress={() => setCastingMode('script_config')}
+            >
+               <FileText size={rp(48)} color={colors.primary} style={{marginBottom: 16}} />
+               <Text style={{ color: colors.text, fontSize: rf(20), fontWeight: '700' }}>Usar Guion</Text>
+               <Text style={{ color: colors.textSecondary, fontSize: rf(14), textAlign: 'center', marginTop: 8 }}>Ensaya con las líneas de los personajes y autocompletado de voz IA.</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity 
+              style={[styles.btn, { backgroundColor: colors.card, padding: rp(32), borderRadius: rp(16), alignItems: 'center', width: '100%' }]}
+              onPress={() => setCastingMode('free_input')}
+            >
+               <Type size={rp(48)} color="#10B981" style={{marginBottom: 16}} />
+               <Text style={{ color: colors.text, fontSize: rf(20), fontWeight: '700' }}>Teleprompter Libre</Text>
+               <Text style={{ color: colors.textSecondary, fontSize: rf(14), textAlign: 'center', marginTop: 8 }}>Escribe o pega cualquier texto para usar el teleprompter automático continuo.</Text>
+            </TouchableOpacity>
+          </View>
+        </SafeAreaView>
+      )}
+
+      {/* --- FREE INPUT SCREEN --- */}
+      {castingMode === 'free_input' && (
+        <SafeAreaView style={[styles.configContainer, { backgroundColor: colors.background }]}>
+          <View style={styles.configHeader}>
+            <TouchableOpacity onPress={() => setCastingMode('selection')} style={styles.configBackBtn}>
+              <ArrowLeft color={colors.text} size={rp(24)} />
+            </TouchableOpacity>
+            <View style={styles.configTitleContainer}>
+              <Type color="#10B981" size={rp(24)} />
+              <Text style={[styles.configTitle, { color: colors.text }]}>Edición de Texto</Text>
+            </View>
+            <TouchableOpacity onPress={startFreeCasting} style={[styles.startRecordingBtn, { paddingHorizontal: rp(16), paddingVertical: rp(8), marginTop: 0 }]}>
+              <Text style={[styles.startRecordingText, { fontSize: rf(14) }]}>Continuar</Text>
+            </TouchableOpacity>
+          </View>
+          
+          <KeyboardAvoidingView 
+            behavior={Platform.OS === 'ios' ? 'padding' : 'height'} 
+            style={{ flex: 1 }}
+          >
+            {/* Leyenda de ayuda */}
+            <View style={{ paddingHorizontal: rp(16), paddingTop: rp(8), paddingBottom: rp(4) }}>
+              <Text style={{ color: colors.textSecondary, fontSize: rf(12), textAlign: 'center' }}>
+                Selecciona texto y usa la barra para aplicar formato solo a esa parte
+              </Text>
+            </View>
+
+            {/* Toolbar de formato */}
+            <View style={{ flexDirection: 'row', paddingHorizontal: rp(16), paddingVertical: rp(8), borderBottomWidth: 1, borderBottomColor: 'rgba(255,255,255,0.1)' }}>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: rp(8), alignItems: 'center' }}>
+                {/* Negrita */}
+                <TouchableOpacity
+                  onPress={() => applyFormatToSelection('bold', !activeFormat.bold)}
+                  style={[{ padding: rp(8), borderRadius: rp(8) }, activeFormat.bold && { backgroundColor: '#10B981' }]}
+                >
+                  <Bold size={rp(18)} color={activeFormat.bold ? 'white' : colors.text} />
+                </TouchableOpacity>
+
+                {/* Cursiva */}
+                <TouchableOpacity
+                  onPress={() => applyFormatToSelection('italic', !activeFormat.italic)}
+                  style={[{ padding: rp(8), borderRadius: rp(8) }, activeFormat.italic && { backgroundColor: '#10B981' }]}
+                >
+                  <Italic size={rp(18)} color={activeFormat.italic ? 'white' : colors.text} />
+                </TouchableOpacity>
+
+                {/* Subrayado */}
+                <TouchableOpacity
+                  onPress={() => applyFormatToSelection('underline', !activeFormat.underline)}
+                  style={[{ padding: rp(8), borderRadius: rp(8) }, activeFormat.underline && { backgroundColor: '#10B981' }]}
+                >
+                  <Underline size={rp(18)} color={activeFormat.underline ? 'white' : colors.text} />
+                </TouchableOpacity>
+
+                <View style={{ width: 1, height: 24, backgroundColor: 'rgba(255,255,255,0.2)', marginHorizontal: 4 }} />
+
+                {/* Alineación izquierda */}
+                <TouchableOpacity
+                  onPress={() => applyFormatToSelection('align', 'left')}
+                  style={[{ padding: rp(8), borderRadius: rp(8) }, activeFormat.align === 'left' && { backgroundColor: '#10B981' }]}
+                >
+                  <AlignLeft size={rp(18)} color={activeFormat.align === 'left' ? 'white' : colors.text} />
+                </TouchableOpacity>
+
+                {/* Alineación centro */}
+                <TouchableOpacity
+                  onPress={() => applyFormatToSelection('align', 'center')}
+                  style={[{ padding: rp(8), borderRadius: rp(8) }, activeFormat.align === 'center' && { backgroundColor: '#10B981' }]}
+                >
+                  <AlignCenter size={rp(18)} color={activeFormat.align === 'center' ? 'white' : colors.text} />
+                </TouchableOpacity>
+
+                {/* Alineación derecha */}
+                <TouchableOpacity
+                  onPress={() => applyFormatToSelection('align', 'right')}
+                  style={[{ padding: rp(8), borderRadius: rp(8) }, activeFormat.align === 'right' && { backgroundColor: '#10B981' }]}
+                >
+                  <AlignRight size={rp(18)} color={activeFormat.align === 'right' ? 'white' : colors.text} />
+                </TouchableOpacity>
+
+                <View style={{ width: 1, height: 24, backgroundColor: 'rgba(255,255,255,0.2)', marginHorizontal: 4 }} />
+
+                {/* Color: botón que muestra el color activo */}
+                <TouchableOpacity
+                  onPress={() => setShowColorPicker(!showColorPicker)}
+                  style={{
+                    width: rp(30), height: rp(30), borderRadius: rp(15),
+                    backgroundColor: activeFormat.color,
+                    borderWidth: 2, borderColor: 'white', marginHorizontal: 4
+                  }}
+                />
+              </ScrollView>
+
+              <TouchableOpacity onPress={() => Keyboard.dismiss()} style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: 'rgba(255,255,255,0.1)', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 8, marginLeft: 12 }}>
+                <KeyboardIcon size={rp(16)} color={colors.text} style={{marginRight: 4}} />
+                <Text style={{color: colors.text, fontSize: rf(12)}}>Ocultar</Text>
+              </TouchableOpacity>
+            </View>
+
+            {/* Paleta de colores */}
+            {showColorPicker && (
+              <View style={{ flexDirection: 'row', backgroundColor: 'rgba(255,255,255,0.05)', paddingVertical: rp(10), justifyContent: 'center', gap: rp(12), borderBottomWidth: 1, borderBottomColor: 'rgba(255,255,255,0.1)' }}>
+                {['white', '#FBBF24', '#10B981', '#0EA5E9', '#EF4444', '#A78BFA', '#F97316', '#000000'].map(c => (
+                  <TouchableOpacity
+                    key={c}
+                    onPress={() => { applyFormatToSelection('color', c); setShowColorPicker(false); }}
+                    style={{
+                      width: rp(32), height: rp(32), borderRadius: rp(16),
+                      backgroundColor: c,
+                      borderWidth: activeFormat.color === c ? 3 : 1,
+                      borderColor: activeFormat.color === c ? 'white' : 'rgba(255,255,255,0.4)'
+                    }}
+                  />
+                ))}
+              </View>
+            )}
+
+            {/* Previsualización del rich text mientras se escribe */}
+            <View style={{ flex: 1, padding: rp(16) }}>
+              <TextInput
+                ref={freeTextInputRef}
+                style={{
+                  flex: 1,
+                  backgroundColor: 'rgba(255,255,255,0.05)',
+                  color: activeFormat.color === 'white' ? colors.text : activeFormat.color,
+                  fontSize: rf(20),
+                  padding: rp(20),
+                  borderRadius: rp(12),
+                  textAlignVertical: 'top',
+                  textAlign: activeFormat.align,
+                  fontWeight: activeFormat.bold ? 'bold' : 'normal',
+                  fontStyle: activeFormat.italic ? 'italic' : 'normal',
+                  textDecorationLine: activeFormat.underline ? 'underline' : 'none',
+                }}
+                multiline
+                placeholder="Escribe o pega aquí tu texto libre..."
+                placeholderTextColor={colors.textSecondary}
+                value={freeText}
+                onChangeText={handleFreeTextChange}
+                onSelectionChange={(e) => {
+                  const sel = e.nativeEvent.selection;
+                  setTextSelection(sel);
+                  
+                  // Sólo persistimos en el ref si el TextInput tiene el foco REAL
+                  // o si el rango seleccionado tiene longitud > 0.
+                  // Esto evita que el {0,0} automático del blur destruya nuestra selección.
+                  if (isTextInputFocusedRef.current || sel.start !== sel.end) {
+                    lastSelectionRef.current = sel;
+                  }
+                  
+                  updateActiveFormatFromCursor(richSegments, sel.start);
+                }}
+                onFocus={() => {
+                  isTextInputFocusedRef.current = true;
+                  setShowColorPicker(false);
+                }}
+                onBlur={() => {
+                  isTextInputFocusedRef.current = false;
+                }}
+                onPressIn={() => setShowColorPicker(false)}
+              />
+            </View>
+          </KeyboardAvoidingView>
+        </SafeAreaView>
+      )}
+
       {/* Scene Configuration Screen */}
-      {showConfigScreen ? (
+      {castingMode === 'script_config' && (
         <SafeAreaView style={[styles.configContainer, { backgroundColor: colors.background }]}>
           {/* Header */}
           <View style={styles.configHeader}>
@@ -1448,7 +2081,7 @@ export default function CastingModeScreen() {
           {/* Start Recording Button */}
           <View style={styles.configFooter}>
             <TouchableOpacity
-              onPress={startCastingSession}
+              onPress={startScriptCasting}
               style={styles.startRecordingBtn}
             >
               <Video size={rp(20)} color="#fff" />
@@ -1457,30 +2090,69 @@ export default function CastingModeScreen() {
             </TouchableOpacity>
           </View>
         </SafeAreaView>
-      ) : (
-        <>
-          {/* Camera Fullscreen */}
-          <CameraView
-            style={StyleSheet.absoluteFill}
-            facing={facing}
-            ref={cameraRef}
-            mode="video"
-          />
+      )}
 
-          {/* UI Overlay - Absolute positioned to avoid CameraView children warning */}
+      {/* CAMERA AND RECORDING VIEW */}
+      {castingMode === 'recording' && (
+        <>
+          {/* Dynamic Camera Component Loader */}
+          {CameraComponent.current && (
+            <CameraComponent.current
+              ref={cameraRef}
+              isActive={castingMode === 'recording' && !isProcessing}
+              facing={facing}
+              zoom={zoom}
+            />
+          )}
+
+          {/* UI Overlay - Absolute positioned */}
           <SafeAreaView style={StyleSheet.absoluteFill}>
             {/* Header Controls */}
-            <View style={styles.header}>
-              <TouchableOpacity onPress={() => router.replace(`/scripts/${id}`)} style={styles.iconBtn}>
-                <ArrowLeft color="white" size={rp(24)} />
-              </TouchableOpacity>
+            <View style={[styles.header, { zIndex: 50 }]}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+                <TouchableOpacity onPress={() => router.replace(`/scripts/${id}`)} style={styles.iconBtn}>
+                  <ArrowLeft color="white" size={rp(24)} />
+                </TouchableOpacity>
+                {castingType === 'free' && (
+                  <TouchableOpacity 
+                    onPress={() => { setCastingMode('free_input'); isPlaying && setIsPlaying(false); }}
+                    style={{ backgroundColor: 'rgba(0,0,0,0.5)', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 20 }}
+                  >
+                    <Text style={{ color: 'white', fontWeight: '600', fontSize: rf(14) }}>Editar T</Text>
+                  </TouchableOpacity>
+                )}
+              </View>
+
               <View style={styles.timerBadge}>
                 <View style={[styles.dot, isRecording && styles.recordingDot]} />
                 <Text style={styles.timerText}>{formatTime(recordingTime)}</Text>
               </View>
-              <TouchableOpacity onPress={toggleCamera} style={styles.iconBtn}>
-                <SwitchCamera color="white" size={rp(24)} />
-              </TouchableOpacity>
+
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                <View style={{ position: 'relative', zIndex: 100 }}>
+                  <TouchableOpacity onPress={() => setIsZoomMenuOpen(!isZoomMenuOpen)} style={[styles.activeZoomBtnHeader, { backgroundColor: 'rgba(0,0,0,0.5)' }]}>
+                     <Text style={styles.zoomTextHeader}>
+                       {zoom === 0 ? '0.5x' : zoom === 0.08 ? '1x' : '2x'}
+                     </Text>
+                  </TouchableOpacity>
+                  {isZoomMenuOpen && (
+                    <View style={{ position: 'absolute', top: 44, left: 0, backgroundColor: 'rgba(0,0,0,0.6)', borderRadius: 18, paddingVertical: 4 }}>
+                      <TouchableOpacity onPress={() => {setZoom(0); setIsZoomMenuOpen(false)}} style={[styles.zoomBtnHeader, zoom===0 && styles.activeZoomBtnHeader]}>
+                        <Text style={styles.zoomTextHeader}>0.5x</Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity onPress={() => {setZoom(0.08); setIsZoomMenuOpen(false)}} style={[styles.zoomBtnHeader, zoom===0.08 && styles.activeZoomBtnHeader]}>
+                        <Text style={styles.zoomTextHeader}>1x</Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity onPress={() => {setZoom(0.15); setIsZoomMenuOpen(false)}} style={[styles.zoomBtnHeader, zoom===0.15 && styles.activeZoomBtnHeader]}>
+                        <Text style={styles.zoomTextHeader}>2x</Text>
+                      </TouchableOpacity>
+                    </View>
+                  )}
+                </View>
+                <TouchableOpacity onPress={toggleCamera} style={styles.iconBtn}>
+                  <SwitchCamera color="white" size={rp(24)} />
+                </TouchableOpacity>
+              </View>
             </View>
 
 
@@ -1507,13 +2179,7 @@ export default function CastingModeScreen() {
               </View>
             )}
 
-            {/* Recording Tip Banner */}
-            {isRecording && !countdown && (
-              <View style={styles.recordingTipBanner}>
-                <Mic size={rp(16)} color="#10B981" />
-                <Text style={styles.recordingTipText}>Habla cerca del micrófono para mejor calidad</Text>
-              </View>
-            )}
+            {/* Recording Tip Banner removed per user request */}
 
             {/* Countdown Overlay */}
             {countdown !== null && (
@@ -1528,9 +2194,20 @@ export default function CastingModeScreen() {
             {/* Teleprompter Overlay */}
             {!hideTeleprompter && (
               <Animated.View
+                pointerEvents={castingType === 'free' ? 'box-none' : 'auto'}
                 style={[
                   styles.teleprompterContainer,
-                  {
+                  castingType === 'free' ? {
+                    height: '100%',
+                    position: 'absolute',
+                    top: 0,
+                    bottom: 0,
+                    left: 0,
+                    right: 0,
+                    backgroundColor: 'transparent',
+                    borderTopLeftRadius: 0,
+                    borderTopRightRadius: 0,
+                  } : {
                     height: teleprompterHeight.interpolate({
                       inputRange: [rp(150), screenHeight * 0.8],
                       outputRange: [rp(150), screenHeight * 0.8],
@@ -1539,107 +2216,172 @@ export default function CastingModeScreen() {
                   }
                 ]}
               >
-                {/* Drag Handle (Top) */}
-                <View
-                  {...panResponder.panHandlers}
-                  style={styles.dragHandleContainer}
-                >
-                  <GripHorizontal color="rgba(255,255,255,0.5)" size={rp(24)} />
-                </View>
+                {/* Drag Handle (Top) - Only for scripts */}
+                {castingType !== 'free' && (
+                  <View
+                    {...panResponder.panHandlers}
+                    style={styles.dragHandleContainer}
+                  >
+                    <GripHorizontal color="rgba(255,255,255,0.5)" size={rp(24)} />
+                  </View>
+                )}
 
-                <FlatList
-                  ref={flatListRef}
-                  data={configuredLines}
-                  keyExtractor={(item) => 'afterLineId' in item ? item.id : item.id}
-                  contentContainerStyle={{ paddingTop: rp(20), paddingBottom: rp(100), paddingHorizontal: rp(24) }}
-                  renderItem={({ item, index }) => {
-                    const isActive = index === currentIndex;
-                    const isAction = 'afterLineId' in item;
+                {castingType === 'script' ? (
+                  <FlatList
+                    ref={flatListRef}
+                    data={configuredLines}
+                    keyExtractor={(item) => 'afterLineId' in item ? item.id : item.id}
+                    contentContainerStyle={{ paddingTop: rp(20), paddingBottom: rp(100), paddingLeft: Math.max(insets.left, rp(24)), paddingRight: Math.max(insets.right, rp(24)) }}
+                    renderItem={({ item, index }) => {
+                      const isActive = index === currentIndex;
+                      const isAction = 'afterLineId' in item;
 
-                    // Calculate opacity: active = 1, neighbors = 0.6, others = 0.3
-                    let opacity = 0.3;
-                    if (isActive) opacity = 1;
-                    else if (Math.abs(index - currentIndex) <= 1) opacity = 0.6;
+                      // Calculate opacity: active = 1, neighbors = 0.6, others = 0.3
+                      let opacity = 0.3;
+                      if (isActive) opacity = 1;
+                      else if (Math.abs(index - currentIndex) <= 1) opacity = 0.6;
 
-                    // Render Action Card
-                    if (isAction) {
-                      const action = item as ActionCard;
-                      // If hideActions is true, don't render action cards
-                      if (hideActions) return null;
+                      // Render Action Card
+                      if (isAction) {
+                        const action = item as ActionCard;
+                        // If hideActions is true, don't render action cards
+                        if (hideActions) return null;
 
+                        return (
+                          <View
+                            style={[
+                              styles.teleprompterActionCard,
+                              isActive && styles.teleprompterActionCardActive,
+                              { opacity }
+                            ]}
+                          >
+                            <View style={styles.teleprompterActionHeader}>
+                              <Clapperboard color="#F59E0B" size={rp(16)} />
+                              <Text style={styles.teleprompterActionLabel}>ACCIÓN</Text>
+                              <View style={styles.teleprompterActionDuration}>
+                                <Timer size={rp(12)} color="#F59E0B" />
+                                <Text style={styles.teleprompterActionDurationText}>{action.duration}s</Text>
+                              </View>
+                            </View>
+                            <Text style={[styles.teleprompterActionText, isActive && { fontWeight: '700' }]}>
+                              ({action.text})
+                            </Text>
+                          </View>
+                        );
+                      }
+
+                      // Render Dialogue Line
+                      const line = item as DialogueLine;
                       return (
-                        <View
+                        <TouchableOpacity
+                          onPress={() => setCurrentIndex(index)}
                           style={[
-                            styles.teleprompterActionCard,
-                            isActive && styles.teleprompterActionCardActive,
-                            { opacity }
+                            styles.dialogueCard,
+                            isActive && styles.activeCard,
+                            { opacity, borderLeftColor: line.color }
                           ]}
                         >
-                          <View style={styles.teleprompterActionHeader}>
-                            <Clapperboard color="#F59E0B" size={rp(16)} />
-                            <Text style={styles.teleprompterActionLabel}>ACCIÓN</Text>
-                            <View style={styles.teleprompterActionDuration}>
-                              <Timer size={rp(12)} color="#F59E0B" />
-                              <Text style={styles.teleprompterActionDurationText}>{action.duration}s</Text>
+                          <View style={styles.cardHeader}>
+                            <View style={[styles.charBadge, { backgroundColor: line.color }]}>
+                              <Text style={styles.charBadgeText}>{line.characterName.charAt(0)}</Text>
                             </View>
+                            <Text style={[styles.cardCharName, isActive && { color: '#fff' }]}>{line.characterName}</Text>
+                            {line.isUserCharacter ? (
+                              <View style={styles.youBadge}>
+                                <Text style={styles.youBadgeText}>TÚ</Text>
+                              </View>
+                            ) : (
+                              <View style={[styles.aiBadge, { backgroundColor: line.color }]}>
+                                <Text style={styles.aiBadgeText}>IA</Text>
+                              </View>
+                            )}
                           </View>
-                          <Text style={[styles.teleprompterActionText, isActive && { fontWeight: '700' }]}>
-                            ({action.text})
-                          </Text>
-                        </View>
-                      );
-                    }
 
-                    // Render Dialogue Line
-                    const line = item as DialogueLine;
-                    return (
-                      <TouchableOpacity
-                        onPress={() => setCurrentIndex(index)}
-                        style={[
-                          styles.dialogueCard,
-                          isActive && styles.activeCard,
-                          { opacity, borderLeftColor: line.color }
-                        ]}
-                      >
-                        <View style={styles.cardHeader}>
-                          <View style={[styles.charBadge, { backgroundColor: line.color }]}>
-                            <Text style={styles.charBadgeText}>{line.characterName.charAt(0)}</Text>
-                          </View>
-                          <Text style={[styles.cardCharName, isActive && { color: '#fff' }]}>{line.characterName}</Text>
-                          {line.isUserCharacter ? (
-                            <View style={styles.youBadge}>
-                              <Text style={styles.youBadgeText}>TÚ</Text>
+                          {/* Show hidden text placeholder or actual text */}
+                          {hideUserLines && line.isUserCharacter ? (
+                            <View style={styles.hiddenTextContainer}>
+                              <EyeOff size={rp(32)} color="#10B981" />
+                              <Text style={styles.hiddenText}>Línea oculta</Text>
                             </View>
                           ) : (
-                            <View style={[styles.aiBadge, { backgroundColor: line.color }]}>
-                              <Text style={styles.aiBadgeText}>IA</Text>
-                            </View>
+                            <Text style={[styles.cardText, isActive && { color: '#fff', fontWeight: '600' }]}>
+                              {renderTextWithStageDirections(
+                                showStageDirections ? line.text : line.cleanText
+                              )}
+                            </Text>
                           )}
-                        </View>
+                        </TouchableOpacity>
+                      );
+                    }}
+                    onScrollToIndexFailed={info => {
+                      const wait = new Promise(resolve => setTimeout(resolve, 500));
+                      wait.then(() => {
+                        flatListRef.current?.scrollToIndex({ index: info.index, animated: true, viewPosition: 0 });
+                      });
+                    }}
+                  />
+                ) : (
+                  <ScrollView
+                    ref={freeScrollViewRef}
+                    contentContainerStyle={{ paddingTop: screenHeight - rp(250), paddingBottom: screenHeight, paddingLeft: Math.max(insets.left, rp(24)), paddingRight: Math.max(insets.right, rp(24)) }}
+                    scrollEnabled={!isPlaying}
+                    showsVerticalScrollIndicator={false}
+                    onScroll={(e) => {
+                      if (!isPlaying) {
+                        scrollOffsetRef.current = e.nativeEvent.contentOffset.y;
+                      }
+                    }}
+                    scrollEventThrottle={16}
+                  >
+                    {richSegments.length === 0 || (richSegments.length === 1 && !richSegments[0].text) ? (
+                      <Text style={{ color: 'rgba(255,255,255,0.4)', fontSize: freeFontSize, textAlign: 'center', transform: [{ scaleX: isMirrored ? -1 : 1 }] }}>
+                        No hay texto para mostrar. Vuelve atrás y escribe algo.
+                      </Text>
+                    ) : (
+                      // Agrupar segmentos por párrafo (separados por saltos de línea)
+                      // Cada segmento que contiene \n se divide y cada línea puede tener su propia alineación
+                      (() => {
+                        // Dividir los segmentos por líneas preservando el formato de cada trozo
+                        type RenderSpan = Omit<TextSegment, 'id'>;
+                        const lines: RenderSpan[][] = [[]];
 
-                        {/* Show hidden text placeholder or actual text */}
-                        {hideUserLines && line.isUserCharacter ? (
-                          <View style={styles.hiddenTextContainer}>
-                            <EyeOff size={rp(32)} color="#10B981" />
-                            <Text style={styles.hiddenText}>Línea oculta</Text>
-                          </View>
-                        ) : (
-                          <Text style={[styles.cardText, isActive && { color: '#fff', fontWeight: '600' }]}>
-                            {renderTextWithStageDirections(
-                              showStageDirections ? line.text : line.cleanText
-                            )}
-                          </Text>
-                        )}
-                      </TouchableOpacity>
-                    );
-                  }}
-                  onScrollToIndexFailed={info => {
-                    const wait = new Promise(resolve => setTimeout(resolve, 500));
-                    wait.then(() => {
-                      flatListRef.current?.scrollToIndex({ index: info.index, animated: true, viewPosition: 0 });
-                    });
-                  }}
-                />
+                        for (const seg of richSegments) {
+                          const parts = seg.text.split('\n');
+                          for (let pi = 0; pi < parts.length; pi++) {
+                            if (pi > 0) lines.push([]);
+                            if (parts[pi].length > 0) {
+                              lines[lines.length - 1].push({ ...seg, text: parts[pi] });
+                            }
+                          }
+                        }
+
+                        return lines.map((lineSpans, lineIdx) => {
+                          // La alineación de la línea la decide el primer span (o centro por defecto)
+                          const lineAlign = lineSpans[0]?.align ?? 'center';
+                          return (
+                            <View key={lineIdx} style={{ width: '100%', alignItems: lineAlign === 'left' ? 'flex-start' : lineAlign === 'right' ? 'flex-end' : 'center', marginBottom: freeFontSize * 0.3, transform: [{ scaleX: isMirrored ? -1 : 1 }] }}>
+                              <Text style={{ fontSize: freeFontSize, lineHeight: freeFontSize * 1.4, textAlign: lineAlign }}>
+                                {lineSpans.length === 0 ? ' ' : lineSpans.map((span, si) => (
+                                  <Text
+                                    key={si}
+                                    style={{
+                                      color: span.color,
+                                      fontWeight: span.bold ? 'bold' : 'normal',
+                                      fontStyle: span.italic ? 'italic' : 'normal',
+                                      textDecorationLine: span.underline ? 'underline' : 'none',
+                                    }}
+                                  >
+                                    {span.text}
+                                  </Text>
+                                ))}
+                              </Text>
+                            </View>
+                          );
+                        });
+                      })()
+                    )}
+                  </ScrollView>
+                )}
               </Animated.View>
             )}
 
@@ -1659,36 +2401,48 @@ export default function CastingModeScreen() {
             <View style={styles.controlsContainer}>
               <View style={styles.controls}>
                 {/* Previous */}
-                <TouchableOpacity onPress={() => setCurrentIndex(Math.max(0, currentIndex - 1))} style={styles.controlBtn}>
-                  <SkipBack color="white" size={rp(20)} />
-                </TouchableOpacity>
+                {castingType !== 'free' && (
+                  <TouchableOpacity onPress={() => setCurrentIndex(Math.max(0, currentIndex - 1))} style={styles.controlBtn}>
+                    <SkipBack color="white" size={rp(20)} />
+                  </TouchableOpacity>
+                )}
 
-                {/* Practice Mode: Play/Pause (only when not recording) */}
-                {!isRecording && (
+                {/* Practice Mode: Play/Pause (only when not recording for script, always for free mode) */}
+                {(!isRecording || castingType === 'free') && (
                   <TouchableOpacity
                     onPress={togglePracticeMode}
-                    style={[styles.practiceBtn, isPlaying && styles.practiceBtnActive]}
+                    style={[
+                      styles.practiceBtn, 
+                      isPlaying && styles.practiceBtnActive,
+                      castingType === 'free' && { backgroundColor: '#10B981', width: rp(60), height: rp(60), borderRadius: rp(30), borderColor: 'white', borderWidth: 2 }
+                    ]}
                   >
-                    {isPlaying ? <Pause color="white" size={rp(24)} /> : <Play color="white" size={rp(24)} />}
+                    {isPlaying ? <Pause color="white" size={rp(28)} /> : <Play color="white" size={rp(28)} />}
                   </TouchableOpacity>
                 )}
 
                 {/* Record / Stop */}
                 <TouchableOpacity
                   onPress={toggleRecording}
-                  style={[styles.recordBtn, isRecording && styles.recordingBtnActive]}
+                  style={[
+                    styles.recordBtn, 
+                    isRecording && styles.recordingBtnActive,
+                    castingType === 'free' && { width: rp(60), height: rp(60), borderRadius: rp(30), borderWidth: 2, padding: 4 }
+                  ]}
                 >
-                  {isRecording ? <Square fill="white" color="white" size={rp(24)} /> : <View style={styles.recordInner} />}
+                  {isRecording ? <Square fill="#EF4444" color="white" size={rp(24)} /> : <View style={[styles.recordInner, castingType === 'free' && { width: '100%', height: '100%', borderRadius: rp(30) }]} />}
                 </TouchableOpacity>
 
                 {/* Next (Manual Advance) */}
-                <TouchableOpacity onPress={nextLine} style={styles.controlBtn}>
-                  <SkipForward color="white" size={rp(20)} />
-                </TouchableOpacity>
+                {castingType !== 'free' && (
+                  <TouchableOpacity onPress={nextLine} style={styles.controlBtn}>
+                    <SkipForward color="white" size={rp(20)} />
+                  </TouchableOpacity>
+                )}
 
                 {/* Menu */}
-                <TouchableOpacity onPress={() => setShowMenu(!showMenu)} style={styles.controlBtn}>
-                  <MoreVertical color="white" size={rp(20)} />
+                <TouchableOpacity onPress={() => setShowMenu(!showMenu)} style={[styles.controlBtn, {backgroundColor: 'rgba(0,0,0,0.5)', width: rp(48), height: rp(48), borderRadius: rp(24), alignItems: 'center', justifyContent: 'center'}]}>
+                  <MoreVertical color="white" size={rp(24)} />
                 </TouchableOpacity>
               </View>
 
@@ -1700,99 +2454,192 @@ export default function CastingModeScreen() {
                     onPress={() => setShowMenu(false)}
                   />
                   <View style={styles.menuDropdown}>
-                    <TouchableOpacity
-                      onPress={() => { setHideUserLines(!hideUserLines); setShowMenu(false); }}
-                      style={styles.menuItem}
-                    >
-                      {hideUserLines ? (
-                        <Eye size={rp(20)} color="white" />
-                      ) : (
-                        <EyeOff size={rp(20)} color="white" />
-                      )}
-                      <Text style={styles.menuText}>
-                        {hideUserLines ? 'Mostrar mis líneas' : 'Ocultar mis líneas'}
-                      </Text>
-                    </TouchableOpacity>
-                    <View style={styles.menuSeparator} />
-                    <TouchableOpacity
-                      onPress={() => { setHideTeleprompter(!hideTeleprompter); setShowMenu(false); }}
-                      style={styles.menuItem}
-                    >
-                      <EyeOff size={rp(20)} color="white" />
-                      <Text style={styles.menuText}>
-                        {hideTeleprompter ? 'Mostrar Teleprompter' : 'Ocultar Teleprompter'}
-                      </Text>
-                    </TouchableOpacity>
-                    <View style={styles.menuSeparator} />
-                    <TouchableOpacity
-                      onPress={() => { setHideActions(!hideActions); setShowMenu(false); }}
-                      style={styles.menuItem}
-                    >
-                      {hideActions ? (
-                        <Eye size={rp(20)} color="#F59E0B" />
-                      ) : (
-                        <EyeOff size={rp(20)} color="#F59E0B" />
-                      )}
-                      <Text style={styles.menuText}>
-                        {hideActions ? 'Mostrar acciones' : 'Ocultar acciones'}
-                      </Text>
-                    </TouchableOpacity>
-                    <View style={styles.menuSeparator} />
-                    <TouchableOpacity
-                      onPress={() => { setShowStageDirections(!showStageDirections); setShowMenu(false); }}
-                      style={styles.menuItem}
-                    >
-                      <MessageSquare size={rp(20)} color={showStageDirections ? '#FFA500' : 'white'} />
-                      <Text style={[styles.menuText, showStageDirections && { color: '#FFA500' }]}>
-                        {showStageDirections ? 'Ocultar Acotaciones' : 'Mostrar Acotaciones'}
-                      </Text>
-                    </TouchableOpacity>
-                    <View style={styles.menuSeparator} />
-                    {/* Control de volumen en el menú */}
-                    <View style={styles.menuItem}>
-                      <Volume2 size={rp(20)} color="white" />
-                      <Text style={styles.menuText}>Volumen voz IA</Text>
-                    </View>
-                    <View style={styles.volumeControlMenu}>
-                      <TouchableOpacity
-                        onPress={() => setTtsVolume(Math.max(0.1, ttsVolume - 0.1))}
-                        style={styles.volumeBtnMenu}
-                      >
-                        <Minus size={rp(18)} color="white" />
-                      </TouchableOpacity>
-                      <View style={styles.volumeDisplayMenu}>
-                        <Text style={styles.volumeTextMenu}>{Math.round(ttsVolume * 100)}%</Text>
-                      </View>
-                      <TouchableOpacity
-                        onPress={() => setTtsVolume(Math.min(1.0, ttsVolume + 0.1))}
-                        style={styles.volumeBtnMenu}
-                      >
-                        <Plus size={rp(18)} color="white" />
-                      </TouchableOpacity>
-                    </View>
-                    <View style={styles.menuSeparator} />
-                    {/* Delay de inicio */}
-                    <View style={styles.menuItem}>
-                      <Timer size={rp(20)} color="white" />
-                      <Text style={styles.menuText}>Espera inicial</Text>
-                    </View>
-                    <View style={styles.volumeControlMenu}>
-                      <TouchableOpacity
-                        onPress={() => setStartDelay(Math.max(0, startDelay - 5))}
-                        style={styles.volumeBtnMenu}
-                      >
-                        <Minus size={rp(18)} color="white" />
-                      </TouchableOpacity>
-                      <View style={styles.volumeDisplayMenu}>
-                        <Text style={styles.volumeTextMenu}>{startDelay === 0 ? 'Off' : `${startDelay}s`}</Text>
-                      </View>
-                      <TouchableOpacity
-                        onPress={() => setStartDelay(Math.min(60, startDelay + 5))}
-                        style={styles.volumeBtnMenu}
-                      >
-                        <Plus size={rp(18)} color="white" />
-                      </TouchableOpacity>
-                    </View>
+                    <ScrollView style={{ maxHeight: rp(300) }} showsVerticalScrollIndicator={false}>
+                      
+                    {castingType === 'script' ? (
+                      <>
+                        <TouchableOpacity
+                          onPress={() => { setHideUserLines(!hideUserLines); setShowMenu(false); }}
+                          style={styles.menuItem}
+                        >
+                          {hideUserLines ? (
+                            <Eye size={rp(20)} color="white" />
+                          ) : (
+                            <EyeOff size={rp(20)} color="white" />
+                          )}
+                          <Text style={styles.menuText}>
+                            {hideUserLines ? 'Mostrar mis líneas' : 'Ocultar mis líneas'}
+                          </Text>
+                        </TouchableOpacity>
+                        <View style={styles.menuSeparator} />
+                        <TouchableOpacity
+                          onPress={() => { setHideTeleprompter(!hideTeleprompter); setShowMenu(false); }}
+                          style={styles.menuItem}
+                        >
+                          <EyeOff size={rp(20)} color="white" />
+                          <Text style={styles.menuText}>
+                            {hideTeleprompter ? 'Mostrar Teleprompter' : 'Ocultar Teleprompter'}
+                          </Text>
+                        </TouchableOpacity>
+                        <View style={styles.menuSeparator} />
+                        <TouchableOpacity
+                          onPress={() => { setHideActions(!hideActions); setShowMenu(false); }}
+                          style={styles.menuItem}
+                        >
+                          {hideActions ? (
+                            <Eye size={rp(20)} color="#F59E0B" />
+                          ) : (
+                            <EyeOff size={rp(20)} color="#F59E0B" />
+                          )}
+                          <Text style={styles.menuText}>
+                            {hideActions ? 'Mostrar acciones' : 'Ocultar acciones'}
+                          </Text>
+                        </TouchableOpacity>
+                        <View style={styles.menuSeparator} />
+                        <TouchableOpacity
+                          onPress={() => { setShowStageDirections(!showStageDirections); setShowMenu(false); }}
+                          style={styles.menuItem}
+                        >
+                          <MessageSquare size={rp(20)} color={showStageDirections ? '#FFA500' : 'white'} />
+                          <Text style={[styles.menuText, showStageDirections && { color: '#FFA500' }]}>
+                            {showStageDirections ? 'Ocultar Acotaciones' : 'Mostrar Acotaciones'}
+                          </Text>
+                        </TouchableOpacity>
+                        <View style={styles.menuSeparator} />
+                        {/* Control de volumen en el menú */}
+                        <View style={styles.menuItem}>
+                          <Volume2 size={rp(20)} color="white" />
+                          <Text style={styles.menuText}>Volumen voz IA</Text>
+                        </View>
+                        <View style={styles.volumeControlMenu}>
+                          <TouchableOpacity
+                            onPress={() => setTtsVolume(Math.max(0.1, ttsVolume - 0.1))}
+                            style={styles.volumeBtnMenu}
+                          >
+                            <Minus size={rp(18)} color="white" />
+                          </TouchableOpacity>
+                          <View style={styles.volumeDisplayMenu}>
+                            <Text style={styles.volumeTextMenu}>{Math.round(ttsVolume * 100)}%</Text>
+                          </View>
+                          <TouchableOpacity
+                            onPress={() => setTtsVolume(Math.min(1.0, ttsVolume + 0.1))}
+                            style={styles.volumeBtnMenu}
+                          >
+                            <Plus size={rp(18)} color="white" />
+                          </TouchableOpacity>
+                        </View>
+                        <View style={styles.menuSeparator} />
+                        {/* Delay de inicio */}
+                        <View style={styles.menuItem}>
+                          <Timer size={rp(20)} color="white" />
+                          <Text style={styles.menuText}>Espera inicial</Text>
+                        </View>
+                        <View style={styles.volumeControlMenu}>
+                          <TouchableOpacity
+                            onPress={() => setStartDelay(Math.max(0, startDelay - 5))}
+                            style={styles.volumeBtnMenu}
+                          >
+                            <Minus size={rp(18)} color="white" />
+                          </TouchableOpacity>
+                          <View style={styles.volumeDisplayMenu}>
+                            <Text style={styles.volumeTextMenu}>{startDelay === 0 ? 'Off' : `${startDelay}s`}</Text>
+                          </View>
+                          <TouchableOpacity
+                            onPress={() => setStartDelay(Math.min(60, startDelay + 5))}
+                            style={styles.volumeBtnMenu}
+                          >
+                            <Plus size={rp(18)} color="white" />
+                          </TouchableOpacity>
+                        </View>
+                      </>
+                    ) : (
+                      <>
+                        {/* Delay de inicio */}
+                        <View style={styles.menuItem}>
+                          <Timer size={rp(20)} color="white" />
+                          <Text style={styles.menuText}>Espera inicial</Text>
+                        </View>
+                        <View style={styles.volumeControlMenu}>
+                          <TouchableOpacity
+                            onPress={() => setStartDelay(Math.max(0, startDelay - 5))}
+                            style={styles.volumeBtnMenu}
+                          >
+                            <Minus size={rp(18)} color="white" />
+                          </TouchableOpacity>
+                          <View style={styles.volumeDisplayMenu}>
+                            <Text style={styles.volumeTextMenu}>{startDelay === 0 ? 'Off' : `${startDelay}s`}</Text>
+                          </View>
+                          <TouchableOpacity
+                            onPress={() => setStartDelay(Math.min(60, startDelay + 5))}
+                            style={styles.volumeBtnMenu}
+                          >
+                            <Plus size={rp(18)} color="white" />
+                          </TouchableOpacity>
+                        </View>
+                        <View style={styles.menuSeparator} />
+
+                        <TouchableOpacity
+                          onPress={() => { setIsMirrored(!isMirrored); setShowMenu(false); }}
+                          style={styles.menuItem}
+                        >
+                          <FlipHorizontal size={rp(20)} color={isMirrored ? '#10B981' : 'white'} />
+                          <Text style={[styles.menuText, isMirrored && { color: '#10B981' }]}>
+                            {isMirrored ? 'Espejo Activado' : 'Modo Espejo'}
+                          </Text>
+                        </TouchableOpacity>
+                        <View style={styles.menuSeparator} />
+                        
+                        {/* Tamaño de texto */}
+                        <View style={styles.menuItem}>
+                          <Type size={rp(20)} color="white" />
+                          <Text style={styles.menuText}>Tamaño de texto</Text>
+                        </View>
+                        <View style={styles.volumeControlMenu}>
+                          <TouchableOpacity
+                            onPress={() => setFreeFontSize(Math.max(rf(16), freeFontSize - rf(4)))}
+                            style={styles.volumeBtnMenu}
+                          >
+                            <Minus size={rp(18)} color="white" />
+                          </TouchableOpacity>
+                          <View style={styles.volumeDisplayMenu}>
+                            <Text style={styles.volumeTextMenu}>{Math.round(freeFontSize)}</Text>
+                          </View>
+                          <TouchableOpacity
+                            onPress={() => setFreeFontSize(Math.min(rf(72), freeFontSize + rf(4)))}
+                            style={styles.volumeBtnMenu}
+                          >
+                            <Plus size={rp(18)} color="white" />
+                          </TouchableOpacity>
+                        </View>
+                        
+                        <View style={styles.menuSeparator} />
+                        
+                        {/* Velocidad */}
+                        <View style={styles.menuItem}>
+                          <Snail size={rp(20)} color="white" />
+                          <Text style={styles.menuText}>Velocidad</Text>
+                          <Rabbit size={rp(20)} color="white" style={{marginLeft: 'auto'}} />
+                        </View>
+                        <View style={styles.volumeControlMenu}>
+                          <TouchableOpacity
+                            onPress={() => setFreeScrollSpeed(Math.max(1, freeScrollSpeed - 1))}
+                            style={styles.volumeBtnMenu}
+                          >
+                            <Minus size={rp(18)} color="white" />
+                          </TouchableOpacity>
+                          <View style={styles.volumeDisplayMenu}>
+                            <Text style={styles.volumeTextMenu}>{freeScrollSpeed}</Text>
+                          </View>
+                          <TouchableOpacity
+                            onPress={() => setFreeScrollSpeed(Math.min(10, freeScrollSpeed + 1))}
+                            style={styles.volumeBtnMenu}
+                          >
+                            <Plus size={rp(18)} color="white" />
+                          </TouchableOpacity>
+                        </View>
+                      </>
+                    )}
+                    </ScrollView>
                   </View>
                 </>
               )}
@@ -1979,10 +2826,10 @@ const styles = StyleSheet.create({
     borderColor: 'white',
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: 'rgba(16, 185, 129, 0.2)',
+    backgroundColor: '#10B981',
   },
   practiceBtnActive: {
-    backgroundColor: 'rgba(16, 185, 129, 0.4)',
+    backgroundColor: '#059669',
     borderColor: '#10B981',
   },
   youBadge: {
@@ -2015,10 +2862,10 @@ const styles = StyleSheet.create({
   },
   menuBackdrop: {
     position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
+    top: -9000,
+    bottom: -9000,
+    left: -9000,
+    right: -9000,
     zIndex: 1000,
   },
   menuItem: {
@@ -2625,6 +3472,54 @@ const styles = StyleSheet.create({
     fontSize: rf(16),
     fontStyle: 'italic',
     lineHeight: rf(22),
+  },
+  zoomControls: {
+    position: 'absolute',
+    right: rp(20),
+    top: '35%',
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    borderRadius: rp(30),
+    padding: rp(6),
+    gap: rp(12),
+    alignItems: 'center',
+    zIndex: 100,
+  },
+  zoomBtn: {
+    width: rp(44),
+    height: rp(44),
+    borderRadius: rp(22),
+    backgroundColor: 'rgba(255,255,255,0.15)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  activeZoomBtn: {
+    backgroundColor: '#10B981',
+  },
+  zoomText: {
+    color: 'white',
+    fontSize: rf(12),
+    fontWeight: '800',
+  },
+  zoomBtnHeader: {
+    width: rp(32),
+    height: rp(32),
+    borderRadius: rp(16),
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'transparent'
+  },
+  activeZoomBtnHeader: {
+    backgroundColor: 'rgba(255,255,255,0.2)',
+    width: rp(44),
+    height: rp(44),
+    borderRadius: rp(22),
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  zoomTextHeader: {
+    color: 'white',
+    fontSize: rf(13),
+    fontWeight: '700'
   },
 });
 

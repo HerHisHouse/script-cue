@@ -10,6 +10,9 @@ import {
     Platform,
     TextInput,
     Pressable,
+    Modal,
+    KeyboardAvoidingView,
+    Keyboard,
     useColorScheme,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -44,23 +47,38 @@ import {
     Plus,
     FileText,
     MessageSquare,
+    ArrowUpDown,
 } from 'lucide-react-native';
 import { Audio, InterruptionModeIOS, InterruptionModeAndroid } from 'expo-av';
 import * as Speech from 'expo-speech';
 import { transcribeAudio } from '@/services/transcription';
 import * as FileSystem from 'expo-file-system/legacy';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { Modal } from 'react-native';
 import { rf, rp } from '@/utils/responsive';
 import Constants from 'expo-constants';
 import { createTTSService } from '@/utils/tts';
 import { getSettings } from '@/utils/appSettings';
 import { setAudioModeForPlayback, enableRecordingMode } from '@/utils/audioMode';
+import { invalidateCacheForLine, generateAndCacheAudio } from '@/utils/ttsCache';
+import DraggableFlatList, { ScaleDecorator, RenderItemParams, ShadowDecorator, OpacityDecorator, useOnCellActiveAnimation } from 'react-native-draggable-flatlist';
+import * as Haptics from 'expo-haptics';
+import { GestureHandlerRootView } from 'react-native-gesture-handler';
 
 export default function StudioV2Screen() {
     const router = useRouter();
     const { id } = useLocalSearchParams();
     const { colors } = useTheme();
+    const modalScrollRef = useRef<ScrollView>(null);
+    const [keyboardVisible, setKeyboardVisible] = useState(false);
+
+    useEffect(() => {
+        const showSub = Keyboard.addListener(Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow', () => setKeyboardVisible(true));
+        const hideSub = Keyboard.addListener(Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide', () => setKeyboardVisible(false));
+        return () => {
+            showSub.remove();
+            hideSub.remove();
+        };
+    }, []);
     const { user } = useAuth();
     const colorScheme = useColorScheme();
 
@@ -97,6 +115,7 @@ export default function StudioV2Screen() {
     const processingRef = useRef(false);
     // Sequence ID to cancel stale audio operations
     const audioSequenceRef = useRef(0);
+    const scrollViewRef = useRef<ScrollView>(null);
 
     // Session Recording Refs
     const sessionRecordingRef = useRef<Audio.Recording | null>(null); // Not used for continuous anymore, but kept for types if needed
@@ -119,6 +138,8 @@ export default function StudioV2Screen() {
     // Editing State
     const [editingLineId, setEditingLineId] = useState<string | null>(null);
     const [editedText, setEditedText] = useState('');
+    const [originalText, setOriginalText] = useState('');
+    const [originalCharName, setOriginalCharName] = useState('');
     const [isUpdating, setIsUpdating] = useState(false);
 
     // Add New Line State
@@ -126,6 +147,71 @@ export default function StudioV2Screen() {
     const [characters, setCharacters] = useState<any[]>([]);
     const [newLineText, setNewLineText] = useState('');
     const [selectedCharacter, setSelectedCharacter] = useState<any | null>(null);
+
+    // Reordering State
+    const [isReordering, setIsReordering] = useState(false);
+    const [showReorderInfoModal, setShowReorderInfoModal] = useState(false);
+    const [dontShowReorderInfoAgain, setDontShowReorderInfoAgain] = useState(false);
+
+    // Sync Order Function
+    const syncOrderToBackend = async (newLines: DialogueLine[]) => {
+        if (!user) return;
+
+        try {
+            console.log('Syncing new order to Supabase...');
+
+            // Prepare updates including scene_id to satisfy RLS policy
+            const updates = newLines.map((line, index) => ({
+                id: line.id,
+                order_index: index + 1, // 1-based index
+                scene_id: line.sceneId, // Required for RLS check
+                character_name: line.characterName, // Required not null schema
+                content: line.text // Required not null schema
+            }));
+
+            const { error } = await supabase
+                .from('lines')
+                .upsert(
+                    updates.map(u => ({
+                        id: u.id,
+                        order_index: u.order_index,
+                        scene_id: u.scene_id,
+                        character_name: u.character_name,
+                        content: u.content
+                    }))
+                );
+
+            if (error) throw error;
+            console.log('Order synced successfully');
+        } catch (error) {
+            console.error('Error syncing order:', error);
+            // Optionally revert local state here if critical
+        }
+    };
+
+    const toggleReordering = async () => {
+        const hideInfo = await AsyncStorage.getItem('hideReorderInfo');
+        if (hideInfo === 'true') {
+            setIsReordering(true);
+        } else {
+            setShowReorderInfoModal(true);
+        }
+        setShowMenu(false);
+    };
+
+    const saveNewOrder = async () => {
+        setIsUpdating(true);
+        try {
+            await syncOrderToBackend(dialogueLines);
+            setIsReordering(false);
+            Alert.alert("Éxito", "Orden guardado correctamente");
+        } catch (e) {
+            console.error(e);
+            Alert.alert("Error", "Hubo un problema al guardar el orden");
+        } finally {
+            setIsUpdating(false);
+        }
+    };
 
     // Load script data
     const loadData = useCallback(async () => {
@@ -216,6 +302,13 @@ export default function StudioV2Screen() {
             startListening();
         }
     }, [currentIndex, dialogueLines, isPlaying]);
+
+    // Reset scroll position when card changes
+    useEffect(() => {
+        if (scrollViewRef.current && !isReordering) {
+            scrollViewRef.current.scrollTo({ y: 0, animated: true });
+        }
+    }, [currentIndex, isReordering]);
 
     // --- TTS Logic ---
 
@@ -811,59 +904,77 @@ export default function StudioV2Screen() {
 
     // --- Helper Functions for Segment Upload ---
 
+    // Helper: subida binaria via XHR - evita "Invalid Content-Type header" del SDK en React Native
+    async function uploadBinaryToStorage(
+        bucket: string,
+        filePath: string,
+        data: Uint8Array,
+        contentType: string
+    ): Promise<string> {
+        const { data: sessionData } = await supabase.auth.getSession();
+        const token = sessionData.session?.access_token;
+        if (!token) throw new Error('No auth token');
+
+        const uploadUrl = `${process.env.EXPO_PUBLIC_SUPABASE_URL}/storage/v1/object/${bucket}/${filePath}`;
+
+        await new Promise<void>((resolve, reject) => {
+            const xhr = new XMLHttpRequest();
+            xhr.open('POST', uploadUrl, true);
+            xhr.setRequestHeader('Authorization', `Bearer ${token}`);
+            xhr.setRequestHeader('Content-Type', contentType);
+            xhr.setRequestHeader('x-upsert', 'true');
+            xhr.timeout = 120000; // 2 minutos para segmentos de audio
+
+            xhr.onload = () => {
+                if (xhr.status >= 200 && xhr.status < 300) {
+                    resolve();
+                } else {
+                    reject(new Error(`Upload failed: ${xhr.status} ${xhr.responseText}`));
+                }
+            };
+            xhr.onerror = () => reject(new Error('Network error during segment upload'));
+            xhr.ontimeout = () => reject(new Error('Segment upload timeout'));
+            xhr.send(data);
+        });
+
+        return filePath;
+    }
+
     async function uploadAISegment(localUri: string, index: number): Promise<string | null> {
         if (!user?.id) return null;
         try {
             console.log('[uploadAISegment] Starting upload for:', localUri);
 
-            // Detect file extension from URL
             const extension = localUri.endsWith('.mp3') ? 'mp3' : 'm4a';
             const fileName = `${user.id}/segments/${Date.now()}_ai_${index}.${extension}`;
             const contentType = extension === 'mp3' ? 'audio/mpeg' : 'audio/m4a';
 
-            let arrayBuffer: ArrayBuffer;
+            let bytes: Uint8Array;
 
-            // Check if it's a local file (file://) or remote URL (http://)
             if (localUri.startsWith('file://')) {
-                // Local file - use FileSystem
-                console.log('[uploadAISegment] Local file detected, using FileSystem');
+                console.log('[uploadAISegment] Local file — reading as base64');
                 const base64 = await FileSystem.readAsStringAsync(localUri, {
                     encoding: FileSystem.EncodingType.Base64,
                 });
-                arrayBuffer = base64ToArrayBuffer(base64);
+                const binaryString = atob(base64);
+                bytes = new Uint8Array(binaryString.length);
+                for (let i = 0; i < binaryString.length; i++) bytes[i] = binaryString.charCodeAt(i);
             } else {
-                // Remote URL - use fetch
-                console.log('[uploadAISegment] Remote URL detected, using fetch');
+                console.log('[uploadAISegment] Remote URL — fetching');
                 const response = await fetch(localUri);
-                if (!response.ok) {
-                    throw new Error(`Fetch failed: ${response.status} ${response.statusText}`);
-                }
-                const blob = await response.blob();
-
-                // Convert blob to ArrayBuffer (React Native compatible way)
-                const reader = new FileReader();
-                arrayBuffer = await new Promise((resolve, reject) => {
-                    reader.onloadend = () => {
-                        if (reader.result instanceof ArrayBuffer) {
-                            resolve(reader.result);
-                        } else {
-                            reject(new Error('Failed to convert blob to ArrayBuffer'));
-                        }
-                    };
+                if (!response.ok) throw new Error(`Fetch failed: ${response.status}`);
+                const ab = await new Promise<ArrayBuffer>((resolve, reject) => {
+                    const reader = new FileReader();
+                    reader.onloadend = () => reader.result instanceof ArrayBuffer ? resolve(reader.result) : reject(new Error('Conversion failed'));
                     reader.onerror = reject;
-                    reader.readAsArrayBuffer(blob);
+                    reader.readAsArrayBuffer(response.blob() as any);
                 });
+                bytes = new Uint8Array(ab);
             }
 
-            console.log('[uploadAISegment] ArrayBuffer size:', arrayBuffer.byteLength, 'bytes');
-
-            const { error } = await supabase.storage
-                .from('recordings')
-                .upload(fileName, arrayBuffer, { contentType });
-
-            if (error) throw error;
-
-            console.log('[uploadAISegment] Success:', fileName);
+            console.log('[uploadAISegment] Uploading', bytes.byteLength, 'bytes via XHR');
+            await uploadBinaryToStorage('recordings', fileName, bytes, contentType);
+            console.log('[uploadAISegment] ✅ Success:', fileName);
             return fileName;
         } catch (error) {
             console.error('[uploadAISegment] Error:', error);
@@ -878,16 +989,16 @@ export default function StudioV2Screen() {
             const base64 = await FileSystem.readAsStringAsync(uri, {
                 encoding: FileSystem.EncodingType.Base64,
             });
-            const arrayBuffer = base64ToArrayBuffer(base64);
+            const binaryString = atob(base64);
+            const bytes = new Uint8Array(binaryString.length);
+            for (let i = 0; i < binaryString.length; i++) bytes[i] = binaryString.charCodeAt(i);
 
-            const { error } = await supabase.storage
-                .from('recordings')
-                .upload(fileName, arrayBuffer, { contentType: 'audio/m4a' });
-
-            if (error) throw error;
+            console.log('[uploadUserSegment] Uploading', bytes.byteLength, 'bytes via XHR');
+            await uploadBinaryToStorage('recordings', fileName, bytes, 'audio/m4a');
+            console.log('[uploadUserSegment] ✅ Success:', fileName);
             return fileName;
         } catch (error) {
-            console.error('Error uploading user segment:', error);
+            console.error('[uploadUserSegment] Error:', error);
             return null;
         }
     }
@@ -963,6 +1074,7 @@ export default function StudioV2Screen() {
             console.log('[Merge] Server URL:', mergeServerUrl);
 
             let mergedPath: string | null = null;
+            let actualDuration: number = recordingTime; // Default to recording time
 
             try {
                 // Try to merge on server with timeout
@@ -993,6 +1105,42 @@ export default function StudioV2Screen() {
                 console.log('[Merge] Server merge success:', result);
                 mergedPath = result.path;
 
+                // Get actual duration from merged file
+                try {
+                    setProcessingStep('Obteniendo duración del audio...');
+
+                    if (!mergedPath) {
+                        console.warn('[Merge] No merged path available for duration check');
+                    } else {
+                        // Get signed URL for the merged file
+                        const { data: signedUrlData, error: signedUrlError } = await supabase.storage
+                            .from('recordings')
+                            .createSignedUrl(mergedPath, 60); // 1 minute expiry
+
+                        if (signedUrlError || !signedUrlData?.signedUrl) {
+                            console.warn('[Merge] Could not get signed URL for duration check:', signedUrlError);
+                        } else {
+                            // Load the audio file to get its actual duration
+                            const { sound } = await Audio.Sound.createAsync(
+                                { uri: signedUrlData.signedUrl },
+                                { shouldPlay: false }
+                            );
+
+                            const status = await sound.getStatusAsync();
+                            if (status.isLoaded && status.durationMillis) {
+                                actualDuration = Math.round(status.durationMillis / 1000);
+                                console.log(`[Merge] Actual duration from file: ${actualDuration}s (was ${recordingTime}s)`);
+                            }
+
+                            // Unload the sound
+                            await sound.unloadAsync();
+                        }
+                    }
+                } catch (durationError) {
+                    console.warn('[Merge] Could not get actual duration, using recording time:', durationError);
+                    // Keep using recordingTime as fallback
+                }
+
             } catch (serverError: any) {
                 console.error('[Merge] Server merge failed:', serverError);
 
@@ -1011,12 +1159,13 @@ export default function StudioV2Screen() {
                 console.log('[Merge] All segments will be listed in notes');
             }
 
-            // Save to recordings table
+            // Save to recordings table with actual duration
             const recordingData = {
                 user_id: user.id,
                 script_id: id as string,
+                scene_id: dialogueLines[currentIndex]?.sceneId ?? dialogueLines[0]?.sceneId,
                 audio_url: mergedPath!,
-                duration_seconds: recordingTime,
+                duration_seconds: actualDuration, // Use actual duration instead of recordingTime
                 title: `Sesión ${new Date().toLocaleString('es-ES')}`,
                 notes: mergedPath === serverSegments[0].path
                     ? `Grabación con ${serverSegments.length} segmentos (servidor no disponible para mezclar). Segmentos: ${JSON.stringify(serverSegments.map(s => s.path))}`
@@ -1090,6 +1239,8 @@ export default function StudioV2Screen() {
         }
         setEditingLineId(line.id);
         setEditedText(line.text);
+        setOriginalText(line.text);
+        setOriginalCharName(line.characterName);
     }
 
     function cancelEditing() {
@@ -1110,6 +1261,129 @@ export default function StudioV2Screen() {
 
             if (error) throw error;
 
+            // --- SINCRONIZACIÓN CON script_html (Versión Edición) ---
+            try {
+                const escapeRegex = (str: string) => str.replace(/[/\-\\^$*+?.()|[\]{}]/g, '\\$&');
+
+                // Obtener información del guión y HTML
+                const { data: scriptInfo } = await supabase
+                    .from('scripts')
+                    .select('id, original_script_id, script_html')
+                    .eq('id', id)
+                    .single();
+                
+                const sourceScriptId = scriptInfo?.original_script_id || id;
+                let currentHtml = scriptInfo?.script_html || '';
+
+                if (scriptInfo?.original_script_id && !currentHtml) {
+                    const { data: originalScript } = await supabase
+                        .from('scripts')
+                        .select('script_html')
+                        .eq('id', scriptInfo.original_script_id)
+                        .single();
+                    currentHtml = originalScript?.script_html || '';
+                }
+
+                if (currentHtml && originalText) {
+                    // Encontrar la escena de la línea para acotar la búsqueda
+                    const editedLine = dialogueLines.find(l => l.id === editingLineId);
+                    const sceneId = editedLine?.sceneId;
+
+                    if (sceneId) {
+                        const { data: sceneData } = await supabase
+                            .from('scenes')
+                            .select('heading')
+                            .eq('id', sceneId)
+                            .single();
+                        
+                        if (sceneData?.heading) {
+                            const sceneTag = `<p class="scene">${sceneData.heading}</p>`;
+                            const sceneIndex = currentHtml.indexOf(sceneTag);
+
+                            if (sceneIndex !== -1) {
+                                // Localizar el bloque usando los datos originales (antes de la edición)
+                                const shortText = escapeRegex(originalText.substring(0, 30));
+                                const pattern = new RegExp(
+                                    '<p[^>]*class=["\']character["\'][^>]*>\\s*' + 
+                                    escapeRegex(originalCharName.toUpperCase()) + 
+                                    '\\s*<\\/p>\\s*<p[^>]*class=["\']dialogue["\'][^>]*>\\s*' +
+                                    shortText,
+                                    'i'
+                                );
+
+                                const remainingHtml = currentHtml.substring(sceneIndex);
+                                const match = remainingHtml.match(pattern);
+
+                                if (match && match.index !== undefined) {
+                                    const matchStartIndex = sceneIndex + match.index;
+                                    const matchEndIndex = matchStartIndex + match[0].length;
+                                    
+                                    // Buscamos el cierre completo del párrafo original
+                                    const closingTagIndex = currentHtml.indexOf('</p>', matchEndIndex);
+
+                                    if (closingTagIndex !== -1) {
+                                        const totalEndIndex = closingTagIndex + 4;
+                                        
+                                        // Construimos el bloque nuevo con el texto editado
+                                        const newCharName = originalCharName.toUpperCase();
+                                        const newText = editedText.trim();
+                                        const newLineHtml = `<p class="character">${newCharName}</p>\n<p class="dialogue">${newText}</p>`;
+                                        
+                                        // Reemplazamos el bloque viejo por el nuevo
+                                        const updatedHtml = currentHtml.slice(0, matchStartIndex) + newLineHtml + currentHtml.slice(totalEndIndex);
+                                        
+                                        await supabase
+                                            .from('scripts')
+                                            .update({ script_html: updatedHtml })
+                                            .eq('id', sourceScriptId);
+                                            
+                                        console.log('✅ script_html sincronizado tras edición');
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            } catch (htmlError) {
+                console.error('Error al sincronizar edición en script_html:', htmlError);
+            }
+
+            // Invalidate TTS cache for this line since content changed
+            await invalidateCacheForLine(editingLineId);
+
+            // Get character info to regenerate TTS
+            const editedLine = dialogueLines.find(l => l.id === editingLineId);
+            if (editedLine && !editedLine.isUserCharacter && user?.id) {
+                console.log('🎙️ Regenerating TTS for edited line...');
+
+                // Get character voice configuration
+                const { data: character } = await supabase
+                    .from('characters')
+                    .select('voice_provider, voice_id, voice_gender')
+                    .eq('script_id', id as string)
+                    .ilike('name', editedLine.characterName)
+                    .single();
+
+                if (character) {
+                    const voiceConfig = {
+                        provider: (character.voice_provider || 'openai') as 'openai' | 'elevenlabs' | 'system',
+                        voiceId: character.voice_id || undefined
+                    };
+
+                    // Regenerate TTS audio in background
+                    generateAndCacheAudio(
+                        id as string,
+                        editingLineId,
+                        editedLine.characterName,
+                        editedText.trim(),
+                        voiceConfig,
+                        user.id
+                    ).catch(err => {
+                        console.error('Error regenerating TTS:', err);
+                    });
+                }
+            }
+
             // Update local state
             setDialogueLines(prev => prev.map(line =>
                 line.id === editingLineId
@@ -1120,7 +1394,7 @@ export default function StudioV2Screen() {
             setEditingLineId(null);
             setEditedText('');
 
-            Alert.alert('Éxito', 'Línea actualizada correctamente');
+            Alert.alert('Éxito', 'Línea actualizada correctamente. El audio TTS se regenerará automáticamente.');
         } catch (error: any) {
             console.error('Error updating line:', error);
             Alert.alert('Error', 'No se pudo actualizar la línea: ' + error.message);
@@ -1325,6 +1599,140 @@ export default function StudioV2Screen() {
 
             if (error) throw error;
 
+            // --- SINCRONIZACIÓN CON script_html (Versión Flexible con Regex) ---
+            try {
+                // Función auxiliar para escapar caracteres especiales en Regex
+                const escapeRegex = (str: string) => str.replace(/[/\-\\^$*+?.()|[\]{}]/g, '\\$&');
+
+                // 1. Obtener información del guión y el HTML actual
+                const { data: scriptInfo } = await supabase
+                    .from('scripts')
+                    .select('id, original_script_id, script_html')
+                    .eq('id', id)
+                    .single();
+                
+                const sourceScriptId = scriptInfo?.original_script_id || id;
+                let currentHtml = scriptInfo?.script_html || '';
+                
+                // Si es una copia sin HTML, buscamos en el original
+                if (scriptInfo?.original_script_id && !currentHtml) {
+                    const { data: originalScript } = await supabase
+                        .from('scripts')
+                        .select('script_html')
+                        .eq('id', scriptInfo.original_script_id)
+                        .single();
+                    currentHtml = originalScript?.script_html || '';
+                }
+
+                if (currentHtml) {
+                    // 2. Obtener el encabezado de la escena
+                    const { data: sceneData } = await supabase
+                        .from('scenes')
+                        .select('heading')
+                        .eq('id', sceneId)
+                        .single();
+                    
+                    if (sceneData?.heading) {
+                        const sceneHeader = sceneData.heading;
+                        const sceneTag = `<p class="scene">${sceneHeader}</p>`;
+                        const sceneIndex = currentHtml.indexOf(sceneTag);
+                        
+                        if (sceneIndex !== -1) {
+                            // 3. Preparar búsqueda flexible con Regex
+                            const currentChar = currentLine.characterName.toUpperCase();
+                            const currentText = currentLine.text.trim();
+                            
+                            // LOG DE DEPURACIÓN 1: Lo que estamos buscando
+                            console.log(`🔍 Intentando localizar diálogo tras: [${currentChar}] -> [${currentText}]`);
+                            
+                            // LOG DE DEPURACIÓN 2: Fragmento del HTML real para contrastar
+                            const htmlSnippet = currentHtml.substring(sceneIndex, sceneIndex + 800);
+                            console.log(`📄 Fragmento HTML real en esta escena:\n${htmlSnippet}`);
+
+                            // Búsqueda tolerante: usamos solo los primeros 30 caracteres para localizar el inicio
+                            const shortText = escapeRegex(currentText.substring(0, 30));
+                            const pattern = new RegExp(
+                                '<p[^>]*class=["\']character["\'][^>]*>\\s*' + 
+                                escapeRegex(currentChar) + 
+                                '\\s*<\\/p>\\s*<p[^>]*class=["\']dialogue["\'][^>]*>\\s*' +
+                                shortText,
+                                'i'
+                            );
+
+                            // Buscamos el patrón en el contenido de la escena (desde sceneIndex en adelante)
+                            const remainingHtml = currentHtml.substring(sceneIndex);
+                            const match = remainingHtml.match(pattern);
+                            
+                            let insertionPoint = -1;
+                            if (match && match.index !== undefined) {
+                                // 1. Posición absoluta donde termina el match parcial (después de los 30 caracteres)
+                                const matchEndIndex = sceneIndex + match.index + match[0].length;
+                                
+                                // 2. Buscamos el cierre </p> del diálogo que sigue a esa posición para no cortar el texto
+                                const closingTagIndex = currentHtml.indexOf('</p>', matchEndIndex);
+                                
+                                if (closingTagIndex !== -1) {
+                                    // 3. Insertamos DESPUÉS del cierre </p> (longitud de </p> es 4)
+                                    insertionPoint = closingTagIndex + 4;
+                                    console.log('🎯 ¡DIÁLOGO ENCONTRADO CON REGEX! Insertando tras el cierre </p> del bloque completo.');
+                                } else {
+                                    // Fallback por si hay malformación: usar el fin del match
+                                    insertionPoint = matchEndIndex;
+                                }
+                            } else {
+                                console.warn('⚠️ No se encontró el diálogo con Regex. Usando Plan B (insertar al final de la escena).');
+                                // Plan B: Insertar al final de la escena
+                                let nextSceneIndex = currentHtml.indexOf('<p class="scene">', sceneIndex + sceneTag.length);
+                                if (nextSceneIndex === -1) {
+                                    nextSceneIndex = currentHtml.lastIndexOf('</body>');
+                                    if (nextSceneIndex === -1) nextSceneIndex = currentHtml.length;
+                                }
+                                insertionPoint = nextSceneIndex;
+                            }
+                            
+                            const charName = selectedCharacter.name.toUpperCase();
+                            const dialogueText = newLineText.trim();
+                            const newLineHtml = `\n<p class="character">${charName}</p>\n<p class="dialogue">${dialogueText}</p>\n`;
+                            
+                            const updatedHtml = currentHtml.slice(0, insertionPoint) + newLineHtml + currentHtml.slice(insertionPoint);
+                            
+                            // 4. Guardar el HTML actualizado en el guión fuente
+                            await supabase
+                                .from('scripts')
+                                .update({ script_html: updatedHtml })
+                                .eq('id', sourceScriptId);
+                                
+                            console.log('✅ script_html actualizado correctamente');
+                        }
+                    }
+                }
+            } catch (htmlError) {
+                console.error('Error al sincronizar script_html:', htmlError);
+            }
+
+            // Generate TTS audio for new line if it's an AI character
+            if (newLine && !selectedCharacter.is_user_character && user?.id) {
+                console.log('🎙️ Generating TTS for new line...');
+
+                // Get character voice configuration
+                const voiceConfig = {
+                    provider: (selectedCharacter.voice_provider || 'openai') as 'openai' | 'elevenlabs' | 'system',
+                    voiceId: selectedCharacter.voice_id || undefined
+                };
+
+                // Generate TTS audio in background
+                generateAndCacheAudio(
+                    id as string,
+                    newLine.id,
+                    selectedCharacter.name,
+                    newLineText.trim(),
+                    voiceConfig,
+                    user.id
+                ).catch(err => {
+                    console.error('Error generating TTS for new line:', err);
+                });
+            }
+
             // Reload data
             await loadData();
 
@@ -1332,7 +1740,7 @@ export default function StudioV2Screen() {
             setCurrentIndex(newOrderIndex);
 
             closeAddLineModal();
-            Alert.alert('Éxito', 'Nueva línea añadida correctamente');
+            Alert.alert('Éxito', 'Nueva línea añadida correctamente. El audio TTS se generará automáticamente.');
         } catch (error: any) {
             console.error('Error creating line:', error);
             Alert.alert('Error', 'No se pudo crear la línea: ' + error.message);
@@ -1405,695 +1813,825 @@ export default function StudioV2Screen() {
     };
 
     return (
-        <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
-            {/* Hide System Header */}
-            <Stack.Screen options={{ headerShown: false }} />
+        <GestureHandlerRootView style={{ flex: 1 }}>
+            <SafeAreaView style={[styles.container, { backgroundColor: colors.surface }]}>
+                <View style={{ flex: 1, backgroundColor: colors.background }}>
+                    {/* Hide System Header */}
+                    <Stack.Screen options={{ headerShown: false }} />
 
-            {/* Custom Header Restored */}
-            <View style={[styles.header, { backgroundColor: colors.surface, borderBottomColor: colors.border }]}>
-                <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
-                    <ArrowLeft size={24} color={colors.text} />
-                </TouchableOpacity>
+                    {/* Custom Header Restored */}
+                    <View style={[styles.header, { backgroundColor: colors.surface, borderBottomColor: colors.border }]}>
+                        <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
+                            <ArrowLeft size={24} color={colors.text} />
+                        </TouchableOpacity>
 
-                <View style={styles.headerCenter}>
-                    <Text style={[styles.headerTitle, { color: colors.text }]} numberOfLines={1}>
-                        Modo Estudio
-                    </Text>
-                    <Text style={[styles.headerSubtitle, { color: colors.textSecondary }]} numberOfLines={1}>
-                        {scriptTitle}
-                    </Text>
-                    {/* Mode badges row - below script title */}
-                    {(literalMode || showStageDirections) && (
-                        <View style={styles.modeBadgesRow}>
-                            {literalMode && (
-                                <View style={[styles.literalModeBadge, { backgroundColor: colors.primary }]}>
-                                    <FileText size={12} color="#FFFFFF" />
-                                    <Text style={styles.literalModeBadgeText}>LITERAL</Text>
-                                </View>
-                            )}
-                            {showStageDirections && (
-                                <View style={[styles.literalModeBadge, { backgroundColor: colorScheme === 'dark' ? '#FFA500' : '#DC2626' }]}>
-                                    <MessageSquare size={12} color="#FFFFFF" />
-                                    <Text style={styles.literalModeBadgeText}>ACOTACIONES</Text>
-                                </View>
-                            )}
-                        </View>
-                    )}
-                </View>
-
-                {/* Recording Indicator with Cancel button */}
-                {isRecording && (
-                    <View style={styles.recordingIndicatorContainer}>
-                        <View style={styles.recordingIndicator}>
-                            <View style={styles.recordingDot} />
-                            <Text style={[styles.recordingText, { color: colors.error }]}>
-                                {Math.floor(recordingTime / 60)}:{(recordingTime % 60).toString().padStart(2, '0')}
+                        <View style={styles.headerCenter}>
+                            <Text style={[styles.headerTitle, { color: colors.text }]} numberOfLines={1}>
+                                Modo Estudio
                             </Text>
-                        </View>
-                        <TouchableOpacity
-                            onPress={cancelSessionRecording}
-                            style={styles.cancelRecordingButton}
-                        >
-                            <X size={16} color="#FFFFFF" />
-                            <Text style={styles.cancelRecordingText}>Cancelar</Text>
-                        </TouchableOpacity>
-                    </View>
-                )}
-
-                {/* Add Line Button */}
-                {!isPlaying && !isRecording && !isSpeaking && !isListening && (
-                    <TouchableOpacity onPress={openAddLineModal} style={styles.addButton}>
-                        <Plus size={24} color={colors.primary} />
-                    </TouchableOpacity>
-                )}
-
-                <TouchableOpacity onPress={() => setShowMenu(true)} style={styles.menuButton}>
-                    <MoreVertical size={24} color={colors.text} />
-                </TouchableOpacity>
-            </View>
-
-            {/* Menu Modal */}
-            {showMenu && (
-                <Pressable
-                    style={styles.menuOverlay}
-                    onPress={() => setShowMenu(false)}
-                >
-                    <View style={[styles.menuContent, { backgroundColor: colors.surface }]}>
-                        <TouchableOpacity
-                            style={[styles.menuItem, { borderBottomColor: `${colors.border}99` }]}
-                            onPress={handleRestart}
-                        >
-                            <RotateCcw size={20} color={colors.text} />
-                            <Text style={[styles.menuItemText, { color: colors.text }]}>Reiniciar</Text>
-                        </TouchableOpacity>
-
-                        <TouchableOpacity
-                            style={[styles.menuItem, { borderBottomColor: `${colors.border}99` }]}
-                            onPress={toggleHideLines}
-                        >
-                            <EyeOff size={20} color={colors.text} />
-                            <Text style={[styles.menuItemText, { color: colors.text }]}>
-                                {hideUserLines ? 'Mostrar' : 'Ocultar'} mis líneas
+                            <Text style={[styles.headerSubtitle, { color: colors.textSecondary }]} numberOfLines={1}>
+                                {scriptTitle}
                             </Text>
-                        </TouchableOpacity>
-
-                        <TouchableOpacity
-                            style={[styles.menuItem, { borderBottomColor: `${colors.border}99` }]}
-                            onPress={handleEditScript}
-                        >
-                            <Edit3 size={20} color={colors.text} />
-                            <Text style={[styles.menuItemText, { color: colors.text }]}>Editar guion</Text>
-                        </TouchableOpacity>
-
-                        <TouchableOpacity
-                            style={[styles.menuItem, { borderBottomColor: `${colors.border}99` }]}
-                            onPress={() => { setLiteralMode(p => !p); setShowMenu(false); }}
-                        >
-                            <FileText size={20} color={literalMode ? colors.primary : colors.text} />
-                            <Text style={[styles.menuItemText, { color: literalMode ? colors.primary : colors.text }]}>
-                                {literalMode ? 'Modo Texto Literal (Activo)' : 'Modo Texto Literal'}
-                            </Text>
-                        </TouchableOpacity>
-
-                        <TouchableOpacity
-                            style={[styles.menuItem, { borderBottomWidth: 0 }]}
-                            onPress={async () => {
-                                setShowMenu(false);
-                                // If activating, check if we should show the info modal
-                                if (!showStageDirections) {
-                                    const hidden = await AsyncStorage.getItem('hideStageDirectionsInfo');
-                                    if (hidden !== 'true') {
-                                        setShowStageDirectionsInfo(true);
-                                    }
-                                }
-                                setShowStageDirections(p => !p);
-                            }}
-                        >
-                            <MessageSquare size={20} color={showStageDirections ? colors.primary : colors.text} />
-                            <Text style={[styles.menuItemText, { color: showStageDirections ? colors.primary : colors.text }]}>
-                                {showStageDirections ? 'Acotaciones (Activo)' : 'Acotaciones'}
-                            </Text>
-                        </TouchableOpacity>
-                    </View>
-                </Pressable>
-            )}
-
-            {/* Headphone Alert Modal */}
-            <Modal
-                visible={showHeadphoneAlert}
-                transparent={true}
-                animationType="fade"
-                onRequestClose={() => setShowHeadphoneAlert(false)}
-            >
-                <View style={styles.modalOverlay}>
-                    <View style={[styles.modalContent, { backgroundColor: colors.surface }]}>
-                        <View style={styles.modalHeader}>
-                            <Headphones size={32} color={colors.primary} />
-                            <Text style={[styles.modalTitle, { color: colors.text }]}>Recomendación</Text>
-                        </View>
-
-                        <Text style={[styles.modalText, { color: colors.textSecondary }]}>
-                            Para una mejor calidad de grabación y evitar eco, te recomendamos usar auriculares.
-                        </Text>
-
-                        <TouchableOpacity
-                            style={styles.checkboxContainer}
-                            onPress={() => setDontShowHeadphoneAgain(!dontShowHeadphoneAgain)}
-                        >
-                            <View style={[styles.checkbox, { borderColor: colors.textSecondary, backgroundColor: dontShowHeadphoneAgain ? colors.primary : 'transparent' }]}>
-                                {dontShowHeadphoneAgain && <Check size={12} color="#FFFFFF" />}
-                            </View>
-                            <Text style={[styles.checkboxText, { color: colors.textSecondary }]}>No volver a mostrar</Text>
-                        </TouchableOpacity>
-
-                        <View style={styles.modalButtons}>
-                            <TouchableOpacity
-                                style={[styles.modalButton, { backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border }]}
-                                onPress={() => setShowHeadphoneAlert(false)}
-                            >
-                                <Text style={[styles.modalButtonText, { color: colors.text }]}>Cancelar</Text>
-                            </TouchableOpacity>
-
-                            <TouchableOpacity
-                                style={[styles.modalButton, { backgroundColor: colors.primary }]}
-                                onPress={confirmStartRecording}
-                            >
-                                <Text style={[styles.modalButtonText, { color: '#FFFFFF' }]}>Entendido</Text>
-                            </TouchableOpacity>
-                        </View>
-                    </View>
-                </View>
-            </Modal>
-
-            {/* Stage Directions Info Modal */}
-            <Modal
-                visible={showStageDirectionsInfo}
-                transparent={true}
-                animationType="fade"
-                onRequestClose={() => setShowStageDirectionsInfo(false)}
-            >
-                <View style={styles.modalOverlay}>
-                    <View style={[styles.modalContent, { backgroundColor: colors.surface }]}>
-                        <View style={styles.modalHeader}>
-                            <MessageSquare size={32} color={colors.primary} />
-                            <Text style={[styles.modalTitle, { color: colors.text }]}>Acotaciones</Text>
-                        </View>
-
-                        <Text style={[styles.modalText, { color: colors.textSecondary }]}>
-                            Al activar "Acotaciones" se mostrarán en las tarjetas para ofrecer más información sobre la escena. Si quieres que desaparezcan vuelve a pulsar para desactivarlas.
-                        </Text>
-
-                        <TouchableOpacity
-                            style={styles.checkboxContainer}
-                            onPress={() => setDontShowStageDirectionsAgain(!dontShowStageDirectionsAgain)}
-                        >
-                            <View style={[styles.checkbox, { borderColor: colors.textSecondary, backgroundColor: dontShowStageDirectionsAgain ? colors.primary : 'transparent' }]}>
-                                {dontShowStageDirectionsAgain && <Check size={12} color="#FFFFFF" />}
-                            </View>
-                            <Text style={[styles.checkboxText, { color: colors.textSecondary }]}>No volver a mostrar este mensaje</Text>
-                        </TouchableOpacity>
-
-                        <View style={styles.modalButtons}>
-                            <TouchableOpacity
-                                style={[styles.modalButton, { backgroundColor: colors.primary, flex: 1 }]}
-                                onPress={async () => {
-                                    if (dontShowStageDirectionsAgain) {
-                                        await AsyncStorage.setItem('hideStageDirectionsInfo', 'true');
-                                    }
-                                    setShowStageDirectionsInfo(false);
-                                }}
-                            >
-                                <Text style={[styles.modalButtonText, { color: '#FFFFFF' }]}>Entendido</Text>
-                            </TouchableOpacity>
-                        </View>
-                    </View>
-                </View>
-            </Modal>
-
-            {/* Add New Line Modal */}
-            <Modal
-                visible={showAddLineModal}
-                transparent={true}
-                animationType="slide"
-                onRequestClose={closeAddLineModal}
-            >
-                <View style={styles.modalOverlay}>
-                    <View style={[styles.modalContent, { backgroundColor: colors.surface, width: '90%', maxHeight: '80%' }]}>
-                        <View style={styles.modalHeader}>
-                            <Text style={[styles.modalTitle, { color: colors.text }]}>Añadir Nueva Línea</Text>
-                            <TouchableOpacity onPress={closeAddLineModal} style={styles.closeButton}>
-                                <X size={24} color={colors.text} />
-                            </TouchableOpacity>
-                        </View>
-
-                        <ScrollView contentContainerStyle={{ paddingBottom: 20, paddingHorizontal: 20 }} style={{ width: '100%' }}>
-                            <Text style={[styles.modalSubtitle, { color: colors.text, marginBottom: 12 }]}>
-                                1. Selecciona el Personaje:
-                            </Text>
-
-                            <View style={styles.characterGrid}>
-                                {characters.map((char) => (
-                                    <TouchableOpacity
-                                        key={char.id}
-                                        style={[
-                                            styles.characterOption,
-                                            {
-                                                borderColor: selectedCharacter?.id === char.id ? char.color : colors.border,
-                                                backgroundColor: selectedCharacter?.id === char.id ? `${char.color}20` : 'transparent'
-                                            }
-                                        ]}
-                                        onPress={() => setSelectedCharacter(char)}
-                                    >
-                                        <View style={[styles.characterInitialCircle, { backgroundColor: char.color || colors.primary }]}>
-                                            <Text style={styles.characterInitial}>
-                                                {char.name.charAt(0).toUpperCase()}
-                                            </Text>
+                            {/* Mode badges row - below script title */}
+                            {(literalMode || showStageDirections) && (
+                                <View style={styles.modeBadgesRow}>
+                                    {literalMode && (
+                                        <View style={[styles.literalModeBadge, { backgroundColor: colors.primary }]}>
+                                            <FileText size={12} color="#FFFFFF" />
+                                            <Text style={styles.literalModeBadgeText}>LITERAL</Text>
                                         </View>
-                                        <Text style={[styles.characterNameOption, { color: colors.text }]}>
-                                            {char.name}
-                                        </Text>
-                                    </TouchableOpacity>
-                                ))}
-                            </View>
-
-                            {selectedCharacter && (
-                                <>
-                                    <Text style={[styles.modalSubtitle, { color: colors.text, marginBottom: 12 }]}>
-                                        2. Escribe el Diálogo:
-                                    </Text>
-                                    <View style={{ width: '100%' }}>
-                                        <TextInput
-                                            style={[styles.lineInput, {
-                                                color: colors.text,
-                                                borderColor: colors.border,
-                                            }]}
-                                            placeholder="Escribe aquí lo que dice el personaje..."
-                                            placeholderTextColor={colors.textSecondary}
-                                            multiline
-                                            scrollEnabled={false}
-                                            value={newLineText}
-                                            onChangeText={setNewLineText}
-                                        />
-                                    </View>
-
-                                    <View style={{ flexDirection: 'row', gap: 10, marginTop: 10 }}>
-                                        <TouchableOpacity
-                                            style={[styles.button, { backgroundColor: colors.border, flex: 1 }]}
-                                            onPress={closeAddLineModal}
-                                        >
-                                            <Text style={[styles.buttonText, { color: colors.text }]}>Cancelar</Text>
-                                        </TouchableOpacity>
-
-                                        <TouchableOpacity
-                                            style={[
-                                                styles.button,
-                                                { backgroundColor: selectedCharacter.color || colors.primary, flex: 1 }
-                                            ]}
-                                            onPress={createNewLine}
-                                            disabled={isUpdating || !newLineText.trim()}
-                                        >
-                                            {isUpdating ? (
-                                                <ActivityIndicator size="small" color="#FFFFFF" />
-                                            ) : (
-                                                <Text style={styles.buttonText}>Añadir</Text>
-                                            )}
-                                        </TouchableOpacity>
-                                    </View>
-                                </>
-                            )}
-                        </ScrollView>
-                    </View>
-                </View>
-            </Modal>
-
-            {/* Processing Overlay */}
-            {isProcessing && (
-                <View style={styles.loadingOverlay}>
-                    <View style={[styles.loadingCard, { backgroundColor: colors.surface }]}>
-                        <ActivityIndicator size="large" color={colors.primary} />
-                        <Text style={[styles.loadingText, { color: colors.text }]}>
-                            {processingStep || 'Procesando...'}
-                        </Text>
-                        {/* Progress Bar */}
-                        <View style={{
-                            width: '100%',
-                            height: 8,
-                            backgroundColor: colors.border,
-                            borderRadius: 4,
-                            marginTop: 8,
-                            overflow: 'hidden'
-                        }}>
-                            <View style={{
-                                width: `${uploadProgress}%`,
-                                height: '100%',
-                                backgroundColor: colors.primary
-                            }} />
-                        </View>
-                        <Text style={{ fontSize: rf(12), color: colors.textSecondary }}>
-                            {uploadProgress}%
-                        </Text>
-                    </View>
-                </View>
-            )}
-
-            {/* Content */}
-            <ScrollView
-                style={styles.content}
-                contentContainerStyle={styles.contentContainer}
-            >
-                {currentLine && (
-                    <View style={styles.cardContainer}>
-                        {/* Current Card */}
-                        <View
-                            style={[
-                                styles.card,
-                                {
-                                    backgroundColor: colors.background,
-                                    borderColor: currentLine.isUserCharacter ? '#10B981' : currentLine.color || colors.primary,
-                                    borderWidth: 4,
-                                    padding: 0, // Remove padding to let header fill width
-                                    overflow: 'hidden', // Ensure header stays inside border
-                                }
-                            ]}
-                        >
-                            {/* Header Banner */}
-                            <View style={[
-                                styles.cardHeaderBanner,
-                                {
-                                    backgroundColor: currentLine.isUserCharacter ? '#10B981' : currentLine.color || colors.primary,
-                                }
-                            ]}>
-                                {/* Menu Button - Always on the right */}
-                                {!isPlaying && !isRecording && !isSpeaking && !isListening && (
-                                    <TouchableOpacity
-                                        onPress={() => setOpenEditMenuLineId(
-                                            openEditMenuLineId === currentLine.id ? null : currentLine.id
-                                        )}
-                                        style={styles.menuButtonAbsolute}
-                                    >
-                                        <MoreVertical size={20} color={colors.background} />
-                                    </TouchableOpacity>
-                                )}
-
-                                {/* Content - Either Name+Badge or Edit Buttons */}
-                                {openEditMenuLineId === currentLine.id ? (
-                                    // Edit Menu - Replaces name and badge
-                                    <View style={styles.editMenuInHeader}>
-                                        {/* Move Up */}
-                                        {currentIndex > 0 && (
-                                            <TouchableOpacity
-                                                onPress={() => {
-                                                    moveLineUp(currentLine.id);
-                                                    setOpenEditMenuLineId(null);
-                                                }}
-                                                style={styles.editButtonHorizontal}
-                                                disabled={isUpdating}
-                                            >
-                                                <ChevronUp size={18} color={colors.background} />
-                                            </TouchableOpacity>
-                                        )}
-
-                                        {/* Move Down */}
-                                        {currentIndex < dialogueLines.length - 1 && (
-                                            <TouchableOpacity
-                                                onPress={() => {
-                                                    moveLineDown(currentLine.id);
-                                                    setOpenEditMenuLineId(null);
-                                                }}
-                                                style={styles.editButtonHorizontal}
-                                                disabled={isUpdating}
-                                            >
-                                                <ChevronDown size={18} color={colors.background} />
-                                            </TouchableOpacity>
-                                        )}
-
-                                        {/* Edit */}
-                                        <TouchableOpacity
-                                            onPress={() => {
-                                                startEditingLine(currentLine);
-                                                setOpenEditMenuLineId(null);
-                                            }}
-                                            style={styles.editButtonHorizontal}
-                                            disabled={isUpdating}
-                                        >
-                                            <Edit size={18} color={colors.background} />
-                                        </TouchableOpacity>
-
-                                        {/* Delete */}
-                                        <TouchableOpacity
-                                            onPress={() => {
-                                                deleteLine(currentLine.id);
-                                                setOpenEditMenuLineId(null);
-                                            }}
-                                            style={styles.editButtonHorizontal}
-                                            disabled={isUpdating}
-                                        >
-                                            <Trash2 size={18} color={colors.background} />
-                                        </TouchableOpacity>
-                                    </View>
-                                ) : (
-                                    // Normal view - Name and Badge centered
-                                    <View style={styles.headerCenteredContent}>
-                                        <Text style={[styles.characterName, { color: colors.background }]}>
-                                            {currentLine.characterName}
-                                        </Text>
-
-                                        <View style={[
-                                            styles.badge,
-                                            {
-                                                backgroundColor: 'rgba(0,0,0,0.2)',
-                                            }
-                                        ]}>
-                                            <Text style={[styles.badgeText, { color: colors.background }]}>
-                                                {currentLine.isUserCharacter ? 'TÚ' : 'IA'}
-                                            </Text>
+                                    )}
+                                    {showStageDirections && (
+                                        <View style={[styles.literalModeBadge, { backgroundColor: colorScheme === 'dark' ? '#FFA500' : '#DC2626' }]}>
+                                            <MessageSquare size={12} color="#FFFFFF" />
+                                            <Text style={styles.literalModeBadgeText}>ACOTACIONES</Text>
                                         </View>
-                                    </View>
-                                )}
-                            </View>
-
-                            <View style={styles.cardContent}>
-                                {editingLineId === currentLine.id ? (
-                                    // Edit Mode
-                                    <View>
-                                        <TextInput
-                                            style={[
-                                                styles.editInput,
-                                                {
-                                                    color: colors.text,
-                                                    borderColor: colors.border,
-                                                    backgroundColor: colors.surface
-                                                }
-                                            ]}
-                                            value={editedText}
-                                            onChangeText={setEditedText}
-                                            multiline
-                                            autoFocus
-                                            placeholder="Escribe el texto de la línea..."
-                                            placeholderTextColor={colors.textSecondary}
-                                        />
-                                        <View style={styles.editActions}>
-                                            <TouchableOpacity
-                                                onPress={cancelEditing}
-                                                style={[styles.editActionButton, { backgroundColor: colors.border }]}
-                                            >
-                                                <X size={16} color={colors.text} />
-                                                <Text style={[styles.editActionText, { color: colors.text }]}>Cancelar</Text>
-                                            </TouchableOpacity>
-                                            <TouchableOpacity
-                                                onPress={saveEditedLine}
-                                                style={[styles.editActionButton, { backgroundColor: '#10B981' }]}
-                                                disabled={isUpdating || !editedText.trim()}
-                                            >
-                                                <Save size={16} color="#FFFFFF" />
-                                                <Text style={[styles.editActionText, { color: '#FFFFFF' }]}>
-                                                    {isUpdating ? 'Guardando...' : 'Guardar'}
-                                                </Text>
-                                            </TouchableOpacity>
-                                        </View>
-                                    </View>
-                                ) : (
-                                    // Display Mode
-                                    <>
-                                        {currentLine.isUserCharacter && hideUserLines ? (
-                                            // Show EyeOff icon when user lines are hidden
-                                            <View style={styles.hiddenLineContainer}>
-                                                <EyeOff size={48} color={colors.textSecondary} />
-                                                <Text style={[styles.hiddenLineText, { color: colors.textSecondary }]}>
-                                                    Línea oculta
-                                                </Text>
-                                            </View>
-                                        ) : (
-                                            <Text style={[
-                                                styles.dialogueText,
-                                                { color: colors.text }
-                                            ]}>
-                                                {renderTextWithStageDirections(
-                                                    showStageDirections ? currentLine.text : currentLine.cleanText
-                                                )}
-                                            </Text>
-                                        )}
-                                    </>
-                                )}
-                            </View>
-
-                            {/* Status indicators */}
-                            {/* Show if listening (VAD) OR recording (Session Mode) */}
-                            {(isListening || isRecording) && currentLine.isUserCharacter && (
-                                <View style={styles.statusRow}>
-                                    <Mic size={24} color="#EF4444" />
-                                    <Text style={[styles.statusText, { color: '#EF4444', fontWeight: '700' }]}>Escuchando...</Text>
-                                </View>
-                            )}
-
-                            {isTranscribing && currentLine.isUserCharacter && (
-                                <View style={styles.statusRow}>
-                                    <ActivityIndicator size="small" color={colors.primary} />
-                                    <Text style={[styles.statusText, { color: colors.textSecondary }]}>Procesando...</Text>
-                                </View>
-                            )}
-
-                            {isSpeaking && !currentLine.isUserCharacter && (
-                                <View style={styles.statusRow}>
-                                    <Volume2 size={20} color={colors.primary} />
-                                    <Text style={[styles.statusText, { color: colors.textSecondary }]}>Reproduciendo...</Text>
-                                </View>
-                            )}
-                        </View>
-
-                        {/* Next Cards (Cascade Effect - All remaining cards) */}
-                        {dialogueLines.slice(currentIndex + 1).map((line, index) => (
-                            <View
-                                key={line.id}
-                                style={[
-                                    styles.card,
-                                    styles.nextCard,
-                                    {
-                                        backgroundColor: colors.background,
-                                        borderColor: line.isUserCharacter ? '#10B981' : line.color || colors.primary,
-                                        borderWidth: 4,
-                                        opacity: 0.5,
-                                        padding: 0,
-                                        overflow: 'hidden',
-                                        marginTop: index === 0 ? 16 : 12,
-                                    }
-                                ]}
-                            >
-                                <View style={[
-                                    styles.cardHeaderBanner,
-                                    {
-                                        backgroundColor: line.isUserCharacter ? '#10B981' : line.color || colors.primary,
-                                    }
-                                ]}>
-                                    <Text style={[styles.characterName, { color: colors.background }]}>
-                                        {line.characterName}
-                                    </Text>
-                                    <View style={[
-                                        styles.badge,
-                                        {
-                                            backgroundColor: 'rgba(0,0,0,0.2)',
-                                        }
-                                    ]}>
-                                        <Text style={[styles.badgeText, { color: colors.background }]}>
-                                            {line.isUserCharacter ? 'TÚ' : 'IA'}
-                                        </Text>
-                                    </View>
-                                </View>
-
-                                <View style={styles.cardContent}>
-                                    {line.isUserCharacter && hideUserLines ? (
-                                        // Show EyeOff icon for user lines when hidden
-                                        <View style={styles.hiddenLineContainer}>
-                                            <EyeOff size={32} color={colors.textSecondary} />
-                                            <Text style={[styles.hiddenLineText, { color: colors.textSecondary, fontSize: rf(12) }]}>
-                                                Oculta
-                                            </Text>
-                                        </View>
-                                    ) : (
-                                        <Text style={[styles.dialogueText, { color: colors.text }]} numberOfLines={2}>
-                                            {line.text}
-                                        </Text>
                                     )}
                                 </View>
-                            </View>
-                        ))}
+                            )}
+                        </View>
+
+                        {/* Right Side Actions */}
+                        {isReordering ? (
+                            <TouchableOpacity
+                                onPress={saveNewOrder}
+                                disabled={isUpdating}
+                                style={[styles.cancelRecordingButton, { backgroundColor: '#10B981', opacity: isUpdating ? 0.7 : 1 }]}
+                            >
+                                {isUpdating ? (
+                                    <ActivityIndicator size="small" color="#FFFFFF" />
+                                ) : (
+                                    <Save size={16} color="#FFFFFF" />
+                                )}
+                                <Text style={styles.cancelRecordingText}>
+                                    {isUpdating ? 'Guardando...' : 'Guardar orden'}
+                                </Text>
+                            </TouchableOpacity>
+                        ) : (
+                            <>
+                                {/* Recording Indicator with Cancel button */}
+                                {isRecording && (
+                                    <View style={styles.recordingIndicatorContainer}>
+                                        <View style={styles.recordingIndicator}>
+                                            <View style={styles.recordingDot} />
+                                            <Text style={[styles.recordingText, { color: colors.error }]}>
+                                                {Math.floor(recordingTime / 60)}:{(recordingTime % 60).toString().padStart(2, '0')}
+                                            </Text>
+                                        </View>
+                                        <TouchableOpacity
+                                            onPress={cancelSessionRecording}
+                                            style={styles.cancelRecordingButton}
+                                        >
+                                            <X size={16} color="#FFFFFF" />
+                                            <Text style={styles.cancelRecordingText}>Cancelar</Text>
+                                        </TouchableOpacity>
+                                    </View>
+                                )}
+
+                                {/* Add Line Button */}
+                                <TouchableOpacity
+                                    onPress={() => setShowAddLineModal(true)}
+                                    style={[styles.menuButton, { marginRight: 8 }]}
+                                >
+                                    <Plus size={24} color={colors.text} />
+                                </TouchableOpacity>
+
+                                <TouchableOpacity onPress={() => setShowMenu(true)} style={styles.menuButton}>
+                                    <MoreVertical size={24} color={colors.text} />
+                                </TouchableOpacity>
+                            </>
+                        )}
                     </View>
-                )}
-            </ScrollView>
 
-            {/* Footer Controls */}
-            <View style={[styles.footer, { backgroundColor: colors.surface, borderTopColor: colors.border }]}>
-                <View style={styles.progressContainer}>
-                    <Text style={[styles.progressText, { color: colors.textSecondary }]}>
-                        {progressText}
-                    </Text>
-                </View>
+                    {/* Menu Modal */}
+                    {showMenu && (
+                        <Pressable
+                            style={styles.menuOverlay}
+                            onPress={() => setShowMenu(false)}
+                        >
+                            <View style={[styles.menuContent, { backgroundColor: colors.surface }]}>
+                                <TouchableOpacity
+                                    style={[styles.menuItem, { borderBottomColor: `${colors.border}99` }]}
+                                    onPress={handleRestart}
+                                >
+                                    <RotateCcw size={20} color={colors.text} />
+                                    <Text style={[styles.menuItemText, { color: colors.text }]}>Reiniciar</Text>
+                                </TouchableOpacity>
 
-                <View style={styles.controls}>
-                    <TouchableOpacity
-                        onPress={handlePrevious}
-                        disabled={currentIndex === 0}
-                        style={[styles.controlButton, currentIndex === 0 && styles.controlButtonDisabled]}
+                                <TouchableOpacity
+                                    style={[styles.menuItem, { borderBottomColor: `${colors.border}99` }]}
+                                    onPress={toggleHideLines}
+                                >
+                                    <EyeOff size={20} color={colors.text} />
+                                    <Text style={[styles.menuItemText, { color: colors.text }]}>
+                                        {hideUserLines ? 'Mostrar' : 'Ocultar'} mis líneas
+                                    </Text>
+                                </TouchableOpacity>
+
+                                <TouchableOpacity
+                                    style={[styles.menuItem, { borderBottomColor: `${colors.border}99` }]}
+                                    onPress={handleEditScript}
+                                >
+                                    <Edit3 size={20} color={colors.text} />
+                                    <Text style={[styles.menuItemText, { color: colors.text }]}>Editar guion</Text>
+                                </TouchableOpacity>
+
+                                <TouchableOpacity
+                                    style={[styles.menuItem, { borderBottomColor: `${colors.border}99` }]}
+                                    onPress={toggleReordering}
+                                >
+                                    <ArrowUpDown size={20} color={colors.text} />
+                                    <Text style={[styles.menuItemText, { color: colors.text }]}>
+                                        Editar orden tarjetas
+                                    </Text>
+                                </TouchableOpacity>
+
+                                <TouchableOpacity
+                                    style={[styles.menuItem, { borderBottomColor: `${colors.border}99` }]}
+                                    onPress={() => { setLiteralMode(p => !p); setShowMenu(false); }}
+                                >
+                                    <FileText size={20} color={literalMode ? colors.primary : colors.text} />
+                                    <Text style={[styles.menuItemText, { color: literalMode ? colors.primary : colors.text }]}>
+                                        {literalMode ? 'Modo Texto Literal (Activo)' : 'Modo Texto Literal'}
+                                    </Text>
+                                </TouchableOpacity>
+
+                                <TouchableOpacity
+                                    style={[styles.menuItem, { borderBottomWidth: 0 }]}
+                                    onPress={async () => {
+                                        setShowMenu(false);
+                                        // If activating, check if we should show the info modal
+                                        if (!showStageDirections) {
+                                            const hidden = await AsyncStorage.getItem('hideStageDirectionsInfo');
+                                            if (hidden !== 'true') {
+                                                setShowStageDirectionsInfo(true);
+                                            }
+                                        }
+                                        setShowStageDirections(p => !p);
+                                    }}
+                                >
+                                    <MessageSquare size={20} color={showStageDirections ? colors.primary : colors.text} />
+                                    <Text style={[styles.menuItemText, { color: showStageDirections ? colors.primary : colors.text }]}>
+                                        {showStageDirections ? 'Acotaciones (Activo)' : 'Acotaciones'}
+                                    </Text>
+                                </TouchableOpacity>
+                            </View>
+                        </Pressable>
+                    )}
+
+                    {/* Headphone Alert Modal */}
+                    <Modal
+                        visible={showHeadphoneAlert}
+                        transparent={true}
+                        animationType="fade"
+                        onRequestClose={() => setShowHeadphoneAlert(false)}
                     >
-                        <SkipBack size={24} color={currentIndex === 0 ? colors.textSecondary : colors.text} />
-                    </TouchableOpacity>
+                        <View style={styles.modalOverlay}>
+                            <View style={[styles.modalContent, { backgroundColor: colors.surface }]}>
+                                <View style={styles.modalHeader}>
+                                    <Headphones size={32} color={colors.primary} />
+                                    <Text style={[styles.modalTitle, { color: colors.text }]}>Recomendación</Text>
+                                </View>
 
-                    <TouchableOpacity
-                        onPress={handlePlayPause}
-                        style={[styles.playButton, { backgroundColor: colors.primary }]}
+                                <Text style={[styles.modalText, { color: colors.textSecondary }]}>
+                                    Para una mejor calidad de grabación y evitar eco, te recomendamos usar auriculares.
+                                </Text>
+
+                                <TouchableOpacity
+                                    style={styles.checkboxContainer}
+                                    onPress={() => setDontShowHeadphoneAgain(!dontShowHeadphoneAgain)}
+                                >
+                                    <View style={[styles.checkbox, { borderColor: colors.textSecondary, backgroundColor: dontShowHeadphoneAgain ? colors.primary : 'transparent' }]}>
+                                        {dontShowHeadphoneAgain && <Check size={12} color="#FFFFFF" />}
+                                    </View>
+                                    <Text style={[styles.checkboxText, { color: colors.textSecondary }]}>No volver a mostrar</Text>
+                                </TouchableOpacity>
+
+                                <View style={styles.modalButtons}>
+                                    <TouchableOpacity
+                                        style={[styles.modalButton, { backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border }]}
+                                        onPress={() => setShowHeadphoneAlert(false)}
+                                    >
+                                        <Text style={[styles.modalButtonText, { color: colors.text }]}>Cancelar</Text>
+                                    </TouchableOpacity>
+
+                                    <TouchableOpacity
+                                        style={[styles.modalButton, { backgroundColor: colors.primary }]}
+                                        onPress={confirmStartRecording}
+                                    >
+                                        <Text style={[styles.modalButtonText, { color: '#FFFFFF' }]}>Entendido</Text>
+                                    </TouchableOpacity>
+                                </View>
+                            </View>
+                        </View>
+                    </Modal>
+
+                    {/* Stage Directions Info Modal */}
+                    <Modal
+                        visible={showStageDirectionsInfo}
+                        transparent={true}
+                        animationType="fade"
+                        onRequestClose={() => setShowStageDirectionsInfo(false)}
                     >
-                        {isPlaying ? (
-                            <Pause size={28} color="#FFFFFF" />
-                        ) : (
-                            <Play size={28} color="#FFFFFF" />
-                        )}
-                    </TouchableOpacity>
+                        <View style={styles.modalOverlay}>
+                            <View style={[styles.modalContent, { backgroundColor: colors.surface }]}>
+                                <View style={styles.modalHeader}>
+                                    <MessageSquare size={32} color={colors.primary} />
+                                    <Text style={[styles.modalTitle, { color: colors.text }]}>Acotaciones</Text>
+                                </View>
 
-                    <TouchableOpacity
-                        onPress={handleNext}
-                        disabled={currentIndex === dialogueLines.length - 1 && !loopEnabled}
-                        style={[
-                            styles.controlButton,
-                            (currentIndex === dialogueLines.length - 1 && !loopEnabled) && styles.controlButtonDisabled
-                        ]}
+                                <Text style={[styles.modalText, { color: colors.textSecondary }]}>
+                                    Al activar "Acotaciones" se mostrarán en las tarjetas para ofrecer más información sobre la escena. Si quieres que desaparezcan vuelve a pulsar para desactivarlas.
+                                </Text>
+
+                                <TouchableOpacity
+                                    style={styles.checkboxContainer}
+                                    onPress={() => setDontShowStageDirectionsAgain(!dontShowStageDirectionsAgain)}
+                                >
+                                    <View style={[styles.checkbox, { borderColor: colors.textSecondary, backgroundColor: dontShowStageDirectionsAgain ? colors.primary : 'transparent' }]}>
+                                        {dontShowStageDirectionsAgain && <Check size={12} color="#FFFFFF" />}
+                                    </View>
+                                    <Text style={[styles.checkboxText, { color: colors.textSecondary }]}>No volver a mostrar este mensaje</Text>
+                                </TouchableOpacity>
+
+                                <View style={styles.modalButtons}>
+                                    <TouchableOpacity
+                                        style={[styles.modalButton, { backgroundColor: colors.primary, flex: 1 }]}
+                                        onPress={async () => {
+                                            if (dontShowStageDirectionsAgain) {
+                                                await AsyncStorage.setItem('hideStageDirectionsInfo', 'true');
+                                            }
+                                            setShowStageDirectionsInfo(false);
+                                        }}
+                                    >
+                                        <Text style={[styles.modalButtonText, { color: '#FFFFFF' }]}>Entendido</Text>
+                                    </TouchableOpacity>
+                                </View>
+                            </View>
+                        </View>
+                    </Modal>
+
+
+                    {/* Reorder Info Modal */}
+                    <Modal
+                        visible={showReorderInfoModal}
+                        transparent={true}
+                        animationType="fade"
+                        onRequestClose={() => setShowReorderInfoModal(false)}
                     >
-                        <SkipForward
-                            size={24}
-                            color={(currentIndex === dialogueLines.length - 1 && !loopEnabled) ? colors.textSecondary : colors.text}
-                        />
-                    </TouchableOpacity>
+                        <View style={styles.modalOverlay}>
+                            <View style={[styles.modalContent, { backgroundColor: colors.surface }]}>
+                                <View style={styles.modalHeader}>
+                                    <Text style={[styles.modalTitle, { color: colors.text }]}>Modificar orden</Text>
+                                    <TouchableOpacity onPress={() => setShowReorderInfoModal(false)} style={styles.closeButton}>
+                                        <X size={24} color={colors.text} />
+                                    </TouchableOpacity>
+                                </View>
+                                <Text style={[styles.modalText, { color: colors.text }]}>
+                                    Para modificar el orden, mantén pulsada una tarjeta y arrástrala a la nueva posición.
+                                </Text>
+                                <Text style={[styles.modalText, { color: colors.text, marginTop: 10 }]}>
+                                    Pulsa "Guardar" cuando termines para aplicar los cambios.
+                                </Text>
 
-                    <TouchableOpacity
-                        onPress={() => setLoopEnabled(prev => !prev)}
-                        style={[
-                            styles.loopButton,
-                            { backgroundColor: loopEnabled ? colors.primary : colors.input }
-                        ]}
+                                <TouchableOpacity
+                                    style={styles.checkboxContainer}
+                                    onPress={() => setDontShowReorderInfoAgain(!dontShowReorderInfoAgain)}
+                                >
+                                    <View style={[styles.checkbox, { borderColor: colors.textSecondary, backgroundColor: dontShowReorderInfoAgain ? colors.primary : 'transparent' }]}>
+                                        {dontShowReorderInfoAgain && <Check size={12} color="#FFFFFF" />}
+                                    </View>
+                                    <Text style={[styles.checkboxText, { color: colors.textSecondary }]}>No volver a mostrar este mensaje</Text>
+                                </TouchableOpacity>
+
+                                <View style={styles.modalButtons}>
+                                    <TouchableOpacity
+                                        style={[styles.modalButton, { backgroundColor: colors.primary, flex: 1 }]}
+                                        onPress={async () => {
+                                            if (dontShowReorderInfoAgain) {
+                                                await AsyncStorage.setItem('hideReorderInfo', 'true');
+                                            }
+                                            setShowReorderInfoModal(false);
+                                            setIsReordering(true);
+                                        }}
+                                    >
+                                        <Text style={[styles.modalButtonText, { color: '#FFFFFF' }]}>Entendido</Text>
+                                    </TouchableOpacity>
+                                </View>
+                            </View>
+                        </View>
+                    </Modal>
+
+                    {/* Add New Line Modal */}
+                    <Modal
+                        visible={showAddLineModal}
+                        transparent={true}
+                        animationType="slide"
+                        onRequestClose={closeAddLineModal}
                     >
-                        <Repeat size={20} color={loopEnabled ? '#FFFFFF' : colors.text} />
-                    </TouchableOpacity>
+                        <KeyboardAvoidingView
+                            behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+                            style={{ flex: 1 }}
+                        >
+                            <Pressable style={styles.modalOverlay} onPress={closeAddLineModal}>
+                                <Pressable
+                                    onPress={(e) => e.stopPropagation()}
+                                    style={[
+                                        styles.modalContent,
+                                        {
+                                            backgroundColor: colors.surface,
+                                            width: '90%',
+                                            maxHeight: keyboardVisible ? '90%' : '80%',
+                                            marginBottom: keyboardVisible ? 20 : 0,
+                                        }
+                                    ]}
+                                >
+                                    <View style={styles.modalHeader}>
+                                        <Text style={[styles.modalTitle, { color: colors.text }]}>Añadir Nueva Línea</Text>
+                                        <TouchableOpacity onPress={closeAddLineModal} style={styles.closeButton}>
+                                            <X size={24} color={colors.text} />
+                                        </TouchableOpacity>
+                                    </View>
 
-                    <TouchableOpacity
-                        onPress={handleRecButton}
-                        style={[
-                            styles.recButton,
-                            { backgroundColor: isRecording ? '#EF4444' : colors.input }
-                        ]}
-                    >
-                        {isRecording ? (
-                            <View style={styles.recSquare} />
-                        ) : (
-                            <Circle size={20} color={colors.error} fill={colors.error} />
-                        )}
-                    </TouchableOpacity>
-                </View>
+                                <ScrollView 
+                                    ref={modalScrollRef}
+                                    contentContainerStyle={{ paddingBottom: 40, paddingHorizontal: 20 }} 
+                                    style={{ width: '100%' }}
+                                    keyboardShouldPersistTaps="handled"
+                                >
+                                    <Text style={[styles.modalSubtitle, { color: colors.text, marginBottom: 12 }]}>
+                                        1. Selecciona el Personaje:
+                                    </Text>
 
-                {/* Timer removed as it was for session recording. 
+                                    <View style={styles.characterGrid}>
+                                        {characters.map((char) => (
+                                            <TouchableOpacity
+                                                key={char.id}
+                                                style={[
+                                                    styles.characterOption,
+                                                    {
+                                                        borderColor: selectedCharacter?.id === char.id ? char.color : colors.border,
+                                                        backgroundColor: selectedCharacter?.id === char.id ? `${char.color}20` : 'transparent'
+                                                    }
+                                                ]}
+                                                onPress={() => setSelectedCharacter(char)}
+                                            >
+                                                <View style={[styles.characterInitialCircle, { backgroundColor: char.color || colors.primary }]}>
+                                                    <Text style={styles.characterInitial}>
+                                                        {char.name.charAt(0).toUpperCase()}
+                                                    </Text>
+                                                </View>
+                                                <Text style={[styles.characterNameOption, { color: colors.text }]}>
+                                                    {char.name}
+                                                </Text>
+                                            </TouchableOpacity>
+                                        ))}
+                                    </View>
+
+                                    {selectedCharacter && (
+                                        <>
+                                            <Text style={[styles.modalSubtitle, { color: colors.text, marginBottom: 12 }]}>
+                                                2. Escribe el Diálogo:
+                                            </Text>
+                                            <View style={{ width: '100%' }}>
+                                                <TextInput
+                                                    style={[styles.lineInput, {
+                                                        color: colors.text,
+                                                        borderColor: colors.border,
+                                                    }]}
+                                                    placeholder="Escribe aquí lo que dice el personaje..."
+                                                    placeholderTextColor={colors.textSecondary}
+                                                    multiline
+                                                    scrollEnabled={false}
+                                                    value={newLineText}
+                                                    onChangeText={setNewLineText}
+                                                    autoFocus={true}
+                                                    onFocus={() => {
+                                                        // Pequeño delay para asegurar que el teclado se está mostrando
+                                                        setTimeout(() => {
+                                                            modalScrollRef.current?.scrollToEnd({ animated: true });
+                                                        }, 100);
+                                                    }}
+                                                />
+                                            </View>
+
+                                            <View style={{ flexDirection: 'row', gap: 10, marginTop: 10 }}>
+                                                <TouchableOpacity
+                                                    style={[styles.button, { backgroundColor: colors.border, flex: 1 }]}
+                                                    onPress={closeAddLineModal}
+                                                >
+                                                    <Text style={[styles.buttonText, { color: colors.text }]}>Cancelar</Text>
+                                                </TouchableOpacity>
+
+                                                <TouchableOpacity
+                                                    style={[
+                                                        styles.button,
+                                                        { backgroundColor: selectedCharacter.color || colors.primary, flex: 1 }
+                                                    ]}
+                                                    onPress={createNewLine}
+                                                    disabled={isUpdating || !newLineText.trim()}
+                                                >
+                                                    {isUpdating ? (
+                                                        <ActivityIndicator size="small" color="#FFFFFF" />
+                                                    ) : (
+                                                        <Text style={styles.buttonText}>Añadir</Text>
+                                                    )}
+                                                </TouchableOpacity>
+                                            </View>
+                                        </>
+                                    )}
+                                </ScrollView>
+                                </Pressable>
+                            </Pressable>
+                        </KeyboardAvoidingView>
+                    </Modal>
+
+                    {/* Processing Overlay */}
+                    {isProcessing && (
+                        <View style={styles.loadingOverlay}>
+                            <View style={[styles.loadingCard, { backgroundColor: colors.surface }]}>
+                                <ActivityIndicator size="large" color={colors.primary} />
+                                <Text style={[styles.loadingText, { color: colors.text }]}>
+                                    {processingStep || 'Procesando...'}
+                                </Text>
+                                {/* Progress Bar */}
+                                <View style={{
+                                    width: '100%',
+                                    height: 8,
+                                    backgroundColor: colors.border,
+                                    borderRadius: 4,
+                                    marginTop: 8,
+                                    overflow: 'hidden'
+                                }}>
+                                    <View style={{
+                                        width: `${uploadProgress}%`,
+                                        height: '100%',
+                                        backgroundColor: colors.primary
+                                    }} />
+                                </View>
+                                <Text style={{ fontSize: rf(12), color: colors.textSecondary }}>
+                                    {uploadProgress}%
+                                </Text>
+                            </View>
+                        </View>
+                    )}
+
+                    {/* Content */}
+                    {/* Content Switcher */}
+                    {isReordering ? (
+                        <View style={{ flex: 1 }}>
+                            <DraggableFlatList
+                                data={dialogueLines}
+                                onDragBegin={() => Haptics.selectionAsync()}
+                                onDragEnd={({ data }) => {
+                                    setDialogueLines(data);
+                                    // syncOrderToBackend(data); // Removed auto-sync
+
+                                    // Si la línea actual cambia de posición, necesitamos actualizar currentIndex
+                                    // para seguir apuntando a la misma línea (si es posible)
+                                    // O simplemente dejamos que el usuario navegue.
+                                    // Lo más seguro es que currentIndex siga siendo un número, 
+                                    // pero la línea en esa posición habrá cambiado.
+                                    // Si estamos reproduciendo, esto podría ser confuso.
+                                    // Idealmente, pausar al arrastrar.
+                                }}
+                                keyExtractor={(item) => item.id}
+                                containerStyle={styles.content}
+                                contentContainerStyle={{ padding: rp(20), paddingBottom: 100 }}
+                                renderItem={({ item, drag, isActive, getIndex }) => {
+                                    const index = getIndex();
+                                    const isCurrent = index === currentIndex; // Resaltar línea actual de reproducción
+
+                                    // Determinar estilo según estado
+                                    // Si está activa (drag), o es la actual de reproducción.
+                                    // Las líneas pasadas o futuras se muestran normales en la lista.
+
+                                    return (
+                                        <ScaleDecorator>
+                                            <Pressable
+                                                onLongPress={drag}
+                                                delayLongPress={200}
+                                                disabled={isActive}
+                                                style={[
+                                                    styles.card,
+                                                    isActive && {
+                                                        opacity: 0.9,
+                                                        shadowColor: "#000",
+                                                        shadowOffset: { width: 0, height: 10 },
+                                                        shadowOpacity: 0.3,
+                                                        shadowRadius: 20,
+                                                        elevation: 10,
+                                                        transform: [{ scale: 1.05 }],
+                                                        zIndex: 1000
+                                                    },
+                                                    isCurrent && {
+                                                        borderWidth: 4,
+                                                        borderColor: item.isUserCharacter ? '#10B981' : item.color || colors.primary
+                                                    },
+                                                    !isCurrent && !isActive && {
+                                                        opacity: 0.8, // Las no actuales un poco más tenues para destacar la actual
+                                                        borderColor: 'transparent',
+                                                        borderWidth: 4, // Mantener ancho para evitar saltos
+                                                    },
+                                                    {
+                                                        backgroundColor: colors.background,
+                                                        marginBottom: 12,
+                                                        padding: 0,
+                                                        overflow: 'hidden',
+                                                    }
+                                                ]}
+                                            >
+                                                {/* Header Banner */}
+                                                <View style={[
+                                                    styles.cardHeaderBanner,
+                                                    {
+                                                        backgroundColor: item.isUserCharacter ? '#10B981' : item.color || colors.primary,
+                                                    }
+                                                ]}>
+                                                    {/* Menu Button - Always on the right */}
+                                                    {!isPlaying && !isRecording && !isSpeaking && !isListening && (
+                                                        <TouchableOpacity
+                                                            onPress={() => setOpenEditMenuLineId(
+                                                                openEditMenuLineId === item.id ? null : item.id
+                                                            )}
+                                                            style={styles.menuButtonAbsolute}
+                                                        >
+                                                            <MoreVertical size={20} color={colors.background} />
+                                                        </TouchableOpacity>
+                                                    )}
+
+                                                    {/* Content */}
+                                                    {openEditMenuLineId === item.id ? (
+                                                        <View style={styles.editMenuInHeader}>
+                                                            {/* Botones de mover mantenidos como accesibilidad */}
+                                                            <TouchableOpacity
+                                                                onPress={() => {
+                                                                    // Necesitaremos adaptar moveLineUp para usar indices globales o ids
+                                                                    moveLineUp(item.id);
+                                                                    setOpenEditMenuLineId(null);
+                                                                }}
+                                                                style={styles.editButtonHorizontal}
+                                                                disabled={isUpdating}
+                                                            >
+                                                                <ChevronUp size={18} color={colors.background} />
+                                                            </TouchableOpacity>
+
+                                                            <TouchableOpacity
+                                                                onPress={() => {
+                                                                    moveLineDown(item.id);
+                                                                    setOpenEditMenuLineId(null);
+                                                                }}
+                                                                style={styles.editButtonHorizontal}
+                                                                disabled={isUpdating}
+                                                            >
+                                                                <ChevronDown size={18} color={colors.background} />
+                                                            </TouchableOpacity>
+
+                                                            <TouchableOpacity
+                                                                onPress={() => {
+                                                                    startEditingLine(item);
+                                                                    setOpenEditMenuLineId(null);
+                                                                }}
+                                                                style={styles.editButtonHorizontal}
+                                                                disabled={isUpdating}
+                                                            >
+                                                                <Edit size={18} color={colors.background} />
+                                                            </TouchableOpacity>
+
+                                                            <TouchableOpacity
+                                                                onPress={() => {
+                                                                    deleteLine(item.id);
+                                                                    setOpenEditMenuLineId(null);
+                                                                }}
+                                                                style={styles.editButtonHorizontal}
+                                                                disabled={isUpdating}
+                                                            >
+                                                                <Trash2 size={18} color={colors.background} />
+                                                            </TouchableOpacity>
+                                                        </View>
+                                                    ) : (
+                                                        <View style={styles.headerCenteredContent}>
+                                                            <Text style={[styles.characterName, { color: colors.background }]}>
+                                                                {item.characterName}
+                                                            </Text>
+                                                            <View style={[styles.badge, { backgroundColor: 'rgba(0,0,0,0.2)' }]}>
+                                                                <Text style={[styles.badgeText, { color: colors.background }]}>
+                                                                    {item.isUserCharacter ? 'TÚ' : 'IA'}
+                                                                </Text>
+                                                            </View>
+                                                        </View>
+                                                    )}
+                                                </View>
+
+                                                <View style={styles.cardContent}>
+                                                    {editingLineId === item.id ? (
+                                                        <View style={styles.editContainer}>
+                                                            <TextInput
+                                                                style={[styles.editInput, { color: colors.text, borderColor: colors.border, backgroundColor: colors.surface }]}
+                                                                value={editedText}
+                                                                onChangeText={setEditedText}
+                                                                multiline
+                                                                autoFocus
+                                                            />
+                                                            <View style={styles.editActions}>
+                                                                <TouchableOpacity onPress={cancelEditing} style={[styles.editActionButton, { backgroundColor: colors.border }]}>
+                                                                    <Text style={{ color: colors.text }}>Cancelar</Text>
+                                                                </TouchableOpacity>
+                                                                <TouchableOpacity onPress={saveEditedLine} style={[styles.editActionButton, { backgroundColor: '#10B981' }]}>
+                                                                    <Text style={{ color: '#FFFFFF' }}>Guardar</Text>
+                                                                </TouchableOpacity>
+                                                            </View>
+                                                        </View>
+                                                    ) : (
+                                                        <>
+                                                            {item.isUserCharacter && hideUserLines ? (
+                                                                <View style={styles.hiddenLineContainer}>
+                                                                    <EyeOff size={32} color={colors.textSecondary} />
+                                                                    <Text style={[styles.hiddenLineText, { color: colors.textSecondary }]}>Línea oculta</Text>
+                                                                </View>
+                                                            ) : (
+                                                                <Text style={[styles.dialogueText, { color: colors.text }]}>
+                                                                    {renderTextWithStageDirections(showStageDirections ? item.text : item.cleanText)}
+                                                                </Text>
+                                                            )}
+                                                        </>
+                                                    )}
+                                                </View>
+
+                                                {/* Status Indicators */}
+                                                {isCurrent && (
+                                                    <View style={{ position: 'absolute', bottom: 10, right: 10, flexDirection: 'row', alignItems: 'center', gap: 5 }}>
+                                                        {(isListening || isRecording) && item.isUserCharacter && (
+                                                            <Mic size={20} color="#EF4444" />
+                                                        )}
+                                                        {(isSpeaking) && !item.isUserCharacter && (
+                                                            <Volume2 size={20} color={colors.primary} />
+                                                        )}
+                                                    </View>
+                                                )}
+                                            </Pressable>
+                                        </ScaleDecorator>
+                                    );
+                                }}
+                            />
+                        </View>
+                    ) : (
+                        <ScrollView
+                            ref={scrollViewRef}
+                            style={styles.content}
+                            contentContainerStyle={styles.contentContainer}
+                        >
+                            {currentLine && (
+                                <View style={styles.cardContainer}>
+                                    {/* Current Card */}
+                                    <View style={[styles.card, { backgroundColor: colors.background, borderColor: currentLine.isUserCharacter ? '#10B981' : currentLine.color || colors.primary, borderWidth: 4, padding: 0, overflow: 'hidden' }]}>
+                                        {/* Header */}
+                                        <View style={[styles.cardHeaderBanner, { backgroundColor: currentLine.isUserCharacter ? '#10B981' : currentLine.color || colors.primary }]}>
+                                            {!isPlaying && !isRecording && !isSpeaking && !isListening && (
+                                                <TouchableOpacity onPress={() => setOpenEditMenuLineId(openEditMenuLineId === currentLine.id ? null : currentLine.id)} style={styles.menuButtonAbsolute}>
+                                                    <MoreVertical size={20} color={colors.background} />
+                                                </TouchableOpacity>
+                                            )}
+                                            {openEditMenuLineId === currentLine.id ? (
+                                                <View style={styles.editMenuInHeader}>
+                                                    <TouchableOpacity onPress={() => { startEditingLine(currentLine); setOpenEditMenuLineId(null); }} style={styles.editButtonHorizontal}><Edit size={18} color={colors.background} /></TouchableOpacity>
+                                                    <TouchableOpacity onPress={() => { deleteLine(currentLine.id); setOpenEditMenuLineId(null); }} style={styles.editButtonHorizontal}><Trash2 size={18} color={colors.background} /></TouchableOpacity>
+                                                </View>
+                                            ) : (
+                                                <View style={styles.headerCenteredContent}>
+                                                    <Text style={[styles.characterName, { color: colors.background }]}>{currentLine.characterName}</Text>
+                                                    <View style={[styles.badge, { backgroundColor: 'rgba(0,0,0,0.2)' }]}><Text style={[styles.badgeText, { color: colors.background }]}>{currentLine.isUserCharacter ? 'TÚ' : 'IA'}</Text></View>
+                                                </View>
+                                            )}
+                                        </View>
+                                        {/* Content */}
+                                        <View style={styles.cardContent}>
+                                            {editingLineId === currentLine.id ? (
+                                                <View style={styles.editContainer}>
+                                                    <TextInput style={[styles.editInput, { color: colors.text, borderColor: colors.border, backgroundColor: colors.surface }]} value={editedText} onChangeText={setEditedText} multiline autoFocus />
+                                                    <View style={styles.editActions}>
+                                                        <TouchableOpacity onPress={cancelEditing} style={[styles.editActionButton, { backgroundColor: colors.border }]}><Text style={{ color: colors.text }}>Cancelar</Text></TouchableOpacity>
+                                                        <TouchableOpacity onPress={saveEditedLine} style={[styles.editActionButton, { backgroundColor: '#10B981' }]}><Text style={{ color: '#FFFFFF' }}>Guardar</Text></TouchableOpacity>
+                                                    </View>
+                                                </View>
+                                            ) : (
+                                                <>
+                                                    {currentLine.isUserCharacter && hideUserLines ? (
+                                                        <View style={styles.hiddenLineContainer}>
+                                                            <EyeOff size={32} color={colors.textSecondary} />
+                                                            <Text style={[styles.hiddenLineText, { color: colors.textSecondary }]}>Línea oculta</Text>
+                                                        </View>
+                                                    ) : (
+                                                        <Text style={[styles.dialogueText, { color: colors.text }]}>{renderTextWithStageDirections(showStageDirections ? currentLine.text : currentLine.cleanText)}</Text>
+                                                    )}
+                                                </>
+                                            )}
+                                        </View>
+                                        {/* Status Indicators */}
+                                        {(isListening || isRecording) && currentLine.isUserCharacter && (<View style={styles.statusRow}><Mic size={24} color="#EF4444" /><Text style={[styles.statusText, { color: '#EF4444', fontWeight: '700' }]}>Escuchando...</Text></View>)}
+                                        {isTranscribing && currentLine.isUserCharacter && (<View style={styles.statusRow}><ActivityIndicator size="small" color={colors.primary} /><Text style={[styles.statusText, { color: colors.textSecondary }]}>Procesando...</Text></View>)}
+                                        {isSpeaking && !currentLine.isUserCharacter && (<View style={styles.statusRow}><Volume2 size={20} color={colors.primary} /><Text style={[styles.statusText, { color: colors.textSecondary }]}>Reproduciendo...</Text></View>)}
+                                    </View>
+
+                                    {/* Next Cards */}
+                                    {dialogueLines.slice(currentIndex + 1).map((line, index) => (
+                                        <View key={line.id} style={[styles.card, styles.nextCard, { backgroundColor: colors.background, borderColor: line.isUserCharacter ? '#10B981' : line.color || colors.primary, borderWidth: 4, opacity: 0.5, padding: 0, overflow: 'hidden', marginTop: index === 0 ? 16 : 12 }]}>
+                                            <View style={[styles.cardHeaderBanner, { backgroundColor: line.isUserCharacter ? '#10B981' : line.color || colors.primary }]}>
+                                                <Text style={[styles.characterName, { color: colors.background }]}>{line.characterName}</Text>
+                                                <View style={[styles.badge, { backgroundColor: 'rgba(0,0,0,0.2)' }]}><Text style={[styles.badgeText, { color: colors.background }]}>{line.isUserCharacter ? 'TÚ' : 'IA'}</Text></View>
+                                            </View>
+                                            <View style={styles.cardContent}>
+                                                {line.isUserCharacter && hideUserLines ? (
+                                                    <View style={styles.hiddenLineContainer}>
+                                                        <EyeOff size={32} color={colors.textSecondary} />
+                                                        <Text style={[styles.hiddenLineText, { color: colors.textSecondary, fontSize: rf(12) }]}>Oculta</Text>
+                                                    </View>
+                                                ) : (
+                                                    <Text style={[styles.dialogueText, { color: colors.text }]} numberOfLines={2}>{line.text}</Text>
+                                                )}
+                                            </View>
+                                        </View>
+                                    ))}
+                                </View>
+                            )}
+                        </ScrollView>
+                    )}
+
+                    {/* Footer Controls */}
+                    <View style={[styles.footer, { backgroundColor: colors.surface, borderTopColor: colors.border }]}>
+                        <View style={styles.progressContainer}>
+                            <Text style={[styles.progressText, { color: colors.textSecondary }]}>
+                                {progressText}
+                            </Text>
+                        </View>
+
+                        <View style={styles.controls}>
+                            <TouchableOpacity
+                                onPress={handlePrevious}
+                                disabled={currentIndex === 0}
+                                style={[styles.controlButton, currentIndex === 0 && styles.controlButtonDisabled]}
+                            >
+                                <SkipBack size={24} color={currentIndex === 0 ? colors.textSecondary : colors.text} />
+                            </TouchableOpacity>
+
+                            <TouchableOpacity
+                                onPress={handlePlayPause}
+                                style={[styles.playButton, { backgroundColor: colors.primary }]}
+                            >
+                                {isPlaying ? (
+                                    <Pause size={28} color="#FFFFFF" />
+                                ) : (
+                                    <Play size={28} color="#FFFFFF" />
+                                )}
+                            </TouchableOpacity>
+
+                            <TouchableOpacity
+                                onPress={handleNext}
+                                disabled={currentIndex === dialogueLines.length - 1 && !loopEnabled}
+                                style={[
+                                    styles.controlButton,
+                                    (currentIndex === dialogueLines.length - 1 && !loopEnabled) && styles.controlButtonDisabled
+                                ]}
+                            >
+                                <SkipForward
+                                    size={24}
+                                    color={(currentIndex === dialogueLines.length - 1 && !loopEnabled) ? colors.textSecondary : colors.text}
+                                />
+                            </TouchableOpacity>
+
+                            <TouchableOpacity
+                                onPress={() => setLoopEnabled(prev => !prev)}
+                                style={[
+                                    styles.loopButton,
+                                    { backgroundColor: loopEnabled ? colors.primary : colors.input }
+                                ]}
+                            >
+                                <Repeat size={20} color={loopEnabled ? '#FFFFFF' : colors.text} />
+                            </TouchableOpacity>
+
+                            <TouchableOpacity
+                                onPress={handleRecButton}
+                                style={[
+                                    styles.recButton,
+                                    { backgroundColor: isRecording ? '#EF4444' : colors.input }
+                                ]}
+                            >
+                                {isRecording ? (
+                                    <View style={styles.recSquare} />
+                                ) : (
+                                    <Circle size={20} color={colors.error} fill={colors.error} />
+                                )}
+                            </TouchableOpacity>
+                        </View>
+
+                        {/* Timer removed as it was for session recording. 
                     We could add a "REC" indicator or similar if desired. 
                     For now, the red button indicates recording mode. 
                 */}
-            </View>
-        </SafeAreaView>
+                    </View>
+                </View>
+            </SafeAreaView >
+        </GestureHandlerRootView >
     );
 }
 
@@ -2527,8 +3065,21 @@ const styles = StyleSheet.create({
         justifyContent: 'center',
         alignItems: 'center',
     },
+    editContainer: {
+        width: '100%',
+        maxHeight: '80%', // Limit to 80% of card height
+        flex: 1,
+    },
+    editScrollView: {
+        flex: 1,
+        maxHeight: rp(200), // Maximum height for the scroll area
+    },
+    editScrollContent: {
+        flexGrow: 1,
+    },
     editInput: {
         minHeight: rp(100),
+        maxHeight: rp(200), // Prevent infinite growth
         borderWidth: rp(2),
         borderRadius: rp(12),
         padding: rp(16),
@@ -2540,20 +3091,25 @@ const styles = StyleSheet.create({
     editActions: {
         flexDirection: 'row',
         gap: rp(12),
-        marginTop: rp(16),
-        justifyContent: 'flex-end',
+        marginTop: rp(12),
+        paddingTop: rp(12),
+        justifyContent: 'space-between', // Changed from flex-end to space-between
         width: '100%',
+        borderTopWidth: 1,
+        borderTopColor: 'rgba(255, 255, 255, 0.1)',
     },
     editActionButton: {
         flexDirection: 'row',
         alignItems: 'center',
         gap: rp(8),
-        paddingVertical: rp(12),
-        paddingHorizontal: rp(20),
+        paddingVertical: rp(10),
+        paddingHorizontal: rp(16),
         borderRadius: rp(10),
+        flex: 1, // Make buttons equal width
+        justifyContent: 'center',
     },
     editActionText: {
-        fontSize: rf(16),
+        fontSize: rf(14),
         fontWeight: '600',
     },
     // Add/Header Button Styles
@@ -2632,5 +3188,28 @@ const styles = StyleSheet.create({
         marginTop: rp(12),
         fontSize: rf(14),
         fontWeight: '500',
+    },
+    floatingSaveButton: {
+        position: 'absolute',
+        bottom: rp(100), // Above footer
+        alignSelf: 'center',
+        backgroundColor: '#10B981',
+        flexDirection: 'row',
+        alignItems: 'center',
+        paddingHorizontal: rp(24),
+        paddingVertical: rp(12),
+        borderRadius: 30,
+        gap: 8,
+        shadowColor: "#000",
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.3,
+        shadowRadius: 4.65,
+        elevation: 8,
+        zIndex: 2000,
+    },
+    floatingSaveButtonText: {
+        color: '#FFFFFF',
+        fontSize: rf(16),
+        fontWeight: 'bold',
     },
 });

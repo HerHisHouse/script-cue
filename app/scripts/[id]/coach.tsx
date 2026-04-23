@@ -32,7 +32,8 @@ import {
   Info,
   AlertCircle,
   Square,
-  CheckSquare
+  CheckSquare,
+  TrendingDown
 } from 'lucide-react-native';
 import { Audio, Video, ResizeMode } from 'expo-av';
 import { supabase } from '@/utils/supabase';
@@ -50,6 +51,17 @@ const SCREEN_WIDTH = Dimensions.get('window').width;
 
 // Define tabs
 type TabType = 'feedback' | 'suggestions' | 'comparison' | 'exercises';
+
+// Mapeo de etiquetas con tildes para visualización
+const feedbackLabels: Record<string, string> = {
+  ritmo: 'RITMO',
+  diccion: 'DICCIÓN',
+  intencion: 'INTENCIÓN',
+  emociones: 'EMOCIÓN',
+  proyeccion: 'PROYECCIÓN',
+  naturalidad: 'NATURALIDAD',
+  pausas: 'PAUSAS'
+};
 
 export default function CoachModeScreen() {
   const router = useRouter();
@@ -202,6 +214,7 @@ export default function CoachModeScreen() {
         recordingId: selectedRecording.id,
         userId: user.id,
         scriptId: id,
+        sceneId: selectedRecording.scene_id,
         recordingType: selectedRecording.type || 'audio'
       };
       console.log('[DEBUG] Request body:', JSON.stringify(requestBody, null, 2));
@@ -363,7 +376,6 @@ export default function CoachModeScreen() {
       <ChevronRight size={20} color={colors.textSecondary} />
     </TouchableOpacity>
   );
-
   const renderAnalysisContent = () => {
     if (!analysis) return null;
 
@@ -372,11 +384,15 @@ export default function CoachModeScreen() {
         return (
           <View style={styles.tabContent}>
             <View style={[styles.scoreCard, { backgroundColor: colors.surface }]}>
-              <Text style={[styles.sectionTitle, { color: colors.primary }]}>Análisis Técnico-Emocional</Text>
-              {Object.entries(analysis.feedback || {}).map(([key, value]: [string, any]) => (
-                <View key={key} style={styles.feedbackRow}>
-                  <Text style={[styles.feedbackLabel, { color: colors.textSecondary }]}>{key.charAt(0).toUpperCase() + key.slice(1)}</Text>
-                  <Text style={[styles.feedbackValue, { color: colors.text }]}>{value}</Text>
+              {Object.entries(analysis.feedback || {}).map(([key, value]: [string, any], index: number) => (
+                <View key={key} style={styles.verticalFeedbackItem}>
+                  {index > 0 && <View style={[styles.horizontalDivider, { backgroundColor: colors.border }]} />}
+                  <Text style={[styles.feedbackLabelVertical, { color: colors.primary }]}>
+                    {feedbackLabels[key] || key.toUpperCase()}
+                  </Text>
+                  <Text style={[styles.feedbackValueVertical, { color: colors.text }]}>
+                    {value}
+                  </Text>
                 </View>
               ))}
             </View>
@@ -403,14 +419,50 @@ export default function CoachModeScreen() {
           </View>
         );
       case 'comparison':
+        const evol = analysis.evolucion;
+        const hasHistory = evol && Object.keys(evol).length > 0;
+
         return (
           <View style={styles.tabContent}>
             <View style={[styles.scoreCard, { backgroundColor: colors.surface }]}>
-              <Text style={[styles.sectionTitle, { color: colors.primary }]}>Evolución</Text>
-              <Text style={[styles.bulletText, { color: colors.text }]}>
-                {typeof analysis.comparacion === 'string'
-                  ? analysis.comparacion
-                  : JSON.stringify(analysis.comparacion, null, 2) || "No hay suficientes datos para comparar aún."}
+              <Text style={[styles.sectionTitle, { color: colors.primary, marginBottom: 16 }]}>
+                {hasHistory ? "Evolución comparativa" : "Primer Análisis"}
+              </Text>
+              
+              {hasHistory ? (
+                <View style={styles.comparisonGrid}>
+                  {Object.entries(evol).map(([key, trend]: [string, any]) => (
+                    <View key={key} style={styles.comparisonRow}>
+                      <Text style={[styles.comparisonLabel, { color: colors.textSecondary }]}>
+                        {feedbackLabels[key] || key.toUpperCase()}
+                      </Text>
+                      <View style={styles.trendContainer}>
+                        {trend === 'mejorado' && <TrendingUp size={18} color="#4ADE80" />}
+                        {trend === 'empeorado' && <TrendingDown size={18} color="#F87171" />}
+                        {trend === 'igual' && <RefreshCw size={18} color="#FBBF24" />}
+                        <Text style={[
+                            styles.trendText, 
+                            { color: trend === 'mejorado' ? "#4ADE80" : trend === 'empeorado' ? "#F87171" : "#FBBF24" }
+                        ]}>
+                          {trend.toUpperCase()}
+                        </Text>
+                      </View>
+                    </View>
+                  ))}
+                </View>
+              ) : (
+                <View style={styles.emptyComparison}>
+                  <Activity size={40} color={colors.textSecondary} style={{ opacity: 0.3, marginBottom: 12 }} />
+                  <Text style={[styles.emptyComparisonText, { color: colors.textSecondary }]}>
+                    No hay datos de tomas anteriores para esta escena.
+                  </Text>
+                </View>
+              )}
+
+              <View style={[styles.horizontalDivider, { backgroundColor: colors.border, marginVertical: 20 }]} />
+              
+              <Text style={[styles.comparisonText, { color: colors.text, fontStyle: hasHistory ? 'normal' : 'italic' }]}>
+                {analysis.comparacion}
               </Text>
             </View>
           </View>
@@ -803,71 +855,126 @@ const styles = StyleSheet.create({
   },
   tabText: { fontSize: rf(14), fontWeight: '600' },
   tabContent: { padding: rp(20) },
+  scrollIndicator: { alignItems: 'center', marginBottom: 8 },
+  scrollHint: { fontSize: rf(10), opacity: 0.5 },
 
-  // Feedback
+  // Feedback Vertical
+  verticalFeedbackItem: {
+    paddingVertical: rp(12),
+    width: '100%',
+  },
+  horizontalDivider: {
+    height: 1,
+    width: '100%',
+    marginBottom: 16,
+    opacity: 0.3,
+  },
+  feedbackLabelVertical: {
+    fontSize: rf(13),
+    fontWeight: '800',
+    letterSpacing: 1.2,
+    marginBottom: 8,
+    textTransform: 'uppercase'
+  },
+  feedbackValueVertical: {
+    fontSize: rf(15),
+    lineHeight: 22,
+    textAlign: 'left',
+  },
+
   scoreCard: {
     padding: rp(20),
-    borderRadius: 12,
+    borderRadius: 16,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 10,
+    elevation: 2,
   },
-  sectionTitle: { fontSize: rf(18), fontWeight: '700', marginBottom: 12 },
+  sectionTitle: { fontSize: rf(16), fontWeight: '700', marginBottom: 16 },
   feedbackRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     paddingVertical: rp(8),
     borderBottomWidth: 0.5,
-    borderBottomColor: 'rgba(150,150,150,0.2)',
+    borderBottomColor: 'rgba(0,0,0,0.05)',
   },
-  feedbackLabel: { fontSize: rf(15) },
-  feedbackValue: { fontSize: rf(15), fontWeight: '600', maxWidth: '60%', textAlign: 'right' },
-
-  bulletRow: {
-    flexDirection: 'row',
-    gap: 10,
-    marginBottom: 12,
-  },
-  bulletText: { flex: 1, fontSize: rf(15), lineHeight: 22 },
-
-  // Exercises
+  feedbackLabel: { fontSize: rf(14), fontWeight: '500' },
+  feedbackValue: { fontSize: rf(14), flex: 1, textAlign: 'right', marginLeft: 16 },
+  bulletRow: { flexDirection: 'row', gap: 10, marginBottom: 12 },
+  bulletText: { fontSize: rf(14), lineHeight: 20, flex: 1 },
   exerciseCard: {
     padding: rp(16),
     borderRadius: 12,
     marginBottom: 12,
-    borderLeftWidth: 4,
-    borderLeftColor: '#3B82F6',
   },
-  exerciseHeader: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 6 },
+  exerciseHeader: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 8 },
   exerciseTitle: { fontSize: rf(16), fontWeight: '600' },
   exerciseDesc: { fontSize: rf(14), lineHeight: 20 },
 
+  // Comparison Styles
+  comparisonGrid: {
+    gap: 12,
+  },
+  comparisonRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: 4,
+  },
+  comparisonLabel: {
+    fontSize: rf(12),
+    fontWeight: '600',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
+  trendContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    minWidth: 100,
+    justifyContent: 'flex-end',
+  },
+  trendText: {
+    fontSize: rf(11),
+    fontWeight: '800',
+  },
+  comparisonText: {
+    fontSize: rf(15),
+    lineHeight: 22,
+  },
+  emptyComparison: {
+    alignItems: 'center',
+    paddingVertical: 20,
+  },
+  emptyComparisonText: {
+    fontSize: rf(13),
+    textAlign: 'center',
+    lineHeight: 18,
+  },
+
   secondaryButton: {
     flexDirection: 'row',
-    justifyContent: 'center',
     alignItems: 'center',
+    justifyContent: 'center',
     gap: 8,
-    padding: rp(16),
+    paddingVertical: rp(14),
     borderRadius: 12,
-    borderWidth: 1,
+    borderWidth: 1.5,
   },
-  secondaryButtonText: { fontSize: rf(16), fontWeight: '600' },
+  secondaryButtonText: { fontSize: rf(15), fontWeight: '700' },
 
-  // Modal styles
+  // Modal
   modalOverlay: {
     flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.7)',
+    backgroundColor: 'rgba(0,0,0,0.5)',
     justifyContent: 'center',
-    alignItems: 'center',
     padding: rp(20),
   },
   modalContent: {
-    width: '100%',
-    maxWidth: 400,
-    borderRadius: 16,
+    borderRadius: 24,
     padding: rp(24),
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 12,
-    elevation: 8,
+    alignItems: 'center',
   },
   modalHeader: {
     alignItems: 'center',
@@ -877,44 +984,31 @@ const styles = StyleSheet.create({
     fontSize: rf(22),
     fontWeight: '700',
     marginTop: 12,
-    textAlign: 'center',
   },
   modalText: {
-    fontSize: rf(16),
-    lineHeight: 24,
+    fontSize: rf(15),
     textAlign: 'center',
+    lineHeight: 22,
   },
   checkboxRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 12,
+    gap: 10,
     marginTop: 24,
-    marginBottom: 20,
-    paddingVertical: rp(8),
+    marginBottom: 24,
   },
   checkboxText: {
-    fontSize: rf(15),
-    flex: 1,
+    fontSize: rf(14),
   },
   modalButton: {
+    width: '100%',
     paddingVertical: rp(16),
-    borderRadius: 12,
+    borderRadius: 16,
     alignItems: 'center',
   },
   modalButtonText: {
-    color: '#FFFFFF',
-    fontSize: rf(17),
+    color: '#fff',
+    fontSize: rf(16),
     fontWeight: '700',
-  },
-  scrollIndicator: {
-    paddingVertical: rp(8),
-    alignItems: 'center',
-    borderBottomWidth: 1,
-    borderBottomColor: 'rgba(150,150,150,0.1)',
-  },
-  scrollHint: {
-    fontSize: rf(12),
-    fontStyle: 'italic',
-    opacity: 0.6,
   },
 });
