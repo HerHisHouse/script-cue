@@ -591,8 +591,14 @@ app.post('/analyze-recording', async (req, res) => {
                         })
                         .join('\n');
 
-                    scriptContext = `\n\nCONTEXTO DEL GUION:\n${scriptLines}\n\nEl usuario interpreta al personaje: ${userCharacterName}`;
-                    console.log('[Coach] Script context added, length:', scriptContext.length);
+                    // ISOLATION STRATEGY: List only user lines to prevent confusion
+                    const userLinesOnly = dialogues
+                        .filter(d => characterMap.get(d.character_id) === userCharacterName)
+                        .map((d, i) => `${i + 1}. "${d.line_text}"`)
+                        .join('\n');
+
+                    scriptContext = `\n\nCONTEXTO COMPLETO DEL GUION:\n${scriptLines}\n\nLÍNEAS ESPECÍFICAS DE ${userCharacterName} (A ANALIZAR EXCLUSIVAMENTE):\n${userLinesOnly}\n\nEl usuario interpreta al personaje: ${userCharacterName}`;
+                    console.log('[Coach] Script context with isolation added.');
                 }
             } catch (e) {
                 console.error('[Coach] Error fetching script context:', e);
@@ -646,7 +652,11 @@ Tu análisis se basa en estos principios:
 - Las emociones se trabajan desde la circunstancia, no desde el resultado.
 - El silencio y las pausas son parte de la interpretación, no errores a rellenar.
 
-CRÍTICO: El audio contiene voces de IA intercaladas con la voz del actor. Las voces de IA suenan sintéticas y artificiales. IGNORA COMPLETAMENTE cualquier intervención que no sea la voz humana natural. Analiza EXCLUSIVAMENTE las intervenciones del personaje ${userCharacterName} interpretadas por una voz humana real. Si no puedes distinguirlas con certeza, céntrate solo en los momentos donde la voz suena claramente humana y orgánica.
+REGLA DE ORO (INCUMPLIMIENTO RESULTA EN FALLO DE TAREA): 
+El audio contiene voces de IA intercaladas con la voz del actor. Las voces de IA son sintéticas y NO deben ser analizadas. 
+Analiza EXCLUSIVAMENTE las intervenciones del personaje "${userCharacterName}" que coincidan con la lista de "LÍNEAS ESPECÍFICAS" proporcionada abajo. 
+
+Cualquier observación sobre ritmo, dicción o intención en frases que NO sean de "${userCharacterName}" es un error grave. Céntrate únicamente en la voz humana que interpreta esas líneas.
 
 ${scriptContext}
 
@@ -655,18 +665,18 @@ ${previousTakeInfo}
 Devuelve SOLO JSON válido con esta estructura exacta, sin markdown ni bloques de código:
 {
   "feedback": {
-    "ritmo": "Análisis técnico del tempo, aceleraciones, frenadas y su relación con la dramaturgia de la escena. Sé específico.",
-    "diccion": "Análisis de articulación, vocales, consonantes finales y proyección. Indica momentos concretos donde falla.",
-    "intencion": "Análisis del objetivo activo del personaje. ¿Se percibe qué quiere conseguir en cada línea? ¿Es específico o genérico?",
-    "emociones": "Análisis de la verdad emocional. ¿Viene de la circunstancia o parece impuesto? ¿Hay momentos de quiebre o todo es plano?",
-    "proyeccion": "Análisis del uso de la voz, volumen y energía. ¿Llega? ¿Se pierde?",
-    "naturalidad": "Grado de organicidad. ¿Parece vivido o recitado? Señala líneas concretas.",
-    "pausas": "Uso del silencio. ¿Las pausas son activas o son huecos vacíos? ¿Respira el personaje?"
+    "ritmo": "Análisis técnico del tempo de las líneas de ${userCharacterName}.",
+    "diccion": "Análisis de articulación y proyección en las líneas de ${userCharacterName}.",
+    "intencion": "Análisis del objetivo activo de ${userCharacterName}.",
+    "emociones": "Análisis de la verdad emocional de ${userCharacterName}.",
+    "proyeccion": "Análisis del uso de la voz de ${userCharacterName}.",
+    "naturalidad": "Grado de organicidad de ${userCharacterName}.",
+    "pausas": "Uso del silencio por parte de ${userCharacterName}."
   },
   "sugerencias": [
-    "Sugerencia técnica y accionable 1 (no genérica)",
-    "Sugerencia técnica y accionable 2",
-    "Sugerencia técnica y accionable 3"
+    "Sugerencia técnica 1",
+    "Sugerencia técnica 2",
+    "Sugerencia técnica 3"
   ],
   "evolucion": {
     "ritmo": "mejorado | igual | empeorado",
@@ -675,17 +685,17 @@ Devuelve SOLO JSON válido con esta estructura exacta, sin markdown ni bloques d
     "emociones": "mejorado | igual | empeorado",
     "naturalidad": "mejorado | igual | empeorado"
   },
-  "comparacion": "Si hay toma anterior: comparativa honesta ítem por ítem. Si no hay toma anterior: mensaje explicando que esta es la primera toma analizada.",
-  "recomendaciones_personaje": "Consejos específicos para abordar a ${userCharacterName} basados en lo escuchado.",
+  "comparacion": "Si hay toma anterior: comparativa honesta de la evolución de ${userCharacterName}. Si no hay toma anterior: mensaje de bienvenida.",
+  "recomendaciones_personaje": "Consejos específicos para abordar a ${userCharacterName}.",
   "ejercicios": [
     {
       "nombre": "Nombre del ejercicio",
-      "descripcion": "Instrucciones detalladas y concretas"
+      "descripcion": "Instrucciones detalladas"
     }
   ]
 }
 
-Idioma: Español. Tono: directo, técnico, honesto. Sin eufemismos. Sin frases motivacionales vacías.`;
+Idioma: Español. Tono: directo, técnico, honesto. Sin eufemismos.`;
 
         const openAIResponse = await fetch('https://api.openai.com/v1/chat/completions', {
             method: 'POST',
