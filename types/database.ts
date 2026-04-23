@@ -121,6 +121,7 @@ export interface Recording {
   hidden?: boolean;
   type?: 'audio' | 'video';
   scene_id?: string | null;
+  character_id?: string | null;
   created_at: string;
 }
 

@@ -475,7 +475,7 @@ app.post('/analyze-recording', async (req, res) => {
     console.log('[Coach] Request received at:', new Date().toISOString());
     console.log('[Coach] Body keys:', Object.keys(req.body));
 
-    const { recordingPath, userId, scriptId, sceneId, recordingType, recordingId } = req.body;
+    const { recordingPath, userId, scriptId, sceneId, recordingType, recordingId, characterId, compareWithId } = req.body;
 
     if (!recordingPath || !userId) {
         console.log('[Coach] ERROR: Missing required fields');
@@ -607,17 +607,29 @@ app.post('/analyze-recording', async (req, res) => {
 
         // 5. Fetch previous analysis for comparison
         let previousTakeInfo = "";
-        if (scriptId && sceneId) {
+        if (userId && scriptId && sceneId) {
             try {
-                console.log(`[Coach] Buscando análisis previo para Escena: ${sceneId}`);
-                const { data: prevFeedbacks } = await supabase
-                    .from('coach_feedback')
-                    .select('feedback, created_at, recordings!inner(script_id, scene_id)')
-                    .eq('user_id', userId)
-                    .eq('recordings.script_id', scriptId)
-                    .eq('recordings.scene_id', sceneId)
-                    .order('created_at', { ascending: false })
-                    .limit(1);
+                let prevFeedbacks;
+
+                if (compareWithId) {
+                    console.log(`[Coach] Manual comparison requested with recording: ${compareWithId}`);
+                    const { data } = await supabase
+                        .from('coach_feedback')
+                        .select('feedback, created_at')
+                        .eq('recording_id', compareWithId);
+                    prevFeedbacks = data;
+                } else {
+                    console.log(`[Coach] Buscando análisis previo automático para Escena: ${sceneId}`);
+                    const { data } = await supabase
+                        .from('coach_feedback')
+                        .select('feedback, created_at, recordings!inner(script_id, scene_id)')
+                        .eq('user_id', userId)
+                        .eq('recordings.script_id', scriptId)
+                        .eq('recordings.scene_id', sceneId)
+                        .order('created_at', { ascending: false })
+                        .limit(1);
+                    prevFeedbacks = data;
+                }
 
                 if (prevFeedbacks && prevFeedbacks.length > 0) {
                     const prev = prevFeedbacks[0].feedback;
@@ -635,7 +647,8 @@ INSTRUCCIÓN DE COMPARACIÓN:
 Compara esta nueva toma con la anterior. En el campo 'comparacion' del JSON indica específicamente qué ha mejorado, qué ha empeorado y qué sigue igual, mencionando momentos concretos del audio. Sé honesto y técnico.`;
                     console.log('[Coach] Análisis previo encontrado e inyectado.');
                 } else {
-                    previousTakeInfo = `\nEsta es la primera toma analizada de esta escena. En el campo 'comparacion' indica: "Esta es tu primera toma analizada de esta escena. Graba una nueva toma tras practicar con este feedback para ver tu evolución."`;
+                    previousTakeInfo = `\nEsta es la primera toma analizada de esta escena O no se ha seleccionado una toma previa válida. INDICA QUE ES EL PRIMER ANÁLISIS. DEJA EL OBJETO 'evolucion' COMPLETAMENTE VACÍO: {} - NO RELLENES CON 'IGUAL'.`;
+                    console.log('[Coach] No previous feedback found for this context.');
                 }
             } catch (e) {
                 console.error('[Coach] Error buscando historial:', e);
@@ -685,7 +698,8 @@ Devuelve SOLO JSON válido con esta estructura exacta, sin markdown ni bloques d
     "emociones": "mejorado | igual | empeorado",
     "naturalidad": "mejorado | igual | empeorado"
   },
-  "comparacion": "Si hay toma anterior: comparativa honesta de la evolución de ${userCharacterName}. Si no hay toma anterior: mensaje de bienvenida.",
+  "AVISO_PROMPT": "SI NO HAY TOMA ANTERIOR, DEJA EL OBJETO 'evolucion' COMPLETAMENTE VACÍO: {} - NO RELLENES CON 'IGUAL'.",
+  "comparacion": "Si hay toma anterior: comparativa técnica detallada. Si no hay toma anterior: mensaje animando a comparar con otra toma más adelante.",
   "recomendaciones_personaje": "Consejos específicos para abordar a ${userCharacterName}.",
   "ejercicios": [
     {

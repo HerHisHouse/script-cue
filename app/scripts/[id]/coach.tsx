@@ -75,6 +75,7 @@ export default function CoachModeScreen() {
   const [analysis, setAnalysis] = useState<any | null>(null);
   const [analyzing, setAnalyzing] = useState(false);
   const [activeTab, setActiveTab] = useState<TabType>('feedback');
+  const [comparingWith, setComparingWith] = useState<string | null>(null);
   const [playbackStatus, setPlaybackStatus] = useState<any>(null);
   const [sound, setSound] = useState<Audio.Sound | null>(null);
   const [showDisclaimer, setShowDisclaimer] = useState(false);
@@ -192,30 +193,29 @@ export default function CoachModeScreen() {
   // I will add the import in a separate tool call or just use require if possible? No, require is messy for types.
   // I will assume I can update imports in a separate call. I'll do that first.
 
-  async function startAnalysis() {
+  async function startAnalysis(compareWithId?: string) {
     if (!selectedRecording || !user) return;
 
     setAnalyzing(true);
+    if (compareWithId) setComparingWith(compareWithId);
+    else setComparingWith(null);
+
     try {
       const renderUrl = process.env.EXPO_PUBLIC_RENDER_SERVER_URL || 'https://script-cue-merge-server.onrender.com';
-
-      console.log('Requesting analysis from:', renderUrl);
-      console.log('Recording path:', selectedRecording.audio_url);
-      console.log('Recording ID:', selectedRecording.id);
-      console.log('User ID:', user.id);
 
       // Create abort controller for timeout
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 300000); // 5 minutes
 
-      console.log('[DEBUG] About to send fetch request...');
       const requestBody = {
         recordingPath: selectedRecording.audio_url,
         recordingId: selectedRecording.id,
         userId: user.id,
         scriptId: id,
         sceneId: selectedRecording.scene_id,
-        recordingType: selectedRecording.type || 'audio'
+        recordingType: selectedRecording.type || 'audio',
+        characterId: selectedRecording.character_id,
+        compareWithId: compareWithId
       };
       console.log('[DEBUG] Request body:', JSON.stringify(requestBody, null, 2));
 
@@ -418,16 +418,16 @@ export default function CoachModeScreen() {
             )}
           </View>
         );
-      case 'comparison':
-        const evol = analysis.evolucion;
-        const hasHistory = evol && Object.keys(evol).length > 0;
+  case 'comparison':
+    const evol = analysis.evolucion;
+    const hasHistory = evol && Object.keys(evol).length > 0;
 
-        return (
-          <View style={styles.tabContent}>
-            <View style={[styles.scoreCard, { backgroundColor: colors.surface }]}>
-              <Text style={[styles.sectionTitle, { color: colors.primary, marginBottom: 16 }]}>
-                {hasHistory ? "Evolución comparativa" : "Primer Análisis"}
-              </Text>
+    return (
+      <View style={styles.tabContent}>
+        <View style={[styles.scoreCard, { backgroundColor: colors.surface }]}>
+          <Text style={[styles.sectionTitle, { color: colors.primary, marginBottom: 16 }]}>
+            {hasHistory ? "Evolución comparativa" : "Comparar Interpretación"}
+          </Text>
               
               {hasHistory ? (
                 <>
@@ -456,14 +456,37 @@ export default function CoachModeScreen() {
               ) : (
                 <View style={styles.emptyComparison}>
                   <Activity size={40} color={colors.textSecondary} style={{ opacity: 0.3, marginBottom: 12 }} />
-                  <Text style={[styles.emptyComparisonText, { color: colors.textSecondary }]}>
-                    Esta es tu primera toma analizada de esta escena.
+                  <Text style={[styles.emptyComparisonText, { color: colors.textSecondary, marginBottom: 16 }]}>
+                    Esta es tu primera toma analizada de esta escena. ¿Quieres compararla con otra grabación?
                   </Text>
+                  
+                  {recordings.filter(r => r.id !== selectedRecording?.id && r.scene_id === selectedRecording?.scene_id).length > 0 ? (
+                    <View style={{ width: '100%', gap: 8 }}>
+                      {recordings
+                        .filter(r => r.id !== selectedRecording?.id && r.scene_id === selectedRecording?.scene_id)
+                        .map(r => (
+                          <TouchableOpacity
+                            key={r.id}
+                            style={[styles.comparisonOption, { backgroundColor: colors.input, borderColor: colors.border }]}
+                            onPress={() => startAnalysis(r.id)}
+                          >
+                            <Repeat size={16} color={colors.primary} />
+                            <Text style={[styles.comparisonOptionText, { color: colors.text }]}>
+                              {new Date(r.created_at).toLocaleDateString()} - {new Date(r.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                            </Text>
+                          </TouchableOpacity>
+                        ))}
+                    </View>
+                  ) : (
+                    <Text style={{ fontSize: rf(12), color: colors.textSecondary, fontStyle: 'italic', textAlign: 'center' }}>
+                      No hay otras grabaciones de la misma escena para comparar.
+                    </Text>
+                  )}
                 </View>
               )}
 
               {!analysis.feedback?.error && (
-                <Text style={[styles.comparisonText, { color: colors.text, fontStyle: hasHistory ? 'normal' : 'italic' }]}>
+                <Text style={[styles.comparisonText, { color: colors.text, fontStyle: hasHistory ? 'normal' : 'italic', marginTop: hasHistory ? 0 : 20 }]}>
                   {analysis.comparacion}
                 </Text>
               )}
@@ -642,7 +665,7 @@ export default function CoachModeScreen() {
 
               <TouchableOpacity
                 style={[styles.analyzeButton, { backgroundColor: colors.primary }]}
-                onPress={startAnalysis}
+                onPress={() => startAnalysis()}
                 disabled={analyzing}
               >
                 {analyzing ? (
@@ -721,7 +744,7 @@ export default function CoachModeScreen() {
 
               <TouchableOpacity
                 style={[styles.secondaryButton, { borderColor: 'transparent', marginTop: 8 }]}
-                onPress={startAnalysis}
+                onPress={() => startAnalysis()}
                 disabled={analyzing}
               >
                 {analyzing ? (
@@ -1013,5 +1036,17 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontSize: rf(16),
     fontWeight: '700',
+  },
+  comparisonOption: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    padding: rp(12),
+    borderRadius: 8,
+    borderWidth: 1,
+  },
+  comparisonOptionText: {
+    fontSize: rf(13),
+    fontWeight: '500',
   },
 });
