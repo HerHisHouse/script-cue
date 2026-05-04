@@ -890,9 +890,10 @@ async function generateAzureTTS({ text, voice }) {
     return Buffer.from(arrayBuffer);
 }
 
-// Endpoint: generate Azure TTS and upload to Supabase Storage
+// Endpoint: generate Azure TTS and return MP3 binary directly
+// (same pattern as OpenAI/ElevenLabs - client saves to local file)
 app.post('/tts-azure', async (req, res) => {
-    const { text, voice, scriptId, lineId, userId } = req.body;
+    const { text, voice, userId } = req.body;
 
     if (!text || !voice || !userId) {
         return res.status(400).json({ error: 'Missing required fields: text, voice, userId' });
@@ -903,26 +904,12 @@ app.post('/tts-azure', async (req, res) => {
     try {
         const audioBuffer = await generateAzureTTS({ text, voice });
 
-        // Upload to Supabase Storage under tts-cache bucket
-        const storagePath = `${userId}/${scriptId || 'preview'}/${lineId || Date.now()}_azure_${voice}.mp3`;
+        console.log(`[Azure TTS] ✅ Returning ${audioBuffer.length} bytes for voice ${voice}`);
 
-        const { data: uploadData, error: uploadError } = await supabase.storage
-            .from('tts-cache')
-            .upload(storagePath, audioBuffer, {
-                contentType: 'audio/mpeg',
-                upsert: true,
-            });
-
-        if (uploadError) {
-            throw new Error(`Storage upload failed: ${uploadError.message}`);
-        }
-
-        const { data: publicData } = supabase.storage
-            .from('tts-cache')
-            .getPublicUrl(uploadData.path || storagePath);
-
-        console.log(`[Azure TTS] ✅ Audio ready: ${publicData.publicUrl}`);
-        res.json({ success: true, audioUrl: publicData.publicUrl, storagePath });
+        // Return MP3 binary directly — client saves it to a local temp file
+        res.set('Content-Type', 'audio/mpeg');
+        res.set('Content-Length', audioBuffer.length);
+        res.send(audioBuffer);
 
     } catch (error) {
         console.error('[Azure TTS] Error:', error);

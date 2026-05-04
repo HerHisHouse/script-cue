@@ -3,7 +3,6 @@ import client from './openaiClient';
 import { generateElevenLabsAudio } from './elevenLabsClient';
 import * as FileSystem from 'expo-file-system/legacy';
 import * as Crypto from 'expo-crypto';
-import { Platform } from 'react-native';
 
 interface TTSCacheEntry {
     id: string;
@@ -19,8 +18,8 @@ interface TTSCacheEntry {
 }
 
 interface VoiceConfig {
-    provider: 'openai' | 'elevenlabs' | 'system';
-    voiceId?: string; // OpenAI voice or ElevenLabs voice ID
+    provider: 'openai' | 'elevenlabs' | 'azure' | 'system';
+    voiceId?: string; // OpenAI voice, ElevenLabs voice ID, or Azure voice name
 }
 
 /**
@@ -62,74 +61,57 @@ function arrayBufferToBase64(buffer: ArrayBuffer): string {
 }
 
 /**
- * Upload audio to Supabase Storage using XMLHttpRequest for Android
+ * Upload audio to Supabase Storage.
+ * IMPORTANTE: En React Native, el SDK de Supabase Storage rechaza ArrayBuffer
+ * directamente con "Invalid Content-Type header". Usamos XMLHttpRequest para
+ * ambas plataformas, que es la única vía fiable para enviar datos binarios en RN.
  */
 async function uploadAudioToStorage(
     storagePath: string,
     arrayBuffer: ArrayBuffer,
     userId: string
 ): Promise<boolean> {
-    if (Platform.OS === 'android') {
-        // Android: usar XMLHttpRequest
-        try {
-            const { data: sessionData } = await supabase.auth.getSession();
-            const token = sessionData.session?.access_token;
-            
-            if (!token) {
-                console.error('No auth token available');
-                return false;
-            }
+    try {
+        const { data: sessionData } = await supabase.auth.getSession();
+        const token = sessionData.session?.access_token;
 
-            const bytes = new Uint8Array(arrayBuffer);
-            
-            await new Promise<void>((resolve, reject) => {
-                const xhr = new XMLHttpRequest();
-                const uploadUrl = `${process.env.EXPO_PUBLIC_SUPABASE_URL}/storage/v1/object/tts-cache/${storagePath}`;
-                
-                xhr.open('POST', uploadUrl, true);
-                xhr.setRequestHeader('Authorization', `Bearer ${token}`);
-                xhr.setRequestHeader('Content-Type', 'audio/mpeg');
-                xhr.setRequestHeader('x-upsert', 'true');
-                
-                xhr.timeout = 60000; // 1 minuto para audio
-                
-                xhr.onload = () => {
-                    if (xhr.status >= 200 && xhr.status < 300) {
-                        resolve();
-                    } else {
-                        console.error('XMLHttpRequest error:', xhr.status, xhr.responseText);
-                        reject(new Error(`Upload failed with status ${xhr.status}`));
-                    }
-                };
-                
-                xhr.onerror = () => reject(new Error('Network error during upload'));
-                xhr.ontimeout = () => reject(new Error('Upload timeout'));
-                
-                xhr.send(bytes);
-            });
-            
-            return true;
-        } catch (error) {
-            console.error('Error uploading with XMLHttpRequest:', error);
+        if (!token) {
+            console.error('[TTS Upload] No auth token available');
             return false;
         }
-    } else {
-        // iOS/Web: usar cliente de Supabase normal
-        const { error } = await supabase.storage
-            .from('tts-cache')
-            .upload(storagePath, arrayBuffer, {
-                contentType: 'audio/mpeg',
-                upsert: true
-            });
-        
-        if (error) {
-            console.error('Error uploading to storage:', error);
-            return false;
-        }
-        
+
+        const bytes = new Uint8Array(arrayBuffer);
+        const uploadUrl = `${process.env.EXPO_PUBLIC_SUPABASE_URL}/storage/v1/object/tts-cache/${storagePath}`;
+
+        await new Promise<void>((resolve, reject) => {
+            const xhr = new XMLHttpRequest();
+            xhr.open('POST', uploadUrl, true);
+            xhr.setRequestHeader('Authorization', `Bearer ${token}`);
+            xhr.setRequestHeader('Content-Type', 'audio/mpeg');
+            xhr.setRequestHeader('x-upsert', 'true');
+            xhr.timeout = 60000;
+
+            xhr.onload = () => {
+                if (xhr.status >= 200 && xhr.status < 300) {
+                    resolve();
+                } else {
+                    console.error(`[TTS Upload] Error ${xhr.status}:`, xhr.responseText);
+                    reject(new Error(`Upload failed: ${xhr.status}`));
+                }
+            };
+            xhr.onerror = () => reject(new Error('Network error during TTS upload'));
+            xhr.ontimeout = () => reject(new Error('TTS upload timeout'));
+            xhr.send(bytes);
+        });
+
+        console.log('[TTS Upload] ✅ Success:', storagePath);
         return true;
+    } catch (error) {
+        console.error('[TTS Upload] Failed:', error);
+        return false;
     }
 }
+
 
 /**
  * Check if audio is cached for a specific line
@@ -212,7 +194,13 @@ export async function generateAndCacheAudio(
     userId: string
 ): Promise<string | null> {
     try {
-        const textHash = await hashText(text);
+        if (!text || !text.trim()) {
+             console.log('Skipping audio generation for empty text');
+             return null;
+        }
+
+        const cleanText = text.trim();
+        const textHash = await hashText(cleanText);
         const provider = voiceConfig.provider;
         const voiceId = voiceConfig.voiceId || null;
 
@@ -228,15 +216,60 @@ export async function generateAndCacheAudio(
         let arrayBuffer: ArrayBuffer | null = null;
 
         // Generate audio based on provider
-        if (provider === 'elevenlabs') {
+        if (provider === 'azure') {
+            // Azure TTS is handled server-side via the Render microservice
+            const renderUrl = process.env.EXPO_PUBLIC_RENDER_SERVER_URL;
+            if (!renderUrl) {
+                console.warn('[Azure TTS] RENDER_SERVER_URL not configured, falling back to system TTS');
+                return null;
+            }
+
+            try {
+                const azureVoice = voiceId || 'es-ES-AlvaroNeural';
+                const response = await fetch(`${renderUrl}/tts-azure`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        text: cleanText,
+                        voice: azureVoice,
+                        userId,
+                    }),
+                });
+
+                if (!response.ok) {
+                    const bodyText = await response.text().catch(() => '');
+                    console.warn(`[Azure TTS] Server error ${response.status}: ${bodyText}. Falling back to system TTS.`);
+                    return null;
+                }
+
+                // Server returns MP3 binary directly — save to local file (same as OpenAI/ElevenLabs)
+                const arrayBuffer = await response.arrayBuffer();
+                if (!arrayBuffer || arrayBuffer.byteLength === 0) {
+                    console.warn('[Azure TTS] Empty audio buffer received, falling back to system TTS.');
+                    return null;
+                }
+
+                const base64 = arrayBufferToBase64(arrayBuffer);
+                const localPath = `${FileSystem.cacheDirectory}tts_${lineId}_azure.mp3`;
+                await FileSystem.writeAsStringAsync(localPath, base64, {
+                    encoding: FileSystem.EncodingType.Base64,
+                });
+                console.log('✅ Azure TTS audio cached for:', characterName);
+                return localPath;
+
+            } catch (azureErr) {
+                console.warn('[Azure TTS] Unexpected error, falling back to system TTS:', azureErr);
+                return null;
+            }
+        } else if (provider === 'elevenlabs') {
             const elevenLabsVoiceId = voiceId || "21m00Tcm4TlvDq8ikWAM"; // Default Rachel
-            arrayBuffer = await generateElevenLabsAudio(text, elevenLabsVoiceId);
+            arrayBuffer = await generateElevenLabsAudio(cleanText, elevenLabsVoiceId);
         } else if (provider === 'openai') {
             const openaiVoice = (voiceId || 'alloy') as any;
             const response = await client.audio.speech.create({
                 model: "tts-1",
                 voice: openaiVoice,
-                input: text,
+                input: cleanText,
             });
             arrayBuffer = await response.arrayBuffer();
         }
@@ -377,7 +410,7 @@ export async function preGenerateScriptAudio(
                 scriptId,
                 line.id,
                 line.character_name,
-                line.content,
+                line.content.replace(/\([^)]*\)/g, '').replace(/\s+/g, ' ').trim(),
                 voiceConfig,
                 userId
             );
@@ -419,6 +452,40 @@ async function invalidateCacheEntry(cacheId: string): Promise<void> {
             .eq('id', cacheId);
     } catch (error) {
         console.error('Error invalidating cache:', error);
+    }
+}
+
+/**
+ * Invalidate all cache entries for a specific line
+ * This should be called when a line's content is edited
+ */
+export async function invalidateCacheForLine(lineId: string): Promise<void> {
+    try {
+        console.log('🗑️ Invalidating TTS cache for line:', lineId);
+        
+        // Get all cache entries for this line
+        const { data: entries } = await supabase
+            .from('tts_cache')
+            .select('id, storage_path')
+            .eq('line_id', lineId);
+
+        if (entries && entries.length > 0) {
+            // Delete from storage
+            const paths = entries.map(e => e.storage_path);
+            await supabase.storage
+                .from('tts-cache')
+                .remove(paths);
+
+            // Delete from database
+            await supabase
+                .from('tts_cache')
+                .delete()
+                .eq('line_id', lineId);
+
+            console.log(`✅ Invalidated ${entries.length} cache entries for line`);
+        }
+    } catch (error) {
+        console.error('Error invalidating cache for line:', error);
     }
 }
 
