@@ -835,6 +835,100 @@ Idioma: Español. Tono: directo, técnico, honesto. Sin eufemismos.`;
     }
 });
 
+
+// ============================================================
+// AZURE TEXT-TO-SPEECH
+// ============================================================
+
+/**
+ * Generates TTS audio using Azure Cognitive Services.
+ * Returns the audio as a Buffer (MP3).
+ */
+async function generateAzureTTS({ text, voice }) {
+    const azureKey = process.env.AZURE_TTS_KEY;
+    const azureRegion = process.env.AZURE_TTS_REGION;
+
+    if (!azureKey || !azureRegion) {
+        throw new Error('Azure TTS not configured: missing AZURE_TTS_KEY or AZURE_TTS_REGION');
+    }
+
+    // Extract prosody hints from text
+    const hasQuestion = text.includes('?');
+    const hasExclamation = text.includes('!');
+
+    const rate = hasQuestion ? '+5%' : '0%';
+    const pitch = hasQuestion ? '+10%' : hasExclamation ? '+15%' : '0%';
+
+    const ssml = `<speak version="1.0" xmlns="http://www.w3.org/2001/10/synthesis" xml:lang="es-ES">
+  <voice name="${voice}">
+    <prosody rate="${rate}" pitch="${pitch}">
+      ${text}
+    </prosody>
+  </voice>
+</speak>`;
+
+    const endpoint = `https://${azureRegion}.tts.speech.microsoft.com/cognitiveservices/v1`;
+
+    const response = await fetch(endpoint, {
+        method: 'POST',
+        headers: {
+            'Ocp-Apim-Subscription-Key': azureKey,
+            'Content-Type': 'application/ssml+xml',
+            'X-Microsoft-OutputFormat': 'audio-24khz-48kbitrate-mono-mp3',
+        },
+        body: ssml,
+    });
+
+    if (!response.ok) {
+        const errText = await response.text();
+        throw new Error(`Azure TTS API error: ${response.status} ${errText}`);
+    }
+
+    // Azure returns binary MP3 directly
+    const arrayBuffer = await response.arrayBuffer();
+    return Buffer.from(arrayBuffer);
+}
+
+// Endpoint: generate Azure TTS and upload to Supabase Storage
+app.post('/tts-azure', async (req, res) => {
+    const { text, voice, scriptId, lineId, userId } = req.body;
+
+    if (!text || !voice || !userId) {
+        return res.status(400).json({ error: 'Missing required fields: text, voice, userId' });
+    }
+
+    console.log(`[Azure TTS] Generating audio for voice: ${voice}`);
+
+    try {
+        const audioBuffer = await generateAzureTTS({ text, voice });
+
+        // Upload to Supabase Storage under tts-cache bucket
+        const storagePath = `${userId}/${scriptId || 'preview'}/${lineId || Date.now()}_azure_${voice}.mp3`;
+
+        const { data: uploadData, error: uploadError } = await supabase.storage
+            .from('tts-cache')
+            .upload(storagePath, audioBuffer, {
+                contentType: 'audio/mpeg',
+                upsert: true,
+            });
+
+        if (uploadError) {
+            throw new Error(`Storage upload failed: ${uploadError.message}`);
+        }
+
+        const { data: publicData } = supabase.storage
+            .from('tts-cache')
+            .getPublicUrl(uploadData.path || storagePath);
+
+        console.log(`[Azure TTS] ✅ Audio ready: ${publicData.publicUrl}`);
+        res.json({ success: true, audioUrl: publicData.publicUrl, storagePath });
+
+    } catch (error) {
+        console.error('[Azure TTS] Error:', error);
+        res.status(500).json({ error: error.message, fallback: 'system' });
+    }
+});
+
 app.listen(PORT, () => {
     console.log(`🎵 Audio Merge Server running on port ${PORT}`);
     console.log(`📊 Health check: http://localhost:${PORT}/health`);
