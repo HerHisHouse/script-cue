@@ -845,8 +845,9 @@ Idioma: Español. Tono: directo, técnico, honesto. Sin eufemismos.`;
  * Returns the audio as a Buffer (MP3).
  */
 async function generateAzureTTS({ text, voice }) {
-    const azureKey = process.env.AZURE_TTS_KEY;
-    const azureRegion = process.env.AZURE_TTS_REGION;
+    // .trim() is critical: copy-pasting keys into Render often adds a trailing \n
+    const azureKey = (process.env.AZURE_TTS_KEY || '').trim();
+    const azureRegion = (process.env.AZURE_TTS_REGION || '').trim();
 
     if (!azureKey || !azureRegion) {
         throw new Error('Azure TTS not configured: missing AZURE_TTS_KEY or AZURE_TTS_REGION');
