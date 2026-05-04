@@ -837,15 +837,73 @@ Idioma: Español. Tono: directo, técnico, honesto. Sin eufemismos.`;
 
 
 // ============================================================
+// ============================================================
 // AZURE TEXT-TO-SPEECH
 // ============================================================
 
 /**
- * Generates TTS audio using Azure Cognitive Services.
- * Returns the audio as a Buffer (MP3).
+ * Analiza el texto y extrae contexto emocional y de puntuación.
+ * Separa las acotaciones entre paréntesis del texto limpio.
+ */
+function analyzeTextContext(text) {
+    const analysis = {
+        hasQuestion: text.includes('?'),
+        hasExclamation: text.includes('!'),
+        hasEllipsis: text.includes('...'),
+        direction: null,
+        cleanText: text,
+    };
+
+    // Detectar acotaciones entre paréntesis (ej: "(susurrando) No hagas ruido")
+    const directionMatch = text.match(/\(([^)]+)\)/);
+    if (directionMatch) {
+        analysis.direction = directionMatch[1].toLowerCase().trim();
+        // Quitar la acotación del texto que se enviará al TTS
+        analysis.cleanText = text.replace(/\([^)]+\)/g, '').trim();
+    }
+
+    return analysis;
+}
+
+/**
+ * Mapeo de acotaciones en español a parámetros SSML de prosodia.
+ * rate: velocidad de habla   pitch: tono    volume: volumen
+ */
+const emotionMap = {
+    'susurrando':   { volume: 'soft',   rate: '-10%', pitch: '-5%'  },
+    'susurra':      { volume: 'soft',   rate: '-10%', pitch: '-5%'  },
+    'gritando':     { volume: 'loud',   rate: '+10%', pitch: '+20%' },
+    'grita':        { volume: 'loud',   rate: '+10%', pitch: '+20%' },
+    'enfadado':     { volume: 'loud',   rate: '+5%',  pitch: '+10%' },
+    'enfadada':     { volume: 'loud',   rate: '+5%',  pitch: '+10%' },
+    'triste':       { volume: 'soft',   rate: '-15%', pitch: '-10%' },
+    'llorando':     { volume: 'soft',   rate: '-15%', pitch: '-8%'  },
+    'alegre':       { volume: 'medium', rate: '+5%',  pitch: '+5%'  },
+    'feliz':        { volume: 'medium', rate: '+5%',  pitch: '+5%'  },
+    'nervioso':     { volume: 'medium', rate: '+20%', pitch: '+15%' },
+    'nerviosa':     { volume: 'medium', rate: '+20%', pitch: '+15%' },
+    'cansado':      { volume: 'soft',   rate: '-20%', pitch: '-8%'  },
+    'cansada':      { volume: 'soft',   rate: '-20%', pitch: '-8%'  },
+    'sorprendido':  { volume: 'loud',   rate: '+10%', pitch: '+25%' },
+    'sorprendida':  { volume: 'loud',   rate: '+10%', pitch: '+25%' },
+    'asustado':     { volume: 'soft',   rate: '+15%', pitch: '+20%' },
+    'asustada':     { volume: 'soft',   rate: '+15%', pitch: '+20%' },
+    'serio':        { volume: 'medium', rate: '-5%',  pitch: '-3%'  },
+    'seria':        { volume: 'medium', rate: '-5%',  pitch: '-3%'  },
+    'sarcástico':   { volume: 'medium', rate: '+5%',  pitch: '+8%'  },
+    'sarcástica':   { volume: 'medium', rate: '+5%',  pitch: '+8%'  },
+    'irónico':      { volume: 'medium', rate: '+5%',  pitch: '+8%'  },
+    'dudoso':       { volume: 'soft',   rate: '-10%', pitch: '-5%'  },
+    'pensativo':    { volume: 'soft',   rate: '-15%', pitch: '-3%'  },
+    'pensativa':    { volume: 'soft',   rate: '-15%', pitch: '-3%'  },
+};
+
+/**
+ * Genera audio TTS usando Azure Cognitive Services.
+ * Devuelve el audio como Buffer (MP3).
  */
 async function generateAzureTTS({ text, voice }) {
-    // .trim() is critical: copy-pasting keys into Render often adds a trailing \n
+    // .trim() crítico: copiar/pegar keys en Render añade \n al final
     const azureKey = (process.env.AZURE_TTS_KEY || '').trim();
     const azureRegion = (process.env.AZURE_TTS_REGION || '').trim();
 
@@ -853,20 +911,69 @@ async function generateAzureTTS({ text, voice }) {
         throw new Error('Azure TTS not configured: missing AZURE_TTS_KEY or AZURE_TTS_REGION');
     }
 
-    // Extract prosody hints from text
-    const hasQuestion = text.includes('?');
-    const hasExclamation = text.includes('!');
+    // PASO 1: Analizar contexto del texto
+    const context = analyzeTextContext(text);
+    console.log('[Azure TTS] Texto original:', text);
+    console.log('[Azure TTS] Contexto detectado:', context);
 
-    const rate = hasQuestion ? '+5%' : '0%';
-    const pitch = hasQuestion ? '+10%' : hasExclamation ? '+15%' : '0%';
+    // PASO 2: Parámetros base por puntuación
+    let rate = '0%';
+    let pitch = '0%';
+    let volume = 'medium';
 
+    if (context.hasQuestion) {
+        pitch = '+10%';
+        rate  = '+5%';
+    }
+    if (context.hasExclamation) {
+        pitch  = '+15%';
+        rate   = '+8%';
+        volume = 'loud';
+    }
+    if (context.hasEllipsis) {
+        rate = '-10%';
+    }
+
+    // PASO 3: Sobrescribir con acotación emocional si existe
+    if (context.direction) {
+        // Buscar coincidencia exacta primero, luego parcial
+        const exactMatch = emotionMap[context.direction];
+        if (exactMatch) {
+            rate   = exactMatch.rate;
+            pitch  = exactMatch.pitch;
+            volume = exactMatch.volume;
+        } else {
+            // Búsqueda parcial: "muy enfadado" → buscar "enfadado"
+            const partialKey = Object.keys(emotionMap).find(k => context.direction.includes(k));
+            if (partialKey) {
+                rate   = emotionMap[partialKey].rate;
+                pitch  = emotionMap[partialKey].pitch;
+                volume = emotionMap[partialKey].volume;
+            }
+        }
+    }
+
+    console.log('[Azure TTS] Parámetros SSML:', { rate, pitch, volume });
+
+    // PASO 4: Insertar breaks explícitos en el texto limpio
+    let finalText = context.cleanText;
+    // "..." → pausa larga (ya manejada por rate -10%, pero añadimos break visual)
+    finalText = finalText.replace(/\.\.\./g, '<break time="800ms"/>');
+    // ". " → pausa media entre frases
+    finalText = finalText.replace(/\.\s/g, '.<break time="400ms"/> ');
+    // ", " → pausa corta
+    finalText = finalText.replace(/,\s/g, ',<break time="200ms"/> ');
+
+    // PASO 5: Construir SSML
     const ssml = `<speak version="1.0" xmlns="http://www.w3.org/2001/10/synthesis" xml:lang="es-ES">
   <voice name="${voice}">
-    <prosody rate="${rate}" pitch="${pitch}">
-      ${text}
+    <prosody rate="${rate}" pitch="${pitch}" volume="${volume}">
+      ${finalText}
     </prosody>
   </voice>
 </speak>`;
+
+    console.log('[Azure TTS] SSML generado:', ssml);
 
     const endpoint = `https://${azureRegion}.tts.speech.microsoft.com/cognitiveservices/v1`;
 
@@ -885,13 +992,13 @@ async function generateAzureTTS({ text, voice }) {
         throw new Error(`Azure TTS API error: ${response.status} ${errText}`);
     }
 
-    // Azure returns binary MP3 directly
+    // Azure devuelve el MP3 binario directamente
     const arrayBuffer = await response.arrayBuffer();
     return Buffer.from(arrayBuffer);
 }
 
-// Endpoint: generate Azure TTS and return MP3 binary directly
-// (same pattern as OpenAI/ElevenLabs - client saves to local file)
+// Endpoint: generar Azure TTS y devolver MP3 binario directamente
+// (mismo patrón que OpenAI/ElevenLabs — el cliente lo guarda en fichero local)
 app.post('/tts-azure', async (req, res) => {
     const { text, voice, userId } = req.body;
 
@@ -906,7 +1013,7 @@ app.post('/tts-azure', async (req, res) => {
 
         console.log(`[Azure TTS] ✅ Returning ${audioBuffer.length} bytes for voice ${voice}`);
 
-        // Return MP3 binary directly — client saves it to a local temp file
+        // Devolver MP3 binario — el cliente lo escribe en fichero temporal
         res.set('Content-Type', 'audio/mpeg');
         res.set('Content-Length', audioBuffer.length);
         res.send(audioBuffer);
@@ -916,6 +1023,7 @@ app.post('/tts-azure', async (req, res) => {
         res.status(500).json({ error: error.message, fallback: 'system' });
     }
 });
+
 
 app.listen(PORT, () => {
     console.log(`🎵 Audio Merge Server running on port ${PORT}`);
