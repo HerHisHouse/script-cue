@@ -870,32 +870,32 @@ function analyzeTextContext(text) {
  * rate: velocidad de habla   pitch: tono    volume: volumen
  */
 const emotionMap = {
-    'susurrando':   { volume: 'soft',   rate: '-10%', pitch: '-5%'  },
-    'susurra':      { volume: 'soft',   rate: '-10%', pitch: '-5%'  },
-    'gritando':     { volume: 'loud',   rate: '+10%', pitch: '+20%' },
-    'grita':        { volume: 'loud',   rate: '+10%', pitch: '+20%' },
-    'enfadado':     { volume: 'loud',   rate: '+5%',  pitch: '+10%' },
-    'enfadada':     { volume: 'loud',   rate: '+5%',  pitch: '+10%' },
-    'triste':       { volume: 'soft',   rate: '-15%', pitch: '-10%' },
-    'llorando':     { volume: 'soft',   rate: '-15%', pitch: '-8%'  },
-    'alegre':       { volume: 'medium', rate: '+5%',  pitch: '+5%'  },
-    'feliz':        { volume: 'medium', rate: '+5%',  pitch: '+5%'  },
-    'nervioso':     { volume: 'medium', rate: '+20%', pitch: '+15%' },
-    'nerviosa':     { volume: 'medium', rate: '+20%', pitch: '+15%' },
-    'cansado':      { volume: 'soft',   rate: '-20%', pitch: '-8%'  },
-    'cansada':      { volume: 'soft',   rate: '-20%', pitch: '-8%'  },
-    'sorprendido':  { volume: 'loud',   rate: '+10%', pitch: '+25%' },
-    'sorprendida':  { volume: 'loud',   rate: '+10%', pitch: '+25%' },
-    'asustado':     { volume: 'soft',   rate: '+15%', pitch: '+20%' },
-    'asustada':     { volume: 'soft',   rate: '+15%', pitch: '+20%' },
-    'serio':        { volume: 'medium', rate: '-5%',  pitch: '-3%'  },
-    'seria':        { volume: 'medium', rate: '-5%',  pitch: '-3%'  },
-    'sarcástico':   { volume: 'medium', rate: '+5%',  pitch: '+8%'  },
-    'sarcástica':   { volume: 'medium', rate: '+5%',  pitch: '+8%'  },
-    'irónico':      { volume: 'medium', rate: '+5%',  pitch: '+8%'  },
-    'dudoso':       { volume: 'soft',   rate: '-10%', pitch: '-5%'  },
-    'pensativo':    { volume: 'soft',   rate: '-15%', pitch: '-3%'  },
-    'pensativa':    { volume: 'soft',   rate: '-15%', pitch: '-3%'  },
+    'susurrando':   { volume: '-20dB', rate: '-10%', pitch: '-5%'  },
+    'susurra':      { volume: '-20dB', rate: '-10%', pitch: '-5%'  },
+    'gritando':     { volume: '+6dB',  rate: '+10%', pitch: '+15%' },
+    'grita':        { volume: '+6dB',  rate: '+10%', pitch: '+15%' },
+    'enfadado':     { volume: '+4dB',  rate: '+5%',  pitch: '+8%'  },
+    'enfadada':     { volume: '+4dB',  rate: '+5%',  pitch: '+8%'  },
+    'triste':       { volume: '-10dB', rate: '-15%', pitch: '-10%' },
+    'llorando':     { volume: '-10dB', rate: '-15%', pitch: '-10%' },
+    'alegre':       { volume: '0dB',   rate: '+5%',  pitch: '+5%'  },
+    'feliz':        { volume: '0dB',   rate: '+5%',  pitch: '+5%'  },
+    'nervioso':     { volume: '+2dB',  rate: '+20%', pitch: '+12%' },
+    'nerviosa':     { volume: '+2dB',  rate: '+20%', pitch: '+12%' },
+    'cansado':      { volume: '-15dB', rate: '-20%', pitch: '-8%'  },
+    'cansada':      { volume: '-15dB', rate: '-20%', pitch: '-8%'  },
+    'sorprendido':  { volume: '+5dB',  rate: '+10%', pitch: '+20%' },
+    'sorprendida':  { volume: '+5dB',  rate: '+10%', pitch: '+20%' },
+    'asustado':     { volume: '-5dB',  rate: '+15%', pitch: '+18%' },
+    'asustada':     { volume: '-5dB',  rate: '+15%', pitch: '+18%' },
+    'serio':        { volume: '0dB',   rate: '-5%',  pitch: '-3%'  },
+    'seria':        { volume: '0dB',   rate: '-5%',  pitch: '-3%'  },
+    'sarcástico':   { volume: '0dB',   rate: '+5%',  pitch: '+8%'  },
+    'sarcástica':   { volume: '0dB',   rate: '+5%',  pitch: '+8%'  },
+    'irónico':      { volume: '0dB',   rate: '+5%',  pitch: '+8%'  },
+    'dudoso':       { volume: '-10dB', rate: '-10%', pitch: '-5%'  },
+    'pensativo':    { volume: '-10dB', rate: '-15%', pitch: '-3%'  },
+    'pensativa':    { volume: '-10dB', rate: '-15%', pitch: '-3%'  },
 };
 
 /**
@@ -919,16 +919,16 @@ async function generateAzureTTS({ text, voice }) {
     // PASO 2: Parámetros base por puntuación
     let rate = '0%';
     let pitch = '0%';
-    let volume = 'medium';
+    let volume = '0dB';
 
     if (context.hasQuestion) {
-        pitch = '+10%';
+        pitch = '+8%';
         rate  = '+5%';
     }
     if (context.hasExclamation) {
-        pitch  = '+15%';
+        pitch  = '+12%';
         rate   = '+8%';
-        volume = 'loud';
+        volume = '+3dB';
     }
     if (context.hasEllipsis) {
         rate = '-10%';
@@ -996,6 +996,144 @@ async function generateAzureTTS({ text, voice }) {
     const arrayBuffer = await response.arrayBuffer();
     return Buffer.from(arrayBuffer);
 }
+
+// Endpoint: generar quiz de memoria dinámico
+app.post('/generate-quiz', async (req, res) => {
+    const { script_id, script_text } = req.body;
+
+    if (!script_id || !script_text) {
+        return res.status(400).json({ error: 'Missing script_id or script_text' });
+    }
+
+    try {
+        // 1. Calcular longitud del guion
+        const lines = script_text.split('\n').filter(line => line.trim().length > 0);
+        const lineCount = lines.length;
+
+        // 2. Validar que no sea demasiado corto
+        if (lineCount < 5) {
+            return res.status(400).json({ 
+                error: 'too_short',
+                message: 'El guion es demasiado corto para generar un quiz'
+            });
+        }
+
+        // 3. Determinar cantidad de preguntas según longitud
+        let questionCount;
+        if (lineCount < 10) {
+            questionCount = 5;   // Escena muy corta
+        } else if (lineCount < 20) {
+            questionCount = 10;  // Escena corta
+        } else if (lineCount < 40) {
+            questionCount = 15;  // Escena media
+        } else {
+            questionCount = 20;  // Escena larga
+        }
+
+        console.log(`[Quiz] Guion con ${lineCount} líneas → generando ${questionCount} preguntas`);
+
+        // 4. Llamar a GPT-4o con prompt dinámico
+        const prompt = `Eres un experto en pedagogía teatral. Genera EXACTAMENTE ${questionCount} preguntas de opción múltiple sobre este guion teatral para ayudar al actor a comprender profundamente la escena.
+
+Tipos de preguntas (distribuye equitativamente):
+1. Motivaciones de personajes (¿Por qué X dice/hace Y?)
+2. Direcciones interpretativas (acotaciones entre paréntesis como 'susurrando', 'gritando', 'enfadado')
+3. Secuencia de diálogos (¿Qué dice X justo después de Y?)
+4. Relaciones entre personajes (tensión, dinámica, conflicto)
+5. Subtexto emocional (¿Qué siente realmente el personaje en este momento?)
+
+Reglas importantes:
+- Cada pregunta debe tener 4 opciones plausibles
+- Solo 1 opción es correcta
+- Las opciones incorrectas deben ser creíbles, no obviamente falsas
+- Referirse a momentos específicos del guion
+- Usar nombres de personajes del guion
+- Si hay acotaciones interpretativas entre paréntesis, incluir preguntas sobre ellas
+
+Devuelve SOLO JSON válido sin markdown, con esta estructura exacta:
+{
+  "questions": [
+    {
+      "question": "texto de la pregunta",
+      "options": ["opción 1", "opción 2", "opción 3", "opción 4"],
+      "correct": 0,
+      "type": "motivation"
+    }
+  ]
+}
+
+IMPORTANTE: Debes generar exactamente ${questionCount} preguntas, ni más ni menos.
+
+GUION:
+${script_text}`;
+
+        const openAIResponse = await fetch('https://api.openai.com/v1/chat/completions', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${process.env.OPENAI_API_KEY}`,
+            },
+            body: JSON.stringify({
+                model: 'gpt-4o',
+                messages: [{ role: 'user', content: prompt }],
+                temperature: 0.7,
+            }),
+        });
+
+        if (!openAIResponse.ok) {
+            throw new Error(`OpenAI API error: ${await openAIResponse.text()}`);
+        }
+
+        const aiData = await openAIResponse.json();
+        let content = aiData.choices[0].message.content;
+
+        // 5. Parsear respuesta de GPT-4o
+        content = content.replace(/```json/gi, '').replace(/```/g, '').trim();
+        const firstBrace = content.indexOf('{');
+        const lastBrace = content.lastIndexOf('}');
+        if (firstBrace !== -1 && lastBrace !== -1) {
+            content = content.substring(firstBrace, lastBrace + 1);
+        }
+
+        const parsed = JSON.parse(content);
+
+        // 6. Validar cantidad de preguntas
+        if (!parsed.questions || parsed.questions.length !== questionCount) {
+            console.warn(`[Quiz] GPT devolvió ${parsed.questions?.length || 0} preguntas, esperábamos ${questionCount}`);
+            if (Math.abs((parsed.questions?.length || 0) - questionCount) > 2) {
+                throw new Error('Número incorrecto de preguntas generadas');
+            }
+        }
+
+        // 7. Guardar en DB con metadatos
+        const { error } = await supabase
+            .from('script_quizzes')
+            .insert({ 
+                script_id,
+                questions: {
+                    questions: parsed.questions,
+                    generated_count: parsed.questions.length,
+                    line_count: lineCount
+                }
+            });
+
+        if (error) {
+            console.error('[Quiz] Error saving to Supabase:', error);
+            throw error;
+        }
+
+        // 8. Devolver al cliente
+        res.json({ 
+            questions: parsed.questions,
+            generated_count: parsed.questions.length,
+            line_count: lineCount
+        });
+
+    } catch (error) {
+        console.error('[Quiz] Error:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
 
 // Endpoint: generar Azure TTS y devolver MP3 binario directamente
 // (mismo patrón que OpenAI/ElevenLabs — el cliente lo guarda en fichero local)
