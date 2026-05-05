@@ -997,6 +997,8 @@ async function generateAzureTTS({ text, voice }) {
     return Buffer.from(arrayBuffer);
 }
 
+const activeQuizGenerations = new Map();
+
 // Endpoint: generar quiz de memoria dinámico
 app.post('/generate-quiz', async (req, res) => {
     const { script_id, script_text } = req.body;
@@ -1005,19 +1007,31 @@ app.post('/generate-quiz', async (req, res) => {
         return res.status(400).json({ error: 'Missing script_id or script_text' });
     }
 
-    try {
-        // 1. Calcular longitud del guion
-        const lines = script_text.split('\n').filter(line => line.trim().length > 0);
-        const lineCount = lines.length;
+    // 1. Calcular longitud del guion
+    const lines = script_text.split('\n').filter(line => line.trim().length > 0);
+    const lineCount = lines.length;
 
-        // 2. Validar que no sea demasiado corto
-        if (lineCount < 5) {
-            return res.status(400).json({ 
-                error: 'too_short',
-                message: 'El guion es demasiado corto para generar un quiz'
-            });
+    // 2. Validar que no sea demasiado corto
+    if (lineCount < 5) {
+        return res.status(400).json({ 
+            error: 'too_short',
+            message: 'El guion es demasiado corto para generar un quiz'
+        });
+    }
+
+    // Si ya hay una generación en curso para este guion, esperamos a que termine
+    // para no llamar a OpenAI (y cobrar) dos veces.
+    if (activeQuizGenerations.has(script_id)) {
+        console.log(`[Quiz] Esperando generación en curso para script ${script_id}...`);
+        try {
+            const result = await activeQuizGenerations.get(script_id);
+            return res.json(result);
+        } catch (error) {
+            return res.status(500).json({ error: 'Generación paralela falló' });
         }
+    }
 
+    const generationPromise = (async () => {
         // 3. Determinar cantidad de preguntas según longitud
         let questionCount;
         if (lineCount < 10) {
@@ -1122,16 +1136,23 @@ ${script_text}`;
             throw error;
         }
 
-        // 8. Devolver al cliente
-        res.json({ 
+        return { 
             questions: parsed.questions,
             generated_count: parsed.questions.length,
             line_count: lineCount
-        });
+        };
+    })();
 
+    activeQuizGenerations.set(script_id, generationPromise);
+
+    try {
+        const result = await generationPromise;
+        res.json(result);
     } catch (error) {
         console.error('[Quiz] Error:', error);
         res.status(500).json({ error: error.message });
+    } finally {
+        activeQuizGenerations.delete(script_id);
     }
 });
 
