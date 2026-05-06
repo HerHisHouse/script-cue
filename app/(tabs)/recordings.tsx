@@ -517,16 +517,12 @@ export default function RecordingsScreen() {
         // Cleanup: cerrar todos los menús cuando se pierde el foco
         setShowHeaderMenu(false);
         setShowSearch(false);
-        // Stop audio when navigating away from the screen
-        if (sound) {
-          sound.stopAsync().catch(() => { });
-          sound.unloadAsync().catch(() => { });
-          setSound(null);
-          setIsPlaying(false);
-          setPlayerVisible(false);
-        }
+        // El audio NO se para aquí al cambiar de pista, solo al salir de la pantalla
+        // Pero para evitar el bug del modal que se cierra solo, quitamos setPlayerVisible(false)
+        // y controlamos el stop del audio de forma más precisa o aceptamos que siga sonando si se queda en segundo plano (si es deseado)
+        // Por ahora, solo cerramos los menús. El playerVisible se queda si el modal está abierto.
       };
-    }, [handleRefresh, sound])
+    }, [handleRefresh])
   );
 
   // Mantener loopModeRef actualizado y aplicar al sound actual
@@ -667,65 +663,6 @@ export default function RecordingsScreen() {
       Alert.alert('Error', 'No se pudo descargar el archivo para offline: ' + error.message);
     } finally {
       setDownloadingId(null);
-    }
-  }
-
-  async function handlePlay(recording: Recording) {
-    try {
-      if (playingId === recording.id) {
-        await sound?.stopAsync();
-        setPlayingId(null);
-        return;
-      }
-
-      if (sound) {
-        try {
-          const status = await sound.getStatusAsync();
-          if (status.isLoaded) {
-            await sound.stopAsync();
-          }
-        } catch { }
-        await sound.unloadAsync().catch(() => { });
-      }
-
-      // Preferencia local y presencia de archivo local
-      const settings = await getSettings();
-      const storagePath = (recording.audio_url || (recording as any).storage_path || '').trim();
-      const filename = storagePath.split('/').pop() ?? '';
-      const localUri = (FileSystem.documentDirectory ?? '') + filename;
-      const isLocalPath = storagePath.startsWith('local/');
-
-      let newSound: Audio.Sound;
-      const localInfo = await FileSystem.getInfoAsync(localUri);
-      if (localInfo.exists) {
-        const res = await Audio.Sound.createAsync({ uri: localUri }, { shouldPlay: true });
-        newSound = res.sound;
-      } else if (isLocalPath || settings.useLocalOnly) {
-        // Modo sólo local: si no está el archivo, no hay remoto al que acudir
-        Alert.alert('Audio no disponible', 'El archivo local no se encuentra.');
-        return;
-      } else {
-        const { data, error } = await supabase.storage
-          .from('recordings')
-          .createSignedUrl(storagePath, 60 * 60);
-        if (error || !data?.signedUrl) {
-          Alert.alert('Audio no disponible', 'No se encontró el archivo de la grabación.');
-          return;
-        }
-        newSound = await playAudioFromUrl(data.signedUrl);
-      }
-
-      setSound(newSound);
-      setPlayingId(recording.id);
-
-      newSound.setOnPlaybackStatusUpdate((status) => {
-        if (status.isLoaded && status.didJustFinish) {
-          setPlayingId(null);
-          newSound.unloadAsync().catch(() => { });
-        }
-      });
-    } catch (error) {
-      console.error('Error playing audio:', error);
     }
   }
 
@@ -3297,8 +3234,8 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'flex-end',
-    gap: 20,
-    paddingHorizontal: rp(8),
+    gap: 14,
+    paddingRight: rp(4),
     marginBottom: 12,
   },
   loopWrapper: {
