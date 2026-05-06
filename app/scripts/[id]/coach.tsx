@@ -33,7 +33,8 @@ import {
   AlertCircle,
   Square,
   CheckSquare,
-  TrendingDown
+  TrendingDown,
+  Clapperboard
 } from 'lucide-react-native';
 import { Audio, Video, ResizeMode } from 'expo-av';
 import { supabase } from '@/utils/supabase';
