@@ -191,6 +191,8 @@ export default function StudioV2Screen() {
 
     const toggleReordering = async () => {
         const hideInfo = await AsyncStorage.getItem('hideReorderInfo');
+        // Snapshot the current order so Cancel can restore it
+        setOriginalLines([...dialogueLines]);
         if (hideInfo === 'true') {
             setIsReordering(true);
         } else {
@@ -199,18 +201,29 @@ export default function StudioV2Screen() {
         setShowMenu(false);
     };
 
+    const [originalLines, setOriginalLines] = useState<DialogueLine[]>([]);
+
     const saveNewOrder = async () => {
         setIsUpdating(true);
         try {
             await syncOrderToBackend(dialogueLines);
             setIsReordering(false);
-            Alert.alert("Éxito", "Orden guardado correctamente");
+            setOriginalLines([]);
+            // No Alert — salir del modo reordenar es feedback suficiente
         } catch (e) {
             console.error(e);
             Alert.alert("Error", "Hubo un problema al guardar el orden");
         } finally {
             setIsUpdating(false);
         }
+    };
+
+    const cancelReorder = () => {
+        if (originalLines.length > 0) {
+            setDialogueLines(originalLines);
+        }
+        setOriginalLines([]);
+        setIsReordering(false);
     };
 
     // Load script data
@@ -425,10 +438,10 @@ export default function StudioV2Screen() {
                     return;
                 }
 
-                const provider: 'openai' | 'elevenlabs' = effectiveProvider as 'openai' | 'elevenlabs';
+                const provider: 'openai' | 'elevenlabs' | 'azure' = effectiveProvider as 'openai' | 'elevenlabs' | 'azure';
 
                 // Try to get from cache first
-                let audioUri = await getCachedAudio(line.id, provider, voiceId, textHash);
+                let audioUri = await getCachedAudio(line.id, provider as any, voiceId, textHash);
 
                 // If not in cache, generate and cache
                 if (!audioUri && user) {
@@ -445,7 +458,20 @@ export default function StudioV2Screen() {
                 }
 
                 if (!audioUri) {
-                    throw new Error('Failed to generate audio');
+                    // Azure (or any provider) failed — fall back to system TTS silently
+                    console.warn(`[Studio] No audio URI for ${line.characterName} (${provider}), falling back to system TTS`);
+                    Speech.speak(line.cleanText, {
+                        language: 'es-ES',
+                        onDone: () => {
+                            setIsSpeaking(false);
+                            setTimeout(handleNext, 800);
+                        },
+                        onError: () => {
+                            setIsSpeaking(false);
+                            setTimeout(handleNext, 800);
+                        }
+                    });
+                    return;
                 }
 
                 // IMPORTANT: Force speaker output for AI audio on iOS
@@ -633,15 +659,15 @@ export default function StudioV2Screen() {
                 // Only validate text if Literal Mode is active
                 if (literalMode) {
                     const similarity = calculateSimilarity(spokenText, targetLine.text);
-                    const threshold = 0.99; // High threshold for literal mode
+                    const threshold = 0.85; // Lowered from 0.99 to avoid frustration with minor misrecognitions
 
-                    if (similarity > threshold) {
+                    if (similarity >= threshold) {
                         // Success: advance
                         handleNext();
                     } else {
                         // Mismatch: offer retry
                         Alert.alert(
-                            'No entendido',
+                            'Error en el texto',
                             `Dijiste: "${spokenText}"\nEsperaba: "${targetLine.text}"`,
                             [
                                 { text: 'Reintentar', onPress: () => { processingRef.current = false; startListening(); } },
@@ -1166,7 +1192,7 @@ export default function StudioV2Screen() {
                 scene_id: dialogueLines[currentIndex]?.sceneId ?? dialogueLines[0]?.sceneId,
                 audio_url: mergedPath!,
                 duration_seconds: actualDuration, // Use actual duration instead of recordingTime
-                title: `Sesión ${new Date().toLocaleString('es-ES')}`,
+                title: scriptTitle || `Sesión ${new Date().toLocaleString('es-ES')}`,
                 notes: mergedPath === serverSegments[0].path
                     ? `Grabación con ${serverSegments.length} segmentos (servidor no disponible para mezclar). Segmentos: ${JSON.stringify(serverSegments.map(s => s.path))}`
                     : null
@@ -1366,7 +1392,7 @@ export default function StudioV2Screen() {
 
                 if (character) {
                     const voiceConfig = {
-                        provider: (character.voice_provider || 'openai') as 'openai' | 'elevenlabs' | 'system',
+                        provider: (character.voice_provider || 'openai') as 'openai' | 'elevenlabs' | 'azure' | 'system',
                         voiceId: character.voice_id || undefined
                     };
 
@@ -1716,7 +1742,7 @@ export default function StudioV2Screen() {
 
                 // Get character voice configuration
                 const voiceConfig = {
-                    provider: (selectedCharacter.voice_provider || 'openai') as 'openai' | 'elevenlabs' | 'system',
+                    provider: (selectedCharacter.voice_provider || 'openai') as 'openai' | 'elevenlabs' | 'azure' | 'system',
                     voiceId: selectedCharacter.voice_id || undefined
                 };
 
@@ -1853,20 +1879,32 @@ export default function StudioV2Screen() {
 
                         {/* Right Side Actions */}
                         {isReordering ? (
-                            <TouchableOpacity
-                                onPress={saveNewOrder}
-                                disabled={isUpdating}
-                                style={[styles.cancelRecordingButton, { backgroundColor: '#10B981', opacity: isUpdating ? 0.7 : 1 }]}
-                            >
-                                {isUpdating ? (
-                                    <ActivityIndicator size="small" color="#FFFFFF" />
-                                ) : (
-                                    <Save size={16} color="#FFFFFF" />
-                                )}
-                                <Text style={styles.cancelRecordingText}>
-                                    {isUpdating ? 'Guardando...' : 'Guardar orden'}
-                                </Text>
-                            </TouchableOpacity>
+                            <View style={{ flexDirection: 'row', gap: 8 }}>
+                                {/* Cancel — restores original order */}
+                                <TouchableOpacity
+                                    onPress={cancelReorder}
+                                    disabled={isUpdating}
+                                    style={[styles.cancelRecordingButton, { backgroundColor: colors.border, opacity: isUpdating ? 0.5 : 1 }]}
+                                >
+                                    <X size={16} color={colors.text} />
+                                    <Text style={[styles.cancelRecordingText, { color: colors.text }]}>Cancelar</Text>
+                                </TouchableOpacity>
+                                {/* Save */}
+                                <TouchableOpacity
+                                    onPress={saveNewOrder}
+                                    disabled={isUpdating}
+                                    style={[styles.cancelRecordingButton, { backgroundColor: '#10B981', opacity: isUpdating ? 0.7 : 1 }]}
+                                >
+                                    {isUpdating ? (
+                                        <ActivityIndicator size="small" color="#FFFFFF" />
+                                    ) : (
+                                        <Save size={16} color="#FFFFFF" />
+                                    )}
+                                    <Text style={styles.cancelRecordingText}>
+                                        {isUpdating ? 'Guardando...' : 'Guardar'}
+                                    </Text>
+                                </TouchableOpacity>
+                            </View>
                         ) : (
                             <>
                                 {/* Recording Indicator with Cancel button */}
@@ -2285,191 +2323,76 @@ export default function StudioV2Screen() {
                                 onDragBegin={() => Haptics.selectionAsync()}
                                 onDragEnd={({ data }) => {
                                     setDialogueLines(data);
-                                    // syncOrderToBackend(data); // Removed auto-sync
-
-                                    // Si la línea actual cambia de posición, necesitamos actualizar currentIndex
-                                    // para seguir apuntando a la misma línea (si es posible)
-                                    // O simplemente dejamos que el usuario navegue.
-                                    // Lo más seguro es que currentIndex siga siendo un número, 
-                                    // pero la línea en esa posición habrá cambiado.
-                                    // Si estamos reproduciendo, esto podría ser confuso.
-                                    // Idealmente, pausar al arrastrar.
                                 }}
                                 keyExtractor={(item) => item.id}
                                 containerStyle={styles.content}
-                                contentContainerStyle={{ padding: rp(20), paddingBottom: 100 }}
+                                contentContainerStyle={{ paddingHorizontal: rp(16), paddingVertical: rp(12), paddingBottom: 100 }}
                                 renderItem={({ item, drag, isActive, getIndex }) => {
                                     const index = getIndex();
-                                    const isCurrent = index === currentIndex; // Resaltar línea actual de reproducción
-
-                                    // Determinar estilo según estado
-                                    // Si está activa (drag), o es la actual de reproducción.
-                                    // Las líneas pasadas o futuras se muestran normales en la lista.
+                                    const charColor = item.isUserCharacter ? '#10B981' : (item.color || colors.primary);
+                                    const preview = (item.cleanText || item.text || '').replace(/\s+/g, ' ').trim();
+                                    const previewText = preview.length > 70 ? preview.substring(0, 70) + '\u2026' : preview;
 
                                     return (
-                                        <ScaleDecorator>
-                                            <Pressable
-                                                onLongPress={drag}
-                                                delayLongPress={200}
-                                                disabled={isActive}
-                                                style={[
-                                                    styles.card,
-                                                    isActive && {
-                                                        opacity: 0.9,
-                                                        shadowColor: "#000",
-                                                        shadowOffset: { width: 0, height: 10 },
-                                                        shadowOpacity: 0.3,
-                                                        shadowRadius: 20,
-                                                        elevation: 10,
-                                                        transform: [{ scale: 1.05 }],
-                                                        zIndex: 1000
-                                                    },
-                                                    isCurrent && {
-                                                        borderWidth: 4,
-                                                        borderColor: item.isUserCharacter ? '#10B981' : item.color || colors.primary
-                                                    },
-                                                    !isCurrent && !isActive && {
-                                                        opacity: 0.8, // Las no actuales un poco más tenues para destacar la actual
-                                                        borderColor: 'transparent',
-                                                        borderWidth: 4, // Mantener ancho para evitar saltos
-                                                    },
-                                                    {
-                                                        backgroundColor: colors.background,
-                                                        marginBottom: 12,
-                                                        padding: 0,
-                                                        overflow: 'hidden',
-                                                    }
-                                                ]}
-                                            >
-                                                {/* Header Banner */}
-                                                <View style={[
-                                                    styles.cardHeaderBanner,
-                                                    {
-                                                        backgroundColor: item.isUserCharacter ? '#10B981' : item.color || colors.primary,
-                                                    }
-                                                ]}>
-                                                    {/* Menu Button - Always on the right */}
-                                                    {!isPlaying && !isRecording && !isSpeaking && !isListening && (
-                                                        <TouchableOpacity
-                                                            onPress={() => setOpenEditMenuLineId(
-                                                                openEditMenuLineId === item.id ? null : item.id
-                                                            )}
-                                                            style={styles.menuButtonAbsolute}
-                                                        >
-                                                            <MoreVertical size={20} color={colors.background} />
-                                                        </TouchableOpacity>
-                                                    )}
+                                        <ScaleDecorator activeScale={1.03}>
+                                            <View style={{
+                                                flexDirection: 'row',
+                                                alignItems: 'center',
+                                                height: 68,
+                                                marginBottom: 8,
+                                                borderRadius: 12,
+                                                overflow: 'hidden',
+                                                backgroundColor: colors.surface,
+                                                borderWidth: 1.5,
+                                                borderColor: isActive ? charColor : colors.border,
+                                                shadowColor: isActive ? charColor : 'transparent',
+                                                shadowOffset: { width: 0, height: 4 },
+                                                shadowOpacity: isActive ? 0.35 : 0,
+                                                shadowRadius: 8,
+                                                elevation: isActive ? 8 : 0,
+                                            }}>
+                                                {/* Color accent bar */}
+                                                <View style={{ width: 5, alignSelf: 'stretch', backgroundColor: charColor }} />
 
-                                                    {/* Content */}
-                                                    {openEditMenuLineId === item.id ? (
-                                                        <View style={styles.editMenuInHeader}>
-                                                            {/* Botones de mover mantenidos como accesibilidad */}
-                                                            <TouchableOpacity
-                                                                onPress={() => {
-                                                                    // Necesitaremos adaptar moveLineUp para usar indices globales o ids
-                                                                    moveLineUp(item.id);
-                                                                    setOpenEditMenuLineId(null);
-                                                                }}
-                                                                style={styles.editButtonHorizontal}
-                                                                disabled={isUpdating}
-                                                            >
-                                                                <ChevronUp size={18} color={colors.background} />
-                                                            </TouchableOpacity>
-
-                                                            <TouchableOpacity
-                                                                onPress={() => {
-                                                                    moveLineDown(item.id);
-                                                                    setOpenEditMenuLineId(null);
-                                                                }}
-                                                                style={styles.editButtonHorizontal}
-                                                                disabled={isUpdating}
-                                                            >
-                                                                <ChevronDown size={18} color={colors.background} />
-                                                            </TouchableOpacity>
-
-                                                            <TouchableOpacity
-                                                                onPress={() => {
-                                                                    startEditingLine(item);
-                                                                    setOpenEditMenuLineId(null);
-                                                                }}
-                                                                style={styles.editButtonHorizontal}
-                                                                disabled={isUpdating}
-                                                            >
-                                                                <Edit size={18} color={colors.background} />
-                                                            </TouchableOpacity>
-
-                                                            <TouchableOpacity
-                                                                onPress={() => {
-                                                                    deleteLine(item.id);
-                                                                    setOpenEditMenuLineId(null);
-                                                                }}
-                                                                style={styles.editButtonHorizontal}
-                                                                disabled={isUpdating}
-                                                            >
-                                                                <Trash2 size={18} color={colors.background} />
-                                                            </TouchableOpacity>
-                                                        </View>
-                                                    ) : (
-                                                        <View style={styles.headerCenteredContent}>
-                                                            <Text style={[styles.characterName, { color: colors.background }]}>
-                                                                {item.characterName}
-                                                            </Text>
-                                                            <View style={[styles.badge, { backgroundColor: 'rgba(0,0,0,0.2)' }]}>
-                                                                <Text style={[styles.badgeText, { color: colors.background }]}>
-                                                                    {item.isUserCharacter ? 'TÚ' : 'IA'}
-                                                                </Text>
-                                                            </View>
-                                                        </View>
-                                                    )}
+                                                {/* Position number */}
+                                                <View style={{ width: 36, alignItems: 'center' }}>
+                                                    <Text style={{ fontSize: rf(13), fontWeight: '700', color: colors.textSecondary }}>
+                                                        {(index ?? 0) + 1}
+                                                    </Text>
                                                 </View>
 
-                                                <View style={styles.cardContent}>
-                                                    {editingLineId === item.id ? (
-                                                        <View style={styles.editContainer}>
-                                                            <TextInput
-                                                                style={[styles.editInput, { color: colors.text, borderColor: colors.border, backgroundColor: colors.surface }]}
-                                                                value={editedText}
-                                                                onChangeText={setEditedText}
-                                                                multiline
-                                                                autoFocus
-                                                            />
-                                                            <View style={styles.editActions}>
-                                                                <TouchableOpacity onPress={cancelEditing} style={[styles.editActionButton, { backgroundColor: colors.border }]}>
-                                                                    <Text style={{ color: colors.text }}>Cancelar</Text>
-                                                                </TouchableOpacity>
-                                                                <TouchableOpacity onPress={saveEditedLine} style={[styles.editActionButton, { backgroundColor: '#10B981' }]}>
-                                                                    <Text style={{ color: '#FFFFFF' }}>Guardar</Text>
-                                                                </TouchableOpacity>
-                                                            </View>
-                                                        </View>
-                                                    ) : (
-                                                        <>
-                                                            {item.isUserCharacter && hideUserLines ? (
-                                                                <View style={styles.hiddenLineContainer}>
-                                                                    <EyeOff size={32} color={colors.textSecondary} />
-                                                                    <Text style={[styles.hiddenLineText, { color: colors.textSecondary }]}>Línea oculta</Text>
-                                                                </View>
-                                                            ) : (
-                                                                <Text style={[styles.dialogueText, { color: colors.text }]}>
-                                                                    {renderTextWithStageDirections(showStageDirections ? item.text : item.cleanText)}
-                                                                </Text>
-                                                            )}
-                                                        </>
-                                                    )}
+                                                {/* Content */}
+                                                <View style={{ flex: 1, paddingVertical: rp(10), paddingRight: rp(8) }}>
+                                                    <Text style={{ fontSize: rf(12), fontWeight: '700', color: charColor, marginBottom: 3 }} numberOfLines={1}>
+                                                        {item.characterName}
+                                                        {item.isUserCharacter ? '  \u00b7 T\u00da' : '  \u00b7 IA'}
+                                                    </Text>
+                                                    <Text style={{ fontSize: rf(13), color: colors.textSecondary, lineHeight: rf(18) }} numberOfLines={2}>
+                                                        {previewText}
+                                                    </Text>
                                                 </View>
 
-                                                {/* Status Indicators */}
-                                                {isCurrent && (
-                                                    <View style={{ position: 'absolute', bottom: 10, right: 10, flexDirection: 'row', alignItems: 'center', gap: 5 }}>
-                                                        {(isListening || isRecording) && item.isUserCharacter && (
-                                                            <Mic size={20} color="#EF4444" />
-                                                        )}
-                                                        {(isSpeaking) && !item.isUserCharacter && (
-                                                            <Volume2 size={20} color={colors.primary} />
-                                                        )}
+                                                {/* Drag handle — ONLY trigger for drag, instant response via onPressIn */}
+                                                <TouchableOpacity
+                                                    onPressIn={drag}
+                                                    delayPressIn={0}
+                                                    style={{
+                                                        width: 48,
+                                                        alignSelf: 'stretch',
+                                                        alignItems: 'center',
+                                                        justifyContent: 'center',
+                                                        borderLeftWidth: 1,
+                                                        borderLeftColor: colors.border,
+                                                    }}
+                                                    activeOpacity={0.6}
+                                                >
+                                                    <View style={{ gap: 4, alignItems: 'center' }}>
+                                                        {[0, 1, 2].map(i => (
+                                                            <View key={i} style={{ width: 20, height: 2.5, borderRadius: 2, backgroundColor: isActive ? charColor : colors.textSecondary }} />
+                                                        ))}
                                                     </View>
-                                                )}
-                                            </Pressable>
+                                                </TouchableOpacity>
+                                            </View>
                                         </ScaleDecorator>
                                     );
                                 }}
