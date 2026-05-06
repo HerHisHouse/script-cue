@@ -16,7 +16,7 @@ import { useTheme } from '@/contexts/ThemeContext';
 import { useAuth } from '@/contexts/AuthContext';
 import { DialogueLine } from '@/utils/dialogueParser';
 import { loadDialogueLines } from '@/utils/loadDialogueLines';
-import { ArrowLeft, Mic, Clock, Check, X, ChevronLeft, ChevronRight } from 'lucide-react-native';
+import { ArrowLeft, Mic, Clock, Check, X, ChevronLeft, ChevronRight, Brain } from 'lucide-react-native';
 import { getFailedLines, clearFailedLine, saveScore, FailedLine } from '@/utils/gamification';
 import { Audio } from 'expo-av';
 import * as Speech from 'expo-speech';
@@ -70,23 +70,22 @@ export default function ReinforcementScreen() {
             try {
                 setLoading(true);
                 const lines = await loadDialogueLines(id as string);
-                const failures = await getFailedLines(id as string);
+                const failures = await getFailedLines(id as string, user.id);
 
                 console.log('[Reinforcement] Loaded failures:', failures.length);
 
-                if (lines && failures.length > 0) {
+                if (failures.length > 0) {
                     const itemsWithData: FailedLineWithData[] = [];
                     for (const failure of failures) {
-                        const line = lines.find(l => l.id === failure.lineId);
-                        if (line) {
-                            itemsWithData.push({ ...failure, line });
-                        }
+                        const line = lines ? lines.find(l => l.id === failure.lineId) : null;
+                        
+                        // Si no hay línea (ej: quiz de comprensión), igual lo añadimos
+                        // pero la línea será null/undefined.
+                        itemsWithData.push({ ...failure, line: line as any });
                     }
                     console.log('[Reinforcement] Items with data:', itemsWithData.length);
                     setFailedItems(itemsWithData);
                 } else {
-                    // Importante: setear array vacío si no hay errores
-                    console.log('[Reinforcement] No failures, setting empty array');
                     setFailedItems([]);
                 }
             } catch (e) {
@@ -192,7 +191,7 @@ export default function ReinforcementScreen() {
     const handleSuccess = async () => {
         if (!currentItem) return;
 
-        await clearFailedLine(id as string, currentItem.lineId);
+        await clearFailedLine(id as string, currentItem.lineId, currentItem.id);
         saveScore({
             gameId: 'reinforcement',
             scriptId: id as string,
@@ -508,6 +507,30 @@ export default function ReinforcementScreen() {
 
     // ===== QUIZ MODE LOGIC =====
     const renderQuizMode = () => {
+        // Si es un error de quiz de comprensión (viene de Supabase)
+        if (currentItem.questionText) {
+            return (
+                <View style={styles.content}>
+                    <View style={[styles.card, { backgroundColor: colors.surface, padding: 24 }]}>
+                        <Brain size={40} color={colors.primary} style={{ marginBottom: 16 }} />
+                        <Text style={[styles.questionText, { color: colors.text, fontSize: 20 }]}>
+                            {currentItem.questionText}
+                        </Text>
+                        <Text style={{ color: colors.textSecondary, marginTop: 20, fontStyle: 'italic', textAlign: 'center' }}>
+                            Repasa esta parte del guion para reforzar tu comprensión.
+                        </Text>
+                        <TouchableOpacity
+                            onPress={() => handleSuccess()}
+                            style={[styles.btn, { backgroundColor: colors.primary, marginTop: 30, width: '100%', justifyContent: 'center' }]}
+                        >
+                            <Check size={24} color="#FFF" />
+                            <Text style={styles.btnText}>Entendido</Text>
+                        </TouchableOpacity>
+                    </View>
+                </View>
+            );
+        }
+
         if (!quizQuestion) {
             return (
                 <View style={styles.content}>
@@ -625,92 +648,96 @@ export default function ReinforcementScreen() {
 
     if (failedItems.length === 0) {
         return (
-            <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
-                <View style={[styles.header, { borderBottomColor: colors.border, backgroundColor: colors.surface }]}>
-                    <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
-                        <ArrowLeft size={24} color={colors.text} />
-                    </TouchableOpacity>
-                    <Text style={[styles.headerTitle, { color: colors.text, flex: 1, textAlign: 'center', marginRight: 40 }]}>
-                        Ciclos de Refuerzo
-                    </Text>
-                </View>
-                <View style={[styles.content, styles.center]}>
-                    <Text style={[styles.emptyText, { color: colors.textSecondary }]}>
-                        ¡Excelente! No tienes errores pendientes.{'\n\n'}
-                        Completa más juegos para generar ciclos de refuerzo.
-                    </Text>
-                    <TouchableOpacity
-                        style={[styles.btn, { backgroundColor: colors.primary, marginTop: 20 }]}
-                        onPress={() => router.back()}
-                    >
-                        <Text style={styles.btnText}>Volver</Text>
-                    </TouchableOpacity>
+            <SafeAreaView style={[styles.container, { backgroundColor: colors.surface }]}>
+                <View style={{ flex: 1, backgroundColor: colors.background }}>
+                    <View style={[styles.header, { borderBottomColor: colors.border, backgroundColor: colors.surface }]}>
+                        <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
+                            <ArrowLeft size={24} color={colors.text} />
+                        </TouchableOpacity>
+                        <Text style={[styles.headerTitle, { color: colors.text, flex: 1, textAlign: 'center', marginRight: 40 }]}>
+                            Ciclos de Refuerzo
+                        </Text>
+                    </View>
+                    <View style={[styles.content, styles.center]}>
+                        <Text style={[styles.emptyText, { color: colors.textSecondary }]}>
+                            ¡Excelente! No tienes errores pendientes.{'\n\n'}
+                            Completa más juegos para generar ciclos de refuerzo.
+                        </Text>
+                        <TouchableOpacity
+                            style={[styles.btn, { backgroundColor: colors.primary, marginTop: 20 }]}
+                            onPress={() => router.back()}
+                        >
+                            <Text style={styles.btnText}>Volver</Text>
+                        </TouchableOpacity>
+                    </View>
                 </View>
             </SafeAreaView>
         );
     }
 
     return (
-        <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
-            <View style={[styles.header, { borderBottomColor: colors.border, backgroundColor: colors.surface }]}>
-                <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
-                    <ArrowLeft size={24} color={colors.text} />
-                </TouchableOpacity>
-                <Text style={[styles.headerTitle, { color: colors.text, flex: 1, textAlign: 'center', marginRight: 40 }]}>
-                    Refuerzo ({currentIndex + 1}/{failedItems.length})
-                </Text>
-            </View>
-
-            {currentItem && (
-                <>
-                    {/* Debug logging */}
-                    {console.log('[Reinforcement] Current item reason:', currentItem.reason)}
-                    {console.log('[Reinforcement] Ghost hidden indices:', ghostHiddenIndices.size)}
-
-                    {/* Mapear errores antiguos a nuevos tipos */}
-                    {(currentItem.reason === 'ghost_error' || currentItem.reason === 'wrong_word' || currentItem.reason === 'revealed' || currentItem.reason === 'timeout') && renderGhostMode()}
-                    {(currentItem.reason === 'echo_error' || currentItem.reason === 'poor_match') && renderEchoMode()}
-                    {currentItem.reason === 'quiz_error' && renderQuizMode()}
-                    {!['ghost_error', 'echo_error', 'quiz_error', 'wrong_word', 'revealed', 'timeout', 'poor_match'].includes(currentItem.reason) && (
-                        <View style={styles.content}>
-                            <Text style={{ color: colors.text }}>Tipo de error no soportado: {currentItem.reason}</Text>
-                        </View>
-                    )}
-                </>
-            )}
-
-            {/* Navigation Buttons */}
-            {currentItem && (
-                <View style={styles.navigation}>
-                    <TouchableOpacity
-                        onPress={() => {
-                            if (currentIndex > 0) {
-                                setCurrentIndex(p => p - 1);
-                                resetStates();
-                            }
-                        }}
-                        disabled={currentIndex === 0}
-                        style={[styles.navButton, { opacity: currentIndex === 0 ? 0.3 : 1 }]}
-                    >
-                        <ChevronLeft size={24} color={colors.text} />
-                        <Text style={[styles.navText, { color: colors.text }]}>Anterior</Text>
+        <SafeAreaView style={[styles.container, { backgroundColor: colors.surface }]}>
+            <View style={{ flex: 1, backgroundColor: colors.background }}>
+                <View style={[styles.header, { borderBottomColor: colors.border, backgroundColor: colors.surface }]}>
+                    <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
+                        <ArrowLeft size={24} color={colors.text} />
                     </TouchableOpacity>
-
-                    <TouchableOpacity
-                        onPress={() => {
-                            if (currentIndex < failedItems.length - 1) {
-                                setCurrentIndex(p => p + 1);
-                                resetStates();
-                            }
-                        }}
-                        disabled={currentIndex === failedItems.length - 1}
-                        style={[styles.navButton, { opacity: currentIndex === failedItems.length - 1 ? 0.3 : 1 }]}
-                    >
-                        <Text style={[styles.navText, { color: colors.text }]}>Siguiente</Text>
-                        <ChevronRight size={24} color={colors.text} />
-                    </TouchableOpacity>
+                    <Text style={[styles.headerTitle, { color: colors.text, flex: 1, textAlign: 'center', marginRight: 40 }]}>
+                        Refuerzo ({currentIndex + 1}/{failedItems.length})
+                    </Text>
                 </View>
-            )}
+
+                {currentItem && (
+                    <>
+                        {/* Debug logging */}
+                        {console.log('[Reinforcement] Current item reason:', currentItem.reason)}
+                        {console.log('[Reinforcement] Ghost hidden indices:', ghostHiddenIndices.size)}
+
+                        {/* Mapear errores antiguos a nuevos tipos */}
+                        {(currentItem.reason === 'ghost_error' || currentItem.reason === 'wrong_word' || currentItem.reason === 'revealed' || currentItem.reason === 'timeout') && renderGhostMode()}
+                        {(currentItem.reason === 'echo_error' || currentItem.reason === 'poor_match') && renderEchoMode()}
+                        {currentItem.reason === 'quiz_error' && renderQuizMode()}
+                        {!['ghost_error', 'echo_error', 'quiz_error', 'wrong_word', 'revealed', 'timeout', 'poor_match'].includes(currentItem.reason) && (
+                            <View style={styles.content}>
+                                <Text style={{ color: colors.text }}>Tipo de error no soportado: {currentItem.reason}</Text>
+                            </View>
+                        )}
+                    </>
+                )}
+
+                {/* Navigation Buttons */}
+                {currentItem && (
+                    <View style={styles.navigation}>
+                        <TouchableOpacity
+                            onPress={() => {
+                                if (currentIndex > 0) {
+                                    setCurrentIndex(p => p - 1);
+                                    resetStates();
+                                }
+                            }}
+                            disabled={currentIndex === 0}
+                            style={[styles.navButton, { opacity: currentIndex === 0 ? 0.3 : 1 }]}
+                        >
+                            <ChevronLeft size={24} color={colors.text} />
+                            <Text style={[styles.navText, { color: colors.text }]}>Anterior</Text>
+                        </TouchableOpacity>
+
+                        <TouchableOpacity
+                            onPress={() => {
+                                if (currentIndex < failedItems.length - 1) {
+                                    setCurrentIndex(p => p + 1);
+                                    resetStates();
+                                }
+                            }}
+                            disabled={currentIndex === failedItems.length - 1}
+                            style={[styles.navButton, { opacity: currentIndex === failedItems.length - 1 ? 0.3 : 1 }]}
+                        >
+                            <Text style={[styles.navText, { color: colors.text }]}>Siguiente</Text>
+                            <ChevronRight size={24} color={colors.text} />
+                        </TouchableOpacity>
+                    </View>
+                )}
+            </View>
         </SafeAreaView>
     );
 }
