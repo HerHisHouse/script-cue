@@ -76,6 +76,7 @@ export default function CoachModeScreen() {
   const [analyzing, setAnalyzing] = useState(false);
   const [activeTab, setActiveTab] = useState<TabType>('feedback');
   const [comparingWith, setComparingWith] = useState<string | null>(null);
+  const [analyzedIds, setAnalyzedIds] = useState<Set<string>>(new Set());
   const [playbackStatus, setPlaybackStatus] = useState<any>(null);
   const [sound, setSound] = useState<Audio.Sound | null>(null);
   const [showDisclaimer, setShowDisclaimer] = useState(false);
@@ -149,6 +150,15 @@ export default function CoachModeScreen() {
 
       if (error) throw error;
       setRecordings(data || []);
+
+      // Fetch analyzed IDs
+      const { data: feedbackData } = await supabase
+        .from('coach_feedback')
+        .select('recording_id');
+      
+      if (feedbackData) {
+        setAnalyzedIds(new Set(feedbackData.map(f => f.recording_id)));
+      }
     } catch (e) {
       console.error('Error loading recordings:', e);
     } finally {
@@ -264,9 +274,11 @@ export default function CoachModeScreen() {
         console.log('[DEBUG] Analysis received successfully!');
         setAnalysis(result.analysis);
 
-        // Save to local Supabase just in case server didn't (though server code does it)
-        // But server returns the savedId, so we assume it worked.
-        // We can just refresh or trust the state.
+        // PERSISTENCE locally in state for icons
+        setAnalyzedIds(prev => new Set(prev).add(selectedRecording.id));
+        
+        // Clean comparison state
+        setComparingWith(null);
       } else {
         console.error('[DEBUG] Result does not have success=true or analysis field');
         throw new Error('Respuesta inválida del coach');
@@ -283,6 +295,7 @@ export default function CoachModeScreen() {
         Alert.alert('Error de Análisis', e.message);
       }
     } finally {
+      setComparingWith(null);
       setAnalyzing(false);
     }
   }
@@ -369,9 +382,17 @@ export default function CoachModeScreen() {
         <Text style={[styles.recordingTitle, { color: colors.text }]}>
           {item.title || `${new Date(item.created_at).toLocaleDateString()} - ${new Date(item.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`}
         </Text>
-        <Text style={[styles.recordingSubtitle, { color: colors.textSecondary }]}>
-          {item.duration_seconds ? `${Math.round(item.duration_seconds)}s` : 'Analizar duración'}
-        </Text>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+            <Text style={[styles.recordingSubtitle, { color: colors.textSecondary }]}>
+                {item.duration_seconds ? `${Math.round(item.duration_seconds)}s` : 'Analizar duración'}
+            </Text>
+            {analyzedIds.has(item.id) && (
+                <View style={[styles.analyzedBadge, { backgroundColor: colors.primary + '20' }]}>
+                    <Brain size={12} color={colors.primary} />
+                    <Text style={[styles.analyzedBadgeText, { color: colors.primary }]}>Analizada</Text>
+                </View>
+            )}
+        </View>
       </View>
       <ChevronRight size={20} color={colors.textSecondary} />
     </TouchableOpacity>
@@ -467,13 +488,26 @@ export default function CoachModeScreen() {
                         .map(r => (
                           <TouchableOpacity
                             key={r.id}
-                            style={[styles.comparisonOption, { backgroundColor: colors.input, borderColor: colors.border }]}
+                            style={[
+                                styles.comparisonOption, 
+                                { backgroundColor: colors.input, borderColor: comparingWith === r.id ? colors.primary : colors.border },
+                                comparingWith === r.id && { borderWidth: 2 }
+                            ]}
                             onPress={() => startAnalysis(r.id)}
+                            disabled={analyzing}
                           >
-                            <Repeat size={16} color={colors.primary} />
-                            <Text style={[styles.comparisonOptionText, { color: colors.text }]}>
+                            {analyzing && comparingWith === r.id ? (
+                                <ActivityIndicator size="small" color={colors.primary} />
+                            ) : (
+                                <Repeat size={16} color={comparingWith === r.id ? colors.primary : colors.textSecondary} />
+                            )}
+                            <Text style={[
+                                styles.comparisonOptionText, 
+                                { color: comparingWith === r.id ? colors.primary : colors.text }
+                            ]}>
                               {new Date(r.created_at).toLocaleDateString()} - {new Date(r.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                             </Text>
+                            {comparingWith === r.id && <Sparkles size={14} color={colors.primary} />}
                           </TouchableOpacity>
                         ))}
                     </View>
@@ -530,7 +564,7 @@ export default function CoachModeScreen() {
           </TouchableOpacity>
           <Text style={[styles.headerTitle, { color: colors.text }]}>Modo Coach</Text>
           <TouchableOpacity
-            onPress={() => Alert.alert('Modo Coach', 'Recibe feedback profesional de IA sobre tu interpretación: ritmo, dicción, emoción y sugerencias personalizadas para mejorar.')}
+            onPress={() => Alert.alert('Modo Coach', 'Recibe feedback de IA sobre tu interpretación: ritmo, dicción, emoción y sugerencias personalizadas para mejorar.')}
             style={styles.backButton}
           >
             <Info size={24} color={colors.text} />
@@ -539,7 +573,7 @@ export default function CoachModeScreen() {
 
         <View style={styles.content}>
           <Text style={[styles.subtitle, { color: colors.textSecondary }]}>
-            Selecciona una grabación para recibir feedback profesional.
+            Selecciona una grabación para recibir feedback.
           </Text>
 
           <FlatList
@@ -620,7 +654,7 @@ export default function CoachModeScreen() {
         </TouchableOpacity>
         <Text style={[styles.headerTitle, { color: colors.text }]}>Análisis</Text>
         <TouchableOpacity
-          onPress={() => Alert.alert('Modo Coach', 'Recibe feedback profesional de IA sobre tu interpretación: ritmo, dicción, emoción y sugerencias personalizadas para mejorar.')}
+          onPress={() => Alert.alert('Modo Coach', 'Recibe feedback de IA sobre tu interpretación: ritmo, dicción, emoción y sugerencias personalizadas para mejorar.')}
           style={styles.backButton}
         >
           <Info size={24} color={colors.text} />
@@ -660,7 +694,7 @@ export default function CoachModeScreen() {
               <Brain size={48} color={colors.primary} style={{ marginBottom: 16 }} />
               <Text style={[styles.introTitle, { color: colors.text }]}>Análisis de Interpretación</Text>
               <Text style={[styles.introText, { color: colors.textSecondary }]}>
-                La IA analizará tu ritmo, entonación, pausas y carga emocional para darte feedback profesional.
+                La IA analizará tu ritmo, entonación, pausas y carga emocional para darte feedback.
               </Text>
 
               <TouchableOpacity
@@ -681,6 +715,11 @@ export default function CoachModeScreen() {
           </View>
         ) : (
           <>
+            {/* Scroll Indicator */}
+            <View style={styles.scrollIndicator}>
+              <Text style={[styles.scrollHint, { color: colors.textSecondary }]}>← Desliza para ver más →</Text>
+            </View>
+
             {/* TABS HEADER */}
             <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.tabsContainer}>
               <TouchableOpacity
@@ -700,26 +739,21 @@ export default function CoachModeScreen() {
               </TouchableOpacity>
 
               <TouchableOpacity
-                style={[styles.tab, activeTab === 'comparison' && styles.activeTab, { borderColor: activeTab === 'comparison' ? colors.primary : 'transparent' }]}
-                onPress={() => setActiveTab('comparison')}
-              >
-                <TrendingUp size={18} color={activeTab === 'comparison' ? colors.primary : colors.textSecondary} />
-                <Text style={[styles.tabText, { color: activeTab === 'comparison' ? colors.primary : colors.textSecondary }]}>Comparación</Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity
                 style={[styles.tab, activeTab === 'exercises' && styles.activeTab, { borderColor: activeTab === 'exercises' ? colors.primary : 'transparent' }]}
                 onPress={() => setActiveTab('exercises')}
               >
                 <Dumbbell size={18} color={activeTab === 'exercises' ? colors.primary : colors.textSecondary} />
                 <Text style={[styles.tabText, { color: activeTab === 'exercises' ? colors.primary : colors.textSecondary }]}>Ejercicios</Text>
               </TouchableOpacity>
-            </ScrollView>
 
-            {/* Scroll Indicator */}
-            <View style={styles.scrollIndicator}>
-              <Text style={[styles.scrollHint, { color: colors.textSecondary }]}>← Desliza para ver más →</Text>
-            </View>
+              <TouchableOpacity
+                style={[styles.tab, activeTab === 'comparison' && styles.activeTab, { borderColor: activeTab === 'comparison' ? colors.primary : 'transparent' }]}
+                onPress={() => setActiveTab('comparison')}
+              >
+                <TrendingUp size={18} color={activeTab === 'comparison' ? colors.primary : colors.textSecondary} />
+                <Text style={[styles.tabText, { color: activeTab === 'comparison' ? colors.primary : colors.textSecondary }]}>Comparación</Text>
+              </TouchableOpacity>
+            </ScrollView>
 
             {/* CONTENT */}
             {renderAnalysisContent()}
@@ -1048,5 +1082,18 @@ const styles = StyleSheet.create({
   comparisonOptionText: {
     fontSize: rf(13),
     fontWeight: '500',
+  },
+  analyzedBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 10,
+  },
+  analyzedBadgeText: {
+    fontSize: rf(10),
+    fontWeight: '700',
+    textTransform: 'uppercase',
   },
 });
