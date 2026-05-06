@@ -1111,6 +1111,23 @@ ${script_text}`;
 
         const parsed = JSON.parse(content);
 
+        // Barajar opciones para que la correcta no sea siempre la primera
+        if (parsed.questions && Array.isArray(parsed.questions)) {
+            parsed.questions = parsed.questions.map(q => {
+                const originalCorrectOption = q.options[q.correct];
+                // Crear copia y barajar
+                const shuffledOptions = [...q.options].sort(() => Math.random() - 0.5);
+                // Encontrar el nuevo índice de la respuesta correcta
+                const newCorrectIndex = shuffledOptions.indexOf(originalCorrectOption);
+                
+                return {
+                    ...q,
+                    options: shuffledOptions,
+                    correct: newCorrectIndex
+                };
+            });
+        }
+
         // 6. Validar cantidad de preguntas
         if (!parsed.questions || parsed.questions.length !== questionCount) {
             console.warn(`[Quiz] GPT devolvió ${parsed.questions?.length || 0} preguntas, esperábamos ${questionCount}`);

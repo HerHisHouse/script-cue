@@ -199,7 +199,7 @@ export default function QuizModeScreen() {
                         .insert({
                             user_id: user.id,
                             script_id: scriptId,
-                            game_type: 'quiz',
+                            game_type: 'quiz_error',
                             question_index: currentQIndex,
                             question_text: questions[currentQIndex].question,
                             failed_at: new Date().toISOString()
