@@ -517,34 +517,16 @@ export default function ReinforcementScreen() {
 
     // ===== QUIZ MODE LOGIC =====
     const renderQuizMode = () => {
-        // Si es un error de quiz de comprensión (viene de Supabase)
-        if (currentItem.questionText) {
-            return (
-                <View style={styles.content}>
-                    <View style={[styles.card, { backgroundColor: colors.surface, padding: 24 }]}>
-                        <Brain size={40} color={colors.primary} style={{ marginBottom: 16 }} />
-                        <Text style={[styles.questionText, { color: colors.text, fontSize: 20 }]}>
-                            {currentItem.questionText}
-                        </Text>
-                        <Text style={{ color: colors.textSecondary, marginTop: 20, fontStyle: 'italic', textAlign: 'center' }}>
-                            Repasa esta parte del guion para reforzar tu comprensión.
-                        </Text>
-                        <TouchableOpacity
-                            onPress={() => handleSuccess()}
-                            style={[styles.btn, { backgroundColor: colors.primary, marginTop: 30, width: '100%', justifyContent: 'center' }]}
-                        >
-                            <Check size={24} color="#FFF" />
-                            <Text style={styles.btnText}>Entendido</Text>
-                        </TouchableOpacity>
-                    </View>
-                </View>
-            );
-        }
+        // Determinamos qué pregunta mostrar (la guardada en DB o la generada al vuelo)
+        const isComprehensionQuiz = !!currentItem.questionText;
+        const displayQuestion = isComprehensionQuiz ? currentItem.questionText : quizQuestion?.text;
+        const displayOptions = isComprehensionQuiz ? currentItem.options : quizQuestion?.options;
+        const correctIdx = isComprehensionQuiz ? currentItem.correctIndex : quizQuestion?.correctIndex;
 
-        if (!quizQuestion) {
+        if (!displayQuestion || !displayOptions) {
             return (
                 <View style={styles.content}>
-                    <Text style={{ color: colors.text }}>No se puede generar pregunta para esta línea.</Text>
+                    <Text style={{ color: colors.text }}>No se puede cargar la pregunta.</Text>
                 </View>
             );
         }
@@ -553,7 +535,7 @@ export default function ReinforcementScreen() {
             if (quizSelected !== null) return;
 
             setQuizSelected(idx);
-            const correct = idx === quizQuestion.correctIndex;
+            const correct = idx === correctIdx;
             setQuizCorrect(correct);
 
             if (correct) {
@@ -561,32 +543,14 @@ export default function ReinforcementScreen() {
             }
         };
 
-        const renderQuestionText = () => {
-            if (quizSelected === null) {
-                return <Text style={[styles.questionText, { color: colors.text }]}>{quizQuestion.text}</Text>;
-            }
-
-            const selectedWord = quizQuestion.options[quizSelected];
-            const wordColor = quizCorrect ? colors.success : colors.error;
-            const parts = quizQuestion.text.split('________');
-
-            return (
-                <Text style={[styles.questionText, { color: colors.text }]}>
-                    {parts[0]}
-                    <Text style={{ color: wordColor, fontWeight: 'bold' }}>
-                        {selectedWord}
-                    </Text>
-                    {parts[1]}
-                </Text>
-            );
-        };
-
         return (
             <View style={styles.content}>
-                {renderQuestionText()}
+                <Text style={[styles.questionText, { color: colors.text }]}>
+                    {displayQuestion}
+                </Text>
 
                 <View style={styles.optionsContainer}>
-                    {quizQuestion.options.map((opt, idx) => {
+                    {displayOptions.map((opt, idx) => {
                         let bgColor = colors.surface;
 
                         if (quizSelected !== null) {
@@ -594,7 +558,7 @@ export default function ReinforcementScreen() {
                             if (quizCorrect && idx === quizSelected) {
                                 bgColor = 'rgba(74, 222, 128, 0.2)';
                             }
-                            // Si falló, solo marcar la incorrecta en rojo (no mostrar la correcta)
+                            // Si falló, solo marcar la incorrecta en rojo
                             else if (!quizCorrect && idx === quizSelected) {
                                 bgColor = 'rgba(239, 68, 68, 0.2)';
                             }
@@ -610,9 +574,7 @@ export default function ReinforcementScreen() {
                                 <Text style={[styles.optionText, { color: colors.text }]}>{opt}</Text>
 
                                 <View style={styles.iconContainer}>
-                                    {/* Mostrar check si acertó */}
                                     {quizSelected === idx && quizCorrect && <Check size={20} color={colors.success} />}
-                                    {/* Mostrar X si falló */}
                                     {quizSelected === idx && !quizCorrect && <X size={20} color={colors.error} />}
                                 </View>
                             </TouchableOpacity>
@@ -626,7 +588,7 @@ export default function ReinforcementScreen() {
                             setQuizSelected(null);
                             setQuizCorrect(null);
                         }}
-                        style={[styles.btn, { backgroundColor: colors.primary, marginTop: 20 }]}
+                        style={[styles.btn, { backgroundColor: colors.primary, marginTop: 20, alignSelf: 'center' }]}
                     >
                         <Text style={styles.btnText}>Reintentar</Text>
                     </TouchableOpacity>

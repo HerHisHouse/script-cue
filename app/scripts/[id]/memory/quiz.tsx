@@ -202,6 +202,8 @@ export default function QuizModeScreen() {
                             game_type: 'quiz_error',
                             question_index: currentQIndex,
                             question_text: questions[currentQIndex].question,
+                            options: questions[currentQIndex].options,
+                            correct_index: questions[currentQIndex].correct,
                             failed_at: new Date().toISOString()
                         });
                 } catch (err) {

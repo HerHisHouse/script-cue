@@ -17,6 +17,8 @@ export interface FailedLine {
   count: number;
   id?: string; // ID de la DB si viene de Supabase
   questionText?: string; // Para preguntas de quiz de comprensión
+  options?: string[]; // Opciones del quiz
+  correctIndex?: number; // Índice de la respuesta correcta
 }
 
 export const SCORES_KEY = 'memory_scores';
@@ -125,7 +127,9 @@ export async function getFailedLines(scriptId: string, userId?: string): Promise
           reason: item.game_type as FailedLine['reason'],
           timestamp: new Date(item.failed_at).getTime(),
           count: 1,
-          questionText: item.question_text
+          questionText: item.question_text,
+          options: item.options,
+          correctIndex: item.correct_index
         }));
         allFailures.push(...dbFailures);
       }
