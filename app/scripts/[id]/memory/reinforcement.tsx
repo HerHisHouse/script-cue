@@ -129,6 +129,7 @@ export default function ReinforcementScreen() {
         if (!currentItem || currentItem.reason !== 'ghost_error') return;
 
         const line = currentItem.line;
+        if (!line) return; // Guard for null line
         const words = line.cleanText.split(/\s+/);
         const countToHide = Math.max(1, Math.floor(words.length * 0.5));
         const hiddenIndices = new Set<number>();
@@ -150,7 +151,16 @@ export default function ReinforcementScreen() {
             return;
         }
 
+        // Si ya tenemos el texto de la pregunta (quiz de comprensión), no generamos una nueva
+        if (failedItems[currentIndex].questionText) {
+            return;
+        }
+
         const line = failedItems[currentIndex].line;
+        if (!line) {
+            setQuizQuestion(null);
+            return;
+        }
         const words = line.cleanText.split(/\s+/);
 
         const stopWords = ['el', 'la', 'los', 'las', 'un', 'una', 'de', 'del', 'en', 'y', 'o', 'a', 'con', 'por', 'para', 'que', 'es', 'no', 'se', 'me', 'te', 'lo', 'al'];
