@@ -1120,7 +1120,17 @@ ${script_text}`;
         }
 
         // 7. Guardar en DB con metadatos
-        const { error } = await supabase
+        console.log('[Quiz] Intentando guardar en DB con script_id:', script_id);
+        console.log('[Quiz] Datos a guardar:', JSON.stringify({
+            script_id,
+            questions: {
+                questions: parsed.questions,
+                generated_count: parsed.questions.length,
+                line_count: lineCount
+            }
+        }).substring(0, 200));
+
+        const { data: insertedData, error: insertError } = await supabase
             .from('script_quizzes')
             .insert({ 
                 script_id,
@@ -1129,12 +1139,18 @@ ${script_text}`;
                     generated_count: parsed.questions.length,
                     line_count: lineCount
                 }
-            });
+            })
+            .select();
 
-        if (error) {
-            console.error('[Quiz] Error saving to Supabase:', error);
-            throw error;
+        console.log('[Quiz] Resultado insert:', insertedData);
+        console.log('[Quiz] Error insert:', insertError);
+
+        if (insertError) {
+            console.error('[Quiz] ERROR AL GUARDAR:', insertError);
+            throw insertError;
         }
+
+        console.log('[Quiz] ✅ Quiz guardado exitosamente para script:', script_id);
 
         return { 
             questions: parsed.questions,

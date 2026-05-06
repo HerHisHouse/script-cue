@@ -67,6 +67,7 @@ export default function QuizModeScreen() {
             
             try {
                 // 1. Verificar si ya existe quiz para este guion
+                console.log('[Quiz Frontend] Buscando quiz para script_id:', scriptId);
                 const { data: quizzes, error: fetchError } = await supabase
                     .from('script_quizzes')
                     .select('questions')
@@ -115,6 +116,8 @@ export default function QuizModeScreen() {
                 if (!script) throw new Error('Script no encontrado');
 
                 // Llamar al backend para generar quiz
+                console.log('[Quiz Frontend] Script ID que se enviará:', scriptId);
+                console.log('[Quiz Frontend] Llamando a:', `${SERVER_URL}/generate-quiz`);
                 const response = await fetch(`${SERVER_URL}/generate-quiz`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
