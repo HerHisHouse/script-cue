@@ -587,6 +587,24 @@ export default function CoachModeScreen() {
                 <Text style={[styles.emptyText, { color: colors.textSecondary }]}>
                   No hay grabaciones disponibles. Ve al "Modo Estudio" o "Modo Casting" para grabar una escena.
                 </Text>
+
+                <View style={styles.emptyActions}>
+                  <TouchableOpacity
+                    style={styles.actionButton}
+                    onPress={() => router.push(`/scripts/${id}/studio-v2`)}
+                  >
+                    <Play size={24} color="#FFFFFF" />
+                    <Text style={styles.actionText}>ESTUDIO</Text>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    style={styles.actionButton}
+                    onPress={() => router.push(`/scripts/${id}/casting`)}
+                  >
+                    <Clapperboard size={24} color="#FFFFFF" />
+                    <Text style={styles.actionText}>CASTING</Text>
+                  </TouchableOpacity>
+                </View>
               </View>
             }
           />
@@ -1095,5 +1113,33 @@ const styles = StyleSheet.create({
     fontSize: rf(10),
     fontWeight: '700',
     textTransform: 'uppercase',
+  },
+  emptyActions: {
+    marginTop: 30,
+    width: '100%',
+    maxWidth: 300,
+    gap: 12,
+  },
+  actionButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    paddingVertical: rp(16),
+    paddingHorizontal: rp(12),
+    borderRadius: 12,
+    backgroundColor: '#683a79',
+    shadowColor: '#683a79',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 4,
+    minHeight: rp(56),
+  },
+  actionText: {
+    fontSize: rf(15),
+    fontWeight: '700',
+    color: '#FFFFFF',
+    textAlign: 'center',
   },
 });
