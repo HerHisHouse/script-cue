@@ -1,9 +1,9 @@
 import React, { useMemo, useState, useEffect } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, Alert, Image, Switch, ScrollView, Platform } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, Alert, Image, Switch, ScrollView, Platform, TextInput, ActivityIndicator } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ScreenHeader } from '@/components/ScreenHeader';
 import { useRouter } from 'expo-router';
-import { User, LogOut, Sun, Moon, ChevronDown, Smartphone } from 'lucide-react-native';
+import { User, LogOut, Sun, Moon, ChevronDown, Smartphone, Camera, Pencil, Check, X } from 'lucide-react-native';
 import { useAuth } from '@/contexts/AuthContext';
 import { useTheme } from '@/contexts/ThemeContext';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
@@ -11,11 +11,13 @@ import appConfig from '../../app.json';
 import { getSettings, setSettings } from '@/utils/appSettings';
 import * as Speech from 'expo-speech';
 import * as ScreenOrientation from 'expo-screen-orientation';
+import * as ImagePicker from 'expo-image-picker';
+import { supabase } from '@/utils/supabase';
 import { rf, rp } from '@/utils/responsive';
 
 export default function SettingsScreen() {
   const router = useRouter();
-  const { user, profile, signOut } = useAuth();
+  const { user, profile, signOut, updateProfile } = useAuth();
   const { mode, isDark, colors, setThemeMode } = useTheme();
   const insets = useSafeAreaInsets();
   const [showSignOutConfirm, setShowSignOutConfirm] = useState(false);
@@ -30,6 +32,12 @@ export default function SettingsScreen() {
   const [rateValue, setRateValue] = useState<number>(1.0);
   const [pitchValue, setPitchValue] = useState<number>(1.0);
   const [rotationEnabled, setRotationEnabled] = useState(false);
+
+  // Profile editing state
+  const [editingName, setEditingName] = useState(false);
+  const [nameInput, setNameInput] = useState('');
+  const [savingName, setSavingName] = useState(false);
+  const [uploadingAvatar, setUploadingAvatar] = useState(false);
 
   useEffect(() => {
     (async () => {
@@ -135,6 +143,95 @@ export default function SettingsScreen() {
     }
   }
 
+  // --- Profile editing handlers ---
+  function startEditName() {
+    setNameInput(displayName);
+    setEditingName(true);
+  }
+
+  async function saveName() {
+    const trimmed = nameInput.trim();
+    if (!trimmed) {
+      Alert.alert('Error', 'El nombre no puede estar vacío.');
+      return;
+    }
+    setSavingName(true);
+    try {
+      await updateProfile({ username: trimmed, full_name: trimmed });
+      setEditingName(false);
+    } catch (e: any) {
+      Alert.alert('Error', e?.message || 'No se pudo guardar el nombre.');
+    } finally {
+      setSavingName(false);
+    }
+  }
+
+  async function pickAndUploadAvatar() {
+    try {
+      // Request permissions
+      const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (status !== 'granted') {
+        Alert.alert(
+          'Permiso necesario',
+          'Necesitamos acceso a tu galería para cambiar la foto de perfil.',
+          [{ text: 'Entendido' }]
+        );
+        return;
+      }
+
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        allowsEditing: true,
+        aspect: [1, 1],
+        quality: 0.7,
+      });
+
+      if (result.canceled || !result.assets?.[0]) return;
+
+      const asset = result.assets[0];
+      const userId = user?.id;
+      if (!userId) return;
+
+      setUploadingAvatar(true);
+      try {
+        // Build file path: avatars/{userId}/avatar.jpg
+        const ext = asset.uri.split('.').pop() ?? 'jpg';
+        const filePath = `${userId}/avatar.${ext}`;
+
+        // Fetch the image as blob
+        const response = await fetch(asset.uri);
+        const blob = await response.blob();
+        const arrayBuffer = await new Response(blob).arrayBuffer();
+
+        // Upload to Supabase Storage
+        const { error: uploadError } = await supabase.storage
+          .from('avatars')
+          .upload(filePath, arrayBuffer, {
+            contentType: asset.mimeType ?? 'image/jpeg',
+            upsert: true,
+          });
+
+        if (uploadError) throw uploadError;
+
+        // Get public URL
+        const { data: urlData } = supabase.storage.from('avatars').getPublicUrl(filePath);
+        const publicUrl = urlData?.publicUrl;
+        if (!publicUrl) throw new Error('No se pudo obtener la URL pública del avatar.');
+
+        // Add cache-busting param so the image refreshes immediately
+        const avatarUrl = `${publicUrl}?t=${Date.now()}`;
+
+        // Save to profile
+        await updateProfile({ avatar_url: avatarUrl });
+      } finally {
+        setUploadingAvatar(false);
+      }
+    } catch (e: any) {
+      setUploadingAvatar(false);
+      Alert.alert('Error', e?.message || 'No se pudo subir la imagen.');
+    }
+  }
+
   async function toggleLocalOnly() {
     try {
       const next = !localOnly;
@@ -143,8 +240,8 @@ export default function SettingsScreen() {
       Alert.alert(
         'Preferencia actualizada',
         next
-          ? 'Usar sólo almacenamiento local: activado. Las nuevas grabaciones se guardarán sólo en local.'
-          : 'Usar sólo almacenamiento local: desactivado. Las nuevas grabaciones se sincronizarán con la Nube.'
+          ? 'Usar almacenamiento local: activado. Las nuevas grabaciones se guardarán sólo en local.'
+          : 'Usar almacenamiento local: desactivado. Las nuevas grabaciones se sincronizarán con la Nube.'
       );
     } catch (e: any) {
       Alert.alert('Error', e?.message || 'No se pudo actualizar la preferencia');
@@ -168,171 +265,241 @@ export default function SettingsScreen() {
   }
 
   return (
-    <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]} edges={['top', 'left', 'right']}>
-      <ScreenHeader title="Ajustes" />
+    <SafeAreaView style={[styles.container, { backgroundColor: colors.surface }]} edges={['top', 'left', 'right']}>
+      <View style={{ flex: 1, backgroundColor: colors.background }}>
+        <ScreenHeader title="Ajustes" />
 
-      <ScrollView style={styles.content} contentContainerStyle={{ paddingHorizontal: 12, paddingVertical: 20, paddingBottom: 100 + insets.bottom }}>
-        <ConfirmDialog
-          visible={showSignOutConfirm}
-          title="¿Cerrar sesión?"
-          message="Se cerrará tu sesión actual."
-          confirmText="SÍ"
-          cancelText="NO"
-          onConfirm={() => { setShowSignOutConfirm(false); confirmSignOut(); }}
-          onCancel={() => setShowSignOutConfirm(false)}
-          destructive
-        />
-        <View style={styles.section}>
-          <Text style={[styles.sectionTitle, { color: colors.textSecondary }]}>Cuenta</Text>
+        <ScrollView style={styles.content} contentContainerStyle={{ paddingHorizontal: 12, paddingVertical: 20, paddingBottom: 100 + insets.bottom }}>
+          <ConfirmDialog
+            visible={showSignOutConfirm}
+            title="¿Cerrar sesión?"
+            message="Se cerrará tu sesión actual."
+            confirmText="SÍ"
+            cancelText="NO"
+            onConfirm={() => { setShowSignOutConfirm(false); confirmSignOut(); }}
+            onCancel={() => setShowSignOutConfirm(false)}
+            destructive
+          />
+          {/* CUENTA */}
+          <View style={styles.section}>
+            <Text style={[styles.sectionTitle, { color: colors.textSecondary }]}>Cuenta</Text>
 
-          <View style={[styles.profileCard, { backgroundColor: colors.surface }]}>
-            <View style={[styles.avatarContainer, { backgroundColor: isDark ? '#1E3A8A' : '#EFF6FF' }]}>
-              <User size={28} color={colors.primary} />
-            </View>
-            <View style={styles.profileInfo}>
-              <Text style={[styles.profileName, { color: colors.text }]}>
-                {displayName}
-              </Text>
-              <Text style={[styles.profileEmail, { color: colors.textSecondary }]}>{user?.email}</Text>
-            </View>
-          </View>
-        </View>
+            <View style={[styles.profileCard, { backgroundColor: colors.surface }]}>
+              {/* Avatar con botón de edición */}
+              <TouchableOpacity
+                style={styles.avatarWrapper}
+                onPress={pickAndUploadAvatar}
+                disabled={uploadingAvatar}
+                activeOpacity={0.85}
+              >
+                <View style={[styles.avatarContainer, { backgroundColor: isDark ? '#1E3A8A' : '#EFF6FF' }]}>
+                  {uploadingAvatar ? (
+                    <ActivityIndicator size="small" color={colors.primary} />
+                  ) : profile?.avatar_url ? (
+                    <Image
+                      source={{ uri: profile.avatar_url }}
+                      style={styles.avatarImage}
+                    />
+                  ) : (
+                    <User size={28} color={colors.primary} />
+                  )}
+                </View>
+                {/* Botón de cámara superpuesto */}
+                {!uploadingAvatar && (
+                  <View style={[styles.avatarCameraBtn, { backgroundColor: colors.primary }]}>
+                    <Camera size={12} color="#fff" />
+                  </View>
+                )}
+              </TouchableOpacity>
 
-        <View style={styles.section}>
-          <Text style={[styles.sectionTitle, { color: colors.textSecondary }]}>General</Text>
-          <View style={[styles.storageCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-            <View style={styles.storageRow}>
-              <View style={{ flex: 1 }}>
-                <Text style={[styles.storageTitle, { color: colors.text }]}>Rotación de pantalla</Text>
-                <Text style={[styles.storageDesc, { color: colors.textSecondary }]}>Permitir que la pantalla gire al rotar el dispositivo.</Text>
+              {/* Nombre + email */}
+              <View style={styles.profileInfo}>
+                {editingName ? (
+                  <View style={styles.nameEditRow}>
+                    <TextInput
+                      style={[
+                        styles.nameInput,
+                        {
+                          color: colors.text,
+                          borderColor: colors.primary,
+                          backgroundColor: colors.input,
+                        }
+                      ]}
+                      value={nameInput}
+                      onChangeText={setNameInput}
+                      autoFocus
+                      maxLength={40}
+                      returnKeyType="done"
+                      onSubmitEditing={saveName}
+                    />
+                    <TouchableOpacity
+                      onPress={saveName}
+                      disabled={savingName}
+                      style={[styles.nameActionBtn, { backgroundColor: colors.primary }]}
+                    >
+                      {savingName
+                        ? <ActivityIndicator size="small" color="#fff" />
+                        : <Check size={16} color="#fff" />
+                      }
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      onPress={() => setEditingName(false)}
+                      style={[styles.nameActionBtn, { backgroundColor: isDark ? '#374151' : '#E5E7EB' }]}
+                    >
+                      <X size={16} color={colors.text} />
+                    </TouchableOpacity>
+                  </View>
+                ) : (
+                  <View style={styles.nameDisplayRow}>
+                    <Text style={[styles.profileName, { color: colors.text }]}>
+                      {displayName}
+                    </Text>
+                    <TouchableOpacity onPress={startEditName} style={styles.editNameBtn}>
+                      <Pencil size={14} color={colors.primary} />
+                    </TouchableOpacity>
+                  </View>
+                )}
+                <Text style={[styles.profileEmail, { color: colors.textSecondary }]}>{user?.email}</Text>
               </View>
-              <Switch
-                value={rotationEnabled}
-                onValueChange={toggleRotation}
-                trackColor={{ false: isDark ? '#374151' : '#9CA3AF', true: colors.primary }}
-                thumbColor={rotationEnabled ? '#FFFFFF' : (isDark ? '#9CA3AF' : '#FFFFFF')}
-              />
             </View>
           </View>
-        </View>
 
-        <View style={styles.section}>
-          <Text style={[styles.sectionTitle, { color: colors.textSecondary }]}>Apariencia</Text>
-
-          <View style={[styles.themeCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-            <TouchableOpacity
-              style={[styles.themeOption, mode === 'light' && { backgroundColor: colors.input }]}
-              onPress={() => setThemeMode('light')}
-            >
-              <Sun size={24} color={mode === 'light' ? colors.primary : colors.textSecondary} />
-              <Text style={[styles.themeOptionText, { color: mode === 'light' ? colors.primary : colors.textSecondary }]}>Claro</Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={[styles.themeOption, mode === 'dark' && { backgroundColor: colors.input }]}
-              onPress={() => setThemeMode('dark')}
-            >
-              <Moon size={24} color={mode === 'dark' ? colors.primary : colors.textSecondary} />
-              <Text style={[styles.themeOptionText, { color: mode === 'dark' ? colors.primary : colors.textSecondary }]}>Oscuro</Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={[styles.themeOption, mode === 'auto' && { backgroundColor: colors.input }]}
-              onPress={() => setThemeMode('auto')}
-            >
-              <Smartphone size={24} color={mode === 'auto' ? colors.primary : colors.textSecondary} />
-              <Text style={[styles.themeOptionText, { color: mode === 'auto' ? colors.primary : colors.textSecondary }]}>Sistema</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-
-        <View style={styles.section}>
-          <Text style={[styles.sectionTitle, { color: colors.textSecondary }]}>Almacenamiento</Text>
-
-          <View style={[styles.storageCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-            <View style={styles.storageRow}>
-              <View style={{ flex: 1 }}>
-                <Text style={[styles.storageTitle, { color: colors.text }]}>Usar sólo almacenamiento local</Text>
-                <Text style={[styles.storageDesc, { color: colors.textSecondary }]}>Guarda grabaciones en el dispositivo para reproducción offline. No se suben a la Nube mientras esté activo.</Text>
+          <View style={styles.section}>
+            <Text style={[styles.sectionTitle, { color: colors.textSecondary }]}>General</Text>
+            <View style={[styles.storageCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+              <View style={styles.storageRow}>
+                <View style={{ flex: 1 }}>
+                  <Text style={[styles.storageTitle, { color: colors.text }]}>Rotación de pantalla</Text>
+                  <Text style={[styles.storageDesc, { color: colors.textSecondary }]}>Permitir que la pantalla gire al rotar el dispositivo.</Text>
+                </View>
+                <Switch
+                  value={rotationEnabled}
+                  onValueChange={toggleRotation}
+                  trackColor={{ false: isDark ? '#374151' : '#9CA3AF', true: colors.primary }}
+                  thumbColor={rotationEnabled ? '#FFFFFF' : (isDark ? '#9CA3AF' : '#FFFFFF')}
+                />
               </View>
-              <Switch
-                value={localOnly}
-                onValueChange={toggleLocalOnly}
-                trackColor={{ false: isDark ? '#374151' : '#9CA3AF', true: colors.primary }}
-                thumbColor={localOnly ? '#FFFFFF' : (isDark ? '#9CA3AF' : '#FFFFFF')}
-              />
             </View>
           </View>
-        </View>
 
+          <View style={styles.section}>
+            <Text style={[styles.sectionTitle, { color: colors.textSecondary }]}>Apariencia</Text>
 
-        <View style={styles.section}>
-          <Text style={[styles.sectionTitle, { color: colors.textSecondary }]}>Ayuda</Text>
+            <View style={[styles.themeCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+              <TouchableOpacity
+                style={[styles.themeOption, mode === 'light' && { backgroundColor: colors.input }]}
+                onPress={() => setThemeMode('light')}
+              >
+                <Sun size={24} color={mode === 'light' ? colors.primary : colors.textSecondary} />
+                <Text style={[styles.themeOptionText, { color: mode === 'light' ? colors.primary : colors.textSecondary }]}>Claro</Text>
+              </TouchableOpacity>
 
-          <TouchableOpacity
-            style={[styles.legalCard, { backgroundColor: colors.surface, borderColor: colors.border }]}
-            onPress={() => router.push('/faqs')}
-          >
-            <View style={styles.legalCardContent}>
-              <Text style={[styles.legalCardTitle, { color: colors.text }]}>Preguntas Frecuentes</Text>
-              <Text style={[styles.legalCardDesc, { color: colors.textSecondary }]}>Aprende cómo usar la app</Text>
-            </View>
-            <Text style={[styles.legalCardArrow, { color: colors.textSecondary }]}>›</Text>
-          </TouchableOpacity>
-        </View>
+              <TouchableOpacity
+                style={[styles.themeOption, mode === 'dark' && { backgroundColor: colors.input }]}
+                onPress={() => setThemeMode('dark')}
+              >
+                <Moon size={24} color={mode === 'dark' ? colors.primary : colors.textSecondary} />
+                <Text style={[styles.themeOptionText, { color: mode === 'dark' ? colors.primary : colors.textSecondary }]}>Oscuro</Text>
+              </TouchableOpacity>
 
-        <View style={styles.section}>
-          <Text style={[styles.sectionTitle, { color: colors.textSecondary }]}>Aviso Legal</Text>
-
-          <TouchableOpacity
-            style={[styles.legalCard, { backgroundColor: colors.surface, borderColor: colors.border }]}
-            onPress={() => router.push('/legal/terms')}
-          >
-            <View style={styles.legalCardContent}>
-              <Text style={[styles.legalCardTitle, { color: colors.text }]}>Términos y Condiciones</Text>
-              <Text style={[styles.legalCardDesc, { color: colors.textSecondary }]}>Lee nuestros términos de uso</Text>
-            </View>
-            <Text style={[styles.legalCardArrow, { color: colors.textSecondary }]}>›</Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={[styles.legalCard, { backgroundColor: colors.surface, borderColor: colors.border }]}
-            onPress={() => router.push('/legal/privacy')}
-          >
-            <View style={styles.legalCardContent}>
-              <Text style={[styles.legalCardTitle, { color: colors.text }]}>Política de Privacidad</Text>
-              <Text style={[styles.legalCardDesc, { color: colors.textSecondary }]}>Cómo protegemos tus datos</Text>
-            </View>
-            <Text style={{ color: colors.textSecondary }}>›</Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={[styles.legalCard, { backgroundColor: colors.surface, borderColor: colors.border }]}
-            onPress={() => router.push('/legal/ai-usage')}
-          >
-            <View style={styles.legalCardContent}>
-              <Text style={[styles.legalCardTitle, { color: colors.text }]}>Uso de Inteligencia Artificial</Text>
-              <Text style={[styles.legalCardDesc, { color: colors.textSecondary }]}>Información sobre el uso de IA</Text>
-            </View>
-          </TouchableOpacity>
-        </View>
-
-        <View style={styles.section}>
-          <Text style={[styles.sectionTitle, { color: colors.textSecondary }]}>Acerca de</Text>
-          <View style={[styles.infoCard, { backgroundColor: colors.surface }]}>
-            <Image source={require('../../assets/images/icon.png')} style={{ width: 24, height: 24, borderRadius: 6 }} />
-            <View style={styles.infoText}>
-              <Text style={[styles.appName, { color: colors.text }]}>{appName}</Text>
-              <Text style={[styles.appVersion, { color: colors.textSecondary }]}>{appVersion}</Text>
+              <TouchableOpacity
+                style={[styles.themeOption, mode === 'auto' && { backgroundColor: colors.input }]}
+                onPress={() => setThemeMode('auto')}
+              >
+                <Smartphone size={24} color={mode === 'auto' ? colors.primary : colors.textSecondary} />
+                <Text style={[styles.themeOptionText, { color: mode === 'auto' ? colors.primary : colors.textSecondary }]}>Sistema</Text>
+              </TouchableOpacity>
             </View>
           </View>
-        </View>
 
-        <TouchableOpacity style={[styles.signOutButton, { backgroundColor: colors.surface, borderColor: isDark ? '#7F1D1D' : '#FEE2E2' }]} onPress={() => setShowSignOutConfirm(true)}>
-          <LogOut size={20} color={colors.error} />
-          <Text style={[styles.signOutText, { color: colors.error }]}>Cerrar Sesión</Text>
-        </TouchableOpacity>
-      </ScrollView>
+          <View style={styles.section}>
+            <Text style={[styles.sectionTitle, { color: colors.textSecondary }]}>Almacenamiento</Text>
+
+            <View style={[styles.storageCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+              <View style={styles.storageRow}>
+                <View style={{ flex: 1 }}>
+                  <Text style={[styles.storageTitle, { color: colors.text }]}>Usar almacenamiento local</Text>
+                  <Text style={[styles.storageDesc, { color: colors.textSecondary }]}>Guarda grabaciones en el dispositivo para reproducción offline. No se suben a la Nube mientras esté activo.</Text>
+                </View>
+                <Switch
+                  value={localOnly}
+                  onValueChange={toggleLocalOnly}
+                  trackColor={{ false: isDark ? '#374151' : '#9CA3AF', true: colors.primary }}
+                  thumbColor={localOnly ? '#FFFFFF' : (isDark ? '#9CA3AF' : '#FFFFFF')}
+                />
+              </View>
+            </View>
+          </View>
+
+
+          <View style={styles.section}>
+            <Text style={[styles.sectionTitle, { color: colors.textSecondary }]}>Ayuda</Text>
+
+            <TouchableOpacity
+              style={[styles.legalCard, { backgroundColor: colors.surface, borderColor: colors.border }]}
+              onPress={() => router.push('/faqs')}
+            >
+              <View style={styles.legalCardContent}>
+                <Text style={[styles.legalCardTitle, { color: colors.text }]}>Preguntas Frecuentes</Text>
+                <Text style={[styles.legalCardDesc, { color: colors.textSecondary }]}>Aprende cómo usar la app</Text>
+              </View>
+              <Text style={[styles.legalCardArrow, { color: colors.textSecondary }]}>›</Text>
+            </TouchableOpacity>
+          </View>
+
+          <View style={styles.section}>
+            <Text style={[styles.sectionTitle, { color: colors.textSecondary }]}>Aviso Legal</Text>
+
+            <TouchableOpacity
+              style={[styles.legalCard, { backgroundColor: colors.surface, borderColor: colors.border }]}
+              onPress={() => router.push('/legal/terms')}
+            >
+              <View style={styles.legalCardContent}>
+                <Text style={[styles.legalCardTitle, { color: colors.text }]}>Términos y Condiciones</Text>
+                <Text style={[styles.legalCardDesc, { color: colors.textSecondary }]}>Lee nuestros términos de uso</Text>
+              </View>
+              <Text style={[styles.legalCardArrow, { color: colors.textSecondary }]}>›</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[styles.legalCard, { backgroundColor: colors.surface, borderColor: colors.border }]}
+              onPress={() => router.push('/legal/privacy')}
+            >
+              <View style={styles.legalCardContent}>
+                <Text style={[styles.legalCardTitle, { color: colors.text }]}>Política de Privacidad</Text>
+                <Text style={[styles.legalCardDesc, { color: colors.textSecondary }]}>Cómo protegemos tus datos</Text>
+              </View>
+              <Text style={{ color: colors.textSecondary }}>›</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[styles.legalCard, { backgroundColor: colors.surface, borderColor: colors.border }]}
+              onPress={() => router.push('/legal/ai-usage')}
+            >
+              <View style={styles.legalCardContent}>
+                <Text style={[styles.legalCardTitle, { color: colors.text }]}>Uso de Inteligencia Artificial</Text>
+                <Text style={[styles.legalCardDesc, { color: colors.textSecondary }]}>Información sobre el uso de IA</Text>
+              </View>
+            </TouchableOpacity>
+          </View>
+
+          <View style={styles.section}>
+            <Text style={[styles.sectionTitle, { color: colors.textSecondary }]}>Acerca de</Text>
+            <View style={[styles.infoCard, { backgroundColor: colors.surface }]}>
+              <Image source={require('../../assets/images/icon.png')} style={{ width: 24, height: 24, borderRadius: 6 }} />
+              <View style={styles.infoText}>
+                <Text style={[styles.appName, { color: colors.text }]}>{appName}</Text>
+                <Text style={[styles.appVersion, { color: colors.textSecondary }]}>{appVersion}</Text>
+              </View>
+            </View>
+          </View>
+
+          <TouchableOpacity style={[styles.signOutButton, { backgroundColor: colors.surface, borderColor: isDark ? '#7F1D1D' : '#FEE2E2' }]} onPress={() => setShowSignOutConfirm(true)}>
+            <LogOut size={20} color={colors.error} />
+            <Text style={[styles.signOutText, { color: colors.error }]}>Cerrar Sesión</Text>
+          </TouchableOpacity>
+        </ScrollView>
+      </View>
     </SafeAreaView>
   );
 }
@@ -446,7 +613,30 @@ const styles = StyleSheet.create({
     borderRadius: 28,
     alignItems: 'center',
     justifyContent: 'center',
+    overflow: 'hidden',
+  },
+  avatarImage: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+  },
+  avatarWrapper: {
+    position: 'relative',
     marginRight: rp(16),
+    width: 56,
+    height: 56,
+  },
+  avatarCameraBtn: {
+    position: 'absolute',
+    bottom: 0,
+    right: 0,
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1.5,
+    borderColor: '#fff',
   },
   profileInfo: {
     flex: 1,
@@ -459,6 +649,38 @@ const styles = StyleSheet.create({
   },
   profileEmail: {
     fontSize: rf(14),
+  },
+  nameDisplayRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: rp(6),
+    marginBottom: 4,
+  },
+  editNameBtn: {
+    padding: 4,
+  },
+  nameEditRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: rp(6),
+    marginBottom: 4,
+  },
+  nameInput: {
+    flex: 1,
+    fontSize: rf(15),
+    fontWeight: '600',
+    borderWidth: 1.5,
+    borderRadius: 8,
+    paddingHorizontal: rp(10),
+    paddingVertical: rp(6),
+    minHeight: 36,
+  },
+  nameActionBtn: {
+    width: 34,
+    height: 34,
+    borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   infoCard: {
     flexDirection: 'row',

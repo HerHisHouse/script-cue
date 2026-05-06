@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef, startTransition } from 'react';
-import { useFocusEffect, useLocalSearchParams } from 'expo-router';
+import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import {
   View,
   Text,
@@ -21,7 +21,7 @@ import {
 import { Dimensions } from 'react-native';
 import { PinchGestureHandler, State } from 'react-native-gesture-handler';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Play, Pause, Trash2, Clock, FileAudio, MoreVertical, Edit2, Share2, Search, Grid3x3, List, Send, ChevronRight, Circle, SkipBack, SkipForward, Volume2, VolumeX, Repeat, X, Maximize2, Minimize2, Video as VideoIcon, Cast, Waves, Music, Clapperboard, CheckSquare } from 'lucide-react-native';
+import { Play, Pause, Trash2, Clock, FileAudio, MoreVertical, Edit2, Share2, Search, Grid3x3, List, Send, ChevronRight, Circle, SkipBack, SkipForward, Volume2, VolumeX, Repeat, X, Maximize2, Minimize2, Video as VideoIcon, Cast, Waves, Music, Clapperboard, CheckSquare, Gauge, Download } from 'lucide-react-native';
 import { AudioVisualizer } from '@/components/AudioVisualizer';
 import { SendToModal } from '@/components/SendToModal';
 import { ScreenHeader } from '@/components/ScreenHeader';
@@ -36,13 +36,36 @@ import logger from '@/utils/logger';
 import { Recording } from '@/types/database';
 import { formatDuration, playAudioFromUrl, getSmoothedVolumeSteps } from '@/utils/audio';
 import { getSettings } from '@/utils/appSettings';
-import { Audio, Video, ResizeMode } from 'expo-av';
+import { Audio, Video, ResizeMode, InterruptionModeIOS, InterruptionModeAndroid } from 'expo-av';
 import { LayoutAnimation, Easing } from 'react-native';
 import { computeSafeTopPadding } from '../../utils/layout';
 import { validateAndNormalizeFilename, buildNewPath, RenameError, performRename } from '@/utils/rename';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { setAudioModeForPlayback, setAudioModeForBackgroundPlayback } from '@/utils/audioMode';
 import { rf, rp } from '@/utils/responsive';
+
+// TrackPlayer for lock screen controls - Optional (only works in native builds)
+let TrackPlayer: any = null;
+let TrackPlayerState: any = null;
+let TrackPlayerEvent: any = null;
+let isTrackPlayerReady: any = () => false;
+let setTrackPlayerRepeatMode: any = () => Promise.resolve();
+
+// Try to import TrackPlayer - will fail gracefully in Expo Go
+try {
+  const trackPlayerModule = require('react-native-track-player');
+  TrackPlayer = trackPlayerModule.default;
+  TrackPlayerState = trackPlayerModule.State;
+  TrackPlayerEvent = trackPlayerModule.Event;
+
+  const trackPlayerService = require('@/utils/trackPlayerService');
+  isTrackPlayerReady = trackPlayerService.isTrackPlayerReady;
+  setTrackPlayerRepeatMode = trackPlayerService.setRepeatMode;
+
+  console.log('[TrackPlayer] Module loaded successfully');
+} catch (error) {
+  console.log('[TrackPlayer] Not available (running in Expo Go or module not installed)');
+}
 
 type ViewMode = 'list' | 'grid';
 
@@ -95,6 +118,7 @@ const SearchBar = React.memo(function SearchBar({
 export default function RecordingsScreen() {
   const { user } = useAuth();
   const { colors } = useTheme();
+  const router = useRouter();
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<Recording | null>(null);
   const [deleting, setDeleting] = useState(false);
@@ -116,6 +140,8 @@ export default function RecordingsScreen() {
   const [loopMode, setLoopMode] = useState<'all' | 'one' | 'off'>('off');
   const loopModeRef = useRef(loopMode);
   const [isFullscreen, setIsFullscreen] = useState(false);
+  const [playbackRate, setPlaybackRate] = useState(1.0); // Velocidad de reproducción (0.50x - 2x)
+  const [showSpeedMenu, setShowSpeedMenu] = useState(false); // Mostrar menú de velocidad
   const progressBarWidthRef = useRef<number>(0);
   const volumeBarWidthRef = useRef<number>(0);
   const loopAnim = useRef(new Animated.Value(1)).current;
@@ -375,15 +401,32 @@ export default function RecordingsScreen() {
       if (error) throw error;
       const newItems = (data || []) as Recording[];
 
+      const settings = await getSettings();
+      let finalNewItems = newItems;
+
+      if (settings.useLocalOnly) {
+        console.log('[Offline] Filtering for local files only...');
+        const localCheckResults = await Promise.all(
+          newItems.map(async (rec) => {
+            const storagePath = (rec.audio_url || (rec as any).storage_path || '').trim();
+            const filename = storagePath.split('/').pop() ?? '';
+            const localUri = (FileSystem.documentDirectory ?? '') + filename;
+            const info = await FileSystem.getInfoAsync(localUri);
+            return info.exists ? rec : null;
+          })
+        );
+        finalNewItems = localCheckResults.filter((r): r is Recording => r !== null);
+      }
+
       if (refresh) {
-        setRecordings(newItems);
-        if (opts?.fromSearch && termRaw) {
-          searchCache.current.set(termRaw.toLowerCase(), newItems);
+        setRecordings(finalNewItems);
+        if (opts?.fromSearch && termRaw && !settings.useLocalOnly) {
+          searchCache.current.set(termRaw.toLowerCase(), finalNewItems);
         }
       } else {
         setRecordings((prev) => {
           const existingIds = new Set(prev.map(r => r.id));
-          const uniqueNewItems = newItems.filter(r => !existingIds.has(r.id));
+          const uniqueNewItems = finalNewItems.filter(r => !existingIds.has(r.id));
           return [...prev, ...uniqueNewItems];
         });
       }
@@ -486,10 +529,17 @@ export default function RecordingsScreen() {
     }, [handleRefresh, sound])
   );
 
-  // Mantener loopModeRef actualizado
+  // Mantener loopModeRef actualizado y aplicar al sound actual
   useEffect(() => {
     loopModeRef.current = loopMode;
-  }, [loopMode]);
+
+    // Update the current sound's looping state
+    if (sound) {
+      sound.setIsLoopingAsync(loopMode === 'one').catch((err) => {
+        console.log('[Loop] Error setting loop mode:', err);
+      });
+    }
+  }, [loopMode, sound]);
 
   // Setup remote control commands for lock screen (iOS and Android)
   useEffect(() => {
@@ -498,14 +548,14 @@ export default function RecordingsScreen() {
         // Enable audio session for remote controls
         await Audio.setIsEnabledAsync(true);
 
-        // @ts-ignore - expo-av types don't include setAudioModeAsync with this config
-        if (Audio.setAudioModeAsync) {
-          await Audio.setAudioModeAsync({
-            playsInSilentModeIOS: true,
-            staysActiveInBackground: true,
-            shouldDuckAndroid: true,
-          });
-        }
+        // Configure audio mode for background playback and lock screen controls
+        await Audio.setAudioModeAsync({
+          playsInSilentModeIOS: true,
+          staysActiveInBackground: true,
+          shouldDuckAndroid: true,
+          interruptionModeIOS: InterruptionModeIOS.DoNotMix,
+          interruptionModeAndroid: InterruptionModeAndroid.DoNotMix,
+        });
 
         // Setup remote command handlers (works on both iOS and Android)
         // @ts-ignore
@@ -513,21 +563,25 @@ export default function RecordingsScreen() {
           // @ts-ignore
           await Audio.setRemoteControlsEnabled(true, {
             playCommand: async () => {
+              console.log('[Remote] Play command received');
               if (sound) {
                 await sound.playAsync();
                 setIsPlaying(true);
               }
             },
             pauseCommand: async () => {
+              console.log('[Remote] Pause command received');
               if (sound) {
                 await sound.pauseAsync();
                 setIsPlaying(false);
               }
             },
             nextTrackCommand: () => {
+              console.log('[Remote] Next track command received');
               playNext();
             },
             previousTrackCommand: () => {
+              console.log('[Remote] Previous track command received');
               playPrev();
             },
           });
@@ -566,6 +620,55 @@ export default function RecordingsScreen() {
 
     return () => subscription?.remove();
   }, [playingId, isFullscreen]);
+
+  const [downloadingId, setDownloadingId] = useState<string | null>(null);
+
+  async function handleDownloadOffline(recording: Recording) {
+    try {
+      setShowRecordingMenu(null);
+      setDownloadingId(recording.id);
+
+      const storagePath = (recording.audio_url || (recording as any).storage_path || '').trim();
+      if (!storagePath) {
+        Alert.alert('Error', 'No se encontró la ruta del archivo.');
+        return;
+      }
+
+      const filename = storagePath.split('/').pop() ?? '';
+      const localUri = (FileSystem.documentDirectory ?? '') + filename;
+
+      // Check if already exists
+      const info = await FileSystem.getInfoAsync(localUri);
+      if (info.exists) {
+        Alert.alert('Info', 'Este archivo ya está disponible offline.');
+        return;
+      }
+
+      // Get signed URL
+      const { data, error } = await supabase.storage
+        .from('recordings')
+        .createSignedUrl(storagePath, 3600);
+
+      if (error || !data?.signedUrl) {
+        throw new Error('No se pudo obtener el enlace de descarga.');
+      }
+
+      // Download
+      console.log('[Offline] Downloading...', data.signedUrl, 'to', localUri);
+      const downloadRes = await FileSystem.downloadAsync(data.signedUrl, localUri);
+
+      if (downloadRes.status !== 200) {
+        throw new Error(`Error en descarga: ${downloadRes.status}`);
+      }
+
+      Alert.alert('Éxito', `"${recording.title || 'Grabación'}" descargada correctamente para uso offline.`);
+    } catch (error: any) {
+      console.error('[Offline] Error downloading:', error);
+      Alert.alert('Error', 'No se pudo descargar el archivo para offline: ' + error.message);
+    } finally {
+      setDownloadingId(null);
+    }
+  }
 
   async function handlePlay(recording: Recording) {
     try {
@@ -650,9 +753,377 @@ export default function RecordingsScreen() {
     }
   }
 
-  // Gestión de reproductor modal
+  // Gestión de reproductor modal - Using TrackPlayer for lock screen controls
   async function loadAndPlay(index: number, specificQueue?: Recording[]) {
     const currentQueue = specificQueue || queue;
+    const recording = currentQueue[index];
+    if (!recording) return;
+
+    // Handle Video - Videos still use expo-av
+    if (recording.type === 'video') {
+      // Stop any expo-av sound first
+      if (sound) {
+        try {
+          const status = await sound.getStatusAsync();
+          if (status.isLoaded) {
+            await sound.stopAsync();
+          }
+        } catch { }
+        await sound.unloadAsync().catch(() => { });
+        setSound(null);
+      }
+
+      // Stop TrackPlayer if it was playing audio
+      try {
+        await TrackPlayer.stop();
+        await TrackPlayer.reset();
+      } catch { }
+
+      setPlayingId(recording.id);
+      setCurrentIndex(index);
+      setIsPlaying(true);
+      return;
+    }
+
+    // AUDIO PLAYBACK - Use TrackPlayer for lock screen controls
+    try {
+      // Stop any video/expo-av sound first
+      if (sound) {
+        try {
+          const status = await sound.getStatusAsync();
+          if (status.isLoaded) {
+            await sound.stopAsync();
+          }
+        } catch { }
+        await sound.unloadAsync().catch(() => { });
+        setSound(null);
+      }
+
+      // Check if TrackPlayer is ready
+      if (!isTrackPlayerReady()) {
+        console.warn('[Playback] TrackPlayer not ready, falling back to expo-av');
+        // Fallback to expo-av if TrackPlayer is not ready
+        await loadAndPlayWithExpoAv(index, currentQueue);
+        return;
+      }
+
+      // Reset TrackPlayer queue
+      await TrackPlayer.reset();
+
+      // Prepare tracks from the queue (audio only)
+      const audioRecordings = currentQueue.filter(r => r.type !== 'video');
+      const tracks = [];
+      const failedRecordings = [];
+
+      for (const rec of audioRecordings) {
+        const url = await getPlayableUrlForRecording(rec);
+        if (url) {
+          tracks.push({
+            id: rec.id,
+            url,
+            title: rec.title || 'Grabación',
+            artist: 'Script Cue',
+          });
+        } else {
+          failedRecordings.push(rec);
+          console.warn(`[Playback] Failed to get URL for recording: ${rec.id} - ${rec.title}`);
+        }
+      }
+
+      // Check if the specific recording the user wants to play failed
+      const requestedRecordingFailed = failedRecordings.some(r => r.id === recording.id);
+
+      if (requestedRecordingFailed) {
+        console.error('[Playback] The requested recording could not be loaded:', recording.id);
+        Alert.alert(
+          'Audio no disponible',
+          `No se pudo cargar el archivo "${recording.title || 'Sin título'}". Verifica tu conexión a internet e intenta de nuevo.`,
+          [
+            {
+              text: 'Reintentar',
+              onPress: () => loadAndPlay(index, specificQueue)
+            },
+            {
+              text: 'Cancelar',
+              style: 'cancel'
+            }
+          ]
+        );
+        return;
+      }
+
+      if (tracks.length === 0) {
+        console.error('[Playback] No valid audio tracks found');
+        Alert.alert('Error', 'No se encontraron archivos de audio válidos en la lista.');
+        return;
+      }
+
+      // Warn user if some tracks failed but not the one they want to play
+      if (failedRecordings.length > 0) {
+        console.warn(`[Playback] ${failedRecordings.length} recording(s) could not be loaded but will continue with available tracks`);
+      }
+
+      // Add tracks to TrackPlayer
+      await TrackPlayer.add(tracks);
+
+      // Find the correct index in the audio-only queue
+      const audioIndex = audioRecordings.findIndex(r => r.id === recording.id);
+      if (audioIndex > 0) {
+        await TrackPlayer.skip(audioIndex);
+      }
+
+      // Set repeat mode
+      const currentLoop = loopModeRef.current;
+      if (currentLoop === 'one') {
+        await setTrackPlayerRepeatMode('track');
+      } else if (currentLoop === 'all') {
+        await setTrackPlayerRepeatMode('queue');
+      } else {
+        await setTrackPlayerRepeatMode('off');
+      }
+
+      // Start playback
+      await TrackPlayer.play();
+
+      // Set playback rate
+      try {
+        await TrackPlayer.setRate(playbackRate);
+      } catch (error) {
+        console.warn('[Playback] Could not set playback rate:', error);
+      }
+
+      setPlayingId(recording.id);
+      setCurrentIndex(index);
+      setIsPlaying(true);
+
+      console.log('[Playback] Started with TrackPlayer:', recording.title);
+
+      // Setup playback status polling for UI updates
+      startTrackPlayerPolling(currentQueue);
+
+    } catch (error) {
+      console.error('Error playing audio with TrackPlayer:', error);
+      // Fallback to expo-av
+      console.log('[Playback] Falling back to expo-av');
+      await loadAndPlayWithExpoAv(index, currentQueue);
+    }
+  }
+
+  // Helper to get playable URL for a recording
+  async function getPlayableUrlForRecording(recording: Recording, retryCount = 0): Promise<string | null> {
+    try {
+      console.log(`[Playback] Getting URL for recording: ${recording.id}, attempt ${retryCount + 1}`);
+      console.log('[Playback] Recording object:', JSON.stringify(recording, null, 2));
+
+      const settings = await getSettings();
+      const storagePath = (recording.audio_url || (recording as any).storage_path || '').trim();
+
+      if (!storagePath) {
+        console.error('[Playback] No storage path found for recording:', recording.id);
+        console.error('[Playback] Recording data:', { audio_url: recording.audio_url, storage_path: (recording as any).storage_path });
+        return null;
+      }
+
+      console.log(`[Playback] Storage path: ${storagePath}`);
+      const filename = storagePath.split('/').pop() ?? '';
+      const localUri = (FileSystem.documentDirectory ?? '') + filename;
+      const isLocalPath = storagePath.startsWith('local/');
+
+      // Check local file first
+      const localInfo = await FileSystem.getInfoAsync(localUri);
+      if (localInfo.exists) {
+        console.log('[Playback] Using local file:', localUri);
+        return localUri;
+      }
+
+      if (isLocalPath || settings.useLocalOnly) {
+        console.warn('[Playback] Local file not found and remote disabled');
+        return null;
+      }
+
+      // Get signed URL from Supabase with longer expiry
+      console.log('[Playback] Requesting signed URL from Supabase...');
+      console.log('[Playback] Bucket: recordings, Path:', storagePath);
+
+      const { data, error } = await supabase.storage
+        .from('recordings')
+        .createSignedUrl(storagePath, 3600); // 1 hour expiry
+
+      if (error) {
+        console.error('[Playback] Supabase error creating signed URL:');
+        console.error('[Playback] Error object:', JSON.stringify(error, null, 2));
+        console.error('[Playback] Error message:', error.message);
+        console.error('[Playback] Error name:', error.name);
+
+        // Check if this is a fallback recording (segments instead of merged file)
+        if (error.message === 'Object not found' && recording.notes?.includes('servidor no disponible para mezclar')) {
+          console.log('[Playback] Detected fallback recording, searching for merged file...');
+
+          try {
+            const userId = recording.user_id;
+
+            // List all files in the user's folder to find merged files
+            console.log('[Playback] Listing files in user folder...');
+            const { data: files, error: listError } = await supabase.storage
+              .from('recordings')
+              .list(userId, {
+                limit: 100,
+                offset: 0,
+                sortBy: { column: 'created_at', order: 'desc' }
+              });
+
+            if (listError) {
+              console.error('[Playback] Error listing files:', listError);
+            } else if (files && files.length > 0) {
+              console.log(`[Playback] Found ${files.length} files in user folder`);
+
+              // Find merged files created around the same time as this recording
+              const recordingTime = new Date(recording.created_at).getTime();
+              const mergedFiles = files.filter(f => f.name.includes('_merged.m4a'));
+
+              console.log(`[Playback] Found ${mergedFiles.length} merged files`);
+
+              // Try to find the closest merged file by creation time
+              let closestFile = null;
+              let closestTimeDiff = Infinity;
+
+              for (const file of mergedFiles) {
+                const fileTime = new Date(file.created_at || file.updated_at).getTime();
+                const timeDiff = Math.abs(fileTime - recordingTime);
+
+                // If within 2 hours (7200000 ms), consider it a match
+                if (timeDiff < 7200000 && timeDiff < closestTimeDiff) {
+                  closestTimeDiff = timeDiff;
+                  closestFile = file;
+                }
+              }
+
+              if (closestFile) {
+                const mergedPath = `${userId}/${closestFile.name}`;
+                console.log('[Playback] Found closest merged file:', mergedPath);
+                console.log('[Playback] Time difference:', Math.round(closestTimeDiff / 1000), 'seconds');
+
+                const { data: mergedData, error: mergedError } = await supabase.storage
+                  .from('recordings')
+                  .createSignedUrl(mergedPath, 3600);
+
+                if (!mergedError && mergedData?.signedUrl) {
+                  console.log('[Playback] Successfully got signed URL for merged file! Updating database...');
+
+                  // Update the database with the correct path
+                  const { error: updateError } = await supabase
+                    .from('recordings')
+                    .update({
+                      audio_url: mergedPath,
+                      notes: recording.notes?.replace('servidor no disponible para mezclar', 'mezclado correctamente') || null
+                    })
+                    .eq('id', recording.id);
+
+                  if (updateError) {
+                    console.warn('[Playback] Could not update database:', updateError);
+                  } else {
+                    console.log('[Playback] Database updated successfully');
+                  }
+
+                  return mergedData.signedUrl;
+                } else {
+                  console.warn('[Playback] Could not get signed URL for merged file:', mergedError);
+                }
+              } else {
+                console.warn('[Playback] No merged file found within 2 hours of recording time');
+              }
+            }
+          } catch (searchError) {
+            console.error('[Playback] Error searching for merged file:', searchError);
+          }
+        }
+
+        // Retry up to 2 times if it's a network error
+        if (retryCount < 2 && (error.message?.includes('network') || error.message?.includes('timeout'))) {
+          console.log('[Playback] Retrying after network error...');
+          await new Promise(resolve => setTimeout(resolve, 1000)); // Wait 1 second
+          return getPlayableUrlForRecording(recording, retryCount + 1);
+        }
+
+        return null;
+      }
+
+      if (!data?.signedUrl) {
+        console.error('[Playback] No signed URL returned from Supabase');
+        return null;
+      }
+
+      console.log('[Playback] Successfully got signed URL');
+      return data.signedUrl;
+    } catch (error) {
+      console.error('[Playback] Exception getting playable URL:', error);
+
+      // Retry on exception
+      if (retryCount < 2) {
+        console.log('[Playback] Retrying after exception...');
+        await new Promise(resolve => setTimeout(resolve, 1000));
+        return getPlayableUrlForRecording(recording, retryCount + 1);
+      }
+
+      return null;
+    }
+  }
+
+  // Polling for TrackPlayer status updates
+  const trackPlayerPollingRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  function startTrackPlayerPolling(currentQueue: Recording[]) {
+    // Clear any existing polling
+    if (trackPlayerPollingRef.current) {
+      clearInterval(trackPlayerPollingRef.current);
+    }
+
+    trackPlayerPollingRef.current = setInterval(async () => {
+      try {
+        const state = await TrackPlayer.getPlaybackState();
+        const progress = await TrackPlayer.getProgress();
+        const trackIndex = await TrackPlayer.getActiveTrackIndex();
+
+        setIsPlaying(state.state === TrackPlayerState.Playing);
+        setPositionMillis(progress.position * 1000);
+        setDurationMillis(progress.duration * 1000);
+
+        // Update current index and playingId if track changed
+        if (trackIndex !== undefined && trackIndex >= 0) {
+          const audioRecordings = currentQueue.filter(r => r.type !== 'video');
+          const currentRec = audioRecordings[trackIndex];
+          if (currentRec && currentRec.id !== playingId) {
+            setPlayingId(currentRec.id);
+            // Find the original index in the full queue
+            const originalIndex = currentQueue.findIndex(r => r.id === currentRec.id);
+            if (originalIndex >= 0) {
+              setCurrentIndex(originalIndex);
+            }
+          }
+        }
+
+        // Check if playback ended
+        if (state.state === TrackPlayerState.Stopped || state.state === TrackPlayerState.None) {
+          clearInterval(trackPlayerPollingRef.current!);
+          trackPlayerPollingRef.current = null;
+        }
+      } catch (error) {
+        // Ignore polling errors
+      }
+    }, 250); // Poll every 250ms
+  }
+
+  // Cleanup polling on unmount
+  useEffect(() => {
+    return () => {
+      if (trackPlayerPollingRef.current) {
+        clearInterval(trackPlayerPollingRef.current);
+      }
+    };
+  }, []);
+
+  // Fallback function using expo-av (for when TrackPlayer is not available)
+  async function loadAndPlayWithExpoAv(index: number, currentQueue: Recording[]) {
     const recording = currentQueue[index];
     if (!recording) return;
 
@@ -668,63 +1139,60 @@ export default function RecordingsScreen() {
       setSound(null);
     }
 
-    // Handle Video
-    if (recording.type === 'video') {
-      setPlayingId(recording.id);
-      setCurrentIndex(index);
-      setIsPlaying(true);
-      // Video component will auto-play via shouldPlay prop or we can trigger it
-      return;
-    }
-
     try {
-      // Force speaker output for playback AND enable background audio (screen-off playback)
       await setAudioModeForBackgroundPlayback();
 
-      const settings = await getSettings();
-      const storagePath = (recording.audio_url || (recording as any).storage_path || '').trim();
-      const filename = storagePath.split('/').pop() ?? '';
-      const localUri = (FileSystem.documentDirectory ?? '') + filename;
-      const isLocalPath = storagePath.startsWith('local/');
+      console.log('[Playback] Loading with expo-av:', recording.title);
+      const url = await getPlayableUrlForRecording(recording);
+      if (!url) {
+        console.error('[Playback] No URL available for recording:', recording.id);
+        Alert.alert(
+          'Audio no disponible',
+          `No se pudo cargar el archivo "${recording.title || 'Sin título'}". Verifica tu conexión a internet e intenta de nuevo.`,
+          [
+            {
+              text: 'Reintentar',
+              onPress: () => loadAndPlayWithExpoAv(index, currentQueue)
+            },
+            {
+              text: 'Cancelar',
+              style: 'cancel'
+            }
+          ]
+        );
+        return;
+      }
 
+      console.log('[Playback] Creating sound from URL...');
       let newSound: Audio.Sound;
-      const localInfo = await FileSystem.getInfoAsync(localUri);
-      if (localInfo.exists) {
+      if (url.startsWith('file://') || url.startsWith('/')) {
         const res = await Audio.Sound.createAsync(
-          { uri: localUri },
+          { uri: url },
           { shouldPlay: true, volume, isMuted: muted }
         );
         newSound = res.sound;
-      } else if (isLocalPath || settings.useLocalOnly) {
-        Alert.alert('Audio no disponible', 'El archivo local no se encuentra.');
-        return;
       } else {
-        const { data, error } = await supabase.storage
-          .from('recordings')
-          .createSignedUrl(storagePath, 60 * 60);
-        if (error || !data?.signedUrl) {
-          Alert.alert('Audio no disponible', 'No se encontró el archivo de la grabación.');
-          return;
-        }
-        newSound = await playAudioFromUrl(data.signedUrl);
+        newSound = await playAudioFromUrl(url);
         await newSound.setVolumeAsync(volume);
         await newSound.setIsMutedAsync(muted);
       }
 
+      console.log('[Playback] Sound created successfully');
       setSound(newSound);
       setPlayingId(recording.id);
       setCurrentIndex(index);
       setIsPlaying(true);
 
-      // Get initial status to set Now Playing info
-      const initialStatus = await newSound.getStatusAsync();
-      if (initialStatus.isLoaded) {
-        await updateNowPlayingInfo(
-          recording,
-          true,
-          initialStatus.positionMillis ?? 0,
-          initialStatus.durationMillis ?? 0
-        );
+      // Set playback rate
+      try {
+        await newSound.setRateAsync(playbackRate, true); // true = shouldCorrectPitch
+      } catch (error) {
+        console.warn('[Playback] Could not set playback rate:', error);
+      }
+
+      const currentLoop = loopModeRef.current;
+      if (currentLoop === 'one') {
+        await newSound.setIsLoopingAsync(true);
       }
 
       newSound.setOnPlaybackStatusUpdate((status) => {
@@ -733,33 +1201,39 @@ export default function RecordingsScreen() {
         setPositionMillis(status.positionMillis ?? 0);
         setIsPlaying(Boolean(status.isPlaying));
 
-        // Update Now Playing info on status changes
-        updateNowPlayingInfo(
-          recording,
-          Boolean(status.isPlaying),
-          status.positionMillis ?? 0,
-          status.durationMillis ?? 0
-        );
-
         if (status.didJustFinish) {
           const currentLoop = loopModeRef.current;
           if (currentLoop === 'one') {
             newSound.replayAsync();
           } else if (currentLoop === 'all') {
             const nextIndex = (index + 1) % currentQueue.length;
-            loadAndPlay(nextIndex, currentQueue);
+            loadAndPlayWithExpoAv(nextIndex, currentQueue);
           } else {
             const nextIndex = index + 1;
             if (nextIndex < currentQueue.length) {
-              loadAndPlay(nextIndex, currentQueue);
+              loadAndPlayWithExpoAv(nextIndex, currentQueue);
             } else {
               setIsPlaying(false);
             }
           }
         }
       });
-    } catch (error) {
-      console.error('Error playing audio:', error);
+    } catch (error: any) {
+      console.error('[Playback] Error playing audio with expo-av:', error);
+      Alert.alert(
+        'Error de reproducción',
+        `No se pudo reproducir "${recording.title || 'Sin título'}". ${error?.message || 'Error desconocido'}`,
+        [
+          {
+            text: 'Reintentar',
+            onPress: () => loadAndPlayWithExpoAv(index, currentQueue)
+          },
+          {
+            text: 'Cancelar',
+            style: 'cancel'
+          }
+        ]
+      );
     }
   }
 
@@ -847,6 +1321,24 @@ export default function RecordingsScreen() {
       return;
     }
 
+    // Try TrackPlayer first (for audio with lock screen controls)
+    if (isTrackPlayerReady()) {
+      try {
+        const state = await TrackPlayer.getPlaybackState();
+        if (state.state === TrackPlayerState.Playing) {
+          await TrackPlayer.pause();
+          setIsPlaying(false);
+        } else {
+          await TrackPlayer.play();
+          setIsPlaying(true);
+        }
+        return;
+      } catch (error) {
+        console.log('[togglePlayPause] TrackPlayer error, falling back to expo-av:', error);
+      }
+    }
+
+    // Fallback to expo-av
     if (!sound) return;
     const st = await sound.getStatusAsync();
     if (!st.isLoaded) return;
@@ -912,6 +1404,18 @@ export default function RecordingsScreen() {
       return;
     }
 
+    // Try TrackPlayer first
+    if (isTrackPlayerReady() && durationMillis) {
+      try {
+        const targetSeconds = (durationMillis * ratio) / 1000;
+        await TrackPlayer.seekTo(targetSeconds);
+        return;
+      } catch (error) {
+        console.log('[seekToRatio] TrackPlayer error, falling back to expo-av:', error);
+      }
+    }
+
+    // Fallback to expo-av
     if (!sound || !durationMillis) return;
     const target = Math.floor(durationMillis * ratio);
     try {
@@ -1019,16 +1523,45 @@ export default function RecordingsScreen() {
     };
   }, [sound, volume]);
 
-  function cycleLoopMode() {
-    setLoopMode((prev) => (prev === 'off' ? 'all' : prev === 'all' ? 'one' : 'off'));
+  async function cycleLoopMode() {
+    const nextMode = loopMode === 'off' ? 'all' : loopMode === 'all' ? 'one' : 'off';
+    setLoopMode(nextMode);
+
+    // Sync with TrackPlayer if available
+    if (isTrackPlayerReady()) {
+      try {
+        if (nextMode === 'one') {
+          await setTrackPlayerRepeatMode('track');
+        } else if (nextMode === 'all') {
+          await setTrackPlayerRepeatMode('queue');
+        } else {
+          await setTrackPlayerRepeatMode('off');
+        }
+      } catch (error) {
+        console.log('[cycleLoopMode] TrackPlayer error:', error);
+      }
+    }
+
     Animated.sequence([
       Animated.timing(loopAnim, { toValue: 1.08, duration: 120, useNativeDriver: true }),
       Animated.timing(loopAnim, { toValue: 1, duration: 120, useNativeDriver: true }),
     ]).start();
   }
 
-  function closePlayer() {
-    // IMPORTANT: Stop audio immediately before animation
+  async function closePlayer() {
+    // Clear TrackPlayer polling
+    if (trackPlayerPollingRef.current) {
+      clearInterval(trackPlayerPollingRef.current);
+      trackPlayerPollingRef.current = null;
+    }
+
+    // Stop TrackPlayer if it was playing
+    try {
+      await TrackPlayer.stop();
+      await TrackPlayer.reset();
+    } catch { }
+
+    // IMPORTANT: Stop expo-av sound immediately before animation
     if (sound) {
       sound.stopAsync().catch(() => { });
     }
@@ -1050,14 +1583,38 @@ export default function RecordingsScreen() {
     });
   }
 
-  function playNext() {
+  async function playNext() {
     if (queue.length === 0) return;
+
+    // Try TrackPlayer first for audio
+    const current = queue[currentIndex];
+    if (current?.type !== 'video' && isTrackPlayerReady()) {
+      try {
+        await TrackPlayer.skipToNext();
+        return;
+      } catch (error) {
+        console.log('[playNext] TrackPlayer error, using loadAndPlay:', error);
+      }
+    }
+
     const next = (currentIndex + 1) % queue.length;
     loadAndPlay(next);
   }
 
-  function playPrev() {
+  async function playPrev() {
     if (queue.length === 0) return;
+
+    // Try TrackPlayer first for audio
+    const current = queue[currentIndex];
+    if (current?.type !== 'video' && isTrackPlayerReady()) {
+      try {
+        await TrackPlayer.skipToPrevious();
+        return;
+      } catch (error) {
+        console.log('[playPrev] TrackPlayer error, using loadAndPlay:', error);
+      }
+    }
+
     const prev = (currentIndex - 1 + queue.length) % queue.length;
     loadAndPlay(prev);
   }
@@ -1191,29 +1748,36 @@ export default function RecordingsScreen() {
       setShowRecordingMenu(null);
 
       const canShare = await Sharing.isAvailableAsync();
-      if (!canShare) {
-        // Fallback básico usando Share para al menos abrir hoja de compartir
-        Alert.alert('Compartir no disponible', 'Intentaremos con un método alternativo.');
-      }
-
-      const baseDir = FileSystem.documentDirectory ?? '';
-      const storagePath = (recording.audio_url || (recording as any).storage_path || '').trim();
-      const filename = storagePath.split('/').pop() ?? 'recording.m4a';
-      const localUri = baseDir + filename;
+      const rawPath = (recording.audio_url || (recording as any).storage_path || '').trim();
+      const isAbsoluteLocal = rawPath.startsWith('file://');
+      const isLocalPrefix = rawPath.startsWith('local/');
       const settings = await getSettings();
-      const isLocalPath = storagePath.startsWith('local/');
 
-      // 1) Verificar si el archivo existe localmente y es accesible
-      let info = await FileSystem.getInfoAsync(localUri);
-      if (!info.exists || (info.size ?? 0) === 0) {
-        // 2) Si no existe localmente
-        if (isLocalPath || settings.useLocalOnly) {
-          throw new Error('Archivo local no encontrado');
-        } else {
+      let shareUri: string;
+
+      if (isAbsoluteLocal) {
+        // URI local absoluta (file://): compartir directamente sin Supabase
+        const info = await FileSystem.getInfoAsync(rawPath);
+        if (!info.exists) {
+          Alert.alert('Archivo no disponible', 'El archivo local ya no existe en este dispositivo.');
+          return;
+        }
+        shareUri = rawPath;
+      } else {
+        // Path de Supabase Storage o prefijo 'local/'
+        const baseDir = FileSystem.documentDirectory ?? '';
+        const filename = rawPath.split('/').pop() ?? 'recording.m4a';
+        const localUri = baseDir + filename;
+
+        let info = await FileSystem.getInfoAsync(localUri);
+        if (!info.exists || (info.size ?? 0) === 0) {
+          if (isLocalPrefix || settings.useLocalOnly) {
+            throw new Error('Archivo local no encontrado');
+          }
           // Descargar desde Storage con URL firmada
           const { data, error } = await supabase.storage
             .from('recordings')
-            .createSignedUrl(storagePath, 60 * 60);
+            .createSignedUrl(rawPath, 60 * 60);
           if (error || !data?.signedUrl) {
             throw new Error('Archivo no disponible para descargar');
           }
@@ -1223,9 +1787,9 @@ export default function RecordingsScreen() {
             throw new Error('El archivo descargado no es válido');
           }
         }
+        shareUri = localUri;
       }
 
-      // 3) Abrir selector nativo de compartir con opciones adecuadas
       const shareTitle = recording.title ?? 'Grabación';
       const shareOptions: any = {
         dialogTitle: shareTitle,
@@ -1234,32 +1798,16 @@ export default function RecordingsScreen() {
       };
 
       if (canShare) {
-        await Sharing.shareAsync(localUri, shareOptions);
-        // 4) Confirmación visual: no hay retorno de éxito, confirmamos finalización
-        Alert.alert('Compartido', 'La grabación se ha compartido.');
+        await Sharing.shareAsync(shareUri, shareOptions);
       } else {
-        // Fallback: usar RN Share con URL del archivo
-        try {
-          const result = await Share.share({
-            url: localUri,
-            message: shareTitle,
-            title: shareTitle,
-          });
-          if ((result as any).action) {
-            Alert.alert('Compartido', 'La grabación se ha compartido.');
-          } else {
-            Alert.alert('Cancelado', 'No se compartió la grabación.');
-          }
-        } catch (e) {
-          throw e;
-        }
+        await Share.share({ url: shareUri, message: shareTitle, title: shareTitle });
       }
     } catch (error) {
       console.error('Error sharing recording:', error);
       const raw = String((error as any)?.message || '');
       const msg = /local/i.test(raw)
-        ? 'Archivo local no encontrado. Activa sincronización o graba de nuevo.'
-        : 'No se pudo compartir la grabación';
+        ? 'Archivo local no encontrado. El archivo puede haber sido eliminado del dispositivo.'
+        : `No se pudo compartir la grabación: ${raw}`;
       Alert.alert('Error', msg);
     }
   }
@@ -1571,6 +2119,20 @@ export default function RecordingsScreen() {
                 <Send size={18} color={colors.text} />
                 <Text style={[makeHeaderMenuStyles(colors).text, { color: colors.text }]}>Enviar a…</Text>
               </TouchableOpacity>
+              <View style={makeHeaderMenuStyles(colors).separator} />
+
+              <TouchableOpacity
+                style={makeHeaderMenuStyles(colors).item}
+                onPress={() => handleDownloadOffline(item)}
+                disabled={downloadingId === item.id}
+              >
+                {downloadingId === item.id ? (
+                  <ActivityIndicator size="small" color={colors.primary} />
+                ) : (
+                  <Download size={18} color={colors.text} />
+                )}
+                <Text style={[makeHeaderMenuStyles(colors).text, { color: colors.text }]}>Offline</Text>
+              </TouchableOpacity>
               {/* Nueva opción: Eliminar con diálogo de confirmación */}
               <View style={makeHeaderMenuStyles(colors).separator} />
 
@@ -1589,66 +2151,13 @@ export default function RecordingsScreen() {
   };
 
   return (
-    <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]} edges={['top', 'left', 'right']}>
-      {(showHeaderMenu) && (
-        <Pressable
-          style={styles.backdrop}
-          accessibilityRole="button"
-          accessibilityLabel="Cerrar menús"
-          onPress={() => {
-            Animated.timing(headerMenuOpacity, {
-              toValue: 0,
-              duration: 200,
-              easing: Easing.inOut(Easing.ease),
-              useNativeDriver: true,
-            }).start(({ finished }) => {
-              if (finished) setShowHeaderMenu(false);
-            });
-            // Por coherencia, cerrar menú de grabación si estuviera marcado
-            if (showRecordingMenu !== null) setShowRecordingMenu(null);
-          }}
-        />
-      )}
-
-      <ScreenHeader
-        title="Grabaciones"
-        onLayout={(e) => setHeaderHeight(e.nativeEvent.layout.height)}
-        rightActions={
-          <TouchableOpacity
-            onPress={() => {
-              if (!showHeaderMenu) {
-                setShowHeaderMenu(true);
-                Animated.timing(headerMenuOpacity, {
-                  toValue: 1,
-                  duration: 200,
-                  easing: Easing.inOut(Easing.ease),
-                  useNativeDriver: true,
-                }).start();
-              } else {
-                Animated.timing(headerMenuOpacity, {
-                  toValue: 0,
-                  duration: 200,
-                  easing: Easing.inOut(Easing.ease),
-                  useNativeDriver: true,
-                }).start(({ finished }) => {
-                  if (finished) setShowHeaderMenu(false);
-                });
-              }
-            }}
-            style={styles.headerMenuButton}
-          >
-            <MoreVertical size={20} color={colors.text} />
-          </TouchableOpacity>
-        }
-      />
-
-
-      {showHeaderMenu && (
-        <>
+    <SafeAreaView style={[styles.container, { backgroundColor: colors.surface }]} edges={['top', 'left', 'right']}>
+      <View style={{ flex: 1, backgroundColor: colors.background }}>
+        {(showHeaderMenu) && (
           <Pressable
-            accessibilityRole="button"
-            accessibilityLabel="Cerrar menú"
             style={styles.backdrop}
+            accessibilityRole="button"
+            accessibilityLabel="Cerrar menús"
             onPress={() => {
               Animated.timing(headerMenuOpacity, {
                 toValue: 0,
@@ -1658,20 +2167,52 @@ export default function RecordingsScreen() {
               }).start(({ finished }) => {
                 if (finished) setShowHeaderMenu(false);
               });
+              // Por coherencia, cerrar menú de grabación si estuviera marcado
+              if (showRecordingMenu !== null) setShowRecordingMenu(null);
             }}
           />
-          <Animated.View
-            accessibilityRole="menu"
-            style={[
-              makeHeaderMenuStyles(colors).container,
-              { top: headerHeight + 16, opacity: headerMenuOpacity },
-            ]}
-          >
+        )}
+
+        <ScreenHeader
+          title="Grabaciones"
+          onLayout={(e) => setHeaderHeight(e.nativeEvent.layout.height)}
+          rightActions={
             <TouchableOpacity
-              accessibilityRole="menuitem"
-              style={makeHeaderMenuStyles(colors).item}
               onPress={() => {
-                setShowSearch(!showSearch);
+                if (!showHeaderMenu) {
+                  setShowHeaderMenu(true);
+                  Animated.timing(headerMenuOpacity, {
+                    toValue: 1,
+                    duration: 200,
+                    easing: Easing.inOut(Easing.ease),
+                    useNativeDriver: true,
+                  }).start();
+                } else {
+                  Animated.timing(headerMenuOpacity, {
+                    toValue: 0,
+                    duration: 200,
+                    easing: Easing.inOut(Easing.ease),
+                    useNativeDriver: true,
+                  }).start(({ finished }) => {
+                    if (finished) setShowHeaderMenu(false);
+                  });
+                }
+              }}
+              style={styles.headerMenuButton}
+            >
+              <MoreVertical size={20} color={colors.text} />
+            </TouchableOpacity>
+          }
+        />
+
+
+        {showHeaderMenu && (
+          <>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Cerrar menú"
+              style={styles.backdrop}
+              onPress={() => {
                 Animated.timing(headerMenuOpacity, {
                   toValue: 0,
                   duration: 200,
@@ -1681,539 +2222,616 @@ export default function RecordingsScreen() {
                   if (finished) setShowHeaderMenu(false);
                 });
               }}
-            >
-              <Search size={18} color={colors.text} />
-              <Text style={[styles.menuText, { color: colors.text }]}>Búsqueda avanzada</Text>
-            </TouchableOpacity>
-            <View style={makeHeaderMenuStyles(colors).separator} />
-            <TouchableOpacity
-              accessibilityRole="menuitem"
-              style={makeHeaderMenuStyles(colors).item}
-              onPress={() => {
-                setSelectionMode(!selectionMode);
-                setSelectedIds(new Set());
-                Animated.timing(headerMenuOpacity, {
-                  toValue: 0,
-                  duration: 200,
-                  easing: Easing.inOut(Easing.ease),
-                  useNativeDriver: true,
-                }).start(({ finished }) => {
-                  if (finished) setShowHeaderMenu(false);
-                });
-              }}
-            >
-              <CheckSquare size={18} color={colors.text} />
-              <Text style={[styles.menuText, { color: colors.text }]}>
-                {selectionMode ? 'Cancelar selección' : 'Selección múltiple'}
-              </Text>
-            </TouchableOpacity>
-            <View style={makeHeaderMenuStyles(colors).separator} />
-            <TouchableOpacity
-              style={makeHeaderMenuStyles(colors).item}
-              onPress={() => {
-                LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
-                setViewMode(prev => (prev === 'grid' ? 'list' : 'grid'));
-                setShowHeaderMenu(false);
-              }}
-            >
-              {viewMode === 'list' ? (
-                <>
-                  <Grid3x3 size={18} color={colors.text} />
-                  <Text style={[styles.menuText, { color: colors.text }]}>Vista de cuadrícula</Text>
-                </>
-              ) : (
-                <>
-                  <List size={18} color={colors.text} />
-                  <Text style={[styles.menuText, { color: colors.text }]}>Vista de lista</Text>
-                </>
-              )}
-            </TouchableOpacity>
-          </Animated.View>
-        </>
-      )}
-
-      {/* Search bar moved into FlatList header to avoid remount/focus loss */}
-
-      {selectionMode && selectedIds.size > 0 && (
-        <View style={[styles.selectionBar, { backgroundColor: colors.primary }]}>
-          <Text style={styles.selectionText}>{selectedIds.size} seleccionado(s)</Text>
-          <View style={styles.selectionActions}>
-            <TouchableOpacity onPress={openSendModalBulk} style={styles.selectionButton}>
-              <Send size={20} color="#FFFFFF" />
-            </TouchableOpacity>
-            <TouchableOpacity onPress={handleBulkShare} style={styles.selectionButton}>
-              <Share2 size={20} color="#FFFFFF" />
-            </TouchableOpacity>
-            {/* Eliminado botón de ocultar en selección múltiple */}
-            <TouchableOpacity onPress={handleBulkDelete} style={styles.selectionButton}>
-              <Trash2 size={20} color="#FFFFFF" />
-            </TouchableOpacity>
-            <TouchableOpacity
-              onPress={() => {
-                setSelectionMode(false);
-                setSelectedIds(new Set());
-              }}
-              style={styles.selectionButton}
-            >
-              <Text style={{ color: '#FFFFFF', fontWeight: '600' }}>Cancelar</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-      )}
-
-      {recordings.length === 0 ? (
-        <View style={{ flex: 1 }}>
-          {showSearch && (
-            <SearchBar
-              searchText={searchText}
-              setSearchText={setSearchText}
-              searching={searching}
-              colors={colors}
-              onClose={() => { setShowSearch(false); setSearchText(''); }}
             />
-          )}
-          <View style={styles.emptyState}>
-            <Text style={[styles.emptyTitle, { color: colors.text }]}>
-              {searchText ? 'No se encontraron grabaciones' : 'No hay grabaciones'}
-            </Text>
-            <Text style={[styles.emptyText, { color: colors.textSecondary, textAlign: 'center', paddingHorizontal: 40 }]}>
-              {searchText
-                ? 'Intenta con otro término de búsqueda'
-                : 'Tus sesiones grabadas en el Modo Estudio y Casting aparecerán aquí.'}
-            </Text>
-          </View>
-        </View>
-      ) : (
-        <PinchGestureHandler
-          ref={pinchRef}
-          enabled={viewMode === 'grid'}
-          onHandlerStateChange={(e) => {
-            if (e.nativeEvent.state === State.ACTIVE || e.nativeEvent.state === State.END) {
-              const scale = e.nativeEvent.scale;
-              if (scale > 1.05) {
-                // zoom in => fewer columns
-                setGridColumns((prev) => Math.max(2, prev - 1));
-              } else if (scale < 0.95) {
-                // zoom out => more columns
-                setGridColumns((prev) => Math.min(5, prev + 1));
-              }
-            }
-          }}
-        >
-          <View style={{ flex: 1 }}>
-            <FlatList
-              data={recordings}
-              renderItem={({ item }) => <RecordingCard item={item} />}
-              keyExtractor={(item) => item.id}
-              contentContainerStyle={viewMode === 'grid' ? { paddingVertical: rp(20), paddingBottom: 100 + insets.bottom } : { ...styles.list, paddingBottom: 100 + insets.bottom }}
-              numColumns={viewMode === 'grid' ? gridColumns : 1}
-              key={viewMode === 'grid' ? `grid-${gridColumns}` : 'list'}
-              columnWrapperStyle={viewMode === 'grid' && gridColumns > 1 ? { paddingHorizontal: gridPadding, justifyContent: 'space-between', marginBottom: gridGap } : undefined}
-              onEndReached={loadMore}
-              onEndReachedThreshold={0.6}
-              keyboardShouldPersistTaps="always"
-              refreshing={refreshing}
-              onRefresh={handleRefresh}
-              ListHeaderComponent={showSearch ? (
-                <SearchBar
-                  searchText={searchText}
-                  setSearchText={setSearchText}
-                  searching={searching}
-                  colors={colors}
-                  onClose={() => { setShowSearch(false); setSearchText(''); }}
-                />
-              ) : null}
-              ListFooterComponent={loadingMore ? (
-                <View style={{ paddingVertical: rp(20) }}>
-                  <ActivityIndicator size="small" color={colors.primary} />
-                </View>
-              ) : null}
-            />
-          </View>
-        </PinchGestureHandler>
-      )}
-
-      {/* Reproductor modal */}
-      <Modal
-        visible={playerVisible}
-        transparent
-        animationType="fade"
-        onRequestClose={closePlayer}
-        supportedOrientations={['portrait', 'landscape']}
-      >
-        <View style={styles.playerOverlay}>
-          <Animated.View style={{ flex: 1, opacity: modalOpacity, transform: [{ scale: modalScale }] }}>
-            <View style={{ flex: 1, backgroundColor: '#151718' }}>
-              {/* Player Module - Top Section */}
+            <Animated.View
+              accessibilityRole="menu"
+              style={[
+                makeHeaderMenuStyles(colors).container,
+                { top: headerHeight + 16, opacity: headerMenuOpacity },
+              ]}
+            >
               <TouchableOpacity
-                activeOpacity={1}
-                onPress={toggleControls}
-                style={[
-                  styles.playerModule,
-                  isFullscreen && styles.playerModuleFullscreen,
-                  Platform.OS === 'ios' ? { paddingTop: insets.top + 12 } : { paddingTop: insets.top }
-                ]}
+                accessibilityRole="menuitem"
+                style={makeHeaderMenuStyles(colors).item}
+                onPress={() => {
+                  setShowSearch(!showSearch);
+                  Animated.timing(headerMenuOpacity, {
+                    toValue: 0,
+                    duration: 200,
+                    easing: Easing.inOut(Easing.ease),
+                    useNativeDriver: true,
+                  }).start(({ finished }) => {
+                    if (finished) setShowHeaderMenu(false);
+                  });
+                }}
               >
-                {/* Video Player (if video type) - Background layer */}
-                {queue[currentIndex]?.type === 'video' && (
-                  <View style={styles.visualizerContainer} pointerEvents="none">
-                    <Video
-                      ref={videoRef}
-                      source={{ uri: queue[currentIndex]?.audio_url || '' }}
-                      style={{ width: '100%', height: '100%' }}
-                      resizeMode={ResizeMode.CONTAIN}
-                      shouldPlay={isPlaying}
-                      onPlaybackStatusUpdate={status => {
-                        if (status.isLoaded) {
-                          // Throttle: solo actualizar posición cada 100ms para evitar re-renders constantes
-                          const now = Date.now();
-                          const lastUpdate = lastVideoUpdateRef.current;
+                <Search size={18} color={colors.text} />
+                <Text style={[styles.menuText, { color: colors.text }]}>Búsqueda avanzada</Text>
+              </TouchableOpacity>
+              <View style={makeHeaderMenuStyles(colors).separator} />
+              <TouchableOpacity
+                accessibilityRole="menuitem"
+                style={makeHeaderMenuStyles(colors).item}
+                onPress={() => {
+                  setSelectionMode(!selectionMode);
+                  setSelectedIds(new Set());
+                  Animated.timing(headerMenuOpacity, {
+                    toValue: 0,
+                    duration: 200,
+                    easing: Easing.inOut(Easing.ease),
+                    useNativeDriver: true,
+                  }).start(({ finished }) => {
+                    if (finished) setShowHeaderMenu(false);
+                  });
+                }}
+              >
+                <CheckSquare size={18} color={colors.text} />
+                <Text style={[styles.menuText, { color: colors.text }]}>
+                  {selectionMode ? 'Cancelar selección' : 'Selección múltiple'}
+                </Text>
+              </TouchableOpacity>
+              <View style={makeHeaderMenuStyles(colors).separator} />
+              <TouchableOpacity
+                style={makeHeaderMenuStyles(colors).item}
+                onPress={() => {
+                  LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+                  setViewMode(prev => (prev === 'grid' ? 'list' : 'grid'));
+                  setShowHeaderMenu(false);
+                }}
+              >
+                {viewMode === 'list' ? (
+                  <>
+                    <Grid3x3 size={18} color={colors.text} />
+                    <Text style={[styles.menuText, { color: colors.text }]}>Vista de cuadrícula</Text>
+                  </>
+                ) : (
+                  <>
+                    <List size={18} color={colors.text} />
+                    <Text style={[styles.menuText, { color: colors.text }]}>Vista de lista</Text>
+                  </>
+                )}
+              </TouchableOpacity>
+            </Animated.View>
+          </>
+        )}
 
-                          if (now - lastUpdate > 100) {
-                            lastVideoUpdateRef.current = now;
-                            setPositionMillis(status.positionMillis);
-                          }
+        {/* Search bar moved into FlatList header to avoid remount/focus loss */}
 
-                          // Duración solo se actualiza una vez
-                          if (status.durationMillis && !durationMillis) {
-                            setDurationMillis(status.durationMillis);
-                          }
+        {selectionMode && selectedIds.size > 0 && (
+          <View style={[styles.selectionBar, { backgroundColor: colors.primary }]}>
+            <Text style={styles.selectionText}>{selectedIds.size} seleccionado(s)</Text>
+            <View style={styles.selectionActions}>
+              <TouchableOpacity onPress={openSendModalBulk} style={styles.selectionButton}>
+                <Send size={20} color="#FFFFFF" />
+              </TouchableOpacity>
+              <TouchableOpacity onPress={handleBulkShare} style={styles.selectionButton}>
+                <Share2 size={20} color="#FFFFFF" />
+              </TouchableOpacity>
+              {/* Eliminado botón de ocultar en selección múltiple */}
+              <TouchableOpacity onPress={handleBulkDelete} style={styles.selectionButton}>
+                <Trash2 size={20} color="#FFFFFF" />
+              </TouchableOpacity>
+              <TouchableOpacity
+                onPress={() => {
+                  setSelectionMode(false);
+                  setSelectedIds(new Set());
+                }}
+                style={styles.selectionButton}
+              >
+                <Text style={{ color: '#FFFFFF', fontWeight: '600' }}>Cancelar</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        )}
 
-                          // NO actualizar isPlaying aquí - causa loop infinito
-                          // shouldPlay={isPlaying} ya controla el estado
+        {recordings.length === 0 ? (
+          <View style={{ flex: 1 }}>
+            {showSearch && (
+              <SearchBar
+                searchText={searchText}
+                setSearchText={setSearchText}
+                searching={searching}
+                colors={colors}
+                onClose={() => { setShowSearch(false); setSearchText(''); }}
+              />
+            )}
+            <View style={styles.emptyState}>
+              <Text style={[styles.emptyTitle, { color: colors.text }]}>
+                {searchText ? 'No se encontraron grabaciones' : 'No hay grabaciones'}
+              </Text>
+              <Text style={[styles.emptyText, { color: colors.textSecondary, textAlign: 'center', paddingHorizontal: 40 }]}>
+                {searchText
+                  ? 'Intenta con otro término de búsqueda'
+                  : 'Tus sesiones grabadas en el Modo Estudio y Casting aparecerán aquí.'}
+              </Text>
+            </View>
+          </View>
+        ) : (
+          <PinchGestureHandler
+            ref={pinchRef}
+            enabled={viewMode === 'grid'}
+            onHandlerStateChange={(e) => {
+              if (e.nativeEvent.state === State.ACTIVE || e.nativeEvent.state === State.END) {
+                const scale = e.nativeEvent.scale;
+                if (scale > 1.05) {
+                  // zoom in => fewer columns
+                  setGridColumns((prev) => Math.max(2, prev - 1));
+                } else if (scale < 0.95) {
+                  // zoom out => more columns
+                  setGridColumns((prev) => Math.min(5, prev + 1));
+                }
+              }
+            }}
+          >
+            <View style={{ flex: 1 }}>
+              <FlatList
+                data={recordings}
+                renderItem={({ item }) => <RecordingCard item={item} />}
+                keyExtractor={(item) => item.id}
+                contentContainerStyle={viewMode === 'grid' ? { paddingVertical: rp(20), paddingBottom: 100 + insets.bottom } : { ...styles.list, paddingBottom: 100 + insets.bottom }}
+                numColumns={viewMode === 'grid' ? gridColumns : 1}
+                key={viewMode === 'grid' ? `grid-${gridColumns}` : 'list'}
+                columnWrapperStyle={viewMode === 'grid' && gridColumns > 1 ? { paddingHorizontal: gridPadding, justifyContent: 'space-between', marginBottom: gridGap } : undefined}
+                onEndReached={loadMore}
+                onEndReachedThreshold={0.6}
+                keyboardShouldPersistTaps="always"
+                refreshing={refreshing}
+                onRefresh={handleRefresh}
+                ListHeaderComponent={showSearch ? (
+                  <SearchBar
+                    searchText={searchText}
+                    setSearchText={setSearchText}
+                    searching={searching}
+                    colors={colors}
+                    onClose={() => { setShowSearch(false); setSearchText(''); }}
+                  />
+                ) : null}
+                ListFooterComponent={loadingMore ? (
+                  <View style={{ paddingVertical: rp(20) }}>
+                    <ActivityIndicator size="small" color={colors.primary} />
+                  </View>
+                ) : null}
+              />
+            </View>
+          </PinchGestureHandler>
+        )}
 
-                          if (status.didJustFinish) {
-                            const currentLoop = loopModeRef.current;
-                            if (currentLoop === 'one') {
-                              videoRef.current?.replayAsync();
-                            } else if (currentLoop === 'all') {
-                              const nextIndex = (currentIndex + 1) % queue.length;
-                              loadAndPlay(nextIndex, queue);
-                            } else {
-                              const nextIndex = currentIndex + 1;
-                              if (nextIndex < queue.length) {
+        {/* Reproductor modal */}
+        <Modal
+          visible={playerVisible}
+          transparent
+          animationType="fade"
+          onRequestClose={closePlayer}
+          supportedOrientations={['portrait', 'landscape']}
+        >
+          <View style={styles.playerOverlay}>
+            <Animated.View style={{ flex: 1, opacity: modalOpacity, transform: [{ scale: modalScale }] }}>
+              <View style={{ flex: 1, backgroundColor: '#151718' }}>
+                {/* Player Module - Top Section */}
+                <TouchableOpacity
+                  activeOpacity={1}
+                  onPress={toggleControls}
+                  style={[
+                    styles.playerModule,
+                    isFullscreen && styles.playerModuleFullscreen,
+                    Platform.OS === 'ios' ? { paddingTop: insets.top + 12 } : { paddingTop: insets.top }
+                  ]}
+                >
+                  {/* Video Player (if video type) - Background layer */}
+                  {queue[currentIndex]?.type === 'video' && (
+                    <View style={styles.visualizerContainer} pointerEvents="none">
+                      <Video
+                        ref={videoRef}
+                        source={{ uri: queue[currentIndex]?.audio_url || '' }}
+                        style={{ width: '100%', height: '100%' }}
+                        resizeMode={ResizeMode.CONTAIN}
+                        shouldPlay={isPlaying}
+                        onPlaybackStatusUpdate={status => {
+                          if (status.isLoaded) {
+                            // Throttle: solo actualizar posición cada 100ms para evitar re-renders constantes
+                            const now = Date.now();
+                            const lastUpdate = lastVideoUpdateRef.current;
+
+                            if (now - lastUpdate > 100) {
+                              lastVideoUpdateRef.current = now;
+                              setPositionMillis(status.positionMillis);
+                            }
+
+                            // Duración solo se actualiza una vez
+                            if (status.durationMillis && !durationMillis) {
+                              setDurationMillis(status.durationMillis);
+                            }
+
+                            // NO actualizar isPlaying aquí - causa loop infinito
+                            // shouldPlay={isPlaying} ya controla el estado
+
+                            if (status.didJustFinish) {
+                              const currentLoop = loopModeRef.current;
+                              if (currentLoop === 'one') {
+                                videoRef.current?.replayAsync();
+                              } else if (currentLoop === 'all') {
+                                const nextIndex = (currentIndex + 1) % queue.length;
                                 loadAndPlay(nextIndex, queue);
                               } else {
-                                setIsPlaying(false);
+                                const nextIndex = currentIndex + 1;
+                                if (nextIndex < queue.length) {
+                                  loadAndPlay(nextIndex, queue);
+                                } else {
+                                  setIsPlaying(false);
+                                }
                               }
                             }
                           }
-                        }
-                      }}
+                        }}
+                      />
+                    </View>
+                  )}
+
+                  {/* Audio Visualizer Container - Background layer */}
+                  {queue[currentIndex]?.type !== 'video' && (
+                    <View style={styles.visualizerContainer} pointerEvents="none">
+                      {showAnimation ? (
+                        <AudioVisualizer isPlaying={isPlaying} color={colors.primary} height={isFullscreen ? 80 : 60} barCount={isFullscreen ? 60 : 30} />
+                      ) : (
+                        <View style={styles.staticImageContainer}>
+                          <Music size={80} color="rgba(59, 130, 246, 0.3)" strokeWidth={1.5} />
+                        </View>
+                      )}
+                    </View>
+                  )}
+
+                  {/* All player controls - Always rendered but with opacity */}
+                  <Animated.View
+                    style={[
+                      { opacity: controlsOpacity, paddingHorizontal: rp(16) },
+                      isFullscreen && { flex: 1, justifyContent: 'space-between', paddingHorizontal: rp(24) }
+                    ]}
+                    pointerEvents="box-none"
+                  >
+                    <View style={styles.playerHeader}>
+                      <Text style={[styles.playerTitle, { color: '#FFFFFF' }]} numberOfLines={1}>
+                        {queue[currentIndex]?.title || 'Sin título'}
+                      </Text>
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+                        {/* Chromecast Button */}
+                        <TouchableOpacity
+                          accessibilityRole="button"
+                          accessibilityLabel="Chromecast"
+                          onPress={() => {
+                            // TODO: Implement Chromecast functionality
+                            Alert.alert('Chromecast', 'Funcionalidad de Chromecast próximamente');
+                          }}
+                          style={styles.headerIconButton}
+                        >
+                          <Cast size={22} color="#FFFFFF" />
+                        </TouchableOpacity>
+
+                        {/* Toggle Animation Button */}
+                        <TouchableOpacity
+                          accessibilityRole="button"
+                          accessibilityLabel={showAnimation ? 'Ocultar animación' : 'Mostrar animación'}
+                          onPress={() => setShowAnimation(!showAnimation)}
+                          style={styles.headerIconButton}
+                        >
+                          <Waves size={22} color={showAnimation ? colors.primary : 'rgba(255,255,255,0.5)'} />
+                        </TouchableOpacity>
+
+                        {/* Close Button */}
+                        <TouchableOpacity
+                          accessibilityRole="button"
+                          accessibilityLabel="Cerrar reproductor"
+                          onPress={closePlayer}
+                          style={styles.closeButton}
+                        >
+                          <X size={24} color="#FFFFFF" />
+                        </TouchableOpacity>
+                      </View>
+                    </View>
+                    <Text style={[styles.playerMeta, { color: 'rgba(255,255,255,0.6)' }]}>
+                      {(() => {
+                        const r = queue[currentIndex];
+                        if (!r) return '';
+                        const dateStr = new Date(r.created_at).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' });
+                        return `${formatDuration(r.duration_seconds || 0)} • ${dateStr}`;
+                      })()}
+                    </Text>
+
+                    {/* Center Controls Container - Groups play controls and secondary controls */}
+                    <View style={isFullscreen ? { flex: 1, justifyContent: 'space-between' } : {}}>
+                      {/* Play/Pause/Skip Controls - Centered wrapper */}
+                      <View style={isFullscreen ? { flex: 1, justifyContent: 'center' } : {}}>
+                        <View style={[styles.controlsOverlay, { position: 'relative', backgroundColor: 'transparent' }]}>
+                          <View style={styles.controlsRow}>
+                            <Pressable
+                              style={({ pressed }) => [styles.controlButton, { opacity: pressed ? 0.7 : 1 }]}
+                              onPress={(e) => { e.stopPropagation(); playPrev(); }}
+                              accessibilityLabel="Anterior"
+                            >
+                              <SkipBack size={28} color="#FFFFFF" />
+                            </Pressable>
+                            <Pressable
+                              style={({ pressed }) => [[styles.playPauseButton, { backgroundColor: colors.primary }], { opacity: pressed ? 0.8 : 1 }]}
+                              onPress={(e) => { e.stopPropagation(); togglePlayPause(); }}
+                              accessibilityLabel={isPlaying ? 'Pausar' : 'Reproducir'}
+                            >
+                              {isPlaying ? <Pause size={32} color="#FFFFFF" /> : <Play size={32} color="#FFFFFF" />}
+                            </Pressable>
+                            <Pressable
+                              style={({ pressed }) => [styles.controlButton, { opacity: pressed ? 0.7 : 1 }]}
+                              onPress={(e) => { e.stopPropagation(); playNext(); }}
+                              accessibilityLabel="Siguiente"
+                            >
+                              <SkipForward size={28} color="#FFFFFF" />
+                            </Pressable>
+                          </View>
+                        </View>
+                      </View>
+
+                      {/* Secondary Controls: Speaker, Speed, Loop, Expand (Right Aligned) */}
+                      <View style={styles.secondaryControlsRow}>
+                        <Pressable style={({ hovered, pressed }) => [styles.controlButton, { transform: [{ scale: hovered || pressed ? 1.05 : 1 }], opacity: hovered ? 0.95 : 1 }]} onPress={toggleMute} accessibilityLabel={muted ? 'Reanudar sonido' : 'Silenciar'}>
+                          {muted ? <VolumeX size={20} color="#FFFFFF" /> : <Volume2 size={20} color="#FFFFFF" />}
+                        </Pressable>
+
+                        <Pressable
+                          style={({ hovered, pressed }) => [styles.controlButton, { transform: [{ scale: hovered || pressed ? 1.05 : 1 }], opacity: hovered ? 0.95 : 1 }]}
+                          onPress={() => setShowSpeedMenu(!showSpeedMenu)}
+                          accessibilityLabel={`Velocidad: ${playbackRate.toFixed(2)}x`}
+                        >
+                          <View style={{ position: 'relative', alignItems: 'center', justifyContent: 'center' }}>
+                            <Gauge size={18} color={playbackRate !== 1.0 ? colors.primary : 'rgba(255,255,255,0.5)'} />
+                            {playbackRate !== 1.0 && (
+                              <View style={[styles.speedBadge, { backgroundColor: colors.primary }]}>
+                                <Text style={styles.speedBadgeText}>{playbackRate.toFixed(2)}x</Text>
+                              </View>
+                            )}
+                          </View>
+                        </Pressable>
+
+                        <Pressable style={({ hovered, pressed }) => [styles.loopWrapper, { transform: [{ scale: hovered || pressed ? 1.08 : 1 }], opacity: hovered ? 0.95 : 1 }]} onPress={cycleLoopMode} accessibilityLabel="Modo de bucle">
+                          <Animated.View style={{ transform: [{ scale: loopAnim }], position: 'relative' }}>
+                            <Repeat size={18} color={loopMode === 'off' ? 'rgba(255,255,255,0.5)' : colors.primary} />
+                            {loopMode === 'one' && (
+                              <View style={[styles.loopBadge, { backgroundColor: colors.primary }]}>
+                                <Text style={styles.loopBadgeText}>1</Text>
+                              </View>
+                            )}
+                          </Animated.View>
+                        </Pressable>
+
+                        <Pressable style={({ hovered, pressed }) => [styles.controlButton, { transform: [{ scale: hovered || pressed ? 1.05 : 1 }], opacity: hovered ? 0.95 : 1 }]} onPress={() => setIsFullscreen(!isFullscreen)} accessibilityLabel={isFullscreen ? 'Salir de pantalla completa' : 'Pantalla completa'}>
+                          {isFullscreen ? <Minimize2 size={20} color="#FFFFFF" /> : <Maximize2 size={20} color="#FFFFFF" />}
+                        </Pressable>
+                      </View>
+
+                      {/* Speed Selection Menu */}
+                      {showSpeedMenu && (
+                        <View style={styles.speedMenuContainer}>
+                          {[0.50, 0.75, 1.0, 1.25, 1.50, 1.75, 2.0].map((rate) => (
+                            <Pressable
+                              key={rate}
+                              style={({ pressed }) => [
+                                styles.speedMenuItem,
+                                { backgroundColor: playbackRate === rate ? colors.primary : 'rgba(255,255,255,0.1)' },
+                                pressed && { opacity: 0.7 }
+                              ]}
+                              onPress={() => {
+                                setPlaybackRate(rate);
+                                setShowSpeedMenu(false);
+
+                                // Apply to TrackPlayer if available
+                                if (isTrackPlayerReady()) {
+                                  TrackPlayer.setRate(rate).catch((err: any) => console.warn('Could not set TrackPlayer rate:', err));
+                                }
+
+                                // Apply to expo-av sound if available
+                                if (sound) {
+                                  sound.setRateAsync(rate, true).catch((err: any) => console.warn('Could not set sound rate:', err));
+                                }
+
+                                // Apply to video if available
+                                if (videoRef.current) {
+                                  videoRef.current.setRateAsync(rate, true).catch((err: any) => console.warn('Could not set video rate:', err));
+                                }
+                              }}
+                            >
+                              <Text style={[styles.speedMenuText, { color: playbackRate === rate ? '#FFFFFF' : 'rgba(255,255,255,0.7)' }]}>
+                                {rate.toFixed(2)}x
+                              </Text>
+                            </Pressable>
+                          ))}
+                        </View>
+                      )}
+                    </View>
+
+                    {/* Progress Bar (Bottom) */}
+                    <View style={[styles.progressRow, { width: '100%' }]}>
+                      <Text style={[styles.timeText, { color: '#FFFFFF' }]}>{formatDuration(Math.floor((positionMillis || 0) / 1000))}</Text>
+                      <Pressable
+                        style={[styles.progressBar, { backgroundColor: 'rgba(255,255,255,0.2)' }]}
+                        onPress={(e) => {
+                          const { locationX } = e.nativeEvent as any;
+                          const w = progressBarWidthRef.current || 1;
+                          const ratio = Math.max(0, Math.min(1, locationX / w));
+                          seekToRatio(ratio);
+                        }}
+                        onLayout={(e) => { progressBarWidthRef.current = e.nativeEvent.layout.width; }}
+                      >
+                        <View style={[styles.progressFill, { width: durationMillis ? `${(positionMillis / durationMillis) * 100}%` : '0%', backgroundColor: colors.primary }]}>
+                          <View style={styles.progressThumb} />
+                        </View>
+                      </Pressable>
+                      <Text style={[styles.timeText, { color: '#FFFFFF' }]}>{formatDuration(Math.floor((durationMillis || 0) / 1000))}</Text>
+                    </View>
+                  </Animated.View>
+                </TouchableOpacity>
+
+                {!isFullscreen && (
+                  <View style={[styles.playlistContainer, { backgroundColor: colors.surface }]}>
+                    <Text style={[styles.playlistTitle, { color: colors.textSecondary }]}>Playlist</Text>
+                    <FlatList
+                      data={queue}
+                      keyExtractor={(r) => r.id}
+                      renderItem={({ item, index }) => (
+                        <Pressable
+                          style={({ hovered, pressed }) => [
+                            styles.playlistRow,
+                            {
+                              borderColor: index === currentIndex ? colors.primary : colors.border,
+                              backgroundColor: colors.surface,
+                              transform: [{ scale: hovered || pressed ? 1.02 : 1 }],
+                              opacity: hovered ? 0.97 : 1
+                            }
+                          ]}
+                          onPress={() => loadAndPlay(index, queue)}
+                        >
+                          {Boolean((item as any).thumbnail_url) ? (
+                            <Image source={{ uri: (item as any).thumbnail_url }} style={styles.playlistThumb} />
+                          ) : (
+                            <View style={[styles.playlistThumb, { backgroundColor: colors.input, alignItems: 'center', justifyContent: 'center' }]}>
+                              {item.type === 'video' ? (
+                                <VideoIcon size={18} color={colors.primary} />
+                              ) : (
+                                <FileAudio size={18} color={colors.primary} />
+                              )}
+                            </View>
+                          )}
+                          <View style={{ flex: 1 }}>
+                            <Text style={[styles.playlistItemTitle, { color: colors.text }]} numberOfLines={1}>
+                              {item.title || 'Sin título'}
+                            </Text>
+                            <Text style={[styles.playlistItemMeta, { color: colors.textSecondary }]} numberOfLines={1}>
+                              {formatDuration(item.duration_seconds || 0)}
+                            </Text>
+                          </View>
+                        </Pressable>
+                      )}
+                      style={styles.playlistList}
+                      showsVerticalScrollIndicator={false}
+                      contentContainerStyle={{ paddingBottom: insets.bottom + 20 }}
                     />
                   </View>
                 )}
-
-                {/* Audio Visualizer Container - Background layer */}
-                {queue[currentIndex]?.type !== 'video' && (
-                  <View style={styles.visualizerContainer} pointerEvents="none">
-                    {showAnimation ? (
-                      <AudioVisualizer isPlaying={isPlaying} color={colors.primary} height={isFullscreen ? 80 : 60} barCount={isFullscreen ? 60 : 30} />
-                    ) : (
-                      <View style={styles.staticImageContainer}>
-                        <Music size={80} color="rgba(59, 130, 246, 0.3)" strokeWidth={1.5} />
-                      </View>
-                    )}
-                  </View>
-                )}
-
-                {/* All player controls - Always rendered but with opacity */}
-                <Animated.View
-                  style={[
-                    { opacity: controlsOpacity, paddingHorizontal: rp(16) },
-                    isFullscreen && { flex: 1, justifyContent: 'space-between', paddingHorizontal: rp(24) }
-                  ]}
-                  pointerEvents="box-none"
-                >
-                  <View style={styles.playerHeader}>
-                    <Text style={[styles.playerTitle, { color: '#FFFFFF' }]} numberOfLines={1}>
-                      {queue[currentIndex]?.title || 'Sin título'}
-                    </Text>
-                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
-                      {/* Chromecast Button */}
-                      <TouchableOpacity
-                        accessibilityRole="button"
-                        accessibilityLabel="Chromecast"
-                        onPress={() => {
-                          // TODO: Implement Chromecast functionality
-                          Alert.alert('Chromecast', 'Funcionalidad de Chromecast próximamente');
-                        }}
-                        style={styles.headerIconButton}
-                      >
-                        <Cast size={22} color="#FFFFFF" />
-                      </TouchableOpacity>
-
-                      {/* Toggle Animation Button */}
-                      <TouchableOpacity
-                        accessibilityRole="button"
-                        accessibilityLabel={showAnimation ? 'Ocultar animación' : 'Mostrar animación'}
-                        onPress={() => setShowAnimation(!showAnimation)}
-                        style={styles.headerIconButton}
-                      >
-                        <Waves size={22} color={showAnimation ? colors.primary : 'rgba(255,255,255,0.5)'} />
-                      </TouchableOpacity>
-
-                      {/* Close Button */}
-                      <TouchableOpacity
-                        accessibilityRole="button"
-                        accessibilityLabel="Cerrar reproductor"
-                        onPress={closePlayer}
-                        style={styles.closeButton}
-                      >
-                        <X size={24} color="#FFFFFF" />
-                      </TouchableOpacity>
-                    </View>
-                  </View>
-                  <Text style={[styles.playerMeta, { color: 'rgba(255,255,255,0.6)' }]}>
-                    {(() => {
-                      const r = queue[currentIndex];
-                      if (!r) return '';
-                      const dateStr = new Date(r.created_at).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' });
-                      return `${formatDuration(r.duration_seconds || 0)} • ${dateStr}`;
-                    })()}
-                  </Text>
-
-                  {/* Center Controls Container - Groups play controls and secondary controls */}
-                  <View style={isFullscreen ? { flex: 1, justifyContent: 'space-between' } : {}}>
-                    {/* Play/Pause/Skip Controls - Centered wrapper */}
-                    <View style={isFullscreen ? { flex: 1, justifyContent: 'center' } : {}}>
-                      <View style={[styles.controlsOverlay, { position: 'relative', backgroundColor: 'transparent' }]}>
-                        <View style={styles.controlsRow}>
-                          <Pressable
-                            style={({ pressed }) => [styles.controlButton, { opacity: pressed ? 0.7 : 1 }]}
-                            onPress={(e) => { e.stopPropagation(); playPrev(); }}
-                            accessibilityLabel="Anterior"
-                          >
-                            <SkipBack size={28} color="#FFFFFF" />
-                          </Pressable>
-                          <Pressable
-                            style={({ pressed }) => [[styles.playPauseButton, { backgroundColor: colors.primary }], { opacity: pressed ? 0.8 : 1 }]}
-                            onPress={(e) => { e.stopPropagation(); togglePlayPause(); }}
-                            accessibilityLabel={isPlaying ? 'Pausar' : 'Reproducir'}
-                          >
-                            {isPlaying ? <Pause size={32} color="#FFFFFF" /> : <Play size={32} color="#FFFFFF" />}
-                          </Pressable>
-                          <Pressable
-                            style={({ pressed }) => [styles.controlButton, { opacity: pressed ? 0.7 : 1 }]}
-                            onPress={(e) => { e.stopPropagation(); playNext(); }}
-                            accessibilityLabel="Siguiente"
-                          >
-                            <SkipForward size={28} color="#FFFFFF" />
-                          </Pressable>
-                        </View>
-                      </View>
-                    </View>
-
-                    {/* Secondary Controls: Speaker, Loop, Expand (Right Aligned) */}
-                    <View style={styles.secondaryControlsRow}>
-                      <Pressable style={({ hovered, pressed }) => [styles.controlButton, { transform: [{ scale: hovered || pressed ? 1.05 : 1 }], opacity: hovered ? 0.95 : 1 }]} onPress={toggleMute} accessibilityLabel={muted ? 'Reanudar sonido' : 'Silenciar'}>
-                        {muted ? <VolumeX size={20} color="#FFFFFF" /> : <Volume2 size={20} color="#FFFFFF" />}
-                      </Pressable>
-
-                      <Pressable style={({ hovered, pressed }) => [styles.loopWrapper, { transform: [{ scale: hovered || pressed ? 1.08 : 1 }], opacity: hovered ? 0.95 : 1 }]} onPress={cycleLoopMode} accessibilityLabel="Modo de bucle">
-                        <Animated.View style={{ transform: [{ scale: loopAnim }], position: 'relative' }}>
-                          <Repeat size={18} color={loopMode === 'off' ? 'rgba(255,255,255,0.5)' : colors.primary} />
-                          {loopMode === 'one' && (
-                            <View style={[styles.loopBadge, { backgroundColor: colors.primary }]}>
-                              <Text style={styles.loopBadgeText}>1</Text>
-                            </View>
-                          )}
-                        </Animated.View>
-                      </Pressable>
-
-                      <Pressable style={({ hovered, pressed }) => [styles.controlButton, { transform: [{ scale: hovered || pressed ? 1.05 : 1 }], opacity: hovered ? 0.95 : 1 }]} onPress={() => setIsFullscreen(!isFullscreen)} accessibilityLabel={isFullscreen ? 'Salir de pantalla completa' : 'Pantalla completa'}>
-                        {isFullscreen ? <Minimize2 size={20} color="#FFFFFF" /> : <Maximize2 size={20} color="#FFFFFF" />}
-                      </Pressable>
-                    </View>
-                  </View>
-
-                  {/* Progress Bar (Bottom) */}
-                  <View style={[styles.progressRow, { width: '100%' }]}>
-                    <Text style={[styles.timeText, { color: '#FFFFFF' }]}>{formatDuration(Math.floor((positionMillis || 0) / 1000))}</Text>
-                    <Pressable
-                      style={[styles.progressBar, { backgroundColor: 'rgba(255,255,255,0.2)' }]}
-                      onPress={(e) => {
-                        const { locationX } = e.nativeEvent as any;
-                        const w = progressBarWidthRef.current || 1;
-                        const ratio = Math.max(0, Math.min(1, locationX / w));
-                        seekToRatio(ratio);
-                      }}
-                      onLayout={(e) => { progressBarWidthRef.current = e.nativeEvent.layout.width; }}
-                    >
-                      <View style={[styles.progressFill, { width: durationMillis ? `${(positionMillis / durationMillis) * 100}%` : '0%', backgroundColor: colors.primary }]}>
-                        <View style={styles.progressThumb} />
-                      </View>
-                    </Pressable>
-                    <Text style={[styles.timeText, { color: '#FFFFFF' }]}>{formatDuration(Math.floor((durationMillis || 0) / 1000))}</Text>
-                  </View>
-                </Animated.View>
-              </TouchableOpacity>
-
-              {!isFullscreen && (
-                <View style={[styles.playlistContainer, { backgroundColor: colors.surface }]}>
-                  <Text style={[styles.playlistTitle, { color: colors.textSecondary }]}>Playlist</Text>
-                  <FlatList
-                    data={queue}
-                    keyExtractor={(r) => r.id}
-                    renderItem={({ item, index }) => (
-                      <Pressable
-                        style={({ hovered, pressed }) => [
-                          styles.playlistRow,
-                          {
-                            borderColor: index === currentIndex ? colors.primary : colors.border,
-                            backgroundColor: colors.surface,
-                            transform: [{ scale: hovered || pressed ? 1.02 : 1 }],
-                            opacity: hovered ? 0.97 : 1
-                          }
-                        ]}
-                        onPress={() => loadAndPlay(index, queue)}
-                      >
-                        {Boolean((item as any).thumbnail_url) ? (
-                          <Image source={{ uri: (item as any).thumbnail_url }} style={styles.playlistThumb} />
-                        ) : (
-                          <View style={[styles.playlistThumb, { backgroundColor: colors.input, alignItems: 'center', justifyContent: 'center' }]}>
-                            {item.type === 'video' ? (
-                              <VideoIcon size={18} color={colors.primary} />
-                            ) : (
-                              <FileAudio size={18} color={colors.primary} />
-                            )}
-                          </View>
-                        )}
-                        <View style={{ flex: 1 }}>
-                          <Text style={[styles.playlistItemTitle, { color: colors.text }]} numberOfLines={1}>
-                            {item.title || 'Sin título'}
-                          </Text>
-                          <Text style={[styles.playlistItemMeta, { color: colors.textSecondary }]} numberOfLines={1}>
-                            {formatDuration(item.duration_seconds || 0)}
-                          </Text>
-                        </View>
-                      </Pressable>
-                    )}
-                    style={styles.playlistList}
-                    showsVerticalScrollIndicator={false}
-                    contentContainerStyle={{ paddingBottom: insets.bottom + 20 }}
-                  />
-                </View>
-              )}
-            </View>
-          </Animated.View>
-        </View>
-      </Modal>
-
-      <Modal
-        visible={renameModalVisible}
-        transparent
-        animationType="fade"
-        onRequestClose={() => setRenameModalVisible(false)}
-      >
-        <View style={styles.modalOverlay}>
-          <View style={[styles.modalContent, { backgroundColor: colors.surface }]}>
-            <Text style={[styles.modalTitle, { color: colors.text }]}>Renombrar archivo</Text>
-            <View style={styles.modalInputRow}>
-              <TextInput
-                style={[styles.modalInput, { flex: 1, backgroundColor: colors.input, color: colors.text, borderColor: colors.border }]}
-                value={newFilename}
-                onChangeText={setNewFilename}
-                placeholder="Nuevo nombre (sin extensión)"
-                placeholderTextColor={colors.placeholder}
-                autoFocus
-              />
-              <Text style={[styles.modalExtSuffix, { color: colors.text }]}>.{renameExt}</Text>
-            </View>
-            <View style={styles.modalButtons}>
-              <TouchableOpacity
-                style={[styles.modalButton, { backgroundColor: colors.border }]}
-                onPress={() => setRenameModalVisible(false)}
-              >
-                <Text style={[styles.modalButtonText, { color: colors.text }]}>Cancelar</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[styles.modalButton, { backgroundColor: colors.primary }]}
-                onPress={saveRename}
-              >
-                <Text style={[styles.modalButtonText, { color: '#FFFFFF' }]}>Guardar</Text>
-              </TouchableOpacity>
-            </View>
+              </View>
+            </Animated.View>
           </View>
-        </View>
-      </Modal>
+        </Modal>
 
-      {/* Enviar a... (proyecto -> carpeta) */}
-      <SendToModal
-        visible={sendModalVisible}
-        onClose={() => setSendModalVisible(false)}
-        onMove={performSendRecording}
-      />
-
-      {/* Compartir selección */}
-      <Modal
-        visible={shareModalVisible}
-        transparent
-        animationType="fade"
-        onRequestClose={() => setShareModalVisible(false)}
-      >
-        <View style={styles.modalOverlay}>
-          <View style={[styles.modalContent, { backgroundColor: colors.surface }]}>
-            <Text style={[styles.modalTitle, { color: colors.text }]}>Compartir selección</Text>
-            <Text style={{ color: colors.textSecondary }}>Configura la caducidad de los enlaces:</Text>
-            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
-              {[
-                { label: '15 min', val: 900 },
-                { label: '1 h', val: 3600 },
-                { label: '24 h', val: 86400 },
-                { label: '7 días', val: 604800 },
-              ].map((opt) => (
+        <Modal
+          visible={renameModalVisible}
+          transparent
+          animationType="fade"
+          onRequestClose={() => setRenameModalVisible(false)}
+        >
+          <View style={styles.modalOverlay}>
+            <View style={[styles.modalContent, { backgroundColor: colors.surface }]}>
+              <Text style={[styles.modalTitle, { color: colors.text }]}>Renombrar archivo</Text>
+              <View style={styles.modalInputRow}>
+                <TextInput
+                  style={[styles.modalInput, { flex: 1, backgroundColor: colors.input, color: colors.text, borderColor: colors.border }]}
+                  value={newFilename}
+                  onChangeText={setNewFilename}
+                  placeholder="Nuevo nombre (sin extensión)"
+                  placeholderTextColor={colors.placeholder}
+                  autoFocus
+                />
+                <Text style={[styles.modalExtSuffix, { color: colors.text }]}>.{renameExt}</Text>
+              </View>
+              <View style={styles.modalButtons}>
                 <TouchableOpacity
-                  key={opt.val}
-                  onPress={() => setShareExpiry(opt.val)}
-                  style={[
-                    styles.segmentButton,
-                    { borderColor: colors.border, backgroundColor: shareExpiry === opt.val ? colors.input : 'transparent' },
-                  ]}
+                  style={[styles.modalButton, { backgroundColor: colors.border }]}
+                  onPress={() => setRenameModalVisible(false)}
                 >
-                  <Text style={{ color: colors.text }}>{opt.label}</Text>
+                  <Text style={[styles.modalButtonText, { color: colors.text }]}>Cancelar</Text>
                 </TouchableOpacity>
-              ))}
-            </View>
-            <View style={styles.modalInputRow}>
-              <Text style={{ color: colors.textSecondary }}>O minutos personalizados:</Text>
-              <TextInput
-                style={[styles.modalInput, { flex: 1, backgroundColor: colors.input, color: colors.text, borderColor: colors.border }]}
-                value={shareCustomMinutes}
-                onChangeText={setShareCustomMinutes}
-                keyboardType="number-pad"
-                placeholder="Minutos"
-                placeholderTextColor={colors.placeholder}
-              />
-            </View>
-            <View style={styles.modalButtons}>
-              <TouchableOpacity
-                style={[styles.modalButton, { backgroundColor: colors.border }]}
-                onPress={() => setShareModalVisible(false)}
-              >
-                <Text style={[styles.modalButtonText, { color: colors.text }]}>Cancelar</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[styles.modalButton, { backgroundColor: colors.primary }]}
-                onPress={performBulkShare}
-              >
-                <Text style={[styles.modalButtonText, { color: '#FFFFFF' }]}>Compartir</Text>
-              </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.modalButton, { backgroundColor: colors.primary }]}
+                  onPress={saveRename}
+                >
+                  <Text style={[styles.modalButtonText, { color: '#FFFFFF' }]}>Guardar</Text>
+                </TouchableOpacity>
+              </View>
             </View>
           </View>
-        </View>
-      </Modal>
+        </Modal>
 
-      <ConfirmDialog
-        visible={showDeleteConfirm}
-        title="Eliminar grabación"
-        message={`¿Seguro que quieres eliminar "${deleteTarget?.title || 'esta grabación'}"? Esta acción no se puede deshacer.`}
-        confirmText="Eliminar"
-        cancelText="Cancelar"
-        onConfirm={confirmDelete}
-        onCancel={() => setShowDeleteConfirm(false)}
-        destructive
-      />
+        {/* Enviar a... (proyecto -> carpeta) */}
+        <SendToModal
+          visible={sendModalVisible}
+          onClose={() => setSendModalVisible(false)}
+          onMove={performSendRecording}
+        />
+
+        {/* Compartir selección */}
+        <Modal
+          visible={shareModalVisible}
+          transparent
+          animationType="fade"
+          onRequestClose={() => setShareModalVisible(false)}
+        >
+          <View style={styles.modalOverlay}>
+            <View style={[styles.modalContent, { backgroundColor: colors.surface }]}>
+              <Text style={[styles.modalTitle, { color: colors.text }]}>Compartir selección</Text>
+              <Text style={{ color: colors.textSecondary }}>Configura la caducidad de los enlaces:</Text>
+              <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
+                {[
+                  { label: '15 min', val: 900 },
+                  { label: '1 h', val: 3600 },
+                  { label: '24 h', val: 86400 },
+                  { label: '7 días', val: 604800 },
+                ].map((opt) => (
+                  <TouchableOpacity
+                    key={opt.val}
+                    onPress={() => setShareExpiry(opt.val)}
+                    style={[
+                      styles.segmentButton,
+                      { borderColor: colors.border, backgroundColor: shareExpiry === opt.val ? colors.input : 'transparent' },
+                    ]}
+                  >
+                    <Text style={{ color: colors.text }}>{opt.label}</Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+              <View style={styles.modalInputRow}>
+                <Text style={{ color: colors.textSecondary }}>O minutos personalizados:</Text>
+                <TextInput
+                  style={[styles.modalInput, { flex: 1, backgroundColor: colors.input, color: colors.text, borderColor: colors.border }]}
+                  value={shareCustomMinutes}
+                  onChangeText={setShareCustomMinutes}
+                  keyboardType="number-pad"
+                  placeholder="Minutos"
+                  placeholderTextColor={colors.placeholder}
+                />
+              </View>
+              <View style={styles.modalButtons}>
+                <TouchableOpacity
+                  style={[styles.modalButton, { backgroundColor: colors.border }]}
+                  onPress={() => setShareModalVisible(false)}
+                >
+                  <Text style={[styles.modalButtonText, { color: colors.text }]}>Cancelar</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.modalButton, { backgroundColor: colors.primary }]}
+                  onPress={performBulkShare}
+                >
+                  <Text style={[styles.modalButtonText, { color: '#FFFFFF' }]}>Compartir</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          </View>
+        </Modal>
+
+        <ConfirmDialog
+          visible={showDeleteConfirm}
+          title="Eliminar grabación"
+          message={`¿Seguro que quieres eliminar "${deleteTarget?.title || 'esta grabación'}"? Esta acción no se puede deshacer.`}
+          confirmText="Eliminar"
+          cancelText="Cancelar"
+          onConfirm={confirmDelete}
+          onCancel={() => setShowDeleteConfirm(false)}
+          destructive
+        />
+      </View>
     </SafeAreaView>
   );
 }
@@ -2702,6 +3320,46 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     fontSize: rf(9),
     fontWeight: 'bold',
+  },
+  speedBadge: {
+    position: 'absolute',
+    bottom: -6,
+    left: '50%',
+    transform: [{ translateX: -15 }],
+    paddingHorizontal: 3,
+    paddingVertical: 1,
+    borderRadius: 4,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 0.5,
+    borderColor: '#151718',
+    minWidth: 30,
+  },
+  speedBadgeText: {
+    color: '#FFFFFF',
+    fontSize: rf(6.5),
+    fontWeight: 'bold',
+    letterSpacing: -0.3,
+  },
+  speedMenuContainer: {
+    flexDirection: 'row',
+    gap: 6,
+    paddingHorizontal: rp(8),
+    paddingVertical: rp(8),
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  speedMenuItem: {
+    paddingHorizontal: rp(8),
+    paddingVertical: rp(6),
+    borderRadius: 6,
+    minWidth: 42,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  speedMenuText: {
+    fontSize: rf(11),
+    fontWeight: '600',
   },
   playlistContainer: {
     flex: 1,
