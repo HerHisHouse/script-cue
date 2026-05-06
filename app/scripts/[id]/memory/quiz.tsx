@@ -67,28 +67,42 @@ export default function QuizModeScreen() {
             
             try {
                 // 1. Verificar si ya existe quiz para este guion
-                const { data: existingQuiz } = await supabase
+                const { data: quizzes, error: fetchError } = await supabase
                     .from('script_quizzes')
                     .select('questions')
                     .eq('script_id', scriptId)
-                    .single();
-                
-                if (existingQuiz && existingQuiz.questions && existingQuiz.questions.questions) {
-                    // Quiz ya existe, cargar inmediatamente
-                    const allQuestions = existingQuiz.questions.questions;
-                    const totalQuestions = allQuestions.length;
-                    const questionsToShow = Math.min(totalQuestions, 10);
+                    .limit(1);
+
+                console.log('[Quiz Debug] Quizzes encontrados:', quizzes);
+                console.log('[Quiz Debug] Error de fetch:', fetchError);
+
+                const existingQuiz = quizzes?.[0];
+
+                // NUEVA CONDICIÓN MÁS ROBUSTA
+                if (existingQuiz && existingQuiz.questions) {
+                    console.log('[Quiz] Quiz existente encontrado, cargando...');
                     
-                    const randomQuestions = selectRandomQuestions(allQuestions, questionsToShow);
+                    // Extraer el array de preguntas
+                    const questionsArray = existingQuiz.questions.questions 
+                        || existingQuiz.questions;
                     
-                    setQuestions(randomQuestions);
-                    setTotalAvailable(totalQuestions);
-                    setLoading(false);
-                    setShowWelcome(false);
-                    return;
+                    if (Array.isArray(questionsArray) && questionsArray.length > 0) {
+                        const randomQs = selectRandomQuestions(
+                            questionsArray, 
+                            Math.min(questionsArray.length, 10)
+                        );
+                        
+                        setQuestions(randomQs);
+                        setTotalAvailable(questionsArray.length);
+                        setShowWelcome(false);
+                        setLoading(false);
+                        
+                        console.log('[Quiz] Cargadas', randomQs.length, 'preguntas de', questionsArray.length, 'totales');
+                        return;
+                    }
                 }
-                
-                // 2. Quiz no existe, mostrar pantalla de bienvenida mientras se genera
+
+                console.log('[Quiz] No existe quiz, generando nuevo...');
                 setShowWelcome(true);
                 
                 // Obtener texto completo del guion
