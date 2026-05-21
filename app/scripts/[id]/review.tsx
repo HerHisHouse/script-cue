@@ -231,9 +231,9 @@ export default function ReviewScreen() {
           <TouchableOpacity onPress={() => router.back()} style={s.backBtn}>
             <ArrowLeft size={24} color={colors.text} />
           </TouchableOpacity>
-          <View style={{ flex: 1 }}>
-            <Text style={[s.headerTitle, { color: colors.text }]}>Revisar guion</Text>
-            <Text style={[s.headerSub, { color: colors.textSecondary }]}>
+          <View style={{ flex: 1, alignItems: 'center' }}>
+            <Text style={[s.headerTitle, { color: colors.text, textAlign: 'center' }]}>Revisar guion</Text>
+            <Text style={[s.headerSub, { color: colors.textSecondary, textAlign: 'center' }]}>
               {lines.length} líneas · Usa ≡ para reordenar
             </Text>
           </View>

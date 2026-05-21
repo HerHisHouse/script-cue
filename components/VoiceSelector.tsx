@@ -18,6 +18,7 @@ import {
     getElevenLabsVoices,
     playVoicePreview,
     stopVoicePreview,
+    AZURE_VOICES,
 } from '@/utils/voiceService';
 import * as Speech from 'expo-speech';
 
@@ -29,8 +30,8 @@ interface SystemVoice {
 
 interface VoiceSelectorProps {
     selectedVoiceId?: string;
-    provider: 'openai' | 'elevenlabs' | 'system'; // Provider seleccionado en "Operador de voces"
-    onVoiceSelect: (voiceId: string, provider: 'openai' | 'elevenlabs' | 'system') => void;
+    provider: 'openai' | 'elevenlabs' | 'azure' | 'system'; // Provider seleccionado en "Operador de voces"
+    onVoiceSelect: (voiceId: string, provider: 'openai' | 'elevenlabs' | 'azure' | 'system') => void;
     disabled?: boolean;
     systemLanguage?: string; // Para filtrar voces del sistema por idioma
 }
@@ -123,7 +124,9 @@ export function VoiceSelector({
                 // Preview de OpenAI o ElevenLabs
                 const voice = provider === 'openai'
                     ? OPENAI_VOICES.find(v => v.id === voiceId)
-                    : elevenLabsVoices.find(v => v.id === voiceId);
+                    : provider === 'azure'
+                        ? AZURE_VOICES.find(v => v.id === voiceId)
+                        : elevenLabsVoices.find(v => v.id === voiceId);
 
                 if (voice) {
                     await playVoicePreview(voice);
@@ -167,6 +170,9 @@ export function VoiceSelector({
         } else if (provider === 'elevenlabs') {
             const voice = elevenLabsVoices.find(v => v.id === selectedVoiceId);
             return voice?.name || selectedVoiceId;
+        } else if (provider === 'azure') {
+            const voice = AZURE_VOICES.find(v => v.id === selectedVoiceId);
+            return voice?.name || selectedVoiceId;
         } else {
             const voice = systemVoices.find(v => v.id === selectedVoiceId);
             return voice?.name || selectedVoiceId;
@@ -179,6 +185,8 @@ export function VoiceSelector({
             return OPENAI_VOICES;
         } else if (provider === 'elevenlabs') {
             return elevenLabsVoices;
+        } else if (provider === 'azure') {
+            return AZURE_VOICES;
         } else {
             return systemVoices;
         }
@@ -190,6 +198,7 @@ export function VoiceSelector({
         switch (provider) {
             case 'openai': return 'Voces de OpenAI';
             case 'elevenlabs': return 'Voces de ElevenLabs';
+            case 'azure': return 'Voces de Azure';
             case 'system': return 'Voces del Sistema';
         }
     };
@@ -198,6 +207,7 @@ export function VoiceSelector({
         switch (provider) {
             case 'openai': return '🎯';
             case 'elevenlabs': return '🎭';
+            case 'azure': return '🌐';
             case 'system': return '📱';
         }
     };
@@ -373,7 +383,9 @@ export function VoiceSelector({
                                     ? 'Voces de alta calidad optimizadas para múltiples idiomas'
                                     : provider === 'elevenlabs'
                                         ? 'Voces expresivas con personalización avanzada'
-                                        : 'Voces offline del dispositivo'}
+                                        : provider === 'azure'
+                                            ? 'Voces realistas de Microsoft Azure AI'
+                                            : 'Voces offline del dispositivo'}
                             </Text>
                         </View>
                     </View>

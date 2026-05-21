@@ -965,9 +965,14 @@ async function generateAzureTTS({ text, voice }) {
     finalText = finalText.replace(/,\s/g, ',<break time="200ms"/> ');
 
     // PASO 5: Construir SSML
-    const ssml = `<speak version="1.0" xmlns="http://www.w3.org/2001/10/synthesis" xml:lang="es-ES">
+    const ssmlRate = rate === '0%' ? 'default' : rate;
+    const ssmlPitch = pitch === '0%' ? 'default' : pitch;
+    const ssmlVolume = volume === '0dB' ? 'default' : volume;
+    const locale = voice.split('-').slice(0, 2).join('-'); // e.g. "es-ES", "es-MX"
+
+    const ssml = `<speak version="1.0" xmlns="http://www.w3.org/2001/10/synthesis" xml:lang="${locale}">
   <voice name="${voice}">
-    <prosody rate="${rate}" pitch="${pitch}" volume="${volume}">
+    <prosody rate="${ssmlRate}" pitch="${ssmlPitch}" volume="${ssmlVolume}">
       ${finalText}
     </prosody>
   </voice>

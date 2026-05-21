@@ -30,12 +30,116 @@ import {
   getElevenLabsVoices,
   playVoicePreview,
   stopVoicePreview,
+  AZURE_VOICES,
 } from '@/utils/voiceService';
 
 import { Stack } from 'expo-router';
 
+// TrackPlayer for lock screen controls - Optional (only works in native builds)
+let TrackPlayer: any = null;
+let TrackPlayerCapability: any = null;
+let TrackPlayerEvent: any = null;
+try {
+  const tp = require('react-native-track-player');
+  TrackPlayer = tp.default;
+  TrackPlayerCapability = tp.Capability;
+  TrackPlayerEvent = tp.Event;
+  console.log('[Car Mode] TrackPlayer loaded for lock screen controls');
+} catch {
+  console.log('[Car Mode] TrackPlayer not available, lock screen controls disabled');
+}
+
+// Setup TrackPlayer for Car Mode lock screen controls
+// Returns cleanup function for event listeners
+async function setupCarModeTrackPlayer(
+  scriptTitle: string,
+  onRemotePlay: () => void,
+  onRemotePause: () => void,
+  onRemoteNext: () => void,
+  onRemotePrev: () => void
+): Promise<(() => void) | null> {
+  if (!TrackPlayer || !TrackPlayerEvent) return null;
+  try {
+    // setupPlayer may throw if already initialized — that's OK
+    try {
+      await TrackPlayer.setupPlayer();
+    } catch {
+      // Already initialized by _layout.tsx — continue
+    }
+    await TrackPlayer.updateOptions({
+      capabilities: [
+        TrackPlayerCapability.Play,
+        TrackPlayerCapability.Pause,
+        TrackPlayerCapability.SkipToNext,
+        TrackPlayerCapability.SkipToPrevious,
+        TrackPlayerCapability.Stop,
+      ],
+      compactCapabilities: [
+        TrackPlayerCapability.Play,
+        TrackPlayerCapability.Pause,
+        TrackPlayerCapability.SkipToNext,
+      ],
+    });
+
+    // Register lock screen button listeners
+    const subPlay = TrackPlayer.addEventListener(TrackPlayerEvent.RemotePlay, onRemotePlay);
+    const subPause = TrackPlayer.addEventListener(TrackPlayerEvent.RemotePause, onRemotePause);
+    const subNext = TrackPlayer.addEventListener(TrackPlayerEvent.RemoteNext, onRemoteNext);
+    const subPrev = TrackPlayer.addEventListener(TrackPlayerEvent.RemotePrevious, onRemotePrev);
+
+    console.log('[Car Mode] TrackPlayer setup and listeners registered');
+
+    // Return cleanup function
+    return () => {
+      try {
+        subPlay?.remove?.();
+        subPause?.remove?.();
+        subNext?.remove?.();
+        subPrev?.remove?.();
+      } catch (e) {
+        console.log('[Car Mode] Error removing listeners:', e);
+      }
+    };
+  } catch (e) {
+    console.log('[Car Mode] TrackPlayer setup error:', e);
+    return null;
+  }
+}
+
+// Update lock screen Now Playing info for Car Mode
+async function updateCarModeLockScreen(
+  characterName: string,
+  lineText: string,
+  scriptTitle: string,
+  isPlaying: boolean
+): Promise<void> {
+  if (!TrackPlayer) return;
+  try {
+    const queue = await TrackPlayer.getQueue();
+    const track = {
+      id: `car_mode_${Date.now()}`,
+      url: 'silence://car_mode', // Placeholder - actual audio played by expo-av
+      title: `${characterName}`,
+      artist: scriptTitle,
+      album: 'Modo Coche',
+    };
+    if (queue.length === 0) {
+      await TrackPlayer.add([track]);
+    } else {
+      await TrackPlayer.remove([0]);
+      await TrackPlayer.add([track]);
+    }
+    if (isPlaying) {
+      // We don't call TrackPlayer.play() as expo-av handles the actual audio.
+      // The lock screen info is updated via metadata only.
+    }
+  } catch (e) {
+    console.log('[Car Mode] Lock screen update error:', e);
+  }
+}
+
 type CarModePhase = 'idle' | 'playing_ai' | 'listening_user' | 'processing_command' | 'auto_advancing';
-type VoiceProviderType = 'openai' | 'elevenlabs' | 'system';
+type VoiceProviderType = 'openai' | 'elevenlabs' | 'azure' | 'system';
 
 interface CharacterVoiceConfig {
   characterName: string;
@@ -104,6 +208,8 @@ export default function CarModeScreen() {
   // Sequence ID to cancel stale audio operations
   const sequenceRef = useRef(0);
   const isCleaningUpRef = useRef(false);
+  const [scriptTitle, setScriptTitle] = useState<string>('Modo Coche');
+  const trackPlayerCleanupRef = useRef<(() => void) | null>(null);
 
   // Load Data
   useEffect(() => {
@@ -137,6 +243,37 @@ export default function CarModeScreen() {
           };
         });
         setCharacterVoiceConfigs(configs);
+
+        // Load script title for lock screen
+        const { data: scriptData } = await supabase
+          .from('scripts')
+          .select('title')
+          .eq('id', id)
+          .single();
+        const title = scriptData?.title || 'Modo Coche';
+        setScriptTitle(title);
+
+        // Setup TrackPlayer for lock screen controls with real callbacks
+        if (!trackPlayerCleanupRef.current) {
+          const cleanup = await setupCarModeTrackPlayer(
+            title,
+            () => { // onRemotePlay
+              setIsPaused(false);
+            },
+            () => { // onRemotePause
+              setIsPaused(true);
+            },
+            () => { // onRemoteNext
+              sequenceRef.current++;
+              advanceToNext();
+            },
+            () => { // onRemotePrev
+              sequenceRef.current++;
+              setCurrentIndex(p => Math.max(0, p - 1));
+            },
+          );
+          trackPlayerCleanupRef.current = cleanup;
+        }
       } catch (e) {
         console.error('[Car Mode] Error loading dialogue:', e);
         Alert.alert('Error', 'No se pudo cargar el guión');
@@ -162,6 +299,11 @@ export default function CarModeScreen() {
       stopVoicePreview();
       if (soundRef.current) {
         soundRef.current.unloadAsync();
+      }
+      // Clean up TrackPlayer event listeners
+      if (trackPlayerCleanupRef.current) {
+        trackPlayerCleanupRef.current();
+        trackPlayerCleanupRef.current = null;
       }
     };
   }, [id, user]);
@@ -230,6 +372,14 @@ export default function CarModeScreen() {
     setPhase('playing_ai');
     setStatusText(`${line.characterName}...`);
 
+    // Update lock screen Now Playing info
+    updateCarModeLockScreen(
+      line.characterName,
+      line.cleanText,
+      scriptTitle,
+      true
+    ).catch(() => {});
+
     const voiceConfig = getVoiceConfigForCharacter(line.characterName);
     const effectiveProvider = voiceConfig?.provider || 'openai';
     const voiceId = voiceConfig?.voiceId || 'nova';
@@ -262,7 +412,7 @@ export default function CarModeScreen() {
       });
     };
 
-    if (effectiveProvider === 'openai' || effectiveProvider === 'elevenlabs') {
+    if (effectiveProvider === 'openai' || effectiveProvider === 'elevenlabs' || effectiveProvider === 'azure') {
       try {
         const Crypto = await import('expo-crypto');
         // Use cleanText (without stage directions) for TTS
@@ -402,6 +552,8 @@ export default function CarModeScreen() {
         return OPENAI_VOICES.map(v => ({ id: v.id, name: v.name }));
       case 'elevenlabs':
         return elevenLabsVoices.map(v => ({ id: v.id, name: v.name }));
+      case 'azure':
+        return AZURE_VOICES.map(v => ({ id: v.id, name: v.name }));
       case 'system':
         return availableVoices
           .filter(v => v.language.startsWith('es'))
@@ -421,6 +573,7 @@ export default function CarModeScreen() {
     switch (provider) {
       case 'openai': return '🤖';
       case 'elevenlabs': return '🎭';
+      case 'azure': return '🌐';
       case 'system': return '📱';
     }
   };
@@ -451,6 +604,12 @@ export default function CarModeScreen() {
         }
       } else if (provider === 'elevenlabs') {
         const voice = elevenLabsVoices.find(v => v.id === voiceId);
+        if (voice) {
+          await playVoicePreview(voice);
+          setTimeout(() => setPlayingVoiceId(null), 5000);
+        }
+      } else if (provider === 'azure') {
+        const voice = AZURE_VOICES.find(v => v.id === voiceId);
         if (voice) {
           await playVoicePreview(voice);
           setTimeout(() => setPlayingVoiceId(null), 5000);
@@ -580,16 +739,41 @@ export default function CarModeScreen() {
       const Crypto = await import('expo-crypto');
       const FileSystem = await import('expo-file-system/legacy');
 
-      // Helper for buffer conversion
-      const base64ToArrayBuffer = (base64: string) => {
-        const binaryString = atob(base64);
-        const len = binaryString.length;
-        const bytes = new Uint8Array(len);
-        for (let i = 0; i < len; i++) {
-          bytes[i] = binaryString.charCodeAt(i);
-        }
-        return bytes.buffer;
-      };
+      // Helper: subida binaria via XHR - evita "Invalid Content-Type header"
+      async function uploadBinaryToStorage(
+        bucket: string,
+        filePath: string,
+        data: Uint8Array,
+        contentType: string
+      ): Promise<string> {
+        const { data: sessionData } = await supabase.auth.getSession();
+        const token = sessionData.session?.access_token;
+        if (!token) throw new Error('No auth token');
+
+        const uploadUrl = `${process.env.EXPO_PUBLIC_SUPABASE_URL}/storage/v1/object/${bucket}/${filePath}`;
+
+        await new Promise<void>((resolve, reject) => {
+          const xhr = new XMLHttpRequest();
+          xhr.open('POST', uploadUrl, true);
+          xhr.setRequestHeader('Authorization', `Bearer ${token}`);
+          xhr.setRequestHeader('Content-Type', contentType);
+          xhr.setRequestHeader('x-upsert', 'true');
+          xhr.timeout = 120000;
+
+          xhr.onload = () => {
+            if (xhr.status >= 200 && xhr.status < 300) {
+              resolve();
+            } else {
+              reject(new Error(`Upload failed: ${xhr.status} ${xhr.responseText}`));
+            }
+          };
+          xhr.onerror = () => reject(new Error('Network error during segment upload'));
+          xhr.ontimeout = () => reject(new Error('Segment upload timeout'));
+          xhr.send(data);
+        });
+
+        return filePath;
+      }
 
       // Collect all audio URIs
       const audioSegments: { uri: string; index: number; characterName: string }[] = [];
@@ -622,7 +806,7 @@ export default function CarModeScreen() {
             line.id, // lineId
             line.characterName, // characterName
             line.cleanText, // text
-            { provider: voiceConfig.provider as 'openai' | 'elevenlabs' | 'system', voiceId: voiceConfig.voiceId }, // voiceConfig
+            { provider: voiceConfig.provider as 'openai' | 'elevenlabs' | 'azure' | 'system', voiceId: voiceConfig.voiceId }, // voiceConfig
             currentUser.id // userId
           );
         }
@@ -653,14 +837,17 @@ export default function CarModeScreen() {
           encoding: FileSystem.EncodingType.Base64,
         });
 
-        const arrayBuffer = base64ToArrayBuffer(base64);
+        const binaryString = atob(base64);
+        const bytes = new Uint8Array(binaryString.length);
+        for (let j = 0; j < binaryString.length; j++) {
+          bytes[j] = binaryString.charCodeAt(j);
+        }
 
-        const { error } = await supabase.storage
-          .from('recordings')
-          .upload(fileName, arrayBuffer, { contentType });
-
-        if (!error) {
+        try {
+          await uploadBinaryToStorage('recordings', fileName, bytes, contentType);
           uploadedPaths.push(fileName);
+        } catch (uploadError) {
+          console.error('[GenerateScene] Upload error:', uploadError);
         }
 
         setGeneratingProgress(50 + Math.round(((i + 1) / audioSegments.length) * 30));
@@ -794,13 +981,13 @@ export default function CarModeScreen() {
                   }}
                 >
                   <Text style={styles.dropdownHeaderText}>
-                    {getProviderEmoji(config.provider)} {config.provider === 'openai' ? 'OpenAI' : config.provider === 'elevenlabs' ? 'ElevenLabs' : 'Voces del sistema'}
+                    {getProviderEmoji(config.provider)} {config.provider === 'openai' ? 'OpenAI' : config.provider === 'elevenlabs' ? 'ElevenLabs' : config.provider === 'azure' ? 'Azure' : 'Voces del sistema'}
                   </Text>
                   <ChevronDown size={20} color="#AAA" />
                 </TouchableOpacity>
 
                 {expandedCharacter === config.characterName && (
-                  <View style={styles.dropdownList}>
+                  <ScrollView style={styles.dropdownList} nestedScrollEnabled={true}>
                     <TouchableOpacity
                       style={[styles.dropdownItem, config.provider === 'openai' && styles.dropdownItemSelected]}
                       onPress={() => {
@@ -823,6 +1010,16 @@ export default function CarModeScreen() {
                       <Text style={styles.providerDescription}>Voces ultra realistas</Text>
                     </TouchableOpacity>
                     <TouchableOpacity
+                      style={[styles.dropdownItem, config.provider === 'azure' && styles.dropdownItemSelected]}
+                      onPress={() => {
+                        updateCharacterVoice(config.characterName, 'azure', 'es-ES-AlvaroNeural');
+                        setExpandedCharacter(null);
+                      }}
+                    >
+                      <Text style={styles.dropdownItemText}>🌐 Azure</Text>
+                      <Text style={styles.providerDescription}>Voces realistas de Microsoft Azure</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
                       style={[styles.dropdownItem, config.provider === 'system' && styles.dropdownItemSelected]}
                       onPress={() => {
                         const spanishVoice = availableVoices.find(v => v.language.startsWith('es'));
@@ -833,7 +1030,7 @@ export default function CarModeScreen() {
                       <Text style={styles.dropdownItemText}>📱 Voces del sistema</Text>
                       <Text style={styles.providerDescription}>Voces integradas del dispositivo</Text>
                     </TouchableOpacity>
-                  </View>
+                  </ScrollView>
                 )}
               </View>
 

@@ -15,6 +15,7 @@ import { rf, rp } from '@/utils/responsive';
 import { clearScriptCache, preGenerateScriptAudio } from '@/utils/ttsCache';
 import { VoiceSelector } from '@/components/VoiceSelector';
 import { VoiceOption, VoiceProvider, OPENAI_VOICES, getDefaultVoiceForGender } from '@/utils/voiceService';
+import { BETA_LIMITS, isUserBetaLimited } from '@/constants/betaLimits';
 
 // Tipo extendido para incluir propiedades dinámicas de configuración de personajes
 type ExtendedAppSettings = {
@@ -31,6 +32,11 @@ const CHARACTER_COLORS = [
   { value: '#8B5CF6', label: 'Morado' },
   { value: '#EF4444', label: 'Rojo' },
   { value: '#F97316', label: 'Naranja' },
+  { value: '#EC4899', label: 'Rosa' },
+  { value: '#F59E0B', label: 'Amarillo' },
+  { value: '#06B6D4', label: 'Cian' },
+  { value: '#14B8A6', label: 'Verde azulado' },
+  { value: '#6B7280', label: 'Gris' },
 ];
 
 const GREEN_COLOR = '#10B981';
@@ -42,8 +48,8 @@ interface CharacterConfig {
   gender: 'male' | 'female' | 'neutral'; // Mantenemos para compatibilidad
   color: string;
   voiceId?: string; // ID de la voz seleccionada
-  voiceProvider?: 'openai' | 'elevenlabs' | 'system'; // Incluye 'system'
-  provider?: 'openai' | 'elevenlabs' | 'google' | 'system';
+  voiceProvider?: 'openai' | 'elevenlabs' | 'azure' | 'system'; // Incluye 'azure'
+  provider?: 'openai' | 'elevenlabs' | 'azure' | 'system';
   systemVoiceId?: string;
 }
 
@@ -62,11 +68,13 @@ export default function ImportScriptScreen() {
   const [openOperatorIndex, setOpenOperatorIndex] = useState<number | null>(null);
   const [openVoiceIndex, setOpenVoiceIndex] = useState<number | null>(null);
   const [openGenderIndex, setOpenGenderIndex] = useState<number | null>(null);
+  const [openColorIndex, setOpenColorIndex] = useState<number | null>(null);
   const scrollRef = useRef<ScrollView | null>(null);
   const [configSectionY, setConfigSectionY] = useState<number>(0);
   const [showConfigOnly, setShowConfigOnly] = useState<boolean>(false);
   const [loadingExisting, setLoadingExisting] = useState<boolean>(false);
   const [uploadProgress, setUploadProgress] = useState(0);
+  const [isScriptReviewed, setIsScriptReviewed] = useState<boolean>(false);
 
   useEffect(() => {
     return () => {
@@ -98,6 +106,7 @@ export default function ImportScriptScreen() {
             .maybeSingle();
           if (scriptError) throw scriptError;
           if (scriptData?.title) setTitle(scriptData.title);
+          setIsScriptReviewed(!!scriptData?.reviewed);
 
           const { data: chars, error: charsError } = await supabase
             .from('characters')
@@ -118,7 +127,7 @@ export default function ImportScriptScreen() {
               gender: (c.voice_gender === 'female' ? 'female' : c.voice_gender === 'neutral' ? 'neutral' : 'male'),
               color: c.color || CHARACTER_COLORS[idx % CHARACTER_COLORS.length].value,
               voiceId: c.voice_id || undefined,
-              voiceProvider: (c.voice_provider as 'openai' | 'elevenlabs' | 'system') || undefined,
+              voiceProvider: (c.voice_provider as 'openai' | 'elevenlabs' | 'azure' | 'system') || undefined,
               provider: c.is_user_character ? undefined : ((per.provider as any) || 'system'),
               systemVoiceId: c.is_user_character ? undefined : (per.systemVoiceId || defaultSystemVoiceId || ''),
             };
@@ -290,56 +299,59 @@ export default function ImportScriptScreen() {
           await setSettings(mergeSettings(currentSettings as AppSettings, extendedSettings));
         } catch { }
 
-        // Limpiar caché de audio antiguo y regenerar con nuevas voces
-        try {
-          logger.log('[Config] Clearing old audio cache...');
-          await clearScriptCache(String(scriptId));
+        if (isScriptReviewed) {
+          // Limpiar caché de audio antiguo y regenerar con nuevas voces
+          try {
+            logger.log('[Config] Clearing old audio cache...');
+            await clearScriptCache(String(scriptId));
 
-          logger.log('[Config] Regenerating audio with new voice settings...');
+            logger.log('[Config] Regenerating audio with new voice settings...');
 
-          // Preparar configuración de voces para regeneración
-          const characterVoices: Record<string, { provider: 'openai' | 'elevenlabs' | 'system'; voiceId?: string }> = {};
+            // Preparar configuración de voces para regeneración
+            const characterVoices: Record<string, { provider: 'openai' | 'elevenlabs' | 'azure' | 'system'; voiceId?: string }> = {};
 
-          for (const c of characters) {
-            if (!c.isMyCharacter) {
-              const characterName = (c.name || '').toUpperCase();
-              const provider = (c.provider || 'system') as 'openai' | 'elevenlabs' | 'system';
+            for (const c of characters) {
+              if (!c.isMyCharacter) {
+                const characterName = (c.name || '').toUpperCase();
+                const provider = (c.provider || 'system') as 'openai' | 'elevenlabs' | 'azure' | 'system';
 
-              // Solo incluir voiceId para sistema (offline)
-              // OpenAI usa género automáticamente
-              // ElevenLabs necesitaría su propio voiceId (no implementado aún)
-              const voiceConfig: { provider: 'openai' | 'elevenlabs' | 'system'; voiceId?: string } = {
-                provider,
-              };
+                const voiceConfig: { provider: 'openai' | 'elevenlabs' | 'azure' | 'system'; voiceId?: string } = {
+                  provider,
+                };
 
-              if (provider === 'system' && c.systemVoiceId) {
-                voiceConfig.voiceId = c.systemVoiceId;
+                if (provider === 'system' && c.systemVoiceId) {
+                  voiceConfig.voiceId = c.systemVoiceId;
+                } else if (provider === 'azure' && c.voiceId) {
+                  voiceConfig.voiceId = c.voiceId;
+                }
+
+                characterVoices[characterName] = voiceConfig;
               }
-              // Para OpenAI, no enviamos voiceId - se determina por género en ttsCache
-              // Para ElevenLabs, por ahora usamos voz por defecto
-
-              characterVoices[characterName] = voiceConfig;
             }
+
+            // Regenerar audio en segundo plano (no bloquear UI)
+            preGenerateScriptAudio(
+              String(scriptId),
+              user!.id,
+              characterVoices
+            ).catch(err => {
+              logger.error('[Config] Error regenerating audio:', err);
+              // No mostrar error al usuario, es proceso en segundo plano
+            });
+
+            logger.log('[Config] Audio regeneration started in background');
+          } catch (cacheError: any) {
+            logger.error('[Config] Error managing audio cache:', cacheError);
+            // No bloquear el guardado por errores de caché
           }
 
-          // Regenerar audio en segundo plano (no bloquear UI)
-          preGenerateScriptAudio(
-            String(scriptId),
-            user!.id,
-            characterVoices
-          ).catch(err => {
-            logger.error('[Config] Error regenerating audio:', err);
-            // No mostrar error al usuario, es proceso en segundo plano
-          });
-
-          logger.log('[Config] Audio regeneration started in background');
-        } catch (cacheError: any) {
-          logger.error('[Config] Error managing audio cache:', cacheError);
-          // No bloquear el guardado por errores de caché
+          Alert.alert('Guardado', 'Se actualizaron los personajes y voces. El audio se está regenerando en segundo plano.');
+          router.replace(`/scripts/${scriptId}`);
+        } else {
+          // El guion es nuevo (OCR), ir a revisión antes de generar TTS
+          Alert.alert('Guardado', 'Los personajes han sido configurados.');
+          router.replace(`/scripts/${scriptId}/review`);
         }
-
-        Alert.alert('Guardado', 'Se actualizaron los personajes y voces. El audio se está regenerando en segundo plano.');
-        router.replace(`/scripts/${scriptId}`);
       } catch (error: any) {
         logger.error('Error updating characters:', error);
         Alert.alert('Error', error.message || 'No se pudieron actualizar los personajes');
@@ -366,6 +378,22 @@ export default function ImportScriptScreen() {
     if (!user?.id) {
       Alert.alert('Error', 'No se encontró el usuario autenticado.');
       return;
+    }
+
+    // Validación de límites de la versión beta
+    if (isUserBetaLimited(user)) {
+      const { count, error: countError } = await supabase
+        .from('scripts')
+        .select('*', { count: 'exact', head: true })
+        .eq('user_id', user.id);
+        
+      if (!countError && count !== null && count >= BETA_LIMITS.MAX_SCRIPTS) {
+        Alert.alert(
+          "Límite alcanzado",
+          `Has alcanzado el límite máximo de ${BETA_LIMITS.MAX_SCRIPTS} guiones permitidos en la versión beta.`
+        );
+        return;
+      }
     }
 
     for (let i = 0; i < characters.length; i++) {
@@ -530,9 +558,9 @@ export default function ImportScriptScreen() {
           logger.log(`[Upload] Attempt ${attempt}/${retries}`);
 
           try {
-            if (Platform.OS === 'android' && isBase64 && typeof uploadData === 'string') {
-              // Para Android: usar XMLHttpRequest directamente (más confiable que fetch)
-              logger.log('[Upload] Using XMLHttpRequest for Android...');
+            if ((Platform.OS === 'android' || Platform.OS === 'ios') && isBase64 && typeof uploadData === 'string') {
+              // Para Android/iOS: usar XMLHttpRequest directamente (más confiable que fetch)
+              logger.log('[Upload] Using XMLHttpRequest for Android/iOS...');
 
               // Convertir base64 a Uint8Array
               const binaryString = atob(uploadData);
@@ -704,33 +732,7 @@ export default function ImportScriptScreen() {
         const result = await res.json();
         console.log('parse-pdf result:', result);
 
-        // Pre-generate TTS audio in background
-        try {
-          console.log('🎙️ Starting TTS pre-generation...');
-          const { preGenerateScriptAudio } = await import('@/utils/ttsCache');
-          const { getSettings } = await import('@/utils/appSettings');
-
-          const settings = await getSettings();
-          const characterVoices = (settings as any)?.characterVoicesByScript?.[scriptData.id] || {};
-
-          // Start pre-generation in background (don't await to avoid blocking UI)
-          preGenerateScriptAudio(
-            scriptData.id,
-            user!.id,
-            characterVoices,
-            (current, total) => {
-              console.log(`TTS Progress: ${current}/${total}`);
-            }
-          ).catch(err => {
-            console.error('TTS pre-generation error:', err);
-            // Don't block import on TTS errors
-          });
-
-          console.log('✅ TTS pre-generation started in background');
-        } catch (ttsError) {
-          console.error('Error starting TTS pre-generation:', ttsError);
-          // Don't block import on TTS errors
-        }
+        // Eliminado pre-generación de TTS aquí para ir primero a la pantalla de revisión
 
       } catch (err) {
         console.error('Error calling parse-pdf:', err);
@@ -754,8 +756,8 @@ export default function ImportScriptScreen() {
       }
       // ---------- END: Replace existing parse-pdf fetch block ----------
 
-      // Volver al Resumen del guion (flujo original)
-      router.replace(`/scripts/${scriptData.id}`);
+      // Volver al Resumen del guion (flujo de revisión)
+      router.replace(`/scripts/${scriptData.id}/review`);
     } catch (error: any) {
       logger.error('Error uploading script:', error);
       Alert.alert('Error', error.message || 'No se pudo cargar el guión');
@@ -776,7 +778,7 @@ export default function ImportScriptScreen() {
           </View>
           <Text style={{ color: 'rgba(255,255,255,0.8)', marginTop: 8, fontSize: rf(14) }}>{Math.round(uploadProgress)}%</Text>
           <Text style={{ color: 'rgba(255,255,255,0.7)', marginTop: 16, fontSize: rf(13), textAlign: 'center', paddingHorizontal: rp(40) }}>
-            Generando voces IA en segundo plano, este proceso puede tardar unos minutos...
+            Estamos analizando el guion, esto puede tardar unos minutos...
           </Text>
         </View>
       )}
@@ -795,7 +797,7 @@ export default function ImportScriptScreen() {
             style={[styles.input, { backgroundColor: colors.input, color: colors.text, borderColor: colors.border }]}
             value={title}
             onChangeText={setTitle}
-            placeholder="Mi Guión"
+            placeholder="Se autorellena al importar un guion"
             placeholderTextColor={colors.placeholder}
           />
 
@@ -843,7 +845,19 @@ export default function ImportScriptScreen() {
                 <Text style={[styles.sectionTitle, { color: colors.text }]}>Configuración de Personajes</Text>
               </View>
 
-              <Text style={[styles.label, { color: colors.text }]}>Número de Personajes</Text>
+              <View style={[styles.labelWithInfo, { marginTop: 12, marginBottom: 8 }]}>
+                <Text style={[styles.label, { color: colors.text, marginTop: 0, marginBottom: 0 }]}>Número de Personajes</Text>
+                <TouchableOpacity
+                  onPress={() => Alert.alert(
+                    'Número de personajes',
+                    'Elige el número de personajes que tiene el guion importado hasta un máximo de 10 personajes.',
+                    [{ text: 'Entendido', style: 'default' }]
+                  )}
+                  style={styles.infoButton}
+                >
+                  <Info size={16} color={colors.primary} />
+                </TouchableOpacity>
+              </View>
               <TouchableOpacity
                 style={[styles.picker, { backgroundColor: colors.surface, borderColor: colors.border }]}
                 onPress={() => setShowCountPicker(!showCountPicker)}
@@ -853,8 +867,11 @@ export default function ImportScriptScreen() {
               </TouchableOpacity>
 
               {showCountPicker && (
-                <View style={[styles.pickerOptions, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-                  {[0, 1, 2, 3, 4].map((count) => {
+                <ScrollView
+                  style={[styles.pickerOptions, { backgroundColor: colors.surface, borderColor: colors.border, maxHeight: 180 }]}
+                  nestedScrollEnabled={true}
+                >
+                  {[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((count) => {
                     const isSelected = count === characterCount;
                     return (
                       <TouchableOpacity
@@ -871,7 +888,7 @@ export default function ImportScriptScreen() {
                       </TouchableOpacity>
                     );
                   })}
-                </View>
+                </ScrollView>
               )}
 
               {characterCount > 0 && (
@@ -941,14 +958,16 @@ export default function ImportScriptScreen() {
                               ? 'OpenAI'
                               : prov === 'elevenlabs'
                                 ? 'ElevenLabs'
-                                : 'Sistema (offline)';
+                                : prov === 'azure'
+                                  ? 'Azure'
+                                  : 'Sistema (offline)';
                           })()}
                         </Text>
                         <ChevronDown size={20} color={colors.textSecondary} />
                       </TouchableOpacity>
                       {openOperatorIndex === index && (
                         <View style={[styles.pickerOptions, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-                          {(['openai', 'elevenlabs', 'system'] as const).map((prov) => {
+                          {(['openai', 'elevenlabs', 'azure', 'system'] as const).map((prov) => {
                             const isSelected = (char.provider || 'openai') === prov;
                             return (
                               <TouchableOpacity
@@ -958,8 +977,9 @@ export default function ImportScriptScreen() {
                                   // Al cambiar de provider, limpiar la voz seleccionada
                                   updateCharacter(index, {
                                     provider: prov,
-                                    voiceId: undefined,
+                                    voiceId: prov === 'azure' ? 'es-ES-AlvaroNeural' : undefined,
                                     voiceProvider: prov === 'system' ? undefined : prov as any,
+                                    systemVoiceId: undefined,
                                   });
                                   setOpenOperatorIndex(null);
                                 }}
@@ -968,7 +988,7 @@ export default function ImportScriptScreen() {
                                   styles.pickerOptionText,
                                   isSelected ? styles.pickerOptionTextSelected : { color: colors.textSecondary }
                                 ]}>
-                                  {prov === 'openai' ? 'OpenAI' : prov === 'elevenlabs' ? 'ElevenLabs' : 'Sistema (offline)'}
+                                  {prov === 'openai' ? 'OpenAI' : prov === 'elevenlabs' ? 'ElevenLabs' : prov === 'azure' ? 'Azure' : 'Sistema (offline)'}
                                 </Text>
                               </TouchableOpacity>
                             );
@@ -980,13 +1000,13 @@ export default function ImportScriptScreen() {
                       <Text style={[styles.label, { color: colors.text, marginTop: 12 }]}>Voz del personaje</Text>
                       <VoiceSelector
                         selectedVoiceId={char.voiceId || char.systemVoiceId}
-                        provider={(char.voiceProvider || char.provider || 'openai') as 'openai' | 'elevenlabs' | 'system'}
+                        provider={(char.voiceProvider || char.provider || 'openai') as 'openai' | 'elevenlabs' | 'azure' | 'system'}
                         onVoiceSelect={(voiceId, provider) => {
                           if (provider === 'system') {
                             updateCharacter(index, {
                               systemVoiceId: voiceId,
                               voiceId: voiceId,
-                              voiceProvider: 'system',  // ← FIX: Guardar 'system' en lugar de undefined
+                              voiceProvider: 'system',
                             });
                           } else {
                             updateCharacter(index, {
@@ -1012,26 +1032,49 @@ export default function ImportScriptScreen() {
                           <Info size={16} color={colors.primary} />
                         </TouchableOpacity>
                       </View>
-                      <View style={styles.colorPicker}>
-                        {CHARACTER_COLORS.map((colorOption) => {
-                          const isSelected = char.color === colorOption.value;
-                          return (
-                            <TouchableOpacity
-                              key={colorOption.value}
-                              style={[
-                                styles.colorOption,
-                                { backgroundColor: colorOption.value },
-                                isSelected ? styles.colorOptionSelected : null,
-                              ]}
-                              onPress={() => updateCharacter(index, { color: colorOption.value })}
-                            >
-                              {isSelected && (
-                                <Check size={18} color="#FFFFFF" />
-                              )}
-                            </TouchableOpacity>
-                          );
-                        })}
-                      </View>
+                      <TouchableOpacity
+                        style={[styles.picker, { backgroundColor: colors.surface, borderColor: colors.border }]}
+                        onPress={() => setOpenColorIndex(openColorIndex === index ? null : index)}
+                      >
+                        <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                          <View style={[styles.colorDot, { backgroundColor: char.color }]} />
+                          <Text style={[styles.pickerText, { color: colors.text }]}>
+                            {CHARACTER_COLORS.find(c => c.value === char.color)?.label || 'Seleccionar color'}
+                          </Text>
+                        </View>
+                        <ChevronDown size={20} color={colors.textSecondary} />
+                      </TouchableOpacity>
+
+                      {openColorIndex === index && (
+                        <ScrollView
+                          style={[styles.pickerOptions, { backgroundColor: colors.surface, borderColor: colors.border, maxHeight: 180 }]}
+                          nestedScrollEnabled={true}
+                        >
+                          {CHARACTER_COLORS.map((colorOption) => {
+                            const isSelected = char.color === colorOption.value;
+                            return (
+                              <TouchableOpacity
+                                key={colorOption.value}
+                                style={styles.pickerOption}
+                                onPress={() => {
+                                  updateCharacter(index, { color: colorOption.value });
+                                  setOpenColorIndex(null);
+                                }}
+                              >
+                                <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                                  <View style={[styles.colorDot, { backgroundColor: colorOption.value }]} />
+                                  <Text style={[
+                                    styles.pickerOptionText,
+                                    isSelected ? styles.pickerOptionTextSelected : { color: colors.textSecondary }
+                                  ]}>
+                                    {colorOption.label}
+                                  </Text>
+                                </View>
+                              </TouchableOpacity>
+                            );
+                          })}
+                        </ScrollView>
+                      )}
                     </>
                   )}
 
