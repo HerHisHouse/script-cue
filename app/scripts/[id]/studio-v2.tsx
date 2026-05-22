@@ -48,6 +48,7 @@ import {
     FileText,
     MessageSquare,
     ArrowUpDown,
+    Clapperboard,
 } from 'lucide-react-native';
 import { Audio, InterruptionModeIOS, InterruptionModeAndroid } from 'expo-av';
 import * as Speech from 'expo-speech';
@@ -192,16 +193,24 @@ export default function StudioV2Screen() {
             if (error) throw error;
             console.log('Order synced successfully');
 
-            // Also regenerate script_html to reflect the new order in the text editor
+            // Also reorder dialogue pairs in script_html to reflect the new order in the text editor
             try {
-                const newHtml = rebuildScriptHtml(newLines);
-                await supabase
+                const { data: scriptData } = await supabase
                     .from('scripts')
-                    .update({ script_html: newHtml, updated_at: new Date().toISOString() })
-                    .eq('id', id as string);
-                console.log('script_html regenerated with new order');
+                    .select('script_html')
+                    .eq('id', id as string)
+                    .single();
+
+                if (scriptData?.script_html) {
+                    const newHtml = reorderDialoguesInHtml(scriptData.script_html, newLines);
+                    await supabase
+                        .from('scripts')
+                        .update({ script_html: newHtml })
+                        .eq('id', id as string);
+                    console.log('script_html dialogue order updated');
+                }
             } catch (htmlError) {
-                console.warn('Could not regenerate script_html (non-critical):', htmlError);
+                console.warn('Could not update script_html order (non-critical):', htmlError);
             }
         } catch (error) {
             console.error('Error syncing order:', error);
@@ -209,52 +218,222 @@ export default function StudioV2Screen() {
         }
     };
 
-    // Rebuild script_html from ordered dialogue lines (preserves order in text editor)
-    function rebuildScriptHtml(lines: DialogueLine[]): string {
-        let html = `<div style="font-family: 'Courier New', Courier, monospace; padding: 20px; max-width: 800px; margin: 0 auto; line-height: 1.4;">`;
-        for (const line of lines) {
-            html += `<p style="text-align: center; font-weight: bold; text-transform: uppercase; margin-top: 20px; margin-bottom: 0px; font-size: 14px;">${line.characterName.toUpperCase()}</p>`;
-            html += `<p style="text-align: center; margin-top: 0px; margin-bottom: 15px; font-size: 14px; max-width: 70%; margin-left: auto; margin-right: auto;">${line.text}</p>`;
-        }
-        html += '</div>';
-        return html;
-    }
-
-    // Parse action lines (left-aligned paragraphs) from script_html and interleave with dialogue lines
-    function parseActionLinesFromHtml(html: string, dialogLines: DialogueLine[]): DialogueLine[] {
-        if (!html || dialogLines.length === 0) return dialogLines;
+    // Reorder dialogue pairs in script_html while preserving everything else
+    // (titles, scene headings, action lines, etc.)
+    function reorderDialoguesInHtml(originalHtml: string, newLines: DialogueLine[]): string {
+        if (!originalHtml) return originalHtml;
         try {
-            // Extract all <p> tags with their styles and content
-            const pTagRegex = /<p[^>]*style="([^"]*)"[^>]*>([\s\S]*?)<\/p>/gi;
-            const allParagraphs: { style: string; text: string }[] = [];
-            let match;
-            while ((match = pTagRegex.exec(html)) !== null) {
-                const rawText = match[2].replace(/<[^>]+>/g, '').trim();
-                if (rawText.length > 0) {
-                    allParagraphs.push({ style: match[1], text: rawText });
+            // Build set of known character names (normalized)
+            const charNames = new Set(
+                newLines.map(l => l.characterName.trim().toUpperCase())
+            );
+
+            // Tokenize: split HTML into "dialogue-block" tokens (char-name-p + dialogue-p pair) and "other" tokens
+            // A dialogue block is: <p centered bold uppercase> + <p centered non-bold>
+            // Strategy: find all <p> elements, pair char-name + dialogue, leave the rest
+            const allTagsRegex = /(<(?:p|h1|h2|h3|div)[^>]*>)([\/\s\S]*?)(<\/(?:p|h1|h2|h3|div)>)/gi;
+
+            interface HtmlToken {
+                raw: string;
+                type: 'char-name' | 'dialogue' | 'other';
+                charName?: string;
+            }
+
+            const tokens: HtmlToken[] = [];
+            let lastIndex = 0;
+            let m: RegExpExecArray | null;
+
+            // Simpler: just split by paragraph boundaries
+            const splitRegex = /(<p\b[^>]*>[\s\S]*?<\/p>)/gi;
+            const parts: string[] = [];
+            let li = 0;
+            let sm: RegExpExecArray | null;
+            while ((sm = splitRegex.exec(originalHtml)) !== null) {
+                if (sm.index > li) parts.push(originalHtml.slice(li, sm.index)); // non-p content (wrappers)
+                parts.push(sm[1]);
+                li = sm.index + sm[1].length;
+            }
+            if (li < originalHtml.length) parts.push(originalHtml.slice(li));
+
+            // Classify each <p> part
+            const classified: { raw: string; isCharName: boolean; charName?: string; isDialogue: boolean }[] = [];
+            for (const part of parts) {
+                if (!part.startsWith('<p')) {
+                    classified.push({ raw: part, isCharName: false, isDialogue: false });
+                    continue;
+                }
+                const innerText = part.replace(/<[^>]+>/g, '').trim();
+                const isCentered = part.includes('text-align: center') || part.includes('text-align:center');
+                const isBold = part.includes('font-weight: bold') || part.includes('font-weight:bold');
+                const isUpperCase = innerText === innerText.toUpperCase() && innerText.length < 80;
+                const looksLikeCharName = isCentered && isBold && isUpperCase && charNames.has(innerText.replace(/\([^)]*\)/g, '').trim().toUpperCase());
+                classified.push({
+                    raw: part,
+                    isCharName: looksLikeCharName,
+                    charName: looksLikeCharName ? innerText.trim().toUpperCase() : undefined,
+                    isDialogue: false,
+                });
+            }
+            // Mark dialogue paragraphs (the paragraph immediately after a char-name paragraph)
+            for (let i = 0; i < classified.length; i++) {
+                if (classified[i].isCharName && i + 1 < classified.length && classified[i + 1].raw.startsWith('<p')) {
+                    classified[i + 1].isDialogue = true;
                 }
             }
 
-            // Identify action paragraphs: left-aligned (not centered) and not a character name (not all-caps short)
-            const isActionParagraph = (style: string, text: string): boolean => {
-                const isCentered = style.includes('text-align: center') || style.includes('text-align:center');
-                const isAllCaps = text === text.toUpperCase() && text.length < 60;
-                const isLeftAligned = style.includes('text-align: left') || style.includes('text-align:left') || (!isCentered && !isAllCaps);
-                return isLeftAligned && !isAllCaps && text.length > 3;
-            };
+            // Extract dialogue blocks (char-name + dialogue pairs) in original order
+            const dialogueBlocks: { charNameHtml: string; dialogueHtml: string; charName: string }[] = [];
+            for (let i = 0; i < classified.length; i++) {
+                if (classified[i].isCharName) {
+                    const charNameHtml = classified[i].raw;
+                    const dialogueHtml = classified[i + 1]?.isDialogue ? classified[i + 1].raw : '';
+                    dialogueBlocks.push({
+                        charNameHtml,
+                        dialogueHtml,
+                        charName: classified[i].charName || '',
+                    });
+                }
+            }
 
-            // Map dialogue lines to their text (for matching)
+            if (dialogueBlocks.length === 0) return originalHtml;
+
+            // Build new dialogue blocks in the NEW order, matching by character name + content snippet
+            // Map original block index -> new block index by matching newLines order
+            // We match: newLines[i] -> dialogueBlocks by character name (same char may appear multiple times,
+            // so we use a usage counter per char name)
+            const usageCount: Record<string, number> = {};
+            const blocksByChar: Record<string, typeof dialogueBlocks> = {};
+            for (const block of dialogueBlocks) {
+                if (!blocksByChar[block.charName]) blocksByChar[block.charName] = [];
+                blocksByChar[block.charName].push(block);
+            }
+            // Reset usage
+            const usageIdx: Record<string, number> = {};
+
+            const newDialogueBlocks: typeof dialogueBlocks = [];
+            for (const line of newLines) {
+                if (line.isAction) continue;
+                const cn = line.characterName.trim().toUpperCase();
+                const idx = usageIdx[cn] || 0;
+                const candidates = blocksByChar[cn] || [];
+                if (candidates[idx]) {
+                    newDialogueBlocks.push(candidates[idx]);
+                    usageIdx[cn] = idx + 1;
+                }
+            }
+
+            // Rebuild HTML: replace each dialogue block slot with the new ordered block
+            let blockIdx = 0;
+            const resultParts: string[] = [];
+            let i = 0;
+            while (i < classified.length) {
+                if (classified[i].isCharName) {
+                    const newBlock = newDialogueBlocks[blockIdx];
+                    if (newBlock) {
+                        resultParts.push(newBlock.charNameHtml);
+                        if (newBlock.dialogueHtml) resultParts.push(newBlock.dialogueHtml);
+                        blockIdx++;
+                    } else {
+                        resultParts.push(classified[i].raw);
+                    }
+                    // Skip original dialogue part
+                    if (classified[i + 1]?.isDialogue) i++;
+                } else if (!classified[i].isDialogue) {
+                    resultParts.push(classified[i].raw);
+                }
+                i++;
+            }
+            return resultParts.join('');
+        } catch (e) {
+            console.warn('reorderDialoguesInHtml error:', e);
+            return originalHtml; // Return original unchanged on error
+        }
+    }
+
+    // Parse action lines from script_html and interleave with dialogue lines.
+    // An ACTION line is any paragraph that is NOT a character name and NOT a dialogue (doesn't follow a char name).
+    // We detect by: if a centered paragraph text matches no known character name and wasn't preceded by a
+    // character name paragraph → it's left-aligned or it's a non-dialogue centered paragraph → action.
+    function parseActionLinesFromHtml(html: string, dialogLines: DialogueLine[]): DialogueLine[] {
+        if (!html || dialogLines.length === 0) return dialogLines;
+        try {
+            // Build set of known character names
+            const charNames = new Set(dialogLines.map(l => l.characterName.trim().toUpperCase()));
+
+            // Split HTML into <p> tokens
+            const splitRegex = /(<p\b[^>]*>[\s\S]*?<\/p>)/gi;
+            const parts: string[] = [];
+            let li = 0;
+            let sm: RegExpExecArray | null;
+            while ((sm = splitRegex.exec(html)) !== null) {
+                if (sm.index > li) parts.push(html.slice(li, sm.index));
+                parts.push(sm[1]);
+                li = sm.index + sm[1].length;
+            }
+            if (li < html.length) parts.push(html.slice(li));
+
+            // Classify each paragraph
+            type ParaType = 'char-name' | 'dialogue' | 'action' | 'other';
+            const classified: { raw: string; type: ParaType; text: string }[] = [];
+
+            for (let i = 0; i < parts.length; i++) {
+                const part = parts[i];
+                if (!part.startsWith('<p')) {
+                    classified.push({ raw: part, type: 'other', text: '' });
+                    continue;
+                }
+                const innerText = part.replace(/<[^>]+>/g, '').trim();
+                const isCentered = part.includes('text-align: center') || part.includes('text-align:center');
+                const isBold = part.includes('font-weight: bold') || part.includes('font-weight:bold');
+                const isUpperCase = innerText === innerText.toUpperCase() && /^[A-ZÁÉÍÓÚÑÜ\s()'.]+$/.test(innerText) && innerText.length < 80;
+                const matchesCharName = charNames.has(innerText.replace(/\([^)]*\)/g, '').trim().toUpperCase());
+
+                classified.push({ raw: part, type: 'other', text: innerText });
+            }
+
+            // Second pass: mark char-name and dialogue
+            for (let i = 0; i < classified.length; i++) {
+                const c = classified[i];
+                if (!c.raw.startsWith('<p')) continue;
+
+                const isBold = c.raw.includes('font-weight: bold') || c.raw.includes('font-weight:bold');
+                const isUpper = c.text === c.text.toUpperCase() && /^[A-ZÁÉÍÓÚÑÜ\s()'.]+$/.test(c.text) && c.text.length < 80;
+                const matchesChar = charNames.has(c.text.replace(/\([^)]*\)/g, '').trim().toUpperCase());
+
+                if (matchesChar && isBold && isUpper) {
+                    classified[i].type = 'char-name';
+                    // Next real paragraph after this is dialogue
+                    if (i + 1 < classified.length && classified[i + 1].raw.startsWith('<p')) {
+                        classified[i + 1].type = 'dialogue';
+                    }
+                }
+            }
+
+            // Third pass: everything that's a <p> and still 'other' with non-empty text that isn't
+            // a scene heading (all-caps very short like INT./EXT.) → ACTION
+            for (let i = 0; i < classified.length; i++) {
+                const c = classified[i];
+                if (!c.raw.startsWith('<p') || c.type !== 'other' || c.text.length <= 3) continue;
+                const isSceneHeading = /^(INT\.|EXT\.|INT\.\s|EXT\.\s)/i.test(c.text) ||
+                    (c.text === c.text.toUpperCase() && c.text.length < 40);
+                if (!isSceneHeading) {
+                    classified[i].type = 'action';
+                }
+            }
+
+            // Now interleave: iterate through dialogue lines sequence, matching them to dialogue paragraphs
+            // Track position via dialogue paragraph count
             let dialogIdx = 0;
             const result: DialogueLine[] = [];
-            let actionBuffer: string[] = [];
+            const actionBuffer: string[] = [];
 
-            for (const para of allParagraphs) {
-                if (isActionParagraph(para.style, para.text)) {
-                    actionBuffer.push(para.text);
-                } else {
-                    // Try to match this paragraph to the next dialogue line
+            for (let i = 0; i < classified.length; i++) {
+                const c = classified[i];
+                if (c.type === 'action') {
+                    actionBuffer.push(c.text);
+                } else if (c.type === 'char-name') {
+                    // Flush action buffer before the corresponding dialogue line
                     if (dialogIdx < dialogLines.length) {
-                        // Flush action buffer before this dialogue line
                         for (const actionText of actionBuffer) {
                             result.push({
                                 id: `action-${result.length}-${Date.now()}`,
@@ -271,16 +450,22 @@ export default function StudioV2Screen() {
                                 isAction: true,
                             } as DialogueLine);
                         }
-                        actionBuffer = [];
+                        actionBuffer.length = 0;
                         result.push(dialogLines[dialogIdx]);
                         dialogIdx++;
                     }
                 }
+                // dialogue / other / char-name types: handled above or ignored (char-name consumed with its dialogue idx)
             }
-            // Flush remaining dialogue lines
+
+            // Flush remaining dialogue lines (no more action context)
             while (dialogIdx < dialogLines.length) {
                 result.push(dialogLines[dialogIdx++]);
             }
+
+            const actionCount = result.filter(l => l.isAction).length;
+            console.log(`[Actions] Parsed ${actionCount} action cards from script_html`);
+
             return result;
         } catch (e) {
             console.warn('parseActionLinesFromHtml error:', e);
@@ -2140,7 +2325,7 @@ export default function StudioV2Screen() {
                                         setShowActions(p => !p);
                                     }}
                                 >
-                                    <FileText size={20} color={showActions ? '#8B5CF6' : colors.text} />
+                                    <Clapperboard size={20} color={showActions ? '#8B5CF6' : colors.text} />
                                     <Text style={[styles.menuItemText, { color: showActions ? '#8B5CF6' : colors.text }]}>
                                         {showActions ? 'Acciones (Activo)' : 'Acciones'}
                                     </Text>
