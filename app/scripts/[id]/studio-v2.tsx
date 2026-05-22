@@ -98,7 +98,15 @@ export default function StudioV2Screen() {
     const [showMenu, setShowMenu] = useState(false);
     const [literalMode, setLiteralMode] = useState(false);
     const [showStageDirections, setShowStageDirections] = useState(false); // Show parenthetical stage directions
+    const [showActions, setShowActions] = useState(false); // Show action/description lines from script
+    const [allLinesWithActions, setAllLinesWithActions] = useState<DialogueLine[]>([]); // Lines + action cards merged
     const [openEditMenuLineId, setOpenEditMenuLineId] = useState<string | null>(null);
+
+    // Merged lines (with action cards) - computed reactively so useEffects can use it
+    const activeLines = React.useMemo(
+        () => showActions && allLinesWithActions.length > 0 ? allLinesWithActions : dialogueLines,
+        [showActions, allLinesWithActions, dialogueLines]
+    );
 
     // TTS State
     const [ttsProvider, setTtsProvider] = useState<'openai' | 'elevenlabs' | 'google' | 'system'>('openai');
@@ -183,11 +191,102 @@ export default function StudioV2Screen() {
 
             if (error) throw error;
             console.log('Order synced successfully');
+
+            // Also regenerate script_html to reflect the new order in the text editor
+            try {
+                const newHtml = rebuildScriptHtml(newLines);
+                await supabase
+                    .from('scripts')
+                    .update({ script_html: newHtml, updated_at: new Date().toISOString() })
+                    .eq('id', id as string);
+                console.log('script_html regenerated with new order');
+            } catch (htmlError) {
+                console.warn('Could not regenerate script_html (non-critical):', htmlError);
+            }
         } catch (error) {
             console.error('Error syncing order:', error);
             // Optionally revert local state here if critical
         }
     };
+
+    // Rebuild script_html from ordered dialogue lines (preserves order in text editor)
+    function rebuildScriptHtml(lines: DialogueLine[]): string {
+        let html = `<div style="font-family: 'Courier New', Courier, monospace; padding: 20px; max-width: 800px; margin: 0 auto; line-height: 1.4;">`;
+        for (const line of lines) {
+            html += `<p style="text-align: center; font-weight: bold; text-transform: uppercase; margin-top: 20px; margin-bottom: 0px; font-size: 14px;">${line.characterName.toUpperCase()}</p>`;
+            html += `<p style="text-align: center; margin-top: 0px; margin-bottom: 15px; font-size: 14px; max-width: 70%; margin-left: auto; margin-right: auto;">${line.text}</p>`;
+        }
+        html += '</div>';
+        return html;
+    }
+
+    // Parse action lines (left-aligned paragraphs) from script_html and interleave with dialogue lines
+    function parseActionLinesFromHtml(html: string, dialogLines: DialogueLine[]): DialogueLine[] {
+        if (!html || dialogLines.length === 0) return dialogLines;
+        try {
+            // Extract all <p> tags with their styles and content
+            const pTagRegex = /<p[^>]*style="([^"]*)"[^>]*>([\s\S]*?)<\/p>/gi;
+            const allParagraphs: { style: string; text: string }[] = [];
+            let match;
+            while ((match = pTagRegex.exec(html)) !== null) {
+                const rawText = match[2].replace(/<[^>]+>/g, '').trim();
+                if (rawText.length > 0) {
+                    allParagraphs.push({ style: match[1], text: rawText });
+                }
+            }
+
+            // Identify action paragraphs: left-aligned (not centered) and not a character name (not all-caps short)
+            const isActionParagraph = (style: string, text: string): boolean => {
+                const isCentered = style.includes('text-align: center') || style.includes('text-align:center');
+                const isAllCaps = text === text.toUpperCase() && text.length < 60;
+                const isLeftAligned = style.includes('text-align: left') || style.includes('text-align:left') || (!isCentered && !isAllCaps);
+                return isLeftAligned && !isAllCaps && text.length > 3;
+            };
+
+            // Map dialogue lines to their text (for matching)
+            let dialogIdx = 0;
+            const result: DialogueLine[] = [];
+            let actionBuffer: string[] = [];
+
+            for (const para of allParagraphs) {
+                if (isActionParagraph(para.style, para.text)) {
+                    actionBuffer.push(para.text);
+                } else {
+                    // Try to match this paragraph to the next dialogue line
+                    if (dialogIdx < dialogLines.length) {
+                        // Flush action buffer before this dialogue line
+                        for (const actionText of actionBuffer) {
+                            result.push({
+                                id: `action-${result.length}-${Date.now()}`,
+                                characterId: 'action',
+                                characterName: 'ACCIÓN',
+                                text: actionText,
+                                cleanText: actionText,
+                                color: '#8B5CF6',
+                                voiceGender: 'neutral',
+                                voicePreset: 'natural',
+                                isUserCharacter: false,
+                                orderIndex: -1,
+                                sceneId: dialogLines[dialogIdx]?.sceneId || '',
+                                isAction: true,
+                            } as DialogueLine);
+                        }
+                        actionBuffer = [];
+                        result.push(dialogLines[dialogIdx]);
+                        dialogIdx++;
+                    }
+                }
+            }
+            // Flush remaining dialogue lines
+            while (dialogIdx < dialogLines.length) {
+                result.push(dialogLines[dialogIdx++]);
+            }
+            return result;
+        } catch (e) {
+            console.warn('parseActionLinesFromHtml error:', e);
+            return dialogLines;
+        }
+    }
 
     const toggleReordering = async () => {
         const hideInfo = await AsyncStorage.getItem('hideReorderInfo');
@@ -233,10 +332,10 @@ export default function StudioV2Screen() {
         try {
             setLoading(true);
 
-            // Load script
+            // Load script (also fetch script_html for action lines parsing)
             const { data: script } = await supabase
                 .from('scripts')
-                .select('title')
+                .select('title, script_html')
                 .eq('id', id)
                 .single();
 
@@ -245,6 +344,14 @@ export default function StudioV2Screen() {
             // Load dialogue lines using helper function
             const lines = await loadDialogueLines(id as string);
             setDialogueLines(lines);
+
+            // Parse action lines from script_html and store them for later merging
+            if (script?.script_html) {
+                const actionLines = parseActionLinesFromHtml(script.script_html, lines);
+                setAllLinesWithActions(actionLines);
+            } else {
+                setAllLinesWithActions(lines);
+            }
 
             // Load characters for adding new lines
             const { data: charactersData } = await supabase
@@ -303,9 +410,15 @@ export default function StudioV2Screen() {
 
     // Auto-play AI lines with TTS
     useEffect(() => {
-        if (dialogueLines.length === 0 || !isPlaying) return;
+        if (activeLines.length === 0 || !isPlaying) return;
 
-        const line = dialogueLines[currentIndex];
+        const line = activeLines[currentIndex];
+
+        // If it's an action card, show briefly and auto-advance (IA ignores it)
+        if (line?.isAction) {
+            const timer = setTimeout(() => handleNext(), 1500);
+            return () => clearTimeout(timer);
+        }
 
         // If AI turn, speak it with TTS
         if (!line.isUserCharacter) {
@@ -314,7 +427,7 @@ export default function StudioV2Screen() {
             // User turn: start listening
             startListening();
         }
-    }, [currentIndex, dialogueLines, isPlaying]);
+    }, [currentIndex, activeLines, isPlaying]);
 
     // Reset scroll position when card changes
     useEffect(() => {
@@ -659,7 +772,7 @@ export default function StudioV2Screen() {
                 // Only validate text if Literal Mode is active
                 if (literalMode) {
                     const similarity = calculateSimilarity(spokenText, targetLine.text);
-                    const threshold = 0.85; // Lowered from 0.99 to avoid frustration with minor misrecognitions
+                    const threshold = 0.75; // Lowered to 75% to allow more speech recognition tolerance
 
                     if (similarity >= threshold) {
                         // Success: advance
@@ -1787,8 +1900,8 @@ export default function StudioV2Screen() {
         );
     }
 
-    const currentLine = dialogueLines[currentIndex];
-    const progressText = `Línea ${currentIndex + 1} / ${dialogueLines.length}`;
+    const currentLine = activeLines[currentIndex];
+    const progressText = `Línea ${currentIndex + 1} / ${activeLines.length}`;
 
     // Helper function to render text with colored stage directions
     const renderTextWithStageDirections = (text: string) => {
@@ -1859,7 +1972,7 @@ export default function StudioV2Screen() {
                                 {scriptTitle}
                             </Text>
                             {/* Mode badges row - below script title */}
-                            {(literalMode || showStageDirections) && (
+                            {(literalMode || showStageDirections || showActions) && (
                                 <View style={styles.modeBadgesRow}>
                                     {literalMode && (
                                         <View style={[styles.literalModeBadge, { backgroundColor: colors.primary }]}>
@@ -1871,6 +1984,12 @@ export default function StudioV2Screen() {
                                         <View style={[styles.literalModeBadge, { backgroundColor: colorScheme === 'dark' ? '#FFA500' : '#DC2626' }]}>
                                             <MessageSquare size={12} color="#FFFFFF" />
                                             <Text style={styles.literalModeBadgeText}>ACOTACIONES</Text>
+                                        </View>
+                                    )}
+                                    {showActions && (
+                                        <View style={[styles.literalModeBadge, { backgroundColor: '#8B5CF6' }]}>
+                                            <FileText size={12} color="#FFFFFF" />
+                                            <Text style={styles.literalModeBadgeText}>ACCIONES</Text>
                                         </View>
                                     )}
                                 </View>
@@ -1995,7 +2114,7 @@ export default function StudioV2Screen() {
                                 </TouchableOpacity>
 
                                 <TouchableOpacity
-                                    style={[styles.menuItem, { borderBottomWidth: 0 }]}
+                                    style={[styles.menuItem, { borderBottomColor: `${colors.border}99` }]}
                                     onPress={async () => {
                                         setShowMenu(false);
                                         // If activating, check if we should show the info modal
@@ -2011,6 +2130,19 @@ export default function StudioV2Screen() {
                                     <MessageSquare size={20} color={showStageDirections ? colors.primary : colors.text} />
                                     <Text style={[styles.menuItemText, { color: showStageDirections ? colors.primary : colors.text }]}>
                                         {showStageDirections ? 'Acotaciones (Activo)' : 'Acotaciones'}
+                                    </Text>
+                                </TouchableOpacity>
+
+                                <TouchableOpacity
+                                    style={[styles.menuItem, { borderBottomWidth: 0 }]}
+                                    onPress={() => {
+                                        setShowMenu(false);
+                                        setShowActions(p => !p);
+                                    }}
+                                >
+                                    <FileText size={20} color={showActions ? '#8B5CF6' : colors.text} />
+                                    <Text style={[styles.menuItemText, { color: showActions ? '#8B5CF6' : colors.text }]}>
+                                        {showActions ? 'Acciones (Activo)' : 'Acciones'}
                                     </Text>
                                 </TouchableOpacity>
                             </View>
@@ -2406,24 +2538,30 @@ export default function StudioV2Screen() {
                         >
                             {currentLine && (
                                 <View style={styles.cardContainer}>
-                                    {/* Current Card */}
-                                    <View style={[styles.card, { backgroundColor: colors.background, borderColor: currentLine.isUserCharacter ? '#10B981' : currentLine.color || colors.primary, borderWidth: 4, padding: 0, overflow: 'hidden' }]}>
+                                    {/* Current Card - special style for action cards */}
+                                    <View style={[styles.card, {
+                                        backgroundColor: currentLine.isAction ? 'rgba(139,92,246,0.08)' : colors.background,
+                                        borderColor: currentLine.isAction ? '#8B5CF6' : (currentLine.isUserCharacter ? '#10B981' : currentLine.color || colors.primary),
+                                        borderWidth: currentLine.isAction ? 2 : 4,
+                                        borderStyle: currentLine.isAction ? 'dashed' : 'solid',
+                                        padding: 0, overflow: 'hidden'
+                                    }]}>
                                         {/* Header */}
-                                        <View style={[styles.cardHeaderBanner, { backgroundColor: currentLine.isUserCharacter ? '#10B981' : currentLine.color || colors.primary }]}>
-                                            {!isPlaying && !isRecording && !isSpeaking && !isListening && (
+                                        <View style={[styles.cardHeaderBanner, { backgroundColor: currentLine.isAction ? '#8B5CF6' : (currentLine.isUserCharacter ? '#10B981' : currentLine.color || colors.primary) }]}>
+                                            {!currentLine.isAction && !isPlaying && !isRecording && !isSpeaking && !isListening && (
                                                 <TouchableOpacity onPress={() => setOpenEditMenuLineId(openEditMenuLineId === currentLine.id ? null : currentLine.id)} style={styles.menuButtonAbsolute}>
                                                     <MoreVertical size={20} color={colors.background} />
                                                 </TouchableOpacity>
                                             )}
-                                            {openEditMenuLineId === currentLine.id ? (
+                                            {!currentLine.isAction && openEditMenuLineId === currentLine.id ? (
                                                 <View style={styles.editMenuInHeader}>
                                                     <TouchableOpacity onPress={() => { startEditingLine(currentLine); setOpenEditMenuLineId(null); }} style={styles.editButtonHorizontal}><Edit size={18} color={colors.background} /></TouchableOpacity>
                                                     <TouchableOpacity onPress={() => { deleteLine(currentLine.id); setOpenEditMenuLineId(null); }} style={styles.editButtonHorizontal}><Trash2 size={18} color={colors.background} /></TouchableOpacity>
                                                 </View>
                                             ) : (
                                                 <View style={styles.headerCenteredContent}>
-                                                    <Text style={[styles.characterName, { color: colors.background }]}>{currentLine.characterName}</Text>
-                                                    <View style={[styles.badge, { backgroundColor: 'rgba(0,0,0,0.2)' }]}><Text style={[styles.badgeText, { color: colors.background }]}>{currentLine.isUserCharacter ? 'TÚ' : 'IA'}</Text></View>
+                                                    <Text style={[styles.characterName, { color: colors.background }]}>{currentLine.isAction ? '⚡ ACCIÓN' : currentLine.characterName}</Text>
+                                                    {!currentLine.isAction && <View style={[styles.badge, { backgroundColor: 'rgba(0,0,0,0.2)' }]}><Text style={[styles.badgeText, { color: colors.background }]}>{currentLine.isUserCharacter ? 'TÚ' : 'IA'}</Text></View>}
                                                 </View>
                                             )}
                                         </View>
@@ -2439,13 +2577,13 @@ export default function StudioV2Screen() {
                                                 </View>
                                             ) : (
                                                 <>
-                                                    {currentLine.isUserCharacter && hideUserLines ? (
+                                                    {!currentLine.isAction && currentLine.isUserCharacter && hideUserLines ? (
                                                         <View style={styles.hiddenLineContainer}>
                                                             <EyeOff size={32} color={colors.textSecondary} />
                                                             <Text style={[styles.hiddenLineText, { color: colors.textSecondary }]}>Línea oculta</Text>
                                                         </View>
                                                     ) : (
-                                                        <Text style={[styles.dialogueText, { color: colors.text }]}>{renderTextWithStageDirections(showStageDirections ? currentLine.text : currentLine.cleanText)}</Text>
+                                                        <Text style={[styles.dialogueText, { color: currentLine.isAction ? '#8B5CF6' : colors.text, fontStyle: currentLine.isAction ? 'italic' : 'normal' }]}>{currentLine.isAction ? currentLine.text : renderTextWithStageDirections(showStageDirections ? currentLine.text : currentLine.cleanText)}</Text>
                                                     )}
                                                 </>
                                             )}
@@ -2457,20 +2595,30 @@ export default function StudioV2Screen() {
                                     </View>
 
                                     {/* Next Cards */}
-                                    {dialogueLines.slice(currentIndex + 1).map((line, index) => (
-                                        <View key={line.id} style={[styles.card, styles.nextCard, { backgroundColor: colors.background, borderColor: line.isUserCharacter ? '#10B981' : line.color || colors.primary, borderWidth: 4, opacity: 0.5, padding: 0, overflow: 'hidden', marginTop: index === 0 ? 16 : 12 }]}>
-                                            <View style={[styles.cardHeaderBanner, { backgroundColor: line.isUserCharacter ? '#10B981' : line.color || colors.primary }]}>
-                                                <Text style={[styles.characterName, { color: colors.background }]}>{line.characterName}</Text>
-                                                <View style={[styles.badge, { backgroundColor: 'rgba(0,0,0,0.2)' }]}><Text style={[styles.badgeText, { color: colors.background }]}>{line.isUserCharacter ? 'TÚ' : 'IA'}</Text></View>
+                                    {activeLines.slice(currentIndex + 1).map((line, index) => (
+                                        <View key={`${line.id}-${index}`} style={[
+                                            styles.card, styles.nextCard,
+                                            {
+                                                backgroundColor: line.isAction ? 'rgba(139,92,246,0.08)' : colors.background,
+                                                borderColor: line.isAction ? '#8B5CF6' : (line.isUserCharacter ? '#10B981' : line.color || colors.primary),
+                                                borderWidth: line.isAction ? 2 : 4,
+                                                opacity: 0.5, padding: 0, overflow: 'hidden',
+                                                marginTop: index === 0 ? 16 : 12,
+                                                borderStyle: line.isAction ? 'dashed' : 'solid',
+                                            }
+                                        ]}>
+                                            <View style={[styles.cardHeaderBanner, { backgroundColor: line.isAction ? '#8B5CF6' : (line.isUserCharacter ? '#10B981' : line.color || colors.primary) }]}>
+                                                <Text style={[styles.characterName, { color: colors.background }]}>{line.isAction ? '⚡ ACCIÓN' : line.characterName}</Text>
+                                                {!line.isAction && <View style={[styles.badge, { backgroundColor: 'rgba(0,0,0,0.2)' }]}><Text style={[styles.badgeText, { color: colors.background }]}>{line.isUserCharacter ? 'TÚ' : 'IA'}</Text></View>}
                                             </View>
                                             <View style={styles.cardContent}>
-                                                {line.isUserCharacter && hideUserLines ? (
+                                                {!line.isAction && line.isUserCharacter && hideUserLines ? (
                                                     <View style={styles.hiddenLineContainer}>
                                                         <EyeOff size={32} color={colors.textSecondary} />
                                                         <Text style={[styles.hiddenLineText, { color: colors.textSecondary, fontSize: rf(12) }]}>Oculta</Text>
                                                     </View>
                                                 ) : (
-                                                    <Text style={[styles.dialogueText, { color: colors.text }]} numberOfLines={2}>{line.text}</Text>
+                                                    <Text style={[styles.dialogueText, { color: line.isAction ? '#8B5CF6' : colors.text, fontStyle: line.isAction ? 'italic' : 'normal' }]} numberOfLines={2}>{line.text}</Text>
                                                 )}
                                             </View>
                                         </View>

@@ -633,6 +633,37 @@ export default function ScriptEditorScreen() {
                             data: window.scrollY
                         }));
                     });
+
+                    // Fix paste to always be plain text
+                    document.addEventListener('paste', function(e) {
+                        e.preventDefault();
+                        var text = (e.originalEvent || e).clipboardData.getData('text/plain');
+                        document.execCommand('insertText', false, text);
+                    });
+
+                    // Fix huge margin inheritance on Enter key
+                    document.addEventListener('keydown', function(e) {
+                        if (e.key === 'Enter' && !e.shiftKey) {
+                            setTimeout(function() {
+                                var selection = window.getSelection();
+                                if (selection.rangeCount > 0) {
+                                    var node = selection.focusNode;
+                                    while (node && node.nodeName !== 'P' && node.nodeName !== 'DIV' && node !== document.body) {
+                                        node = node.parentNode;
+                                    }
+                                    if (node && node !== document.body) {
+                                        node.style.marginTop = '0px';
+                                        node.style.marginBottom = '15px';
+                                        node.style.fontWeight = 'normal';
+                                        node.style.maxWidth = '80%';
+                                        node.style.marginLeft = 'auto';
+                                        node.style.marginRight = 'auto';
+                                        node.style.fontSize = '14px';
+                                    }
+                                }
+                            }, 10);
+                        }
+                    });
                 </script>
             </body>
             </html>

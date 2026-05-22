@@ -8,7 +8,7 @@ import {
   Alert,
   ScrollView,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter, useLocalSearchParams, Link } from 'expo-router';
 import { ArrowLeft, Play, Users, Trash2, Brain, Car, Clapperboard, GraduationCap, User, ArrowLeftRight, FileText } from 'lucide-react-native';
 import { supabase } from '@/utils/supabase';
@@ -27,6 +27,7 @@ export default function ScriptDetailScreen() {
   const { id } = useLocalSearchParams();
   const { colors } = useTheme();
   const { user } = useAuth();
+  const insets = useSafeAreaInsets();
   const [script, setScript] = useState<Script | null>(null);
   const [characters, setCharacters] = useState<Character[]>([]);
   const [loading, setLoading] = useState(true);
@@ -216,8 +217,8 @@ export default function ScriptDetailScreen() {
   const characterCountDisplay = charactersLoadError ? '-' : String(characters.length);
 
   return (
-    <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
-      <View style={[styles.header, { backgroundColor: colors.surface, borderBottomColor: colors.border }]}>
+    <View style={[styles.container, { backgroundColor: colors.background }]}>
+      <View style={[styles.header, { backgroundColor: colors.surface, borderBottomColor: colors.border, paddingTop: insets.top + 10, paddingBottom: 16 }]}>
         <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
           <ArrowLeft size={24} color={colors.text} />
         </TouchableOpacity>
@@ -398,7 +399,7 @@ export default function ScriptDetailScreen() {
         <FixedFooterSpacer />
       </ScrollView>
       <FixedFooter />
-    </SafeAreaView>
+    </View>
   );
 }
 
