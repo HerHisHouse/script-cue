@@ -221,52 +221,56 @@ export default function StudioV2Screen() {
     // ─── HTML UTILITIES ──────────────────────────────────────────────────────
 
     /**
-     * Returns true if a <p> paragraph (raw HTML string) is left-aligned.
-     * GPT generates: text-align: left → action/scene-heading
-     *                text-align: center → character name or dialogue
-     * If no text-align is specified, treat as left-aligned (safer for actions).
+     * Returns true if an HTML string (tag or raw text) is left-aligned.
      */
-    function isLeftAlignedParagraph(rawPTag: string): boolean {
-        // Extract just the opening tag style
-        const styleMatch = rawPTag.match(/style="([^"]*)"/i);
-        if (!styleMatch) return true; // no style → probably left-aligned
-        const style = styleMatch[1];
-        if (style.includes('text-align: center') || style.includes('text-align:center')) return false;
-        if (style.includes('text-align: left') || style.includes('text-align:left')) return true;
-        return true; // default: left
+    function isLeftAlignedParagraph(rawTag: string): boolean {
+        // If it's raw text without any formatting tags, assume it's left-aligned (action)
+        if (!/<[a-z][\s\S]*>/i.test(rawTag)) {
+            return true;
+        }
+        const lowerTag = rawTag.toLowerCase();
+        if (lowerTag.includes('text-align: center') || lowerTag.includes('text-align:center') || lowerTag.includes('align="center"')) return false;
+        if (lowerTag.includes('text-align: right') || lowerTag.includes('text-align:right') || lowerTag.includes('align="right"')) return false;
+        return true; 
     }
 
     /**
      * Returns true if the paragraph contains bold text (via <strong>, <b>, or font-weight:bold)
      */
-    function isBoldParagraph(rawPTag: string): boolean {
-        return rawPTag.includes('<strong') || rawPTag.includes('<b>') || rawPTag.includes('<b ') ||
-               rawPTag.includes('font-weight: bold') || rawPTag.includes('font-weight:bold');
+    function isBoldParagraph(rawTag: string): boolean {
+        const lowerTag = rawTag.toLowerCase();
+        return lowerTag.includes('<strong') || lowerTag.includes('<b>') || lowerTag.includes('<b ') ||
+               lowerTag.includes('font-weight: bold') || lowerTag.includes('font-weight:bold');
     }
 
     /**
      * Checks if a scene heading (e.g. "INT - CHALET, SALÓN - DÍA").
      * These are left-aligned, bold, all-caps short lines.
      */
-    function isSceneHeading(text: string, rawPTag: string): boolean {
+    function isSceneHeading(text: string, rawTag: string): boolean {
         const upper = text.toUpperCase();
         const looksAllCaps = upper === text && text.length < 80;
         const startsWithIntExt = /^(INT|EXT)[\.\s\-]/i.test(text.trim());
-        return (startsWithIntExt || (looksAllCaps && isBoldParagraph(rawPTag)));
+        return (startsWithIntExt || (looksAllCaps && isBoldParagraph(rawTag)));
     }
 
-    // Split HTML string into an array of raw <p> tag strings (and inter-tag content)
+    // Split HTML string into an array of block tags, <br> tags, and inter-tag raw text
     function splitHtmlIntoParagraphs(html: string): string[] {
         const parts: string[] = [];
-        const splitRegex = /(<p\b[^>]*>[\s\S]*?<\/p>)/gi;
+        // Match block-level elements OR <br>
+        const splitRegex = /(<(?:p|div|h[1-6])\b[^>]*>[\s\S]*?<\/(?:p|div|h[1-6])>|<br\s*\/?>)/gi;
         let li = 0;
         let sm: RegExpExecArray | null;
         while ((sm = splitRegex.exec(html)) !== null) {
-            if (sm.index > li) parts.push(html.slice(li, sm.index));
-            parts.push(sm[1]);
+            if (sm.index > li) {
+                parts.push(html.slice(li, sm.index)); // inter-tag text
+            }
+            parts.push(sm[1]); // the tag
             li = sm.index + sm[1].length;
         }
-        if (li < html.length) parts.push(html.slice(li));
+        if (li < html.length) {
+            parts.push(html.slice(li));
+        }
         return parts;
     }
 
@@ -289,6 +293,7 @@ export default function StudioV2Screen() {
     function parseActionLinesFromHtml(html: string, dialogLines: DialogueLine[]): DialogueLine[] {
         if (!html || dialogLines.length === 0) return dialogLines;
         try {
+            console.log("RAW HTML START:\n", html.substring(0, 1000), "\n:RAW HTML END");
             const charNames = new Set(dialogLines.map(l => l.characterName.trim().toUpperCase()));
             const parts = splitHtmlIntoParagraphs(html);
 
@@ -297,10 +302,6 @@ export default function StudioV2Screen() {
             const classified: { raw: string; type: PType; text: string }[] = [];
 
             for (const part of parts) {
-                if (!part.startsWith('<p')) {
-                    classified.push({ raw: part, type: 'other', text: '' });
-                    continue;
-                }
                 const text = stripHtmlTags(part);
                 if (text.length === 0) {
                     classified.push({ raw: part, type: 'other', text: '' });
@@ -399,11 +400,11 @@ export default function StudioV2Screen() {
             // Classify into char-name or not
             const classified: { raw: string; isCharName: boolean; isDialogue: boolean; charName: string }[] = [];
             for (const part of parts) {
-                if (!part.startsWith('<p')) {
+                const text = stripHtmlTags(part);
+                if (text.length === 0) {
                     classified.push({ raw: part, isCharName: false, isDialogue: false, charName: '' });
                     continue;
                 }
-                const text = stripHtmlTags(part);
                 const isLeft = isLeftAlignedParagraph(part);
                 if (isLeft) {
                     // Left-aligned → never a char-name
@@ -419,9 +420,9 @@ export default function StudioV2Screen() {
             // Mark the paragraph immediately after each char-name as dialogue
             for (let i = 0; i < classified.length; i++) {
                 if (classified[i].isCharName) {
-                    // Find next <p> element
+                    // Find next non-empty element
                     let j = i + 1;
-                    while (j < classified.length && !classified[j].raw.startsWith('<p')) j++;
+                    while (j < classified.length && stripHtmlTags(classified[j].raw).length === 0) j++;
                     if (j < classified.length && !classified[j].isCharName) {
                         classified[j].isDialogue = true;
                     }
@@ -434,7 +435,7 @@ export default function StudioV2Screen() {
                 if (classified[i].isCharName) {
                     // Find the associated dialogue element
                     let j = i + 1;
-                    while (j < classified.length && !classified[j].raw.startsWith('<p')) j++;
+                    while (j < classified.length && stripHtmlTags(classified[j].raw).length === 0) j++;
                     const dialogueHtml = (j < classified.length && classified[j].isDialogue) ? classified[j].raw : '';
                     dialogueBlocks.push({
                         charNameHtml: classified[i].raw,
@@ -488,8 +489,8 @@ export default function StudioV2Screen() {
                     }
                     // Skip the original dialogue element (already consumed or replaced)
                     let j = i + 1;
-                    while (j < classified.length && !classified[j].raw.startsWith('<p')) {
-                        resultParts.push(classified[j].raw); // preserve non-p content between
+                    while (j < classified.length && stripHtmlTags(classified[j].raw).length === 0) {
+                        resultParts.push(classified[j].raw); // preserve whitespace/br
                         j++;
                     }
                     if (j < classified.length && classified[j].isDialogue) {
