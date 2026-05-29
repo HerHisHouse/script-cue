@@ -21,6 +21,7 @@ import { getSettings, setSettings } from '@/utils/appSettings';
 import * as Speech from 'expo-speech';
 import { FixedFooter, FixedFooterSpacer } from '@/components/FixedFooter';
 import { rf, rp } from '@/utils/responsive';
+import { OPENAI_VOICES, AZURE_VOICES } from '@/utils/voiceService';
 
 export default function ScriptDetailScreen() {
   const router = useRouter();
@@ -38,6 +39,7 @@ export default function ScriptDetailScreen() {
   // TTS settings for quick selection before study mode
   const [ttsProvider, setTtsProvider] = useState<'openai' | 'elevenlabs' | 'google' | 'system'>('openai');
   const [availableVoices, setAvailableVoices] = useState<any[]>([]);
+  const [elevenLabsVoices, setElevenLabsVoices] = useState<any[]>([]);
   const [systemLang, setSystemLang] = useState<string>('es-ES');
   const [systemVoiceId, setSystemVoiceId] = useState<string | undefined>(undefined);
   const [langDropdownOpen, setLangDropdownOpen] = useState<boolean>(false);
@@ -114,6 +116,13 @@ export default function ScriptDetailScreen() {
         setAvailableVoices(voices || []);
       } catch { }
     })();
+    (async () => {
+      try {
+        const { getElevenLabsVoices } = await import('@/utils/voiceService');
+        const voices = await getElevenLabsVoices();
+        setElevenLabsVoices(voices || []);
+      } catch { }
+    })();
   }, []);
 
   function uniqueLanguages(): string[] {
@@ -142,16 +151,47 @@ export default function ScriptDetailScreen() {
 
   function getCharacterVoiceText(c: Character): string {
     try {
-      const nameKey = (c?.name || '').toUpperCase();
-      const entry = perCharacterVoices[nameKey];
-      if (!entry) return '-';
-      const provider = (entry.provider || 'system') as string;
-      const providerLabel = provider === 'system' ? 'Sistema' : provider.charAt(0).toUpperCase() + provider.slice(1);
-      let voiceName = '';
-      if (provider === 'system' && entry.systemVoiceId) {
-        const v = (availableVoices || []).find((vv: any) => vv?.identifier === entry.systemVoiceId || vv?.voiceURI === entry.systemVoiceId || vv?.name === entry.systemVoiceId);
-        voiceName = (v?.name as string) || (entry.systemVoiceId as string) || '';
+      const provider = c.voice_provider || 'system';
+      const voiceId = c.voice_id || '';
+      
+      const providerLabel = provider === 'system' ? 'Sistema' : 
+                            provider === 'elevenlabs' ? 'ElevenLabs' : 
+                            provider === 'openai' ? 'OpenAI' : 'Azure';
+                            
+      let voiceName = voiceId;
+
+      if (provider === 'system' && voiceId) {
+        const v = (availableVoices || []).find((vv: any) => vv?.identifier === voiceId || vv?.voiceURI === voiceId || vv?.name === voiceId);
+        voiceName = (v?.name as string) || voiceId;
+      } else if (provider === 'elevenlabs') {
+        const v = elevenLabsVoices.find(v => v.id === voiceId);
+        if (v) voiceName = v.name;
+      } else if (provider === 'openai') {
+        const v = OPENAI_VOICES.find(v => v.id === voiceId);
+        if (v) voiceName = v.name;
+      } else if (provider === 'azure') {
+        const v = AZURE_VOICES.find(v => v.id === voiceId);
+        if (v) voiceName = v.name;
       }
+
+      // Fallback for older scripts using perCharacterVoices local storage
+      if (!c.voice_provider) {
+        const nameKey = (c?.name || '').toUpperCase();
+        const entry = perCharacterVoices[nameKey];
+        if (entry) {
+            const legacyProvider = (entry.provider || 'system') as string;
+            const legacyLabel = legacyProvider === 'system' ? 'Sistema' : 
+                                legacyProvider === 'elevenlabs' ? 'ElevenLabs' : 
+                                legacyProvider.charAt(0).toUpperCase() + legacyProvider.slice(1);
+            let legacyName = '';
+            if (legacyProvider === 'system' && entry.systemVoiceId) {
+              const v = (availableVoices || []).find((vv: any) => vv?.identifier === entry.systemVoiceId || vv?.voiceURI === entry.systemVoiceId || vv?.name === entry.systemVoiceId);
+              legacyName = (v?.name as string) || (entry.systemVoiceId as string) || '';
+            }
+            return legacyName ? `${legacyLabel} / ${legacyName}` : legacyLabel;
+        }
+      }
+
       return voiceName ? `${providerLabel} / ${voiceName}` : providerLabel;
     } catch {
       return '-';
@@ -316,14 +356,21 @@ export default function ScriptDetailScreen() {
                     {(c.name || '-')} · {getCharacterVoiceText(c)}
                   </Text>
                 ))}
-                {/* Hint dentro del recuadro */}
-                <Text style={[styles.hintText, { color: colors.textSecondary, marginTop: 12, textAlign: 'center' }]}>
-                  Modificar personajes y voces: abre
-                  <Text style={[styles.hintLink, { color: colors.primary }]} onPress={goToCharacterConfig}> Configuración de personajes</Text>.
-                </Text>
               </View>
             </>
           )}
+
+          {/* Opciones de modificación */}
+          <View style={{ marginTop: 16, borderTopWidth: 1, borderTopColor: colors.border, paddingTop: 16 }}>
+            <Text style={[styles.hintText, { color: colors.textSecondary, textAlign: 'center' }]}>
+              Modificar personajes y voces: abre
+              <Text style={[styles.hintLink, { color: colors.primary }]} onPress={goToCharacterConfig}> Configuración</Text>.
+            </Text>
+            <Text style={[styles.hintText, { color: colors.textSecondary, marginTop: 4, textAlign: 'center' }]}>
+              Modificar texto y emociones: vuelve a
+              <Text style={[styles.hintLink, { color: colors.primary }]} onPress={() => router.push({ pathname: '/scripts/[id]/review', params: { id: id as string, force: '1' } })}> Revisar Guion</Text>.
+            </Text>
+          </View>
         </View>
 
         {charactersLoadError && (

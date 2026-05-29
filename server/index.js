@@ -718,7 +718,7 @@ Idioma: Español. Tono: directo, técnico, honesto. Sin eufemismos.`;
                 'Content-Type': 'application/json'
             },
             body: JSON.stringify({
-                model: "gpt-4o-audio-preview",
+                model: "gpt-audio",
                 modalities: ["text", "audio"],
                 audio: { voice: "alloy", format: "mp3" },
                 messages: [

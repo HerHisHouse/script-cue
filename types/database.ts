@@ -13,6 +13,9 @@ export interface Profile {
   username: string | null;  // <-- AÑADIDO (coincide con la DB)
   full_name: string | null; // <-- AÑADIDO (coincide con la DB)
   avatar_url: string | null; // <-- AÑADIDO (foto de perfil)
+  total_scripts_imported: number | null; // <-- AÑADIDO (para límite de guiones)
+  created_at?: string;
+  updated_at?: string;
 }
 
 // ** SCRIPT SIMPLIFICADO **
@@ -48,7 +51,7 @@ export interface Character {
   voice_gender: VoiceGender | null;
   color: string | null;
   voice_id: string | null; // ID de la voz seleccionada (ej: alloy, nova, echo)
-  voice_provider: 'openai' | 'elevenlabs' | 'system' | null; // Proveedor de la voz
+  voice_provider: 'openai' | 'elevenlabs' | 'system' | 'azure' | null; // Proveedor de la voz
   // Omitimos campos que aún no hemos añadido a la DB para evitar errores
   // voice_preset: VoicePreset;
   // line_count: number;
@@ -165,6 +168,20 @@ export interface ScriptAnalysis {
   updated_at: string;
 }
 
+export interface CustomAnalysisQuestion {
+  id: string;
+  question: string;
+  answer: string;
+}
+
+export interface CustomAnalysis {
+  id: string;
+  script_id: string;
+  user_id: string;
+  questions: CustomAnalysisQuestion[];
+  created_at: string;
+  updated_at: string;
+}
 
 // --- Tipo Principal de Base de Datos (ACTUALIZADO) ---
 // Refleja las interfaces simplificadas que SÍ tenemos en la DB
@@ -237,6 +254,12 @@ export interface Database {
         Row: ScriptAnalysis;
         Insert: Omit<ScriptAnalysis, 'id' | 'created_at' | 'updated_at'>;
         Update: Partial<Omit<ScriptAnalysis, 'id' | 'script_id' | 'user_id' | 'created_at' | 'updated_at'>>;
+        Relationships: [];
+      };
+      custom_analysis: {
+        Row: CustomAnalysis;
+        Insert: Omit<CustomAnalysis, 'id' | 'created_at' | 'updated_at'>;
+        Update: Partial<Omit<CustomAnalysis, 'id' | 'script_id' | 'user_id' | 'created_at' | 'updated_at'>>;
         Relationships: [];
       };
     };
