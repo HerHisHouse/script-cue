@@ -460,6 +460,20 @@ export default function CoachModeScreen() {
                 </View>
               </View>
             ))}
+            <TouchableOpacity
+                style={[styles.secondaryButton, { borderColor: colors.primary, marginTop: 24 }]}
+                onPress={() => {
+                  if (!selectedRecording) return;
+                  if (selectedRecording.type === 'video') {
+                    router.push(`/scripts/${id}/casting`);
+                  } else {
+                    router.push(`/scripts/${id}/studio-v2`);
+                  }
+                }}
+              >
+                <Repeat size={20} color={colors.primary} />
+                <Text style={[styles.secondaryButtonText, { color: colors.primary }]}>Nueva toma con este feedback</Text>
+            </TouchableOpacity>
           </View>
         );
       case 'comparacion':
