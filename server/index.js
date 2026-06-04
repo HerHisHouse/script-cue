@@ -666,7 +666,7 @@ El audio contiene voces de IA intercaladas con la voz del actor.
 Las voces de IA son sintéticas y NO deben ser analizadas bajo ningún concepto.
 Analiza EXCLUSIVAMENTE las intervenciones del personaje "${userCharacterName}" 
 que coincidan con la lista de "LÍNEAS ESPECÍFICAS" proporcionada abajo.
-Cualquier observación sobre líneas que NO pertenezcan a "${userCharacterName}" es un error grave.
+Cualquier observación o propuesta basada en líneas que NO pertenezcan a "${userCharacterName}" (es decir, líneas dichas por la IA u otro personaje) es un error gravísimo. Las propuestas deben centrarse ÚNICAMENTE en el texto y actuación de "${userCharacterName}".
 
 ${scriptContext}
 
@@ -681,6 +681,7 @@ Devuelve SOLO JSON válido con esta estructura exacta, sin markdown ni bloques d
     "ritmo": "Cómo fluye el texto y las pausas dramáticas."
   },
   "propuestas": [
+    // IMPORTANTE: DEBES generar un mínimo de 5 propuestas y un máximo de 8. Si el guion es muy corto, busca diferentes ángulos (físico, emocional, ritmo) para llegar a 5.
     {
       "titulo": "Título de la propuesta",
       "descripcion": "Instrucciones prácticas para probar en la siguiente toma."

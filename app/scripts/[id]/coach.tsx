@@ -617,13 +617,7 @@ export default function CoachModeScreen() {
               </View>
 
               <Text style={[styles.modalText, { color: colors.text }]}>
-                El Modo Escena es un laboratorio creativo donde puedes explorar tu personaje desde nuevos ángulos.
-              </Text>
-              <Text style={[styles.modalText, { color: colors.text, marginTop: 12 }]}>
-                A partir de una grabación tuya, la IA propone ejercicios prácticos para investigar la escena de formas distintas.
-              </Text>
-              <Text style={[styles.modalText, { color: colors.text, marginTop: 12 }]}>
-                No es una evaluación: es una herramienta de exploración.
+                El modo Escena es una herramienta de entrenamiento para explorar personajes y escenas desde distintas perspectivas. Diseñada para complementar el estudio y la preparación actoral, no para sustituir la formación profesional.
               </Text>
 
               <TouchableOpacity
@@ -662,7 +656,7 @@ export default function CoachModeScreen() {
         <TouchableOpacity onPress={() => setSelectedRecording(null)} style={styles.backButton}>
           <ArrowLeft size={24} color={colors.text} />
         </TouchableOpacity>
-        <Text style={[styles.headerTitle, { color: colors.text }]}>Análisis</Text>
+        <Text style={[styles.headerTitle, { color: colors.text }]}>Análisis de la escena</Text>
         <TouchableOpacity
           onPress={() => Alert.alert('Modo Escena', 'Parte de una grabación y recibe propuestas para explorar tu personaje desde ángulos distintos. No es una evaluación: es un laboratorio.')}
           style={styles.backButton}
@@ -717,7 +711,7 @@ export default function CoachModeScreen() {
                 ) : (
                   <>
                     <Sparkles size={20} color="#fff" />
-                    <Text style={styles.analyzeButtonText}>Analizar con Escena</Text>
+                    <Text style={styles.analyzeButtonText}>Analizar</Text>
                   </>
                 )}
               </TouchableOpacity>
@@ -760,39 +754,7 @@ export default function CoachModeScreen() {
             {/* CONTENT */}
             {renderAnalysisContent()}
 
-            {/* FOOTER ACTION */}
-            <View style={{ padding: rp(20) }}>
-              <TouchableOpacity
-                style={[styles.secondaryButton, { borderColor: colors.primary }]}
-                onPress={() => {
-                  if (!selectedRecording) return;
-                  // Navigate to Studio mode for audio, Casting mode for video
-                  if (selectedRecording.type === 'video') {
-                    router.push(`/scripts/${id}/casting`);
-                  } else {
-                    router.push(`/scripts/${id}/studio-v2`);
-                  }
-                }}
-              >
-                <Repeat size={20} color={colors.primary} />
-                <Text style={[styles.secondaryButtonText, { color: colors.primary }]}>Nueva toma con este feedback</Text>
-              </TouchableOpacity>
 
-              <TouchableOpacity
-                style={[styles.secondaryButton, { borderColor: 'transparent', marginTop: 8 }]}
-                onPress={() => startAnalysis()}
-                disabled={analyzing}
-              >
-                {analyzing ? (
-                  <ActivityIndicator size="small" color={colors.textSecondary} />
-                ) : (
-                  <RefreshCw size={20} color={colors.textSecondary} />
-                )}
-                <Text style={[styles.secondaryButtonText, { color: colors.textSecondary }]}>
-                  {analyzing ? 'Reanalizando...' : 'Volver a analizar'}
-                </Text>
-              </TouchableOpacity>
-            </View>
           </>
         )}
       </ScrollView>
