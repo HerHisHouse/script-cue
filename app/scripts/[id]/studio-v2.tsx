@@ -1994,7 +1994,7 @@ export default function StudioV2Screen() {
         return (
             <View style={[styles.container, styles.center, { backgroundColor: colors.background }]}>
                 <ActivityIndicator size="large" color={colors.primary} />
-                {isProcessing && <Text style={{ marginTop: 10, color: colors.text }}>Procesando audio...</Text>}
+                {isProcessing && <Text style={{ marginTop: 10, color: colors.text, textAlign: 'center', paddingHorizontal: 20 }}>Procesando audio. Estamos mezclado tu voz con la de la IA, dependiendo de si la escena es larga o de tu conexión puede tardar varios minutos.</Text>}
             </View>
         );
     }
