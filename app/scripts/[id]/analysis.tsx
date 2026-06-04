@@ -11,7 +11,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, useLocalSearchParams } from 'expo-router';
-import { ArrowLeft, FileText, Sparkles, Save, BookOpen } from 'lucide-react-native';
+import { ArrowLeft, FileText, Sparkles, Save, BookOpen, PenLine } from 'lucide-react-native';
 import { useTheme } from '@/contexts/ThemeContext';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/utils/supabase';
@@ -279,7 +279,7 @@ export default function AnalysisScreen() {
                             ¿Cómo quieres trabajar el análisis de esta escena?
                         </Text>
                         <Text style={[styles.infoDescription, { color: colors.textSecondary }]}>
-                            Puedes completar el análisis rellenando el formulario o puedes pedirle a la IA que lo rellene por ti.
+                            Puedes completar el análisis rellenando el formulario, pedirle a la IA que lo rellene por ti, o crear tu propio análisis personalizado.
                         </Text>
                     </View>
 
@@ -312,6 +312,15 @@ export default function AnalysisScreen() {
                             <Text style={styles.modeButtonText}>Análisis asistido por IA</Text>
                         </TouchableOpacity>
                     )}
+
+                    {/* Botón de análisis personalizado */}
+                    <TouchableOpacity
+                        style={[styles.modeButton, { backgroundColor: colors.primary }]}
+                        onPress={() => router.push(`/scripts/${id}/analysis/custom`)}
+                    >
+                        <PenLine size={24} color="#FFFFFF" />
+                        <Text style={styles.modeButtonText}>Análisis personalizado</Text>
+                    </TouchableOpacity>
                 </ScrollView>
             </SafeAreaView>
         );

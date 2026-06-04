@@ -1,12 +1,25 @@
 import 'react-native-gesture-handler';
 import { Stack, useRouter, useSegments } from 'expo-router';
 import React, { useEffect } from 'react';
-import { LogBox } from 'react-native';
+import { LogBox, Platform, PermissionsAndroid } from 'react-native';
 import { AuthProvider, useAuth } from '@/contexts/AuthContext';
 import { ThemeProvider } from '@/contexts/ThemeContext';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import * as ScreenOrientation from 'expo-screen-orientation';
 import { getSettings } from '@/utils/appSettings';
+import { Audio } from 'expo-av';
+import { Camera } from 'expo-camera';
+import * as ImagePicker from 'expo-image-picker';
+
+// Dynamic TrackPlayer import for Expo Go compatibility
+let TrackPlayer: any = null;
+let PlaybackService: any = null;
+try {
+  TrackPlayer = require('react-native-track-player').default;
+  PlaybackService = require('@/services/playbackService').PlaybackService;
+} catch (e) {
+  console.log('[_layout] TrackPlayer not available in this environment');
+}
 
 function AppRoot() {
   const { user, loading } = useAuth();
@@ -24,7 +37,8 @@ function AppRoot() {
   useEffect(() => {
     if (!loading) {
       const inAuthGroup = segments[0] === 'auth';
-      if (!user && !inAuthGroup) {
+      const inLegalGroup = segments[0] === 'legal';
+      if (!user && !inAuthGroup && !inLegalGroup) {
         router.replace('/auth');
       }
     }
@@ -44,6 +58,62 @@ function AppRoot() {
         console.error('Error setting initial orientation:', e);
       }
     })();
+  }, []);
+
+  // Solicitar permisos iniciales requeridos por la app
+  useEffect(() => {
+    (async () => {
+      try {
+        await Audio.requestPermissionsAsync();
+        await Camera.requestCameraPermissionsAsync();
+        await ImagePicker.requestMediaLibraryPermissionsAsync();
+        
+        if (Platform.OS === 'android' && Platform.Version >= 33) {
+          try {
+            const granted = await PermissionsAndroid.request('android.permission.POST_NOTIFICATIONS');
+            if (granted !== PermissionsAndroid.RESULTS.GRANTED) {
+              console.log('Permiso de notificaciones denegado, los controles en segundo plano pueden no funcionar.');
+            } else {
+              console.log('Permiso de notificaciones concedido.');
+            }
+          } catch (err) {
+            console.warn('Error al pedir permiso de notificaciones:', err);
+          }
+        }
+      } catch (e) {
+        console.error('Error solicitando permisos iniciales:', e);
+      }
+    })();
+  }, []);
+
+  // Inicializar TrackPlayer
+  useEffect(() => {
+    async function setupPlayer() {
+      if (!TrackPlayer) return;
+      try {
+        await TrackPlayer.setupPlayer();
+        const { AppKilledPlaybackBehavior, Capability } = require('react-native-track-player');
+        await TrackPlayer.updateOptions({
+          android: {
+            appKilledPlaybackBehavior: AppKilledPlaybackBehavior.StopPlaybackAndRemoveNotification,
+          },
+          capabilities: [
+            Capability.Play,
+            Capability.Pause,
+            Capability.SkipToNext,
+            Capability.SkipToPrevious,
+            Capability.SeekTo,
+            Capability.Stop,
+          ],
+          compactCapabilities: [Capability.Play, Capability.Pause, Capability.SkipToNext, Capability.SkipToPrevious],
+          notificationCapabilities: [Capability.Play, Capability.Pause, Capability.SkipToNext, Capability.SkipToPrevious],
+        });
+        console.log('[_layout] TrackPlayer setup successful');
+      } catch (error) {
+        console.warn('[_layout] TrackPlayer setup error (might be already initialized):', error);
+      }
+    }
+    setupPlayer();
   }, []);
 
   return (

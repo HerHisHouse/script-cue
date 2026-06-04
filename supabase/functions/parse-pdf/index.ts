@@ -3,6 +3,8 @@ import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "npm:@supabase/supabase-js@2.58.0";
 // Robust PDF text extraction
 import pdfParse from "npm:pdf-parse@1.1.1";
+import mammoth from "npm:mammoth";
+import { Buffer } from "node:buffer";
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
@@ -37,18 +39,18 @@ Deno.serve(async (req)=>{
     if (rawText && rawText.trim().length > 0) {
       text = rawText;
     } else {
-      // Extract text from PDF
-      let pdfBuffer = null;
+      // Extract text from File
+      let fileBuffer = null;
       if (filePath) {
         const { data, error } = await supabase.storage.from("scripts").download(filePath);
         if (error) throw error;
         if (typeof data.arrayBuffer === "function") {
           const buf = await data.arrayBuffer();
-          pdfBuffer = new Uint8Array(buf);
+          fileBuffer = new Uint8Array(buf);
         } else if (typeof data.stream === "function") {
           // Edge: some environments return a Response-like object
           const respBuf = await data.arrayBuffer();
-          pdfBuffer = new Uint8Array(respBuf);
+          fileBuffer = new Uint8Array(respBuf);
         } else {
           throw new Error("Unsupported file data type for parse-pdf (expected Blob/Response)");
         }
@@ -66,36 +68,49 @@ Deno.serve(async (req)=>{
         for(let i = 0; i < len; i++){
           bytes[i] = binaryString.charCodeAt(i);
         }
-        pdfBuffer = bytes;
+        fileBuffer = bytes;
       } else {
         throw new Error("No filePath, fileContent, or raw text provided");
       }
       // Validate before parsing
-      if (!pdfBuffer || pdfBuffer.byteLength === 0) {
-        throw new Error("PDF buffer is empty or invalid");
+      if (!fileBuffer || fileBuffer.byteLength === 0) {
+        throw new Error("File buffer is empty or invalid");
       }
-      const layoutPages: Array<{ width: number; height: number; items: Array<{ str: string; x: number; y: number; width: number; fontSize: number }> }> = [];
-      const parsedPdf = await pdfParse(pdfBuffer, {
-        pagerender: async (pageData: any) => {
-          const textContent = await pageData.getTextContent();
-          const viewport = pageData.getViewport({ scale: 1.0 });
-          const items = (textContent.items || []).map((it: any) => {
-            const t = it.transform || [0,0,0,0,0,0];
-            const x = t[4] || 0;
-            const y = t[5] || 0;
-            const a = t[0] || 0;
-            const b = t[1] || 0;
-            const fontSize = Math.sqrt(a * a + b * b);
-            return { str: it.str || '', x, y, width: it.width || 0, fontSize };
-          });
-          layoutPages.push({ width: viewport.width, height: viewport.height, items });
-          return items.map((i: any) => i.str).join(' ');
+      
+      const isDocx = fileName && fileName.toLowerCase().endsWith('.docx');
+      
+      if (isDocx) {
+        console.log("Parsing DOCX file...");
+        const result = await mammoth.extractRawText({ buffer: Buffer.from(fileBuffer) });
+        if (!result || !result.value || result.value.trim().length === 0) {
+          throw new Error("Failed to extract text from DOCX");
         }
-      });
-      if (!parsedPdf || !parsedPdf.text || parsedPdf.text.trim().length === 0) {
-        throw new Error("Failed to extract text from PDF");
+        text = result.value;
+      } else {
+        console.log("Parsing PDF file...");
+        const layoutPages: Array<{ width: number; height: number; items: Array<{ str: string; x: number; y: number; width: number; fontSize: number }> }> = [];
+        const parsedPdf = await pdfParse(fileBuffer, {
+          pagerender: async (pageData: any) => {
+            const textContent = await pageData.getTextContent();
+            const viewport = pageData.getViewport({ scale: 1.0 });
+            const items = (textContent.items || []).map((it: any) => {
+              const t = it.transform || [0,0,0,0,0,0];
+              const x = t[4] || 0;
+              const y = t[5] || 0;
+              const a = t[0] || 0;
+              const b = t[1] || 0;
+              const fontSize = Math.sqrt(a * a + b * b);
+              return { str: it.str || '', x, y, width: it.width || 0, fontSize };
+            });
+            layoutPages.push({ width: viewport.width, height: viewport.height, items });
+            return items.map((i: any) => i.str).join(' ');
+          }
+        });
+        if (!parsedPdf || !parsedPdf.text || parsedPdf.text.trim().length === 0) {
+          throw new Error("Failed to extract text from PDF");
+        }
+        text = parsedPdf.text;
       }
-      text = parsedPdf.text;
     }
     // STEP 1: Save raw text
     console.log("Saving raw text to script_raw...");
@@ -256,14 +271,52 @@ Deno.serve(async (req)=>{
 
         if (sceneError) throw sceneError;
 
+        const EMOTION_PATTERNS = {
+            whispering: [/susurr/i, /suave/i, /en voz baja/i, /whisper/i],
+            shouting:   [/grit/i, /vocea/i, /gritando/i, /a voces/i, /shout/i],
+            crying:     [/llor/i, /solloz/i, /entre lágrimas/i, /llorando/i],
+            laughing:   [/ríe/i, /carcajada/i, /riendo/i, /risas/i],
+            angry:      [/enfad/i, /furios/i, /irad/i, /rabios/i, /enojad/i],
+            excited:    [/emocionad/i, /entusiasmad/i, /eufóric/i, /nervios/i],
+            sad:        [/triste/i, /apagad/i, /melancól/i, /deprimid/i],
+            fearful:    [/mied/i, /aterrad/i, /pánic/i, /temblando/i],
+            tender:     [/tiern/i, /cariñ/i, /dulce/i, /ternura/i],
+            neutral:    [],
+        };
+
+        function extractEmotionFromText(rawText: string) {
+            const bracketMatch = rawText.match(/[\\(\\[]([^\\)\\]]+)[\\)\\]]/);
+            let emotion = 'neutral';
+            let detectedFrom;
+            let intensity = 0.5;
+
+            if (bracketMatch) {
+                detectedFrom = bracketMatch[0];
+                const innerText = bracketMatch[1];
+                for (const [emo, patterns] of Object.entries(EMOTION_PATTERNS)) {
+                    if (patterns.some(p => p.test(innerText))) {
+                        emotion = emo;
+                        intensity = 0.8;
+                        break;
+                    }
+                }
+            }
+            return { direction: { emotion, intensity, detectedFrom } };
+        }
+
         if (scene.content.length > 0) {
-            const linesToInsert = scene.content.map((line: any, idx: number) => ({
-                scene_id: sceneData.id,
-                character_name: line.characterName,
-                content: line.text,
-                order_index: idx,
-                prosody_hints: line.prosodyHints
-            }));
+            const linesToInsert = scene.content.map((line: any, idx: number) => {
+                const { direction } = extractEmotionFromText(line.text || '');
+                return {
+                    scene_id: sceneData.id,
+                    character_name: line.characterName,
+                    content: line.text,
+                    order_index: idx,
+                    prosody_hints: line.prosodyHints,
+                    voice_direction: direction.emotion === 'neutral' ? null : direction
+                };
+            });
+
 
             const { error: linesError } = await supabaseAdmin
                 .from('lines')
@@ -308,15 +361,16 @@ async function parseScreenplayWithOpenAI(text: string) {
     console.log('🤖 Starting OpenAI parsing for Studio Mode...');
     console.log(`📝 Text length: ${text.length} characters`);
 
-    const systemPrompt = `You are an expert screenplay parser. Your job is to extract ONLY the dialogue structure from a screenplay into JSON format.
+    const systemPrompt = `You are an expert screenplay parser. Your job is to extract dialogues AND action lines from a screenplay into JSON format.
     
     CRITICAL RULES:
-    1. Extract ONLY dialogues - ignore ALL action lines, scene descriptions, and transitions
-    2. Identify scenes by INT./EXT. headings
-    3. For each scene, extract ONLY the character names and their dialogue lines
-    4. INCLUDE parentheticals (stage directions) IN THE DIALOGUE TEXT - they provide important performance context
-       Example: "(susurrando) Esto es un secreto." should be kept as "(susurrando) Esto es un secreto."
-    5. Ignore ONLY character name modifiers like (CONT'D), (V.O.), (O.S.) that appear after the character name
+    1. Extract ALL dialogues and ALL action lines (scene descriptions/actions).
+    2. Ignore ONLY scene headers (INT./EXT.), transitions, or page numbers.
+    3. For each scene, extract the dialogues AND the action lines in the exact order they appear.
+    4. For action lines, set "characterName" to "ACCIÓN" and "text" to the action line content.
+    5. INCLUDE parentheticals (stage directions like (susurrando)) IN THE DIALOGUE TEXT. DO NOT extract parentheticals as action lines!
+       Example: "(susurrando) Esto es un secreto." -> dialogue text: "(susurrando) Esto es un secreto."
+    6. Ignore ONLY character name modifiers like (CONT'D), (V.O.), (O.S.) that appear after the character name.
     
     Output format:
     {
@@ -326,6 +380,10 @@ async function parseScreenplayWithOpenAI(text: string) {
           "heading": "INT. KITCHEN - DAY",
           "order_index": 0,
           "content": [
+            {
+              "characterName": "ACCIÓN",
+              "text": "John walks into the kitchen and sighs."
+            },
             {
               "characterName": "JOHN",
               "text": "(susurrando) Hello, how are you?",
@@ -344,9 +402,9 @@ async function parseScreenplayWithOpenAI(text: string) {
     
     IMPORTANT: 
     - Return ONLY valid JSON
-    - Include ALL dialogues from the script
-    - KEEP stage directions like (susurrando), (emocionado), (mirando a la ventana) in the dialogue text
-    - Each dialogue must have characterName, text, and prosodyHints
+    - Include ALL dialogues and actions from the script
+    - KEEP stage directions like (susurrando), (emocionado) in the dialogue text. DO NOT create "ACCIÓN" for them.
+    - Each content block must have characterName and text
     - Set hasQuestion=true if dialogue ends with "?"
     - Set hasExclamation=true if dialogue contains "!"`;
 
@@ -363,7 +421,7 @@ async function parseScreenplayWithOpenAI(text: string) {
             model: 'gpt-4o-mini',
             messages: [
                 { role: 'system', content: systemPrompt },
-                { role: 'user', content: `Extract all dialogues from this screenplay:\n\n${textToSend}` }
+                { role: 'user', content: `Extract all dialogues and actions from this screenplay:\n\n${textToSend}` }
             ],
             temperature: 0.1,
             response_format: { type: "json_object" }
@@ -869,6 +927,19 @@ function parseScreenplayFromLayout(layoutPages: Array<{ width: number; height: n
     }
     // Acción/descripción
     commitDialogue();
+    if (currentScene) {
+      currentScene.content.push({
+        characterName: 'ACCIÓN',
+        text,
+        prosodyHints: {
+          hasQuestion: false,
+          hasExclamation: false,
+          emphasis: 0,
+          emotion: 'neutral',
+          pace: 'normal'
+        }
+      });
+    }
     structuredLines.push({ type: 'action', text, x: normX, page: line.page });
     activeCharacter = null;
   }
@@ -910,14 +981,14 @@ function simpleRegexFallback(rawText: string) {
 async function callOpenAIExtract(text: string) {
   const apiKey = Deno.env.get('OPENAI_API_KEY');
   if (!apiKey) throw new Error('OPENAI_API_KEY not configured');
-  const systemPrompt = `You are a reliable script parser. Given raw text extracted from a screenplay PDF, return a JSON object with only the dialogues.
+  const systemPrompt = `You are a reliable script parser. Given raw text extracted from a screenplay PDF, return a JSON object with dialogues AND action lines.
 Rules:
 - Ignore scene headers (INT./EXT., DAY, NIGHT, etc.).
-- Ignore parenthetical directions (e.g., (whispering)).
-- Ignore stage directions and actions (usually prose lines, not centered).
+- Ignore parenthetical directions (e.g., (whispering)) if they are standalone, or include them in the dialogue.
+- Extract action lines and assign the characterName "ACCIÓN" to them.
 - Identify character names (usually uppercase) and associate the immediate following lines as that character's dialogue.
 - Output a JSON with top-level keys: success (bool), sceneCount (number), scenes (array).
-- scenes: each item { character: "NAME", dialogue: "line text", sceneNumber: n }.
+- scenes: each item { character: "NAME", dialogue: "line text", sceneNumber: n }. For actions, character should be "ACCIÓN".
 - If you are not certain, try conservative extraction (better to omit ambiguous text than include wrong dialogue).
 Return ONLY the JSON object — no extra text.`;
   const userPrompt = `\nParse the following text and extract dialogues only. Preserve the order. Text below:\n---\n${text}\n---`;
@@ -1000,6 +1071,10 @@ function fallbackBuildDialoguesFromText(fullText: string) {
     }
     if (activeCharacter) {
       buffer.push(raw);
+    } else {
+      commit();
+      currentScene.content.push({ characterName: 'ACCIÓN', text: raw });
+      structuredLines.push({ type: 'action', text: raw });
     }
   }
 

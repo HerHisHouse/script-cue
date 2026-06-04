@@ -35,8 +35,8 @@ const faqs: FAQ[] = [
     },
     {
         category: 'Modos de Estudio',
-        question: '¿Qué es el Modo Coach?',
-        answer: 'El Modo Coach es tu entrenador personal de actuación. Después de practicar tus líneas, la IA te da feedback personalizado sobre:\n\n• Precisión del texto\n• Tono y emoción\n• Ritmo y timing\n• Sugerencias de mejora',
+        question: '¿Qué es el Modo Escena?',
+        answer: 'El Modo Escena es un laboratorio creativo donde puedes explorar tu personaje desde nuevos ángulos. A partir de una grabación tuya, la IA propone ejercicios prácticos para investigar la escena de formas distintas. No es una evaluación: es una herramienta de exploración.',
     },
     {
         category: 'Modos de Estudio',

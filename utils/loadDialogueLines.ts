@@ -44,18 +44,25 @@ export async function loadDialogueLines(scriptId: string): Promise<DialogueLine[
                 (c) => c.name.toLowerCase().trim() === line.character_name.toLowerCase().trim()
             );
 
+            const isAction = line.character_name.toUpperCase() === 'ACCIÓN';
+
+            // Convert parentheticals to brackets so they show up in UI and get sent to TTS
+            const textWithBrackets = line.content.replace(/\(([^)]+)\)/g, '[$1]');
+
             return {
                 id: line.id,
-                characterId: character?.id || `unknown-${line.character_name}`,
+                characterId: character?.id || (isAction ? 'action-card' : `unknown-${line.character_name}`),
                 characterName: line.character_name,
-                text: line.content,
-                cleanText: line.content.replace(/\([^)]*\)/g, '').replace(/\s+/g, ' ').trim(),
-                color: character?.color || '#6B7280',
+                text: textWithBrackets,
+                cleanText: textWithBrackets.replace(/[\(\[][^\)\]]*[\)\]]/g, '').replace(/\s+/g, ' ').trim(),
+                color: isAction ? '#683a79' : (character?.color || '#6B7280'),
                 voiceGender: character?.voice_gender || 'neutral',
                 voicePreset: 'natural',
                 isUserCharacter: character?.is_user_character || false,
                 orderIndex: index,
                 sceneId: line.scenes.id,
+                isAction,
+                voiceDirection: line.voice_direction,
             };
         });
 

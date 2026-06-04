@@ -25,7 +25,7 @@ export default function TermsScreen() {
                     <Text style={[styles.date, { color: colors.textSecondary }]}>Última actualización: 10 de diciembre de 2024</Text>
 
                     <Text style={[styles.paragraph, { color: colors.text }]}>
-                        Bienvenido/a a Script Cue.{'\n'}
+                        Te doy la bienvenida a Script Cue.{'\n'}
                         Al crear una cuenta y utilizar nuestros servicios, aceptas estos Términos y Condiciones de Uso. Por favor, léelos cuidadosamente. Si no estás de acuerdo, no debes utilizar la Aplicación.
                     </Text>
 
@@ -37,7 +37,7 @@ export default function TermsScreen() {
                         • análisis impulsados por inteligencia artificial,{'\n'}
                         • almacenamiento de archivos,{'\n'}
                         • organización de proyectos y contenido personal,{'\n'}
-                        • modos interactivos de práctica (modo estudio, modo memory, modo coach, modo coche, modo casting, etc.).{'\n\n'}
+                        • modos interactivos de práctica (modo estudio, modo memory, modo escena, modo coche, modo casting, etc.).{'\n\n'}
                         La Aplicación no sustituye a un coach profesional, escuela de interpretación ni asesoramiento especializado.
                     </Text>
 
@@ -106,7 +106,7 @@ export default function TermsScreen() {
                         El usuario acepta este riesgo inherente al uso de servicios en línea.
                     </Text>
 
-                    <Text style={[styles.sectionTitle, { color: colors.text }]}>8. Limitación de Responsabilidad</Text>
+                    <Text style={[styles.sectionTitle, { color: colors.text }]}>8. Limitaciones de Responsabilidad</Text>
                     <Text style={[styles.paragraph, { color: colors.text }]}>
                         La Aplicación se ofrece "tal cual es".{'\n\n'}
                         No garantizamos que:{'\n'}
@@ -115,9 +115,33 @@ export default function TermsScreen() {
                         • Los resultados de la IA sean siempre correctos.{'\n'}
                         • El almacenamiento remoto esté disponible 24/7.{'\n\n'}
                         En ningún caso seremos responsables por:{'\n'}
-                        • pérdida de grabaciones,{'\n'}
-                        • daños indirectos o emergentes,{'\n'}
-                        • interpretaciones incorrectas derivadas del uso de la IA.
+                        • Pérdida de grabaciones.{'\n'}
+                        • Daños indirectos o emergentes.{'\n'}
+                        • Interpretaciones incorrectas derivadas del uso de la IA.{'\n'}
+                        • Pérdida de datos durante sincronización o almacenamiento en la nube.{'\n'}
+                        • Fallos de terceros (Supabase, APIs de IA).{'\n'}
+                        • Uso indebido de resultados de IA en audiciones o castings.{'\n'}
+                        • Daños derivados de la interpretación de feedback de IA.{'\n'}
+                        • Interrupciones del servicio por mantenimiento o fuerza mayor.
+                    </Text>
+
+                    <Text style={[styles.sectionTitle, { color: colors.text }]}>8.1 Indemnización</Text>
+                    <Text style={[styles.paragraph, { color: colors.text }]}>
+                        El usuario acepta indemnizar y eximir a Script Cue de cualquier reclamo derivado de:{'\n'}
+                        • Contenido que el usuario suba que infrinja derechos de terceros.{'\n'}
+                        • Uso de la App para violar leyes aplicables.{'\n'}
+                        • Compartir grabaciones sin autorización de otros actores.
+                    </Text>
+
+                    <Text style={[styles.sectionTitle, { color: colors.text }]}>8.2 Severabilidad</Text>
+                    <Text style={[styles.paragraph, { color: colors.text }]}>
+                        Si alguna cláusula es inválida, el resto permanece en vigor.
+                    </Text>
+
+                    <Text style={[styles.sectionTitle, { color: colors.text }]}>8.3 Ley Aplicable</Text>
+                    <Text style={[styles.paragraph, { color: colors.text }]}>
+                        Estos términos se rigen por las leyes de España.{'\n'}
+                        Cualquier disputa se resolverá en los tribunales de Madrid.
                     </Text>
 
                     <Text style={[styles.sectionTitle, { color: colors.text }]}>9. Suspensión o Eliminación de Cuenta</Text>

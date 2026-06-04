@@ -382,7 +382,7 @@ export function VoiceSelector({
                                 {getProviderEmoji()} {provider === 'openai'
                                     ? 'Voces de alta calidad optimizadas para múltiples idiomas'
                                     : provider === 'elevenlabs'
-                                        ? 'Voces expresivas con personalización avanzada'
+                                        ? 'Voces con personalización de emociones avanzada'
                                         : provider === 'azure'
                                             ? 'Voces realistas de Microsoft Azure AI'
                                             : 'Voces offline del dispositivo'}

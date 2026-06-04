@@ -1,0 +1,104 @@
+<USER_REQUEST>
+Vamos a rediseñar el modo Coach.
+
+RENOMBRAR Y REDISEÑAR MODO COACH → MODO ESCENA
+
+El Modo Coach pasa a llamarse Modo "ESCENA".
+El flujo técnico (grabación → servidor → OpenAI → JSON → UI) 
+se mantiene exactamente igual. Solo cambiamos:
+1. El nombre en toda la UI
+2. El prompt que se envía a OpenAI
+3. La estructura del JSON de respuesta
+4. Las pestañas y etiquetas en pantalla
+
+---
+
+## CAMBIO 1: RENOMBRAR EN TODA LA APP
+
+Buscar y reemplazar en TODOS los archivos:
+
+- "Modo Coach" → "Modo Escena"
+- "coach" (como label UI) → "ESCENA" en la pantalla "Resumen"
+- El archivo coach.tsx NO se renombra para no romper rutas
+- Los nombres de tabla en Supabase (coach_feedback) NO se cambian
+- Los endpoints del servidor NO se cambian
+
+Solo cambia el texto visible al usuario, nada estructural.
+
+---
+
+## CAMBIO 2: NUEVO PROMPT EN server/index.js
+
+Localizar el systemPrompt en server/index.js (línea ~659).
+Reemplazar el contenido completo por este nuevo prompt:
+
+```javascript
+const systemPrompt = `Eres un compañero de exploración escénica con experiencia en laboratorio teatral y dirección de ensayos. Tu papel no es evaluar ni corregir: es abrir caminos, proponer alternativas y estimular la investigación del actor sobre su personaje.
+
+No eres un profesor que examina. Eres alguien que ha visto la escena y propone: "¿Y si lo pruebas así?"
+
+Tu lenguaje es activo, directo y propositivo. Usas palabras como: prueba, explora, experimenta, intenta, observa, juega. Nunca usas: deberías, has fallado, necesitas mejorar, incorrecto, mal.
+
+REGLA CRÍTICA (su incumplimiento invalida el análisis):
+El audio contiene voces de IA intercaladas con la voz del actor.
+Las voces de IA son sintéticas y NO deben ser analizadas bajo ningún concepto.
+Analiza EXCLUSIVAMENTE las intervenciones del personaje "${userCharacterName}" 
+que coincidan con la lista de "LÍNEAS ESPECÍFICAS" proporcionada.
+Cualquier observación sobre líneas que NO pertenezcan a "${userCharacterName}" es un error grave.
+
+${scriptContext}
+
+${p
+<truncated 6034 bytes>
+ar."
+
+AHORA: "Modo Escena
+Parte de una grabación y recibe propuestas para explorar tu personaje desde ángulos distintos. No es una evaluación: es un laboratorio."
+
+- Captura 4: Al entrar en una grabación:
+* Sustituir el mensaje de (i) por el mismo de la pantalla anterior
+Sustituir el mensaje:
+
+ANTES: "La lA analizará tu ritmo, entonación, pausas y carga emocional para darte feedback."
+
+AHORA: "La IA analizará la grabación para darte feedback y propuestas de actuación"
+
+* Cambiar el texto del botón
+ANTES: "Analizar con Coach"
+
+AHORA: "Analizar con Escena"
+
+---
+
+## VERIFICACIÓN ANTES DE PUSH
+
+✓ "Modo Coach" no aparece en ningún texto visible al usuario
+✓ Las 3 pestañas son: Feedback, Propuestas, Comparación
+✓ Feedback muestra exactamente 4 bloques: presencia, objetivo, 
+  relación, ritmo
+✓ Propuestas renderiza entre 5 y 8 tarjetas numeradas
+✓ Comparación maneja correctamente el caso null (sin toma anterior)
+✓ El nombre del archivo coach.tsx NO ha cambiado
+✓ Los endpoints y tablas de Supabase NO han cambiado
+
+git add .
+git commit -m "refactor: modo Coach → modo Escena, nuevo enfoque exploratorio"
+git push
+
+Dame el plan y las dudas que tengas antes de implementarlo.
+
+</USER_REQUEST>
+<ADDITIONAL_METADATA>
+The current local time is: 2026-06-04T13:38:00+02:00.
+
+The user's current state is as follows:
+Other open documents:
+- /Users/alexdiaz/Documents/RS/run_sql.js (LANGUAGE_JAVASCRIPT)
+- /Users/alexdiaz/Documents/RS/test-html-format.js (LANGUAGE_JAVASCRIPT)
+- /Users/alexdiaz/Documents/RS/app/scripts/[id]/editor.tsx (LANGUAGE_TSX)
+- /Users/alexdiaz/Documents/RS/components/VoiceSelector.tsx (LANGUAGE_TSX)
+- /Users/alexdiaz/Documents/RS/app/scan-script.tsx (LANGUAGE_TSX)
+</ADDITIONAL_METADATA>
+<USER_SETTINGS_CHANGE>
+The user changed setting `Model Selection` from Gemini 3.1 Pro (Low) to Gemini 3.1 Pro (High). No need to comment on this change if the user doesn't ask about it. If reporting what model you are, please use a human readable name instead of the exact string.
+</USER_SETTINGS_CHANGE>

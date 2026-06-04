@@ -668,8 +668,8 @@ export default function ReinforcementScreen() {
                         {/* Mapear errores antiguos a nuevos tipos */}
                         {(currentItem.reason === 'ghost_error' || currentItem.reason === 'wrong_word' || currentItem.reason === 'revealed' || currentItem.reason === 'timeout') && renderGhostMode()}
                         {(currentItem.reason === 'echo_error' || currentItem.reason === 'poor_match') && renderEchoMode()}
-                        {(currentItem.reason === 'quiz_error' || currentItem.reason === 'quiz') && renderQuizMode()}
-                        {!['ghost_error', 'echo_error', 'quiz_error', 'quiz', 'wrong_word', 'revealed', 'timeout', 'poor_match'].includes(currentItem.reason) && (
+                        {(currentItem.reason === 'quiz_error') && renderQuizMode()}
+                        {!['ghost_error', 'echo_error', 'quiz_error', 'wrong_word', 'revealed', 'timeout', 'poor_match'].includes(currentItem.reason) && (
                             <View style={styles.content}>
                                 <Text style={{ color: colors.text }}>Tipo de error no soportado: {currentItem.reason}</Text>
                             </View>

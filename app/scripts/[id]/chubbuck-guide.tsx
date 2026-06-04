@@ -241,7 +241,7 @@ export default function ChubbuckGuideScreen() {
                     </Text>
                     <View style={styles.modesList}>
                         <Text style={[styles.modeItem, { color: colors.text }]}>• Modo Estudio</Text>
-                        <Text style={[styles.modeItem, { color: colors.text }]}>• Modo Coach</Text>
+                        <Text style={[styles.modeItem, { color: colors.text }]}>• Modo Escena</Text>
                         <Text style={[styles.modeItem, { color: colors.text }]}>• Modo Memory</Text>
                         <Text style={[styles.modeItem, { color: colors.text }]}>• Grabaciones</Text>
                     </View>

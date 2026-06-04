@@ -218,8 +218,10 @@ export default function CarModeScreen() {
       try {
         setLoading(true);
         console.log('[Car Mode] Loading dialogue lines for script:', id);
-        const lines = await loadDialogueLines(id as string);
-        console.log('[Car Mode] Loaded lines:', lines.length);
+        const allLines = await loadDialogueLines(id as string);
+        // Remove action lines from Car Mode entirely to prevent TTS errors
+        const lines = allLines.filter(line => !line.isAction && line.characterName !== 'ACCIÓN');
+        console.log('[Car Mode] Loaded playable lines:', lines.length);
         setDialogueLines(lines);
 
         // Load characters
@@ -414,17 +416,21 @@ export default function CarModeScreen() {
 
     if (effectiveProvider === 'openai' || effectiveProvider === 'elevenlabs' || effectiveProvider === 'azure') {
       try {
-        const Crypto = await import('expo-crypto');
-        // Use cleanText (without stage directions) for TTS
-        const textHash = await Crypto.digestStringAsync(
-          Crypto.CryptoDigestAlgorithm.SHA256,
-          line.cleanText
-        );
-
         if (mySequence !== sequenceRef.current) return;
 
-        console.log('[Car Mode] Checking cache for line:', line.id);
-        const audioUri = await getCachedAudio(line.id, effectiveProvider, voiceId, textHash);
+        const { data: { user: currentUser } } = await supabase.auth.getUser();
+        if (!currentUser) throw new Error('No user');
+
+        console.log('[Car Mode] Getting/generating audio for line:', line.id);
+        const audioUri = await generateAndCacheAudio(
+          id as string,
+          line.id,
+          line.characterName,
+          line.text,
+          { provider: effectiveProvider, voiceId },
+          currentUser.id,
+          line.voiceDirection
+        );
 
         if (mySequence !== sequenceRef.current) return;
 
@@ -699,7 +705,8 @@ export default function CarModeScreen() {
               provider: voiceConfig.provider,
               voiceId: voiceConfig.voiceId,
             },
-            currentUser.id
+            currentUser.id,
+            line.voiceDirection
           );
         } catch (e) {
           console.warn(`[Car Mode] Failed to cache line ${line.id}:`, e);
@@ -789,27 +796,16 @@ export default function CarModeScreen() {
           continue;
         }
 
-        // Generate hash for cache lookup
-        const textHash = await Crypto.digestStringAsync(
-          Crypto.CryptoDigestAlgorithm.SHA256,
-          line.cleanText
+        console.log(`[GenerateScene] Getting/generating audio for line ${i + 1}/${totalLines}`);
+        const audioUri = await generateAndCacheAudio(
+          id as string,
+          line.id,
+          line.characterName,
+          line.text, // Must be the raw text so the adapter detects the tags
+          { provider: voiceConfig.provider as 'openai' | 'elevenlabs' | 'azure' | 'system', voiceId: voiceConfig.voiceId },
+          currentUser.id,
+          line.voiceDirection // Important: pass the DB saved emotion
         );
-
-        // Check cache first
-        let audioUri = await getCachedAudio(line.id, voiceConfig.provider, voiceConfig.voiceId, textHash);
-
-        // If not in cache, generate it
-        if (!audioUri) {
-          console.log(`[GenerateScene] Generating audio for line ${i + 1}/${totalLines}`);
-          audioUri = await generateAndCacheAudio(
-            id as string, // scriptId
-            line.id, // lineId
-            line.characterName, // characterName
-            line.cleanText, // text
-            { provider: voiceConfig.provider as 'openai' | 'elevenlabs' | 'azure' | 'system', voiceId: voiceConfig.voiceId }, // voiceConfig
-            currentUser.id // userId
-          );
-        }
 
         if (audioUri) {
           audioSegments.push({ uri: audioUri, index: i, characterName: line.characterName });
@@ -981,7 +977,7 @@ export default function CarModeScreen() {
                   }}
                 >
                   <Text style={styles.dropdownHeaderText}>
-                    {getProviderEmoji(config.provider)} {config.provider === 'openai' ? 'OpenAI' : config.provider === 'elevenlabs' ? 'ElevenLabs' : config.provider === 'azure' ? 'Azure' : 'Voces del sistema'}
+                    {getProviderEmoji(config.provider)} {config.provider === 'system' ? 'Sistema (Gratis)' : config.provider === 'openai' ? 'OpenAI (Premium)' : config.provider === 'azure' ? 'Azure (Premium)' : 'ElevenLabs (Premium)'}
                   </Text>
                   <ChevronDown size={20} color="#AAA" />
                 </TouchableOpacity>
@@ -989,14 +985,35 @@ export default function CarModeScreen() {
                 {expandedCharacter === config.characterName && (
                   <ScrollView style={styles.dropdownList} nestedScrollEnabled={true}>
                     <TouchableOpacity
+                      style={[styles.dropdownItem, config.provider === 'system' && styles.dropdownItemSelected]}
+                      onPress={() => {
+                        const spanishVoice = availableVoices.find(v => v.language.startsWith('es'));
+                        updateCharacterVoice(config.characterName, 'system', spanishVoice?.identifier || '');
+                        setExpandedCharacter(null);
+                      }}
+                    >
+                      <Text style={styles.dropdownItemText}>📱 Sistema (Gratis)</Text>
+                      <Text style={styles.providerDescription}>Voces integradas del dispositivo</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
                       style={[styles.dropdownItem, config.provider === 'openai' && styles.dropdownItemSelected]}
                       onPress={() => {
                         updateCharacterVoice(config.characterName, 'openai', 'nova');
                         setExpandedCharacter(null);
                       }}
                     >
-                      <Text style={styles.dropdownItemText}>🤖 OpenAI</Text>
+                      <Text style={styles.dropdownItemText}>🤖 OpenAI (Premium)</Text>
                       <Text style={styles.providerDescription}>Voces de alta calidad</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={[styles.dropdownItem, config.provider === 'azure' && styles.dropdownItemSelected]}
+                      onPress={() => {
+                        updateCharacterVoice(config.characterName, 'azure', 'es-ES-AlvaroNeural');
+                        setExpandedCharacter(null);
+                      }}
+                    >
+                      <Text style={styles.dropdownItemText}>🌐 Azure (Premium)</Text>
+                      <Text style={styles.providerDescription}>Voces realistas de Microsoft Azure</Text>
                     </TouchableOpacity>
                     <TouchableOpacity
                       style={[styles.dropdownItem, config.provider === 'elevenlabs' && styles.dropdownItemSelected]}
@@ -1006,29 +1023,8 @@ export default function CarModeScreen() {
                         setExpandedCharacter(null);
                       }}
                     >
-                      <Text style={styles.dropdownItemText}>🎭 ElevenLabs</Text>
+                      <Text style={styles.dropdownItemText}>🎭 ElevenLabs (Premium)</Text>
                       <Text style={styles.providerDescription}>Voces ultra realistas</Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity
-                      style={[styles.dropdownItem, config.provider === 'azure' && styles.dropdownItemSelected]}
-                      onPress={() => {
-                        updateCharacterVoice(config.characterName, 'azure', 'es-ES-AlvaroNeural');
-                        setExpandedCharacter(null);
-                      }}
-                    >
-                      <Text style={styles.dropdownItemText}>🌐 Azure</Text>
-                      <Text style={styles.providerDescription}>Voces realistas de Microsoft Azure</Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity
-                      style={[styles.dropdownItem, config.provider === 'system' && styles.dropdownItemSelected]}
-                      onPress={() => {
-                        const spanishVoice = availableVoices.find(v => v.language.startsWith('es'));
-                        updateCharacterVoice(config.characterName, 'system', spanishVoice?.identifier || '');
-                        setExpandedCharacter(null);
-                      }}
-                    >
-                      <Text style={styles.dropdownItemText}>📱 Voces del sistema</Text>
-                      <Text style={styles.providerDescription}>Voces integradas del dispositivo</Text>
                     </TouchableOpacity>
                   </ScrollView>
                 )}

@@ -68,12 +68,8 @@ export default function CastingModeScreen() {
     const loadCamera = () => {
       try {
         let component;
-        if (isExpoGo) {
-          // Use @ alias or relative path, but handle potential undefined
-          component = require('../../../components/ExpoCameraView');
-        } else {
-          component = require('../../../components/NativeCameraView');
-        }
+        // Siempre usamos ExpoCameraView porque expo-camera funciona tanto en Go como en build nativo
+        component = require('../../../components/ExpoCameraView');
         
         if (component) {
           CameraComponent.current = component.default || component;
@@ -638,6 +634,11 @@ export default function CastingModeScreen() {
     const buildConfiguredLines = () => {
       const result: Array<DialogueLine | ActionCard> = [];
 
+      const actionsBefore = sceneConfig?.actionCards.filter(ac => ac.afterLineId === 'start') || [];
+      for (const action of actionsBefore) {
+        result.push(action);
+      }
+
       for (const line of dialogueLines) {
         // Add the dialogue line with any timing adjustments
         const timingAdjustment = sceneConfig?.lineTimings.find(lt => lt.lineId === line.id)?.timingAdjustment || 0;
@@ -1111,14 +1112,20 @@ export default function CastingModeScreen() {
     const item = configuredLines[currentIndex];
     if (!item) return;
 
-    // Check if this is an action card
-    const isAction = 'afterLineId' in item;
+    // Check if this is an action card or a DB action
+    const isManualAction = 'afterLineId' in item;
+    const isDbAction = (item as any).isAction === true;
+    const isAction = isManualAction || isDbAction;
 
     if (isAction) {
-      // Action card: just wait for the configured duration and advance
-      const action = item as ActionCard;
-      const duration = action.duration * 1000; // Convert to ms
-      console.log(`[Casting] Action card: waiting ${action.duration}s`);
+      // Action: just wait for the configured duration and advance
+      let duration = 0;
+      if (isManualAction) {
+        duration = (item as ActionCard).duration * 1000;
+      } else {
+        duration = getLineDuration(item as DialogueLine) * 1000;
+      }
+      console.log(`[Casting] Action card: waiting ${duration / 1000}s`);
 
       silenceTimerRef.current = setTimeout(() => {
         nextLine();
@@ -1932,38 +1939,108 @@ export default function CastingModeScreen() {
 
           {/* Lines List */}
           <ScrollView style={styles.configList} contentContainerStyle={{ paddingBottom: rp(100) }}>
-            {configuredLines.map((item, index) => {
-              // Check if this is an action card
-              const isAction = 'afterLineId' in item;
+            
+            {/* Add Action Button at the very beginning */}
+            {addingActionAfterLineId === 'start' ? (
+              <View style={styles.addActionForm}>
+                <TextInput
+                  style={[styles.addActionInput, { color: colors.text, borderColor: colors.border }]}
+                  placeholder="Describe la acción..."
+                  placeholderTextColor={colors.textSecondary}
+                  value={newActionText}
+                  onChangeText={setNewActionText}
+                  autoFocus
+                />
+                <View style={styles.addActionButtons}>
+                  <TouchableOpacity
+                    onPress={() => { setAddingActionAfterLineId(null); setNewActionText(''); }}
+                    style={[styles.addActionCancelBtn, { borderColor: colors.border }]}
+                  >
+                    <Text style={{ color: colors.textSecondary }}>Cancelar</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    onPress={() => addActionCard('start', newActionText)}
+                    style={styles.addActionConfirmBtn}
+                  >
+                    <Text style={{ color: '#fff', fontWeight: '600' }}>Añadir</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+            ) : (
+              <TouchableOpacity
+                onPress={() => setAddingActionAfterLineId('start')}
+                style={styles.addActionBtn}
+              >
+                <Plus size={rp(14)} color={colors.textSecondary} />
+                <Text style={[styles.addActionText, { color: colors.textSecondary }]}>Añadir acción</Text>
+              </TouchableOpacity>
+            )}
 
-              if (isAction) {
-                const action = item as ActionCard;
+            {configuredLines.map((item, index) => {
+              const isManualAction = 'afterLineId' in item;
+              const isScriptAction = 'isAction' in item && (item as DialogueLine).isAction === true;
+
+              if (isManualAction || isScriptAction) {
+                const actionId = item.id;
+                const text = isManualAction ? (item as ActionCard).text : (item as DialogueLine).text;
+                let duration = 0;
+                
+                if (isManualAction) {
+                  duration = (item as ActionCard).duration;
+                } else {
+                  duration = getLineDuration(item as DialogueLine);
+                }
+
+                const adjustment = isScriptAction ? (sceneConfig?.lineTimings.find(lt => lt.lineId === actionId)?.timingAdjustment || 0) : 0;
+                
+                const handleMinus = () => {
+                   if (isManualAction) {
+                      updateActionDuration(actionId, duration - 1);
+                   } else {
+                      adjustLineTiming(actionId, adjustment - 1);
+                   }
+                };
+                const handlePlus = () => {
+                   if (isManualAction) {
+                      updateActionDuration(actionId, duration + 1);
+                   } else {
+                      adjustLineTiming(actionId, adjustment + 1);
+                   }
+                };
+
                 return (
-                  <View key={action.id} style={styles.actionCard}>
+                  <View key={actionId} style={[styles.actionCard, { backgroundColor: 'transparent', borderLeftWidth: 2, borderWidth: 2, borderStyle: 'dashed', borderColor: colors.primary }]}>
                     <View style={styles.actionCardHeader}>
-                      <Clapperboard color="#F59E0B" size={rp(16)} />
-                      <Text style={styles.actionCardLabel}>ACCIÓN</Text>
-                      <TouchableOpacity onPress={() => removeActionCard(action.id)} style={styles.deleteActionBtn}>
-                        <Trash2 color="#EF4444" size={rp(16)} />
-                      </TouchableOpacity>
+                      <Clapperboard color={colors.primary} size={rp(16)} />
+                      <Text style={[styles.actionCardLabel, { color: colors.primary }]}>ACCIÓN</Text>
+                      {isManualAction && (
+                        <TouchableOpacity onPress={() => removeActionCard(actionId)} style={styles.deleteActionBtn}>
+                          <Trash2 color="#EF4444" size={rp(16)} />
+                        </TouchableOpacity>
+                      )}
                     </View>
-                    <Text style={styles.actionCardText}>({action.text})</Text>
+                    <Text style={[styles.actionCardText, { color: colors.text }]}>({text})</Text>
                     <View style={styles.actionTimingRow}>
                       <TouchableOpacity
-                        onPress={() => updateActionDuration(action.id, action.duration - 1)}
-                        style={styles.timingBtn}
+                        onPress={handleMinus}
+                        style={[styles.timingBtn, { backgroundColor: 'rgba(0,0,0,0.2)' }]}
                       >
-                        <Minus size={rp(16)} color="#fff" />
+                        <Minus size={rp(16)} color={colors.text} />
                       </TouchableOpacity>
                       <View style={styles.timingDisplay}>
-                        <Timer size={rp(14)} color="#F59E0B" />
-                        <Text style={styles.timingText}>{action.duration}s</Text>
+                        <Timer size={rp(14)} color={colors.primary} />
+                        <Text style={[styles.timingText, { color: colors.text }]}>{duration}s</Text>
+                        {isScriptAction && adjustment !== 0 && (
+                          <Text style={[styles.timingAdjustment, { color: adjustment > 0 ? '#10B981' : '#EF4444' }]}>
+                            {adjustment > 0 ? `+${adjustment}` : adjustment}
+                          </Text>
+                        )}
                       </View>
                       <TouchableOpacity
-                        onPress={() => updateActionDuration(action.id, action.duration + 1)}
-                        style={styles.timingBtn}
+                        onPress={handlePlus}
+                        style={[styles.timingBtn, { backgroundColor: 'rgba(0,0,0,0.2)' }]}
                       >
-                        <Plus size={rp(16)} color="#fff" />
+                        <Plus size={rp(16)} color={colors.text} />
                       </TouchableOpacity>
                     </View>
                   </View>
@@ -2234,7 +2311,9 @@ export default function CastingModeScreen() {
                     contentContainerStyle={{ paddingTop: rp(20), paddingBottom: rp(100), paddingLeft: Math.max(insets.left, rp(24)), paddingRight: Math.max(insets.right, rp(24)) }}
                     renderItem={({ item, index }) => {
                       const isActive = index === currentIndex;
-                      const isAction = 'afterLineId' in item;
+                      const isManualAction = 'afterLineId' in item;
+                      const isScriptAction = 'isAction' in item && (item as DialogueLine).isAction === true;
+                      const isAction = isManualAction || isScriptAction;
 
                       // Calculate opacity: active = 1, neighbors = 0.6, others = 0.3
                       let opacity = 0.3;
@@ -2243,28 +2322,31 @@ export default function CastingModeScreen() {
 
                       // Render Action Card
                       if (isAction) {
-                        const action = item as ActionCard;
                         // If hideActions is true, don't render action cards
-                        if (hideActions) return null;
+                        // if (hideActions) return null; // hideActions doesn't exist here!
+                        
+                        const actionId = item.id;
+                        const text = isManualAction ? (item as ActionCard).text : (item as DialogueLine).text;
+                        const duration = isManualAction ? (item as ActionCard).duration : getLineDuration(item as DialogueLine);
 
                         return (
                           <View
                             style={[
                               styles.teleprompterActionCard,
                               isActive && styles.teleprompterActionCardActive,
-                              { opacity }
+                              { opacity, borderColor: colors.primary, borderWidth: 2, borderStyle: 'dashed', backgroundColor: 'transparent' }
                             ]}
                           >
                             <View style={styles.teleprompterActionHeader}>
-                              <Clapperboard color="#F59E0B" size={rp(16)} />
-                              <Text style={styles.teleprompterActionLabel}>ACCIÓN</Text>
+                              <Clapperboard color={colors.primary} size={rp(16)} />
+                              <Text style={[styles.teleprompterActionLabel, { color: colors.primary }]}>ACCIÓN</Text>
                               <View style={styles.teleprompterActionDuration}>
-                                <Timer size={rp(12)} color="#F59E0B" />
-                                <Text style={styles.teleprompterActionDurationText}>{action.duration}s</Text>
+                                <Timer size={rp(12)} color={colors.primary} />
+                                <Text style={[styles.teleprompterActionDurationText, { color: colors.text }]}>{duration}s</Text>
                               </View>
                             </View>
-                            <Text style={[styles.teleprompterActionText, isActive && { fontWeight: '700' }]}>
-                              ({action.text})
+                            <Text style={[styles.teleprompterActionText, { color: colors.text }, isActive && { fontWeight: '700' }]}>
+                              ({text})
                             </Text>
                           </View>
                         );

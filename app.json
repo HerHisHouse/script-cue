@@ -17,6 +17,8 @@
       "supportsTablet": true,
       "infoPlist": {
         "NSMicrophoneUsageDescription": "Necesitamos acceso al micrófono para grabar tus sesiones de estudio y detectar la lectura de tus líneas.",
+        "NSPhotoLibraryUsageDescription": "Necesitamos acceso a tus fotos para guardar las grabaciones de tus ensayos.",
+        "NSPhotoLibraryAddUsageDescription": "Necesitamos acceso a tus fotos para guardar las grabaciones de tus ensayos.",
         "ITSAppUsesNonExemptEncryption": false,
         "UIBackgroundModes": [
           "audio"
@@ -55,8 +57,9 @@
     "android": {
       "package": "com.alexdiaz.scriptcue",
       "adaptiveIcon": {
-        "foregroundImage": "./assets/images/adaptive-icon.png",
-        "backgroundColor": "#000000"
+        "foregroundImage": "./assets/images/icon.png",
+        "monochromeImage": "./assets/images/icon.png",
+        "backgroundColor": "#FFFFFF"
       },
       "permissions": [
         "INTERNET",

@@ -4,6 +4,8 @@ export async function generateElevenLabsAudio(text: string, voiceId: string): Pr
     throw new Error('Missing ElevenLabs API Key');
   }
 
+  console.log(`[ElevenLabs API] Model: eleven_v3 | Text: "${text}"`);
+  
   const response = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${voiceId}`, {
     method: 'POST',
     headers: {
@@ -13,7 +15,7 @@ export async function generateElevenLabsAudio(text: string, voiceId: string): Pr
     },
     body: JSON.stringify({
       text: text,
-      model_id: "eleven_multilingual_v2",
+      model_id: "eleven_v3",
       voice_settings: {
         stability: 0.5,
         similarity_boost: 0.75,

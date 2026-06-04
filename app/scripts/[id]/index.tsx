@@ -415,13 +415,13 @@ export default function ScriptDetailScreen() {
           </View>
 
           <View style={styles.actionsColumn}>
-            {/* 4. Modo Coach */}
+            {/* 4. Modo Escena */}
             <TouchableOpacity
               style={styles.actionButton}
               onPress={() => router.push(`/scripts/${id}/coach`)}
             >
               <GraduationCap size={24} color="#FFFFFF" />
-              <Text style={styles.actionText}>COACH</Text>
+              <Text style={styles.actionText}>ESCENA</Text>
             </TouchableOpacity>
 
             {/* 5. Modo Casting */}

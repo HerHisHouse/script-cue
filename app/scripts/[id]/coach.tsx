@@ -34,7 +34,10 @@ import {
   Square,
   CheckSquare,
   TrendingDown,
-  Clapperboard
+  Clapperboard,
+  Eye,
+  Target,
+  Users
 } from 'lucide-react-native';
 import { Audio, Video, ResizeMode } from 'expo-av';
 import { supabase } from '@/utils/supabase';
@@ -51,17 +54,24 @@ const COACH_DISCLAIMER_KEY = '@coach_disclaimer_shown';
 const SCREEN_WIDTH = Dimensions.get('window').width;
 
 // Define tabs
-type TabType = 'feedback' | 'suggestions' | 'comparison' | 'exercises';
+type TabType = 'feedback' | 'propuestas' | 'comparacion';
 
 // Mapeo de etiquetas con tildes para visualización
 const feedbackLabels: Record<string, string> = {
-  ritmo: 'RITMO',
-  diccion: 'DICCIÓN',
-  intencion: 'INTENCIÓN',
-  emociones: 'EMOCIÓN',
-  proyeccion: 'PROYECCIÓN',
-  naturalidad: 'NATURALIDAD',
-  pausas: 'PAUSAS'
+  presencia: 'PRESENCIA',
+  objetivo: 'OBJETIVO',
+  relacion: 'RELACIÓN',
+  ritmo: 'RITMO'
+};
+
+const getFeedbackIcon = (key: string, color: string) => {
+  switch (key) {
+    case 'presencia': return <Eye size={20} color={color} />;
+    case 'objetivo': return <Target size={20} color={color} />;
+    case 'relacion': return <Users size={20} color={color} />;
+    case 'ritmo': return <Activity size={20} color={color} />;
+    default: return <Activity size={20} color={color} />;
+  }
 };
 
 export default function CoachModeScreen() {
@@ -401,6 +411,18 @@ export default function CoachModeScreen() {
   const renderAnalysisContent = () => {
     if (!analysis) return null;
 
+    const isOldFormat = !analysis.feedback?.presencia && !analysis.propuestas;
+    if (isOldFormat) {
+      return (
+        <View style={[styles.tabContent, { padding: 20, alignItems: 'center', marginTop: 40 }]}>
+          <AlertCircle size={48} color={colors.warning} style={{ marginBottom: 16 }} />
+          <Text style={{ color: colors.text, textAlign: 'center', fontSize: rf(16), lineHeight: 24 }}>
+            Este análisis fue generado con una versión anterior de la app. Graba una nueva toma para verlo en el nuevo formato.
+          </Text>
+        </View>
+      );
+    }
+
     switch (activeTab) {
       case 'feedback':
         return (
@@ -409,9 +431,12 @@ export default function CoachModeScreen() {
               {Object.entries(analysis.feedback || {}).map(([key, value]: [string, any], index: number) => (
                 <View key={key} style={styles.verticalFeedbackItem}>
                   {index > 0 && <View style={[styles.horizontalDivider, { backgroundColor: colors.border }]} />}
-                  <Text style={[styles.feedbackLabelVertical, { color: colors.primary }]}>
-                    {feedbackLabels[key] || key.toUpperCase()}
-                  </Text>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+                    {getFeedbackIcon(key, colors.primary)}
+                    <Text style={[styles.feedbackLabelVertical, { color: colors.primary, marginBottom: 0 }]}>
+                      {feedbackLabels[key] || key.toUpperCase()}
+                    </Text>
+                  </View>
                   <Text style={[styles.feedbackValueVertical, { color: colors.text }]}>
                     {value}
                   </Text>
@@ -420,61 +445,48 @@ export default function CoachModeScreen() {
             </View>
           </View>
         );
-      case 'suggestions':
+      case 'propuestas':
+        return (
+          <View style={styles.tabContent}>
+            <Text style={[styles.sectionTitle, { color: colors.primary, marginBottom: 16 }]}>Propuestas de Exploración</Text>
+            {(analysis.propuestas || []).map((prop: any, i: number) => (
+              <View key={i} style={[styles.propuestaCard, { backgroundColor: colors.surface, borderLeftColor: '#a78bfa' }]}>
+                <View style={styles.propuestaNumberBox}>
+                  <Text style={styles.propuestaNumber}>{i + 1}</Text>
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={[styles.propuestaTitle, { color: colors.text }]}>{prop.titulo}</Text>
+                  <Text style={[styles.propuestaDesc, { color: colors.textSecondary }]}>{prop.descripcion}</Text>
+                </View>
+              </View>
+            ))}
+          </View>
+        );
+      case 'comparacion':
+        const comp = analysis.comparacion;
+        const hasHistory = comp && comp.exploracion !== null && comp.exploracion !== undefined;
+
         return (
           <View style={styles.tabContent}>
             <View style={[styles.scoreCard, { backgroundColor: colors.surface }]}>
-              <Text style={[styles.sectionTitle, { color: colors.primary }]}>Sugerencias del Coach</Text>
-              {(analysis.sugerencias || []).map((sug: string, i: number) => (
-                <View key={i} style={styles.bulletRow}>
-                  <Sparkles size={16} color={colors.warning} style={{ marginTop: 4 }} />
-                  <Text style={[styles.bulletText, { color: colors.text }]}>{sug}</Text>
-                </View>
-              ))}
-            </View>
-            {analysis.recomendaciones_personaje && (
-              <View style={[styles.scoreCard, { backgroundColor: colors.surface, marginTop: 16 }]}>
-                <Text style={[styles.sectionTitle, { color: colors.primary }]}>Por tu personaje</Text>
-                <Text style={[styles.bulletText, { color: colors.text }]}>{analysis.recomendaciones_personaje}</Text>
-              </View>
-            )}
-          </View>
-        );
-  case 'comparison':
-    const evol = analysis.evolucion;
-    const hasHistory = evol && Object.keys(evol).length > 0;
-
-    return (
-      <View style={styles.tabContent}>
-        <View style={[styles.scoreCard, { backgroundColor: colors.surface }]}>
-          <Text style={[styles.sectionTitle, { color: colors.primary, marginBottom: 16 }]}>
-            {hasHistory ? "Evolución comparativa" : "Comparar Interpretación"}
-          </Text>
+              <Text style={[styles.sectionTitle, { color: colors.primary, marginBottom: 16 }]}>
+                {hasHistory ? "Descubrimientos de la toma" : "Comparar Interpretación"}
+              </Text>
               
               {hasHistory ? (
-                <>
-                  <View style={styles.comparisonGrid}>
-                    {Object.entries(evol).map(([key, trend]: [string, any]) => (
-                      <View key={key} style={styles.comparisonRow}>
-                        <Text style={[styles.comparisonLabel, { color: colors.textSecondary }]}>
-                          {feedbackLabels[key] || key.toUpperCase()}
-                        </Text>
-                        <View style={styles.trendContainer}>
-                          {trend === 'mejorado' && <TrendingUp size={18} color="#4ADE80" />}
-                          {trend === 'empeorado' && <TrendingDown size={18} color="#F87171" />}
-                          {trend === 'igual' && <RefreshCw size={18} color="#FBBF24" />}
-                          <Text style={[
-                            styles.trendText,
-                            { color: trend === 'mejorado' ? "#4ADE80" : trend === 'empeorado' ? "#F87171" : "#FBBF24" }
-                          ]}>
-                            {trend.toUpperCase()}
-                          </Text>
-                        </View>
-                      </View>
-                    ))}
-                  </View>
-                  <View style={[styles.horizontalDivider, { backgroundColor: colors.border, marginVertical: 20 }]} />
-                </>
+                <View style={styles.comparisonGrid}>
+                  {Object.entries(comp).map(([key, value]: [string, any], index: number) => (
+                    <View key={key} style={styles.comparisonItemRow}>
+                      {index > 0 && <View style={[styles.horizontalDivider, { backgroundColor: colors.border }]} />}
+                      <Text style={[styles.comparisonLabel, { color: colors.textSecondary }]}>
+                        {key.toUpperCase()}
+                      </Text>
+                      <Text style={[styles.comparisonText, { color: colors.text }]}>
+                        {value}
+                      </Text>
+                    </View>
+                  ))}
+                </View>
               ) : (
                 <View style={styles.emptyComparison}>
                   <Activity size={40} color={colors.textSecondary} style={{ opacity: 0.3, marginBottom: 12 }} />
@@ -519,28 +531,7 @@ export default function CoachModeScreen() {
                   )}
                 </View>
               )}
-
-              {!analysis.feedback?.error && (
-                <Text style={[styles.comparisonText, { color: colors.text, fontStyle: hasHistory ? 'normal' : 'italic', marginTop: hasHistory ? 0 : 20 }]}>
-                  {analysis.comparacion}
-                </Text>
-              )}
             </View>
-          </View>
-        );
-      case 'exercises':
-        return (
-          <View style={styles.tabContent}>
-            <Text style={[styles.sectionTitle, { color: colors.primary, marginBottom: 16 }]}>Rutina Sugerida</Text>
-            {(analysis.ejercicios || []).map((ex: any, i: number) => (
-              <View key={i} style={[styles.exerciseCard, { backgroundColor: colors.surface }]}>
-                <View style={styles.exerciseHeader}>
-                  <Dumbbell size={20} color={colors.primary} />
-                  <Text style={[styles.exerciseTitle, { color: colors.text }]}>{ex.nombre}</Text>
-                </View>
-                <Text style={[styles.exerciseDesc, { color: colors.textSecondary }]}>{ex.descripcion}</Text>
-              </View>
-            ))}
           </View>
         );
     }
@@ -563,9 +554,9 @@ export default function CoachModeScreen() {
           <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
             <ArrowLeft size={24} color={colors.text} />
           </TouchableOpacity>
-          <Text style={[styles.headerTitle, { color: colors.text }]}>Modo Coach</Text>
+          <Text style={[styles.headerTitle, { color: colors.text }]}>Modo Escena</Text>
           <TouchableOpacity
-            onPress={() => Alert.alert('Modo Coach', 'Recibe feedback de IA sobre tu interpretación: ritmo, dicción, emoción y sugerencias personalizadas para mejorar.')}
+            onPress={() => Alert.alert('Modo Escena', 'Parte de una grabación y recibe propuestas para explorar tu personaje desde ángulos distintos. No es una evaluación: es un laboratorio.')}
             style={styles.backButton}
           >
             <Info size={24} color={colors.text} />
@@ -626,13 +617,13 @@ export default function CoachModeScreen() {
               </View>
 
               <Text style={[styles.modalText, { color: colors.text }]}>
-                El Modo Coach es una herramienta de apoyo orientada al entrenamiento personal.
+                El Modo Escena es un laboratorio creativo donde puedes explorar tu personaje desde nuevos ángulos.
               </Text>
               <Text style={[styles.modalText, { color: colors.text, marginTop: 12 }]}>
-                <Text style={{ fontWeight: '700' }}>No sustituye</Text> la formación ni el criterio de un coach profesional.
+                A partir de una grabación tuya, la IA propone ejercicios prácticos para investigar la escena de formas distintas.
               </Text>
               <Text style={[styles.modalText, { color: colors.text, marginTop: 12 }]}>
-                Su finalidad es ofrecer estímulos, retos y sugerencias para ayudarte a explorar y mejorar tu interpretación.
+                No es una evaluación: es una herramienta de exploración.
               </Text>
 
               <TouchableOpacity
@@ -673,7 +664,7 @@ export default function CoachModeScreen() {
         </TouchableOpacity>
         <Text style={[styles.headerTitle, { color: colors.text }]}>Análisis</Text>
         <TouchableOpacity
-          onPress={() => Alert.alert('Modo Coach', 'Recibe feedback de IA sobre tu interpretación: ritmo, dicción, emoción y sugerencias personalizadas para mejorar.')}
+          onPress={() => Alert.alert('Modo Escena', 'Parte de una grabación y recibe propuestas para explorar tu personaje desde ángulos distintos. No es una evaluación: es un laboratorio.')}
           style={styles.backButton}
         >
           <Info size={24} color={colors.text} />
@@ -713,7 +704,7 @@ export default function CoachModeScreen() {
               <Brain size={48} color={colors.primary} style={{ marginBottom: 16 }} />
               <Text style={[styles.introTitle, { color: colors.text }]}>Análisis de Interpretación</Text>
               <Text style={[styles.introText, { color: colors.textSecondary }]}>
-                La IA analizará tu ritmo, entonación, pausas y carga emocional para darte feedback.
+                La IA analizará la grabación para darte feedback y propuestas de actuación.
               </Text>
 
               <TouchableOpacity
@@ -726,7 +717,7 @@ export default function CoachModeScreen() {
                 ) : (
                   <>
                     <Sparkles size={20} color="#fff" />
-                    <Text style={styles.analyzeButtonText}>Analizar con Coach</Text>
+                    <Text style={styles.analyzeButtonText}>Analizar con Escena</Text>
                   </>
                 )}
               </TouchableOpacity>
@@ -750,27 +741,19 @@ export default function CoachModeScreen() {
               </TouchableOpacity>
 
               <TouchableOpacity
-                style={[styles.tab, activeTab === 'suggestions' && styles.activeTab, { borderColor: activeTab === 'suggestions' ? colors.primary : 'transparent' }]}
-                onPress={() => setActiveTab('suggestions')}
+                style={[styles.tab, activeTab === 'propuestas' && styles.activeTab, { borderColor: activeTab === 'propuestas' ? colors.primary : 'transparent' }]}
+                onPress={() => setActiveTab('propuestas')}
               >
-                <MessageSquare size={18} color={activeTab === 'suggestions' ? colors.primary : colors.textSecondary} />
-                <Text style={[styles.tabText, { color: activeTab === 'suggestions' ? colors.primary : colors.textSecondary }]}>Sugerencias</Text>
+                <Sparkles size={18} color={activeTab === 'propuestas' ? colors.primary : colors.textSecondary} />
+                <Text style={[styles.tabText, { color: activeTab === 'propuestas' ? colors.primary : colors.textSecondary }]}>Propuestas</Text>
               </TouchableOpacity>
 
               <TouchableOpacity
-                style={[styles.tab, activeTab === 'exercises' && styles.activeTab, { borderColor: activeTab === 'exercises' ? colors.primary : 'transparent' }]}
-                onPress={() => setActiveTab('exercises')}
+                style={[styles.tab, activeTab === 'comparacion' && styles.activeTab, { borderColor: activeTab === 'comparacion' ? colors.primary : 'transparent' }]}
+                onPress={() => setActiveTab('comparacion')}
               >
-                <Dumbbell size={18} color={activeTab === 'exercises' ? colors.primary : colors.textSecondary} />
-                <Text style={[styles.tabText, { color: activeTab === 'exercises' ? colors.primary : colors.textSecondary }]}>Ejercicios</Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={[styles.tab, activeTab === 'comparison' && styles.activeTab, { borderColor: activeTab === 'comparison' ? colors.primary : 'transparent' }]}
-                onPress={() => setActiveTab('comparison')}
-              >
-                <TrendingUp size={18} color={activeTab === 'comparison' ? colors.primary : colors.textSecondary} />
-                <Text style={[styles.tabText, { color: activeTab === 'comparison' ? colors.primary : colors.textSecondary }]}>Comparación</Text>
+                <TrendingUp size={18} color={activeTab === 'comparacion' ? colors.primary : colors.textSecondary} />
+                <Text style={[styles.tabText, { color: activeTab === 'comparacion' ? colors.primary : colors.textSecondary }]}>Comparación</Text>
               </TouchableOpacity>
             </ScrollView>
 
@@ -1030,6 +1013,45 @@ const styles = StyleSheet.create({
     fontSize: rf(13),
     textAlign: 'center',
     lineHeight: 18,
+  },
+
+  comparisonItemRow: {
+    paddingVertical: 8,
+  },
+  propuestaCard: {
+    flexDirection: 'row',
+    padding: rp(16),
+    borderRadius: 12,
+    marginBottom: 12,
+    borderLeftWidth: 4,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 10,
+    elevation: 2,
+  },
+  propuestaNumberBox: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: 'rgba(167, 139, 250, 0.2)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 12,
+  },
+  propuestaNumber: {
+    color: '#a78bfa',
+    fontSize: rf(14),
+    fontWeight: '700',
+  },
+  propuestaTitle: {
+    fontSize: rf(16),
+    fontWeight: '700',
+    marginBottom: 4,
+  },
+  propuestaDesc: {
+    fontSize: rf(14),
+    lineHeight: 20,
   },
 
   secondaryButton: {

@@ -21,6 +21,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { useTheme } from '@/contexts/ThemeContext';
 import { supabase } from '@/utils/supabase';
 import { rf, rp } from '@/utils/responsive';
+import { BETA_LIMITS, isUserBetaLimited } from '@/constants/betaLimits';
 
 interface CapturedImage {
   uri: string;
@@ -153,6 +154,27 @@ export default function ScanScriptScreen() {
       return;
     }
 
+    // Validación de límites de la versión beta
+    if (isUserBetaLimited(user)) {
+      if (!user?.id) {
+        Alert.alert('Error', 'No se encontró el usuario autenticado.');
+        return;
+      }
+
+      const { count, error: countError } = await supabase
+        .from('scripts')
+        .select('*', { count: 'exact', head: true })
+        .eq('user_id', user.id);
+        
+      if (!countError && count !== null && count >= BETA_LIMITS.MAX_SCRIPTS) {
+        Alert.alert(
+          "Límite alcanzado",
+          `Has alcanzado el límite máximo de ${BETA_LIMITS.MAX_SCRIPTS} guiones permitidos en la versión beta.`
+        );
+        return;
+      }
+    }
+
     setProcessing(true);
     setProcessingStep('Preparando imágenes...');
 
@@ -225,12 +247,19 @@ export default function ScanScriptScreen() {
 
       setProcessingStep('Analizando diálogos...');
 
+      const { data: sessionData } = await supabase.auth.getSession();
+      const userToken = sessionData.session?.access_token;
+
+      if (!userToken) {
+        throw new Error('No se pudo obtener el token de sesión del usuario');
+      }
+
       const parseResponse = await fetch(
         `${process.env.EXPO_PUBLIC_SUPABASE_URL}/functions/v1/parse-pdf`,
         {
           method: 'POST',
           headers: {
-            'Authorization': `Bearer ${process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY}`,
+            'Authorization': `Bearer ${userToken}`,
             'Content-Type': 'application/json',
           },
           body: JSON.stringify({

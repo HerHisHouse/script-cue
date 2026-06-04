@@ -1,5 +1,5 @@
 import React from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, Animated, Easing, Pressable } from 'react-native';
+import { View, Text, TouchableOpacity, StyleSheet, Animated, Easing, Pressable, Modal } from 'react-native';
 import { FileText, Clock, MoreVertical, Send, Trash2, Share2, Edit3, CheckSquare, Square } from 'lucide-react-native';
 import { MENU_ITEM_PADDING_H, MENU_ITEM_PADDING_V } from '@/utils/ui';
 import { Script } from '@/types/database';
@@ -49,7 +49,7 @@ export function ScriptCard({ script, onPress, onLongPress, selected = false, sho
           padding: isGrid ? 12 : 16,
           shadowOpacity: isGrid ? 0.04 : 0.05,
         },
-        isGrid ? { flexDirection: 'column', alignItems: 'center' } : null,
+        isGrid ? { flexDirection: 'column', alignItems: 'center', height: 145, justifyContent: 'center' } : null,
         selected ? { borderWidth: 2, borderColor: colors.primary } : null,
         showMenu ? { zIndex: 1002 } : null,
       ]}
@@ -166,76 +166,67 @@ export function ScriptCard({ script, onPress, onLongPress, selected = false, sho
         </TouchableOpacity>
       )}
 
-      {showMenuButton && showMenu && (
-        <Pressable
-          style={[StyleSheet.absoluteFill, { zIndex: 999 }]}
-          accessibilityRole="button"
-          accessibilityLabel="Cerrar menú"
-          onPress={() => setShowMenu(false)}
-        />
-      )}
-
       {showMenuButton && (
-        <Animated.View
-          style={[
-            menuStyles.container,
-            { top: 44, right: 8 },
-            { opacity: menuOpacity, transform: [{ scale: menuScale }] },
-            { zIndex: 1001 },
-          ]}
-          pointerEvents={showMenu ? 'auto' : 'none'}
-          onStartShouldSetResponder={() => true}
+        <Modal
+          visible={showMenu}
+          transparent
+          animationType="fade"
+          onRequestClose={() => setShowMenu(false)}
         >
           <TouchableOpacity
-            style={menuStyles.item}
-            onPress={() => {
-              setShowMenu(false);
-              onRename?.();
-            }}
+            style={styles.modalOverlay}
+            activeOpacity={1}
+            onPress={() => setShowMenu(false)}
           >
-            <Edit3 size={18} color={colors.text} />
-            <Text style={[menuStyles.text, { color: colors.text }]}>Renombrar</Text>
+            <View style={[styles.optionsContent, { backgroundColor: colors.surface }]}>
+              <TouchableOpacity
+                style={styles.optionItem}
+                onPress={() => {
+                  setShowMenu(false);
+                  setTimeout(() => onRename?.(), 600);
+                }}
+              >
+                <Edit3 size={20} color={colors.text} />
+                <Text style={[styles.optionText, { color: colors.text }]}>Renombrar</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={styles.optionItem}
+                onPress={async () => {
+                  if (onShare) {
+                    await onShare();
+                  }
+                  setShowMenu(false);
+                }}
+              >
+                <Share2 size={20} color={colors.text} />
+                <Text style={[styles.optionText, { color: colors.text }]}>Compartir</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={styles.optionItem}
+                onPress={() => {
+                  setShowMenu(false);
+                  setTimeout(() => onSendTo?.(), 600);
+                }}
+              >
+                <Send size={20} color={colors.text} />
+                <Text style={[styles.optionText, { color: colors.text }]}>Enviar a…</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[styles.optionItem, { borderTopWidth: 1, borderTopColor: isDark ? '#333' : '#eee' }]}
+                onPress={() => {
+                  setShowMenu(false);
+                  setTimeout(() => onDelete?.(), 600);
+                }}
+              >
+                <Trash2 size={20} color={colors.error} />
+                <Text style={[styles.optionText, { color: colors.error }]}>Eliminar</Text>
+              </TouchableOpacity>
+            </View>
           </TouchableOpacity>
-
-          <View style={menuStyles.separator} />
-
-          <TouchableOpacity
-            style={menuStyles.item}
-            onPress={() => {
-              setShowMenu(false);
-              onShare?.();
-            }}
-          >
-            <Share2 size={18} color={colors.text} />
-            <Text style={[menuStyles.text, { color: colors.text }]}>Compartir</Text>
-          </TouchableOpacity>
-
-          <View style={menuStyles.separator} />
-
-          <TouchableOpacity
-            style={menuStyles.item}
-            onPress={() => {
-              setShowMenu(false);
-              onSendTo?.();
-            }}
-          >
-            <Send size={18} color={colors.text} />
-            <Text style={[menuStyles.text, { color: colors.text }]}>Enviar a…</Text>
-          </TouchableOpacity>
-
-          <View style={menuStyles.separator} />
-
-          <TouchableOpacity
-            style={menuStyles.item}
-            onPress={() => {
-              setShowMenu(false);
-              onDelete?.();
-            }}
-          >
-            <Trash2 size={18} color={colors.error} />
-            <Text style={[menuStyles.text, { color: colors.error }]}>Eliminar</Text>
-          </TouchableOpacity>
-        </Animated.View>
+        </Modal>
       )}
     </TouchableOpacity>
   );
@@ -323,5 +314,30 @@ const styles = StyleSheet.create({
   dateText: {
     fontSize: rf(13),
     marginLeft: rp(4),
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    justifyContent: 'center',
+    padding: rp(20),
+  },
+  optionsContent: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    padding: rp(20),
+  },
+  optionItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: rp(16),
+    gap: rp(16),
+  },
+  optionText: {
+    fontSize: rf(16),
+    fontWeight: '500',
   },
 });

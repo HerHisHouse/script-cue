@@ -61,6 +61,21 @@ export default function AIUsageScreen() {
                         • Los análisis se realizan solo cuando tú lo solicitas
                     </Text>
 
+                    <Text style={[styles.sectionTitle, { color: colors.text }]}>Responsabilidad del usuario</Text>
+                    <Text style={[styles.paragraph, { color: colors.text }]}>
+                        El usuario acepta que:{'\n'}
+                        • Verifica la precisión del contenido generado por IA antes de usarlo.{'\n'}
+                        • La IA puede:{'\n'}
+                        {'  '}- Malinterpretar emociones en video/audio.{'\n'}
+                        {'  '}- Generar sugerencias inadecuadas para géneros específicos.{'\n'}
+                        {'  '}- Cometer errores de transcripción.{'\n\n'}
+                        • El usuario es responsable de cualquier feedback incorrecto de IA que use en audiciones reales.{'\n\n'}
+                        • Script Cue no será responsable de:{'\n'}
+                        {'  '}- Pérdida de oportunidades por seguir recomendaciones de IA.{'\n'}
+                        {'  '}- Crítica negativa de colegas basada en análisis de IA.{'\n'}
+                        {'  '}- Daños emocionales derivados del feedback automático.
+                    </Text>
+
                     <Text style={[styles.sectionTitle, { color: colors.text }]}>Privacidad y Seguridad</Text>
                     <Text style={[styles.paragraph, { color: colors.text }]}>
                         • Tus datos personales están protegidos{'\n'}

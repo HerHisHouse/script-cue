@@ -19,7 +19,6 @@ import { useTheme } from '@/contexts/ThemeContext';
 import * as WebBrowser from 'expo-web-browser';
 import { supabase } from '@/utils/supabase';
 import { rf, rp } from '@/utils/responsive';
-import { LegalModal } from '@/components/LegalModal';
 import Svg, { Path } from 'react-native-svg';
 
 // Configure WebBrowser for OAuth
@@ -43,11 +42,6 @@ export default function AuthScreen() {
   const [acceptedTerms, setAcceptedTerms] = useState(false);
   const [acceptedPrivacy, setAcceptedPrivacy] = useState(false);
   const [acceptedAI, setAcceptedAI] = useState(false);
-
-  // Legal modals
-  const [showTermsModal, setShowTermsModal] = useState(false);
-  const [showPrivacyModal, setShowPrivacyModal] = useState(false);
-  const [showAIModal, setShowAIModal] = useState(false);
 
   // Validaciones
   const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -367,7 +361,7 @@ export default function AuthScreen() {
                       style={[styles.link, { color: colors.primary }]}
                       onPress={(e) => {
                         e.stopPropagation();
-                        setShowTermsModal(true);
+                        router.push('/legal/terms');
                       }}
                     >
                       Términos y Condiciones
@@ -390,7 +384,7 @@ export default function AuthScreen() {
                       style={[styles.link, { color: colors.primary }]}
                       onPress={(e) => {
                         e.stopPropagation();
-                        setShowPrivacyModal(true);
+                        router.push('/legal/privacy');
                       }}
                     >
                       Política de Privacidad
@@ -413,7 +407,7 @@ export default function AuthScreen() {
                       style={[styles.link, { color: colors.primary }]}
                       onPress={(e) => {
                         e.stopPropagation();
-                        setShowAIModal(true);
+                        router.push('/legal/ai-usage');
                       }}
                     >
                       uso de IA
@@ -495,28 +489,6 @@ export default function AuthScreen() {
         </ScrollView>
       </KeyboardAvoidingView>
 
-      {/* Legal Modals */}
-      <LegalModal
-        visible={showTermsModal}
-        onClose={() => setShowTermsModal(false)}
-        type="terms"
-        isDark={isDark}
-        colors={colors}
-      />
-      <LegalModal
-        visible={showPrivacyModal}
-        onClose={() => setShowPrivacyModal(false)}
-        type="privacy"
-        isDark={isDark}
-        colors={colors}
-      />
-      <LegalModal
-        visible={showAIModal}
-        onClose={() => setShowAIModal(false)}
-        type="ai"
-        isDark={isDark}
-        colors={colors}
-      />
     </SafeAreaView>
   );
 }

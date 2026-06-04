@@ -12,19 +12,19 @@ import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/utils/supabase';
 import { DialogueLine } from '@/utils/dialogueParser';
 import { loadDialogueLines } from '@/utils/loadDialogueLines';
-import { generateAndCacheAudio } from '@/utils/ttsCache';
+import { generateAndCacheAudio, invalidateCacheForLine } from '@/utils/ttsCache';
 import { rf, rp } from '@/utils/responsive';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import DraggableFlatList, { ScaleDecorator } from 'react-native-draggable-flatlist';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import * as Haptics from 'expo-haptics';
-import { ArrowLeft, Edit, Trash2, Plus, CheckCircle, X, Save } from 'lucide-react-native';
+import { ArrowLeft, Edit, Trash2, Plus, CheckCircle, X, Save, Check } from 'lucide-react-native';
 
-const REVIEW_INFO_KEY = 'hideReviewInfo';
+const REVIEW_INFO_KEY = 'hideReviewInfoV2';
 
 export default function ReviewScreen() {
   const router = useRouter();
-  const { id } = useLocalSearchParams<{ id: string }>();
+  const { id, force } = useLocalSearchParams<{ id: string; force?: string }>();
   const { colors } = useTheme();
   const { user } = useAuth();
 
@@ -38,11 +38,65 @@ export default function ReviewScreen() {
   const [editModalVisible, setEditModalVisible] = useState(false);
   const [editingLine, setEditingLine] = useState<DialogueLine | null>(null);
   const [editText, setEditText] = useState('');
+  const [editSelectedChar, setEditSelectedChar] = useState<any>(null);
   const [isSaving, setIsSaving] = useState(false);
 
   // Add line modal
   const [showAddModal, setShowAddModal] = useState(false);
   const [newLineText, setNewLineText] = useState('');
+
+  // Emotion selector modal
+  const [emotionModalVisible, setEmotionModalVisible] = useState(false);
+  const [activeEmotionLineId, setActiveEmotionLineId] = useState<string | null>(null);
+
+  const EMOTIONS = [
+    { label: 'Neutral', value: 'neutral' },
+    { label: 'Susurrando', value: 'whispering' },
+    { label: 'Gritando', value: 'shouting' },
+    { label: 'Llorando', value: 'crying' },
+    { label: 'Riendo', value: 'laughing' },
+    { label: 'Enfadado/a', value: 'angry' },
+    { label: 'Emocionado/a', value: 'excited' },
+    { label: 'Triste', value: 'sad' },
+    { label: 'Asustado/a', value: 'fearful' },
+    { label: 'Tierno/a', value: 'tender' }
+  ];
+
+  const translateEmotion = (val: string) => EMOTIONS.find(e => e.value === val)?.label || 'Neutral';
+
+  const handleEmotionSelect = async (emotionVal: string) => {
+    if (!activeEmotionLineId) return;
+    
+    // Optimistic UI update
+    setLines(prev => prev.map(l => {
+      if (l.id === activeEmotionLineId) {
+        return {
+          ...l,
+          voiceDirection: emotionVal === 'neutral' ? null : { emotion: emotionVal, intensity: 0.8 }
+        };
+      }
+      return l;
+    }));
+
+    setEmotionModalVisible(false);
+
+    // Update DB silently
+    const updatePayload = emotionVal === 'neutral' ? null : { emotion: emotionVal, intensity: 0.8 };
+    try {
+      await supabase.from('lines').update({ voice_direction: updatePayload }).eq('id', activeEmotionLineId);
+      // Invalidar caché TTS para que se regenere con la nueva emoción
+      await invalidateCacheForLine(activeEmotionLineId);
+      console.log(`[Review] 🗑️ Caché TTS invalidada para línea ${activeEmotionLineId} (nueva emoción: ${emotionVal})`);
+    } catch (e) {
+      console.error('Error updating voice_direction:', e);
+    }
+  };
+  const [showReviewInfo, setShowReviewInfo] = useState(false);
+  const [dontShowReviewInfoAgain, setDontShowReviewInfoAgain] = useState(false);
+  
+  const [showAddLineInfo, setShowAddLineInfo] = useState(false);
+  const [dontShowAddLineInfoAgain, setDontShowAddLineInfoAgain] = useState(false);
+
   const [characters, setCharacters] = useState<any[]>([]);
   const [selectedChar, setSelectedChar] = useState<any>(null);
 
@@ -54,18 +108,14 @@ export default function ReviewScreen() {
         const { data: script } = await supabase
           .from('scripts').select('reviewed').eq('id', id).single();
 
-        if (script?.reviewed) {
+        if (script?.reviewed && force !== '1') {
           router.replace(`/scripts/${id}` as any);
           return;
         }
 
         const hidden = await AsyncStorage.getItem(REVIEW_INFO_KEY);
         if (!hidden) {
-          Alert.alert(
-            '✏️ Revisa el guion',
-            'La IA puede cometer errores al transcribir el guion.\n\nRevisa el texto, reordena líneas si es necesario y confirma cuando esté listo. Después se generarán las voces automáticamente.',
-            [{ text: 'Entendido', onPress: () => AsyncStorage.setItem(REVIEW_INFO_KEY, 'true') }]
-          );
+          setShowReviewInfo(true);
         }
 
         const [loadedLines, charsResult] = await Promise.all([
@@ -99,6 +149,12 @@ export default function ReviewScreen() {
   const openEditModal = (line: DialogueLine) => {
     setEditingLine(line);
     setEditText(line.text);
+    if (line.isAction) {
+      setEditSelectedChar(null);
+    } else {
+      const foundChar = characters.find(c => c.name.toLowerCase().trim() === line.characterName.toLowerCase().trim());
+      setEditSelectedChar(foundChar || null);
+    }
     setEditModalVisible(true);
   };
 
@@ -106,12 +162,29 @@ export default function ReviewScreen() {
     if (!editingLine) return;
     setIsSaving(true);
     try {
+      const charName = editSelectedChar ? editSelectedChar.name : 'ACCIÓN';
+      const charId = editSelectedChar ? editSelectedChar.id : 'action-card';
+
       const { error } = await supabase
-        .from('lines').update({ content: editText }).eq('id', editingLine.id);
+        .from('lines').update({ 
+          content: editText,
+          character_name: charName
+        }).eq('id', editingLine.id);
       if (error) throw error;
+      
       setLines(prev => prev.map(l =>
         l.id === editingLine.id
-          ? { ...l, text: editText, cleanText: editText.replace(/\([^)]*\)/g, '').trim() }
+          ? { 
+              ...l, 
+              text: editText, 
+              cleanText: editText.replace(/\([^)]*\)/g, '').trim(),
+              characterName: charName,
+              characterId: charId,
+              isAction: editSelectedChar === null,
+              color: editSelectedChar ? (editSelectedChar.color || '#6B7280') : colors.primary,
+              voiceGender: editSelectedChar ? (editSelectedChar.voice_gender || 'neutral') : 'neutral',
+              isUserCharacter: editSelectedChar ? (editSelectedChar.is_user_character || false) : false,
+            }
           : l
       ));
       setEditModalVisible(false);
@@ -139,24 +212,29 @@ export default function ReviewScreen() {
 
   // ── Add line ──────────────────────────────────────────────────────────────
   const addLine = async () => {
-    if (!selectedChar || !newLineText.trim()) return;
+    if ((!selectedChar && selectedChar !== null) || !newLineText.trim()) return;
     setIsSaving(true);
     try {
       const sceneId = lines[lines.length - 1]?.sceneId;
       if (!sceneId) throw new Error('No scene found');
       const newOrderIndex = lines.length + 1;
 
+      const charName = selectedChar ? selectedChar.name : 'ACCIÓN';
+      const charId = selectedChar ? selectedChar.id : 'action-card';
+
       const { data, error } = await supabase
         .from('lines')
-        .insert({ scene_id: sceneId, character_name: selectedChar.name, content: newLineText.trim(), order_index: newOrderIndex })
+        .insert({ scene_id: sceneId, character_name: charName, content: newLineText.trim(), order_index: newOrderIndex })
         .select().single();
       if (error) throw error;
 
       const newLine: DialogueLine = {
-        id: data.id, characterId: selectedChar.id, characterName: selectedChar.name,
+        id: data.id, characterId: charId, characterName: charName,
         text: data.content, cleanText: data.content.replace(/\([^)]*\)/g, '').trim(),
-        color: selectedChar.color || '#6B7280', voiceGender: selectedChar.voice_gender || 'neutral',
-        voicePreset: 'natural', isUserCharacter: selectedChar.is_user_character || false,
+        color: selectedChar ? (selectedChar.color || '#6B7280') : colors.primary,
+        voiceGender: selectedChar ? (selectedChar.voice_gender || 'neutral') : 'neutral',
+        voicePreset: 'natural', isUserCharacter: selectedChar ? (selectedChar.is_user_character || false) : false,
+        isAction: selectedChar === null,
         orderIndex: newOrderIndex, sceneId,
       };
       setLines(prev => [...prev, newLine]);
@@ -174,7 +252,7 @@ export default function ReviewScreen() {
   const confirmAndGenerate = () => {
     Alert.alert(
       'Confirmar guion',
-      `Se generarán voces para ${lines.filter(l => !l.isUserCharacter).length} líneas de IA. ¿Continuar?`,
+      `Se generarán voces para ${lines.filter(l => !l.isUserCharacter && !l.isAction).length} líneas de IA. ¿Continuar?`,
       [{ text: 'Cancelar', style: 'cancel' }, { text: 'Confirmar', onPress: doConfirm }]
     );
   };
@@ -186,7 +264,7 @@ export default function ReviewScreen() {
       await supabase.from('scripts').update({ reviewed: true }).eq('id', id);
       await syncOrder(lines);
 
-      const aiLines = lines.filter(l => !l.isUserCharacter);
+      const aiLines = lines.filter(l => !l.isUserCharacter && !l.isAction);
       setConfirmTotal(aiLines.length);
 
       const { data: charRows } = await supabase.from('characters').select('*').eq('script_id', id);
@@ -198,7 +276,7 @@ export default function ReviewScreen() {
         const provider = char?.voice_provider || 'openai';
         const voiceId = char?.voice_id || 'nova';
         try {
-          await generateAndCacheAudio(id as string, line.id, line.characterName, line.cleanText, { provider, voiceId }, user.id);
+          await generateAndCacheAudio(id as string, line.id, line.characterName, line.text, { provider, voiceId }, user.id, line.voiceDirection);
         } catch (e) {
           console.warn(`[Review] TTS failed for line ${line.id}:`, e);
         }
@@ -237,7 +315,14 @@ export default function ReviewScreen() {
               {lines.length} líneas · Usa ≡ para reordenar
             </Text>
           </View>
-          <TouchableOpacity onPress={() => setShowAddModal(true)} style={[s.addBtn, { backgroundColor: colors.primary }]}>
+          <TouchableOpacity onPress={async () => {
+            const hidden = await AsyncStorage.getItem('hideAddLineInfoV2');
+            if (hidden !== 'true') {
+              setShowAddLineInfo(true);
+            } else {
+              setShowAddModal(true);
+            }
+          }} style={[s.addBtn, { backgroundColor: colors.primary }]}>
             <Plus size={18} color="#fff" />
           </TouchableOpacity>
         </View>
@@ -252,12 +337,17 @@ export default function ReviewScreen() {
           contentContainerStyle={{ paddingHorizontal: rp(16), paddingTop: rp(12), paddingBottom: 140 }}
           renderItem={({ item, drag, isActive, getIndex }) => {
             const index = getIndex() ?? 0;
-            const charColor = item.isUserCharacter ? '#10B981' : (item.color || colors.primary);
+            const charColor = item.isAction ? colors.primary : (item.isUserCharacter ? '#10B981' : (item.color || colors.primary));
+            const charData = characters.find(c => c.name.toLowerCase().trim() === item.characterName.toLowerCase().trim());
+            const isElevenLabs = charData?.voice_provider === 'elevenlabs';
+            
             return (
               <ScaleDecorator activeScale={1.02}>
                 <View style={[s.card, {
                   backgroundColor: colors.surface,
-                  borderColor: isActive ? charColor : colors.border,
+                  borderColor: charColor,
+                  borderStyle: item.isAction ? 'dashed' : 'solid',
+                  borderWidth: item.isAction ? 2 : 1.5,
                   shadowColor: isActive ? charColor : 'transparent',
                   shadowOpacity: isActive ? 0.3 : 0,
                   shadowRadius: 8, elevation: isActive ? 6 : 1,
@@ -266,14 +356,43 @@ export default function ReviewScreen() {
                   <View style={{ flex: 1, padding: rp(12) }}>
                     <View style={s.cardHeader}>
                       <Text style={[s.charName, { color: charColor }]}>
-                        {item.characterName}
-                        <Text style={[s.badge, { color: colors.textSecondary }]}>
-                          {item.isUserCharacter ? '  · TÚ' : '  · IA'}
-                        </Text>
+                        {item.isAction ? 'TARJETA DE ACCIÓN' : item.characterName}
+                        {!item.isAction && (
+                          <Text style={[s.badge, { color: colors.textSecondary }]}>
+                            {item.isUserCharacter ? '  · TÚ' : '  · IA'}
+                          </Text>
+                        )}
                       </Text>
                       <Text style={[s.lineNum, { color: colors.textSecondary }]}>#{index + 1}</Text>
                     </View>
                     <Text style={[s.dialogueText, { color: colors.text }]}>{item.text}</Text>
+                    
+                    {!item.isAction && !item.isUserCharacter && isElevenLabs && (
+                      <TouchableOpacity 
+                        style={{ marginTop: rp(8), flexDirection: 'row', alignItems: 'center', alignSelf: 'flex-start' }}
+                        onPress={() => {
+                          setActiveEmotionLineId(item.id);
+                          setEmotionModalVisible(true);
+                        }}
+                      >
+                        <Text style={{ marginRight: 6 }}>🎭</Text>
+                        <View style={{
+                            backgroundColor: item.voiceDirection ? charColor + '20' : colors.border,
+                            paddingHorizontal: rp(8),
+                            paddingVertical: rp(4),
+                            borderRadius: rp(12),
+                        }}>
+                          <Text style={{ 
+                            fontSize: rf(12), 
+                            color: item.voiceDirection ? charColor : colors.textSecondary,
+                            fontWeight: item.voiceDirection ? '600' : '400'
+                          }}>
+                             {item.voiceDirection ? translateEmotion(item.voiceDirection.emotion) : 'Neutral'} ▾
+                          </Text>
+                        </View>
+                      </TouchableOpacity>
+                    )}
+
                     <View style={s.lineActions}>
                       <TouchableOpacity onPress={() => openEditModal(item)} style={s.iconBtn}>
                         <Edit size={15} color={colors.textSecondary} />
@@ -342,11 +461,30 @@ export default function ReviewScreen() {
                   </TouchableOpacity>
                 </View>
 
-                {editingLine && (
-                  <Text style={{ fontSize: rf(12), fontWeight: '700', marginBottom: rp(10),
-                    color: editingLine.isUserCharacter ? '#10B981' : (editingLine.color || colors.primary) }}>
-                    {editingLine.characterName}
-                  </Text>
+                <View style={{ flexDirection: 'row', marginBottom: rp(16), gap: 12 }}>
+                  <TouchableOpacity onPress={() => setEditSelectedChar(null)} style={{ flex: 1, padding: 8, borderRadius: 8, borderWidth: 1, borderColor: editSelectedChar === null ? colors.primary : colors.border, backgroundColor: editSelectedChar === null ? colors.primary + '20' : 'transparent', alignItems: 'center' }}>
+                    <Text style={{ color: editSelectedChar === null ? colors.primary : colors.text }}>Acción</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity onPress={() => setEditSelectedChar(characters[0] || undefined)} style={{ flex: 1, padding: 8, borderRadius: 8, borderWidth: 1, borderColor: editSelectedChar !== null ? colors.primary : colors.border, backgroundColor: editSelectedChar !== null ? colors.primary + '20' : 'transparent', alignItems: 'center' }}>
+                    <Text style={{ color: editSelectedChar !== null ? colors.primary : colors.text }}>Diálogo</Text>
+                  </TouchableOpacity>
+                </View>
+
+                {editSelectedChar !== null && (
+                  <>
+                    <Text style={[s.modalLabel, { color: colors.textSecondary }]}>Personaje:</Text>
+                    <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: rp(16) }}>
+                      {characters.map(c => (
+                        <TouchableOpacity key={c.id} onPress={() => setEditSelectedChar(c)}
+                          style={[s.charChip, {
+                            backgroundColor: editSelectedChar?.id === c.id ? c.color + '30' : colors.background,
+                            borderColor: editSelectedChar?.id === c.id ? c.color : colors.border,
+                          }]}>
+                          <Text style={[s.charChipText, { color: editSelectedChar?.id === c.id ? c.color : colors.text }]}>{c.name}</Text>
+                        </TouchableOpacity>
+                      ))}
+                    </ScrollView>
+                  </>
                 )}
 
                 <TextInput
@@ -383,25 +521,72 @@ export default function ReviewScreen() {
           </KeyboardAvoidingView>
         </Modal>
 
+        {/* ── Emotion Selector Modal ── */}
+        <Modal
+          visible={emotionModalVisible}
+          transparent
+          animationType="fade"
+          onRequestClose={() => setEmotionModalVisible(false)}
+        >
+          <Pressable style={[s.modalOverlay, { backgroundColor: 'rgba(0,0,0,0.4)' }]} onPress={() => setEmotionModalVisible(false)}>
+            <View style={[s.modalContent, { backgroundColor: colors.surface, paddingHorizontal: 0, paddingBottom: rp(20) }]}>
+              <View style={{ paddingHorizontal: rp(20), paddingBottom: rp(12), borderBottomWidth: 1, borderBottomColor: colors.border }}>
+                <Text style={[s.modalTitle, { color: colors.text, marginBottom: 0 }]}>Dirección Interpretativa</Text>
+              </View>
+              <ScrollView style={{ maxHeight: 300 }}>
+                {EMOTIONS.map(emo => (
+                  <TouchableOpacity 
+                    key={emo.value}
+                    style={{ 
+                      paddingVertical: rp(14), 
+                      paddingHorizontal: rp(20),
+                      borderBottomWidth: 1,
+                      borderBottomColor: colors.border
+                    }}
+                    onPress={() => handleEmotionSelect(emo.value)}
+                  >
+                    <Text style={{ color: colors.text, fontSize: rf(15) }}>{emo.label}</Text>
+                  </TouchableOpacity>
+                ))}
+              </ScrollView>
+            </View>
+          </Pressable>
+        </Modal>
+
         {/* ── Add Line Modal ── */}
         <Modal visible={showAddModal} transparent animationType="slide" onRequestClose={() => setShowAddModal(false)}>
           <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
             <Pressable style={s.modalOverlay} onPress={() => setShowAddModal(false)}>
               <Pressable onPress={e => e.stopPropagation()} style={[s.modalContent, { backgroundColor: colors.surface }]}>
                 <Text style={[s.modalTitle, { color: colors.text }]}>Añadir línea</Text>
-                <Text style={[s.modalLabel, { color: colors.textSecondary }]}>Personaje:</Text>
-                <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: rp(16) }}>
-                  {characters.map(c => (
-                    <TouchableOpacity key={c.id} onPress={() => setSelectedChar(c)}
-                      style={[s.charChip, {
-                        backgroundColor: selectedChar?.id === c.id ? c.color + '30' : colors.background,
-                        borderColor: selectedChar?.id === c.id ? c.color : colors.border,
-                      }]}>
-                      <Text style={[s.charChipText, { color: selectedChar?.id === c.id ? c.color : colors.text }]}>{c.name}</Text>
-                    </TouchableOpacity>
-                  ))}
-                </ScrollView>
-                <Text style={[s.modalLabel, { color: colors.textSecondary }]}>Diálogo:</Text>
+                
+                <View style={{ flexDirection: 'row', marginBottom: rp(16), gap: 12 }}>
+                  <TouchableOpacity onPress={() => setSelectedChar(null)} style={{ flex: 1, padding: 8, borderRadius: 8, borderWidth: 1, borderColor: selectedChar === null ? colors.primary : colors.border, backgroundColor: selectedChar === null ? colors.primary + '20' : 'transparent', alignItems: 'center' }}>
+                    <Text style={{ color: selectedChar === null ? colors.primary : colors.text }}>Acción</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity onPress={() => setSelectedChar(characters[0] || undefined)} style={{ flex: 1, padding: 8, borderRadius: 8, borderWidth: 1, borderColor: selectedChar !== null ? colors.primary : colors.border, backgroundColor: selectedChar !== null ? colors.primary + '20' : 'transparent', alignItems: 'center' }}>
+                    <Text style={{ color: selectedChar !== null ? colors.primary : colors.text }}>Diálogo</Text>
+                  </TouchableOpacity>
+                </View>
+
+                {selectedChar !== null && (
+                  <>
+                    <Text style={[s.modalLabel, { color: colors.textSecondary }]}>Personaje:</Text>
+                    <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: rp(16) }}>
+                      {characters.map(c => (
+                        <TouchableOpacity key={c.id} onPress={() => setSelectedChar(c)}
+                          style={[s.charChip, {
+                            backgroundColor: selectedChar?.id === c.id ? c.color + '30' : colors.background,
+                            borderColor: selectedChar?.id === c.id ? c.color : colors.border,
+                          }]}>
+                          <Text style={[s.charChipText, { color: selectedChar?.id === c.id ? c.color : colors.text }]}>{c.name}</Text>
+                        </TouchableOpacity>
+                      ))}
+                    </ScrollView>
+                  </>
+                )}
+                
+                <Text style={[s.modalLabel, { color: colors.textSecondary }]}>{selectedChar === null ? 'Acción:' : 'Diálogo:'}</Text>
                 <TextInput
                   style={[s.input, { color: colors.text, borderColor: colors.border, backgroundColor: colors.background }]}
                   value={newLineText} onChangeText={setNewLineText}
@@ -414,9 +599,9 @@ export default function ReviewScreen() {
                     <Text style={{ color: colors.text }}>Cancelar</Text>
                   </TouchableOpacity>
                   <TouchableOpacity onPress={addLine}
-                    disabled={!selectedChar || !newLineText.trim() || isSaving}
+                    disabled={(!selectedChar && selectedChar !== null) || !newLineText.trim() || isSaving}
                     style={[s.actionBtn, { backgroundColor: colors.primary, flex: 1,
-                      opacity: (!selectedChar || !newLineText.trim()) ? 0.5 : 1 }]}>
+                      opacity: ((!selectedChar && selectedChar !== null) || !newLineText.trim()) ? 0.5 : 1 }]}>
                     {isSaving
                       ? <ActivityIndicator size="small" color="#fff" />
                       : <Text style={{ color: '#fff' }}>Añadir</Text>
@@ -426,6 +611,105 @@ export default function ReviewScreen() {
               </Pressable>
             </Pressable>
           </KeyboardAvoidingView>
+        </Modal>
+
+        {/* Review Info Modal */}
+        <Modal
+          visible={showReviewInfo}
+          transparent={true}
+          animationType="fade"
+          onRequestClose={() => setShowReviewInfo(false)}
+        >
+          <View style={s.modalOverlay}>
+            <View style={[s.modalContent, { backgroundColor: colors.surface }]}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: rp(16), gap: 12 }}>
+                <Edit size={24} color={colors.primary} />
+                <Text style={[s.modalTitle, { color: colors.text, marginBottom: 0 }]}>Revisa el guion</Text>
+              </View>
+
+              <Text style={{ color: colors.textSecondary, fontSize: rf(14), lineHeight: rf(22), marginBottom: rp(20) }}>
+                La IA puede cometer errores al transcribir el guion.
+                {'\n\n'}
+                Revisa el texto, comprueba las tarjetas de las acciones y los diálogos, reordena las líneas si es necesario puedes crear nuevas pulsando "+". Confirma cuando esté listo. Después se generarán las voces automáticamente.
+              </Text>
+
+              <TouchableOpacity
+                style={{ flexDirection: 'row', alignItems: 'center', marginBottom: rp(24), gap: 10 }}
+                onPress={() => setDontShowReviewInfoAgain(!dontShowReviewInfoAgain)}
+              >
+                <View style={{
+                  width: 20, height: 20, borderRadius: 4, borderWidth: 2, alignItems: 'center', justifyContent: 'center',
+                  borderColor: dontShowReviewInfoAgain ? colors.primary : colors.textSecondary,
+                  backgroundColor: dontShowReviewInfoAgain ? colors.primary : 'transparent'
+                }}>
+                  {dontShowReviewInfoAgain && <Check size={14} color="#FFFFFF" />}
+                </View>
+                <Text style={{ color: colors.textSecondary, fontSize: rf(13) }}>No volver a mostrar este mensaje</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[s.actionBtn, { backgroundColor: colors.primary }]}
+                onPress={async () => {
+                  if (dontShowReviewInfoAgain) {
+                    await AsyncStorage.setItem(REVIEW_INFO_KEY, 'true');
+                  }
+                  setShowReviewInfo(false);
+                }}
+              >
+                <Text style={{ color: '#fff', fontSize: rf(14), fontWeight: '600' }}>Entendido</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </Modal>
+
+        {/* Add Line Info Modal */}
+        <Modal
+          visible={showAddLineInfo}
+          transparent={true}
+          animationType="fade"
+          onRequestClose={() => setShowAddLineInfo(false)}
+        >
+          <View style={s.modalOverlay}>
+            <View style={[s.modalContent, { backgroundColor: colors.surface }]}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: rp(16), gap: 12 }}>
+                <Plus size={24} color={colors.primary} />
+                <Text style={[s.modalTitle, { color: colors.text, marginBottom: 0 }]}>Añadir línea o acción</Text>
+              </View>
+
+              <Text style={{ color: colors.textSecondary, fontSize: rf(14), lineHeight: rf(22), marginBottom: rp(20) }}>
+                Puedes agregar nuevas líneas de diálogo o acciones al guion manualmente.
+                {'\n\n'}
+                Ten en cuenta que las nuevas tarjetas se añadirán por defecto al final de la lista, pero luego podrás arrastrarlas a la posición que desees usando el botón lateral (≡).
+              </Text>
+
+              <TouchableOpacity
+                style={{ flexDirection: 'row', alignItems: 'center', marginBottom: rp(24), gap: 10 }}
+                onPress={() => setDontShowAddLineInfoAgain(!dontShowAddLineInfoAgain)}
+              >
+                <View style={{
+                  width: 20, height: 20, borderRadius: 4, borderWidth: 2, alignItems: 'center', justifyContent: 'center',
+                  borderColor: dontShowAddLineInfoAgain ? colors.primary : colors.textSecondary,
+                  backgroundColor: dontShowAddLineInfoAgain ? colors.primary : 'transparent'
+                }}>
+                  {dontShowAddLineInfoAgain && <Check size={14} color="#FFFFFF" />}
+                </View>
+                <Text style={{ color: colors.textSecondary, fontSize: rf(13) }}>No volver a mostrar este mensaje</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[s.actionBtn, { backgroundColor: colors.primary }]}
+                onPress={async () => {
+                  if (dontShowAddLineInfoAgain) {
+                    await AsyncStorage.setItem('hideAddLineInfoV2', 'true');
+                  }
+                  setShowAddLineInfo(false);
+                  setShowAddModal(true);
+                }}
+              >
+                <Text style={{ color: '#fff', fontSize: rf(14), fontWeight: '600' }}>Entendido</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
         </Modal>
 
       </SafeAreaView>

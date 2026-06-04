@@ -3,6 +3,8 @@ import client from './openaiClient';
 import { generateElevenLabsAudio } from './elevenLabsClient';
 import * as FileSystem from 'expo-file-system/legacy';
 import * as Crypto from 'expo-crypto';
+import { detectEmotionFromLine } from './emotionDetector';
+import { buildProviderTTSInput } from './tts/buildProviderInput';
 
 interface TTSCacheEntry {
     id: string;
@@ -191,131 +193,116 @@ export async function generateAndCacheAudio(
     characterName: string,
     text: string,
     voiceConfig: VoiceConfig,
-    userId: string
+    userId: string,
+    savedDirection?: any
 ): Promise<string | null> {
     try {
+        console.log(`[TTS] Starting generation for ${lineId} (${characterName})`);
         if (!text || !text.trim()) {
              console.log('Skipping audio generation for empty text');
              return null;
         }
 
-        const cleanText = text.trim();
-        const textHash = await hashText(cleanText);
+        // 1. Detectar emoción y preparar input
+        const { cleanText, direction: detectedDirection } = detectEmotionFromLine(text);
+        const finalDirection = savedDirection || detectedDirection;
+        const emotion = finalDirection.emotion || 'neutral';
         const provider = voiceConfig.provider;
         const voiceId = voiceConfig.voiceId || null;
 
-        // Check if already cached
-        const cached = await getCachedAudio(lineId, provider, voiceId, textHash);
-        if (cached) return cached;
+        const lineWithDirection = {
+            lineId,
+            text: cleanText,
+            rawText: text,
+            direction: finalDirection
+        };
 
-        // Skip system TTS (handled in real-time)
+        // 2. Ejecutar Adapter ANTES de verificar caché
+        const providerInput = buildProviderTTSInput(provider, lineWithDirection);
+        console.log(`[TTS] Adapter generated input for ${provider}:`, JSON.stringify(providerInput));
+
+        // 3. Generar hash basado en el input final
+        const hashBase = typeof providerInput === 'string' ? providerInput : JSON.stringify(providerInput);
+        const textHash = await hashText(`${hashBase}_${emotion}_${provider}`);
+
+        // 4. Verificar Caché (hash ya incluye emoción y texto procesado por adapter)
+        const cached = await getCachedAudio(lineId, provider, voiceId, textHash);
+        if (cached) {
+            console.log(`[TTS] ✅ Cache HIT → ${lineId} (${emotion}) devolviendo caché`);
+            return cached;
+        }
+        console.log(`[TTS] ⚡ Cache MISS → generando audio NUEVO para ${characterName} (${provider}, ${emotion})`);
+
         if (provider === 'system') return null;
 
-        console.log(`🎙️ Generating audio for ${characterName} (${provider})...`);
+        console.log(`🎙️ Generating NEW audio for ${characterName} (${provider})...`);
 
         let arrayBuffer: ArrayBuffer | null = null;
 
-        // Generate audio based on provider
+        // 5. Generación
         if (provider === 'azure') {
-            // Azure TTS is handled server-side via the Render microservice
             const renderUrl = process.env.EXPO_PUBLIC_RENDER_SERVER_URL;
             if (!renderUrl) {
                 console.warn('[Azure TTS] RENDER_SERVER_URL not configured, falling back to system TTS');
                 return null;
             }
+            const azureVoice = voiceId || 'es-ES-AlvaroNeural';
+            const azureBody: any = { text: (providerInput as any).text, voice: azureVoice, userId };
+            if ((providerInput as any).ssmlConfig) azureBody.ssmlConfig = (providerInput as any).ssmlConfig;
 
-            try {
-                const azureVoice = voiceId || 'es-ES-AlvaroNeural';
-                const response = await fetch(`${renderUrl}/tts-azure`, {
+            let response = await fetch(`${renderUrl}/tts-azure`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(azureBody),
+            });
+            // Fallback para voces Azure que no soportan estilos emocionales
+            if (response.status === 400 && (providerInput as any).ssmlConfig) {
+                console.log(`[Azure TTS] Reintentando sin SSML style para ${azureVoice}...`);
+                delete azureBody.ssmlConfig;
+                response = await fetch(`${renderUrl}/tts-azure`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        text: cleanText,
-                        voice: azureVoice,
-                        userId,
-                    }),
+                    body: JSON.stringify(azureBody),
                 });
-
-                if (!response.ok) {
-                    const bodyText = await response.text().catch(() => '');
-                    console.warn(`[Azure TTS] Server error ${response.status}: ${bodyText}. Falling back to system TTS.`);
-                    return null;
-                }
-
-                // Server returns MP3 binary directly — save to local file (same as OpenAI/ElevenLabs)
-                const arrayBuffer = await response.arrayBuffer();
-                if (!arrayBuffer || arrayBuffer.byteLength === 0) {
-                    console.warn('[Azure TTS] Empty audio buffer received, falling back to system TTS.');
-                    return null;
-                }
-
-                const base64 = arrayBufferToBase64(arrayBuffer);
-                const localPath = `${FileSystem.cacheDirectory}tts_${lineId}_azure.mp3`;
-                await FileSystem.writeAsStringAsync(localPath, base64, {
-                    encoding: FileSystem.EncodingType.Base64,
-                });
-                console.log('✅ Azure TTS audio cached for:', characterName);
-                return localPath;
-
-            } catch (azureErr) {
-                console.warn('[Azure TTS] Unexpected error, falling back to system TTS:', azureErr);
+            }
+            if (!response.ok) {
+                console.warn(`[Azure TTS] Error ${response.status}, falling back.`);
                 return null;
             }
+            arrayBuffer = await response.arrayBuffer();
         } else if (provider === 'elevenlabs') {
-            const elevenLabsVoiceId = voiceId || "21m00Tcm4TlvDq8ikWAM"; // Default Rachel
-            arrayBuffer = await generateElevenLabsAudio(cleanText, elevenLabsVoiceId);
+            console.log(`[ElevenLabs] → Enviando a API: "${providerInput as string}"`);
+            arrayBuffer = await generateElevenLabsAudio(providerInput as string, voiceId || "21m00Tcm4TlvDq8ikWAM");
         } else if (provider === 'openai') {
-            const openaiVoice = (voiceId || 'alloy') as any;
             const response = await client.audio.speech.create({
                 model: "tts-1",
-                voice: openaiVoice,
-                input: cleanText,
+                voice: (voiceId || 'alloy') as any,
+                input: providerInput as string,
             });
             arrayBuffer = await response.arrayBuffer();
         }
 
-        if (!arrayBuffer) {
-            console.error('Failed to generate audio');
-            return null;
-        }
+        if (!arrayBuffer) throw new Error('Generation failed');
 
-        // Upload to Supabase Storage using platform-specific method
-        const storagePath = `${userId}/${scriptId}/${lineId}_${provider}_${voiceId || 'default'}.mp3`;
-        const uploadSuccess = await uploadAudioToStorage(storagePath, arrayBuffer, userId);
+        // 6. Almacenamiento y Registro
+        const storagePath = `${userId}/${scriptId}/${lineId}_${provider}_${emotion}.mp3`;
+        await uploadAudioToStorage(storagePath, arrayBuffer, userId);
 
-        if (!uploadSuccess) {
-            console.error('Failed to upload audio to storage');
-            return null;
-        }
+        await supabase.from('tts_cache').upsert({
+            script_id: scriptId,
+            line_id: lineId,
+            character_name: characterName,
+            provider,
+            voice_id: voiceId,
+            storage_path: storagePath,
+            text_hash: textHash,
+            file_size_bytes: arrayBuffer.byteLength,
+        }, { onConflict: 'line_id,provider,voice_id' });
 
-        // Save metadata to database
-        const { error: dbError } = await supabase
-            .from('tts_cache')
-            .upsert({
-                script_id: scriptId,
-                line_id: lineId,
-                character_name: characterName,
-                provider,
-                voice_id: voiceId,
-                storage_path: storagePath,
-                text_hash: textHash,
-                file_size_bytes: arrayBuffer.byteLength,
-            }, {
-                onConflict: 'line_id,provider,voice_id'
-            });
+        const localPath = `${FileSystem.cacheDirectory}tts_${lineId}_${provider}_${emotion}.mp3`;
+        await FileSystem.writeAsStringAsync(localPath, arrayBufferToBase64(arrayBuffer), { encoding: FileSystem.EncodingType.Base64 });
 
-        if (dbError) {
-            console.error('Error saving cache metadata:', dbError);
-        }
-
-        // Save to local file system
-        const localPath = `${FileSystem.cacheDirectory}tts_${lineId}_${provider}.mp3`;
-        const base64 = arrayBufferToBase64(arrayBuffer);
-        await FileSystem.writeAsStringAsync(localPath, base64, {
-            encoding: FileSystem.EncodingType.Base64,
-        });
-
-        console.log('✅ Generated and cached audio for:', characterName);
+        console.log('✅ Success: Generated and cached audio.');
         return localPath;
     } catch (error) {
         console.error('Error generating and caching audio:', error);
@@ -355,9 +342,10 @@ export async function preGenerateScriptAudio(
             .select('*')
             .eq('script_id', scriptId);
 
-        const aiLines = lines.filter(line => {
+        const aiLines = lines.filter((line: any) => {
+            if (line.character_name.toUpperCase() === 'ACCIÓN') return false;
             const character = characters?.find(
-                c => c.name.toLowerCase().trim() === line.character_name.toLowerCase().trim()
+                (c: any) => c.name.toLowerCase().trim() === line.character_name.toLowerCase().trim()
             );
             return !character?.is_user_character;
         });
@@ -405,18 +393,19 @@ export async function preGenerateScriptAudio(
                 onProgress?.(completed, total);
                 continue;
             }
+// ... (rest of generateAndCacheAudio remains the same)
 
             await generateAndCacheAudio(
                 scriptId,
                 line.id,
                 line.character_name,
-                line.content.replace(/\([^)]*\)/g, '').replace(/\s+/g, ' ').trim(),
+                line.content,
                 voiceConfig,
-                userId
+                userId,
+                line.voice_direction
             );
 
             completed++;
-            onProgress?.(completed, total);
         }
 
         console.log('✅ TTS pre-generation complete!');

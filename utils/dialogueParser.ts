@@ -15,6 +15,7 @@ export interface DialogueLine {
   // New fields for Casting Mode timing
   isAction?: boolean; // If true, this is an action card, not dialogue
   customTimingAdjustment?: number; // Seconds to add/subtract from calculated time
+  voiceDirection?: any; // Phase 2: User-selected or imported voice direction
 }
 
 export function extractDialogue(

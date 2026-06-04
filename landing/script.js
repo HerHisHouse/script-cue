@@ -8,6 +8,8 @@ document.addEventListener('DOMContentLoaded', () => {
     initMobileMenu();
     initScrollAnimations();
     initSmoothScroll();
+    initScrollSpy();
+    initFeaturesCarousel();
 });
 
 /**
@@ -63,7 +65,7 @@ function initMobileMenu() {
  */
 function initScrollAnimations() {
     const animatedElements = document.querySelectorAll(
-        '.feature-card, .mode-card, .step, .testimonial-card, .section-header'
+        '.feature-card, .mode-card, .step, .testimonial-card, .section-header, .checklist-item'
     );
 
     const observerOptions = {
@@ -161,4 +163,143 @@ function toggleFAQ(button) {
     } else {
         faqItem.classList.add('active');
     }
+}
+
+/**
+ * Highlight active nav link based on scroll position
+ */
+function initScrollSpy() {
+    const sections = document.querySelectorAll('section[id]');
+    const navLinks = document.querySelectorAll('.nav-menu .nav-link');
+
+    window.addEventListener('scroll', () => {
+        let current = '';
+        sections.forEach(section => {
+            const sectionTop = section.offsetTop;
+            const sectionHeight = section.clientHeight;
+            // Activate when section is somewhat in view
+            if (window.scrollY >= (sectionTop - 150)) {
+                current = section.getAttribute('id');
+            }
+        });
+
+        navLinks.forEach(link => {
+            link.classList.remove('active');
+            if (link.getAttribute('href') === `#${current}`) {
+                link.classList.add('active');
+            }
+        });
+    });
+}
+
+/**
+ * Features Mockup Carousel
+ */
+function initFeaturesCarousel() {
+    const track = document.getElementById('featuresCarousel');
+    const dots = document.querySelectorAll('.carousel-dot');
+    if (!track || dots.length === 0) return;
+
+    let currentIndex = 0;
+    const totalSlides = dots.length;
+    let autoPlayInterval;
+    let isTransitioning = false;
+
+    // Handle seamless loop after transition ends
+    track.addEventListener('transitionend', () => {
+        isTransitioning = false;
+        if (currentIndex === totalSlides) {
+            track.style.transition = 'none';
+            currentIndex = 0;
+            track.style.transform = `translateX(0%)`;
+            // Force reflow to apply instant transform
+            track.offsetHeight;
+            track.style.transition = 'transform 0.8s cubic-bezier(0.4, 0, 0.2, 1)';
+        }
+    });
+
+    const goToSlide = (index) => {
+        if (isTransitioning && index !== currentIndex + 1) return; // Prevent spam clicking, allow autoplay
+
+        if (index < 0) {
+            // Seamless backwards: jump to clone, then slide to last real slide
+            track.style.transition = 'none';
+            track.style.transform = `translateX(-${totalSlides * 100}%)`;
+            track.offsetHeight; // Force reflow
+            track.style.transition = 'transform 0.8s cubic-bezier(0.4, 0, 0.2, 1)';
+            index = totalSlides - 1;
+        }
+        
+        isTransitioning = true;
+        currentIndex = index;
+        track.style.transform = `translateX(-${currentIndex * 100}%)`;
+        
+        dots.forEach(dot => dot.classList.remove('active'));
+        if (currentIndex === totalSlides) {
+            dots[0].classList.add('active');
+        } else {
+            dots[currentIndex].classList.add('active');
+        }
+    };
+
+    const startAutoPlay = () => {
+        stopAutoPlay();
+        autoPlayInterval = setInterval(() => {
+            goToSlide(currentIndex + 1);
+        }, 3000);
+    };
+
+    const stopAutoPlay = () => {
+        if (autoPlayInterval) {
+            clearInterval(autoPlayInterval);
+        }
+    };
+
+    // Click on dots
+    dots.forEach((dot, index) => {
+        dot.addEventListener('click', () => {
+            goToSlide(index);
+            startAutoPlay();
+        });
+    });
+
+    // Touch events for swiping
+    let startX = 0;
+    let endX = 0;
+
+    track.addEventListener('touchstart', (e) => {
+        startX = e.touches[0].clientX;
+        stopAutoPlay();
+    }, { passive: true });
+
+    track.addEventListener('touchmove', (e) => {
+        endX = e.touches[0].clientX;
+    }, { passive: true });
+
+    track.addEventListener('touchend', () => {
+        // Only process swipe if endX was updated (prevent click triggering swipe)
+        if (endX === 0) {
+            startAutoPlay();
+            return;
+        }
+
+        const threshold = 40;
+        const deltaX = startX - endX;
+        
+        // If swipe left (next)
+        if (deltaX > threshold) {
+            goToSlide(currentIndex + 1);
+        }
+        // If swipe right (prev)
+        else if (deltaX < -threshold) {
+            goToSlide(currentIndex - 1);
+        }
+        
+        startAutoPlay();
+        startX = 0;
+        endX = 0;
+    });
+
+    // Start initial autoplay
+    startAutoPlay();
 }

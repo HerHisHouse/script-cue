@@ -48,8 +48,9 @@ import { rf, rp } from '@/utils/responsive';
 let TrackPlayer: any = null;
 let TrackPlayerState: any = null;
 let TrackPlayerEvent: any = null;
-let isTrackPlayerReady: any = () => false;
 let setTrackPlayerRepeatMode: any = () => Promise.resolve();
+// Whether the native TrackPlayer module is available (i.e. a real native build)
+let nativeTrackPlayerAvailable = false;
 
 // Try to import TrackPlayer - will fail gracefully in Expo Go
 try {
@@ -59,12 +60,28 @@ try {
   TrackPlayerEvent = trackPlayerModule.Event;
 
   const trackPlayerService = require('@/utils/trackPlayerService');
-  isTrackPlayerReady = trackPlayerService.isTrackPlayerReady;
   setTrackPlayerRepeatMode = trackPlayerService.setRepeatMode;
+
+  // Module loaded means we are in a native build; _layout.tsx has already called setupPlayer()
+  nativeTrackPlayerAvailable = true;
 
   console.log('[TrackPlayer] Module loaded successfully');
 } catch (error) {
   console.log('[TrackPlayer] Not available (running in Expo Go or module not installed)');
+}
+
+/**
+ * Returns true if TrackPlayer module is available AND has been set up
+ * (verified by attempting a non-destructive getPlaybackState call).
+ */
+async function isTrackPlayerReady(): Promise<boolean> {
+  if (!nativeTrackPlayerAvailable || !TrackPlayer) return false;
+  try {
+    await TrackPlayer.getPlaybackState();
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 type ViewMode = 'list' | 'grid';
@@ -116,9 +133,9 @@ const SearchBar = React.memo(function SearchBar({
 });
 
 export default function RecordingsScreen() {
-  const { user } = useAuth();
-  const { colors } = useTheme();
   const router = useRouter();
+  const { user } = useAuth();
+  const { colors, isDark } = useTheme();
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<Recording | null>(null);
   const [deleting, setDeleting] = useState(false);
@@ -537,67 +554,6 @@ export default function RecordingsScreen() {
     }
   }, [loopMode, sound]);
 
-  // Setup remote control commands for lock screen (iOS and Android)
-  useEffect(() => {
-    const setupRemoteControls = async () => {
-      try {
-        // Enable audio session for remote controls
-        await Audio.setIsEnabledAsync(true);
-
-        // Configure audio mode for background playback and lock screen controls
-        await Audio.setAudioModeAsync({
-          playsInSilentModeIOS: true,
-          staysActiveInBackground: true,
-          shouldDuckAndroid: true,
-          interruptionModeIOS: InterruptionModeIOS.DoNotMix,
-          interruptionModeAndroid: InterruptionModeAndroid.DoNotMix,
-        });
-
-        // Setup remote command handlers (works on both iOS and Android)
-        // @ts-ignore
-        if (Audio.setRemoteControlsEnabled) {
-          // @ts-ignore
-          await Audio.setRemoteControlsEnabled(true, {
-            playCommand: async () => {
-              console.log('[Remote] Play command received');
-              if (sound) {
-                await sound.playAsync();
-                setIsPlaying(true);
-              }
-            },
-            pauseCommand: async () => {
-              console.log('[Remote] Pause command received');
-              if (sound) {
-                await sound.pauseAsync();
-                setIsPlaying(false);
-              }
-            },
-            nextTrackCommand: () => {
-              console.log('[Remote] Next track command received');
-              playNext();
-            },
-            previousTrackCommand: () => {
-              console.log('[Remote] Previous track command received');
-              playPrev();
-            },
-          });
-        }
-      } catch (error) {
-        console.log('Error setting up remote controls:', error);
-      }
-    };
-
-    setupRemoteControls();
-
-    return () => {
-      // Cleanup
-      // @ts-ignore
-      if (Audio.setRemoteControlsEnabled) {
-        // @ts-ignore
-        Audio.setRemoteControlsEnabled(false).catch(() => { });
-      }
-    };
-  }, [sound]);
 
   // Auto-maximize player when rotating to landscape
   useEffect(() => {
@@ -737,7 +693,7 @@ export default function RecordingsScreen() {
       }
 
       // Check if TrackPlayer is ready
-      if (!isTrackPlayerReady()) {
+      if (!await isTrackPlayerReady()) {
         console.warn('[Playback] TrackPlayer not ready, falling back to expo-av');
         // Fallback to expo-av if TrackPlayer is not ready
         await loadAndPlayWithExpoAv(index, currentQueue);
@@ -1259,7 +1215,7 @@ export default function RecordingsScreen() {
     }
 
     // Try TrackPlayer first (for audio with lock screen controls)
-    if (isTrackPlayerReady()) {
+    if (await isTrackPlayerReady()) {
       try {
         const state = await TrackPlayer.getPlaybackState();
         if (state.state === TrackPlayerState.Playing) {
@@ -1342,7 +1298,7 @@ export default function RecordingsScreen() {
     }
 
     // Try TrackPlayer first
-    if (isTrackPlayerReady() && durationMillis) {
+    if (await isTrackPlayerReady() && durationMillis) {
       try {
         const targetSeconds = (durationMillis * ratio) / 1000;
         await TrackPlayer.seekTo(targetSeconds);
@@ -1465,7 +1421,7 @@ export default function RecordingsScreen() {
     setLoopMode(nextMode);
 
     // Sync with TrackPlayer if available
-    if (isTrackPlayerReady()) {
+    if (await isTrackPlayerReady()) {
       try {
         if (nextMode === 'one') {
           await setTrackPlayerRepeatMode('track');
@@ -1525,7 +1481,7 @@ export default function RecordingsScreen() {
 
     // Try TrackPlayer first for audio
     const current = queue[currentIndex];
-    if (current?.type !== 'video' && isTrackPlayerReady()) {
+    if (current?.type !== 'video' && await isTrackPlayerReady()) {
       try {
         await TrackPlayer.skipToNext();
         return;
@@ -1543,7 +1499,7 @@ export default function RecordingsScreen() {
 
     // Try TrackPlayer first for audio
     const current = queue[currentIndex];
-    if (current?.type !== 'video' && isTrackPlayerReady()) {
+    if (current?.type !== 'video' && await isTrackPlayerReady()) {
       try {
         await TrackPlayer.skipToPrevious();
         return;
@@ -1682,7 +1638,6 @@ export default function RecordingsScreen() {
 
   async function handleShare(recording: Recording) {
     try {
-      setShowRecordingMenu(null);
 
       const canShare = await Sharing.isAvailableAsync();
       const rawPath = (recording.audio_url || (recording as any).storage_path || '').trim();
@@ -2018,70 +1973,74 @@ export default function RecordingsScreen() {
         )}
 
         {showRecordingMenu === item.id && (
-          <>
-            <Pressable
-              style={[StyleSheet.absoluteFill, { zIndex: 1000 }]}
-              accessibilityRole="button"
-              accessibilityLabel="Cerrar menú"
+          <Modal
+            visible={isOpen}
+            transparent
+            animationType="fade"
+            onRequestClose={() => setShowRecordingMenu(null)}
+          >
+            <TouchableOpacity
+              style={styles.optionsOverlay}
+              activeOpacity={1}
               onPress={() => setShowRecordingMenu(null)}
-            />
-            <Animated.View
-              style={[
-                makeHeaderMenuStyles(colors).container,
-                viewMode === 'grid' ? { right: 8, top: 8 } : { right: 60, top: 16 },
-                { opacity: menuOpacity, transform: [{ scale: menuScale }] },
-              ]}
-              pointerEvents={isOpen ? 'auto' : 'none'}
-              onStartShouldSetResponder={() => true}
             >
-              <TouchableOpacity style={makeHeaderMenuStyles(colors).item} onPress={() => handleRename(item)}>
-                <Edit2 size={18} color={colors.text} />
-                <Text style={[makeHeaderMenuStyles(colors).text, { color: colors.text }]}>Renombrar</Text>
-              </TouchableOpacity>
-              <View style={makeHeaderMenuStyles(colors).separator} />
-
-              <TouchableOpacity style={makeHeaderMenuStyles(colors).item} onPress={() => handleShare(item)}>
-                <Share2 size={18} color={colors.text} />
-                <Text style={[makeHeaderMenuStyles(colors).text, { color: colors.text }]}>Compartir</Text>
-              </TouchableOpacity>
-              <View style={makeHeaderMenuStyles(colors).separator} />
-
-              <TouchableOpacity
-                style={makeHeaderMenuStyles(colors).item}
-                onPress={() => {
+              <View style={[styles.optionsContent, { backgroundColor: colors.surface }]}>
+                <TouchableOpacity style={styles.optionItem} onPress={() => {
                   setShowRecordingMenu(null);
-                  openSendModal(item.id);
-                }}
-              >
-                <Send size={18} color={colors.text} />
-                <Text style={[makeHeaderMenuStyles(colors).text, { color: colors.text }]}>Enviar a…</Text>
-              </TouchableOpacity>
-              <View style={makeHeaderMenuStyles(colors).separator} />
+                  setTimeout(() => handleRename(item), 600);
+                }}>
+                  <Edit2 size={20} color={colors.text} />
+                  <Text style={[styles.optionText, { color: colors.text }]}>Renombrar</Text>
+                </TouchableOpacity>
 
-              <TouchableOpacity
-                style={makeHeaderMenuStyles(colors).item}
-                onPress={() => handleDownloadOffline(item)}
-                disabled={downloadingId === item.id}
-              >
-                {downloadingId === item.id ? (
-                  <ActivityIndicator size="small" color={colors.primary} />
-                ) : (
-                  <Download size={18} color={colors.text} />
-                )}
-                <Text style={[makeHeaderMenuStyles(colors).text, { color: colors.text }]}>Offline</Text>
-              </TouchableOpacity>
-              {/* Nueva opción: Eliminar con diálogo de confirmación */}
-              <View style={makeHeaderMenuStyles(colors).separator} />
+                <TouchableOpacity style={styles.optionItem} onPress={async () => {
+                  await handleShare(item);
+                  setShowRecordingMenu(null);
+                }}>
+                  <Share2 size={20} color={colors.text} />
+                  <Text style={[styles.optionText, { color: colors.text }]}>Compartir</Text>
+                </TouchableOpacity>
 
-              <TouchableOpacity
-                style={makeHeaderMenuStyles(colors).item}
-                onPress={() => openDeleteConfirm(item)}
-              >
-                <Trash2 size={18} color={colors.error} />
-                <Text style={[makeHeaderMenuStyles(colors).text, { color: colors.error }]}>Eliminar</Text>
-              </TouchableOpacity>
-            </Animated.View>
-          </>
+                <TouchableOpacity
+                  style={styles.optionItem}
+                  onPress={() => {
+                    setShowRecordingMenu(null);
+                    setTimeout(() => openSendModal(item.id), 600);
+                  }}
+                >
+                  <Send size={20} color={colors.text} />
+                  <Text style={[styles.optionText, { color: colors.text }]}>Enviar a…</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={styles.optionItem}
+                  onPress={() => {
+                    setShowRecordingMenu(null);
+                    setTimeout(() => handleDownloadOffline(item), 600);
+                  }}
+                  disabled={downloadingId === item.id}
+                >
+                  {downloadingId === item.id ? (
+                    <ActivityIndicator size="small" color={colors.primary} />
+                  ) : (
+                    <Download size={20} color={colors.text} />
+                  )}
+                  <Text style={[styles.optionText, { color: colors.text }]}>Offline</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={[styles.optionItem, { borderTopWidth: 1, borderTopColor: isDark ? '#333' : '#eee' }]}
+                  onPress={() => {
+                    setShowRecordingMenu(null);
+                    setTimeout(() => openDeleteConfirm(item), 600);
+                  }}
+                >
+                  <Trash2 size={20} color={colors.error} />
+                  <Text style={[styles.optionText, { color: colors.error }]}>Eliminar</Text>
+                </TouchableOpacity>
+              </View>
+            </TouchableOpacity>
+          </Modal>
         )}
       </TouchableOpacity>
     );
@@ -2557,9 +2516,11 @@ export default function RecordingsScreen() {
                                 setShowSpeedMenu(false);
 
                                 // Apply to TrackPlayer if available
-                                if (isTrackPlayerReady()) {
-                                  TrackPlayer.setRate(rate).catch((err: any) => console.warn('Could not set TrackPlayer rate:', err));
-                                }
+                                isTrackPlayerReady().then((ready) => {
+                                  if (ready) {
+                                    TrackPlayer.setRate(rate).catch((err: any) => console.warn('Could not set TrackPlayer rate:', err));
+                                  }
+                                });
 
                                 // Apply to expo-av sound if available
                                 if (sound) {
@@ -3395,5 +3356,30 @@ const styles = StyleSheet.create({
     paddingVertical: rp(12),
     paddingHorizontal: rp(4),
     borderBottomWidth: 1,
+  },
+  optionsOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    justifyContent: 'center',
+    padding: rp(20),
+  },
+  optionsContent: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    padding: rp(20),
+  },
+  optionItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: rp(16),
+    gap: rp(16),
+  },
+  optionText: {
+    fontSize: rf(16),
+    fontWeight: '500',
   },
 });

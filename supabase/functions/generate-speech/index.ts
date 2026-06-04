@@ -299,7 +299,7 @@ async function generateSpeechWithElevenLabs(
   const url = `https://api.elevenlabs.io/v1/text-to-speech/${voiceId}/stream`;
   const body = {
     text,
-    model_id: "eleven_multilingual_v2",
+    model_id: "eleven_v3",
     voice_settings: {
       stability: Math.min((prosodyHints?.emphasis ?? 0.5) / 2, 1),
       similarity_boost: 0.75,

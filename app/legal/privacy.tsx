@@ -43,7 +43,7 @@ export default function PrivacyScreen() {
                         • Guiones importados manualmente{'\n'}
                         • Grabaciones de audio y vídeo{'\n'}
                         • Carpetas y proyectos creados dentro de la app{'\n'}
-                        • Preferencias de uso (modo coche, modo coach, modo estudio, etc.)
+                        • Preferencias de uso (modo coche, modo escena, modo estudio, etc.)
                     </Text>
 
                     <Text style={[styles.subsectionTitle, { color: colors.text }]}>2.2 Datos generados automáticamente</Text>
@@ -57,6 +57,15 @@ export default function PrivacyScreen() {
                     <Text style={[styles.subsectionTitle, { color: colors.text }]}>2.3 Datos sensibles</Text>
                     <Text style={[styles.paragraph, { color: colors.text }]}>
                         Las grabaciones solo son procesadas bajo petición explícita del usuario y nunca se comparten ni utilizan para entrenar modelos externos.
+                    </Text>
+
+                    <Text style={[styles.subsectionTitle, { color: colors.text }]}>2.4 Datos de terceros en grabaciones</Text>
+                    <Text style={[styles.paragraph, { color: colors.text }]}>
+                        Si el usuario graba a otros actores/actrices (diálogos en audiciones, ensayos con terceros), el usuario es responsable de:{'\n'}
+                        • Obtener consentimiento explícito de otros participantes.{'\n'}
+                        • Informarles de que sus voces/imágenes se guardan en la app.{'\n'}
+                        • Cumplir normativas de protección de datos (RGPD, LSRFP, etc.).{'\n\n'}
+                        Script Cue no es responsable del uso indebido de grabaciones de terceros.
                     </Text>
 
                     <Text style={[styles.sectionTitle, { color: colors.text }]}>3. Finalidad del tratamiento</Text>
@@ -84,6 +93,28 @@ export default function PrivacyScreen() {
                         Adoptamos medidas razonables de seguridad para evitar accesos no autorizados, aunque ningún sistema puede garantizar seguridad absoluta.
                     </Text>
 
+                    <Text style={[styles.subsectionTitle, { color: colors.text }]}>5.1 Almacenamiento local</Text>
+                    <Text style={[styles.paragraph, { color: colors.text }]}>
+                        • Los archivos se guardan en la memoria del dispositivo.{'\n'}
+                        • Script Cue no tiene acceso al almacenamiento local.{'\n'}
+                        • La responsabilidad de hacer backup es del usuario.
+                    </Text>
+
+                    <Text style={[styles.subsectionTitle, { color: colors.text }]}>5.2 Almacenamiento remoto (Supabase)</Text>
+                    <Text style={[styles.paragraph, { color: colors.text }]}>
+                        • Se usa encriptación en tránsito (HTTPS/TLS).{'\n'}
+                        • Los servidores están en EU.{'\n'}
+                        • Supabase tiene sus propias políticas de seguridad.{'\n'}
+                        • En caso de vulneración, Supabase notificará a los usuarios.
+                    </Text>
+
+                    <Text style={[styles.subsectionTitle, { color: colors.text }]}>5.3 Retención de datos borrados</Text>
+                    <Text style={[styles.paragraph, { color: colors.text }]}>
+                        • Los datos se marcan como eliminados inmediatamente.{'\n'}
+                        • Las copias de seguridad pueden conservarlos 30 días más.{'\n'}
+                        • Cumplimos RGPD en caso de que aplique.
+                    </Text>
+
                     <Text style={[styles.sectionTitle, { color: colors.text }]}>6. Conservación de los datos</Text>
                     <Text style={[styles.paragraph, { color: colors.text }]}>
                         Los datos se conservan mientras la cuenta esté activa o hasta que el usuario solicite su eliminación.
@@ -109,11 +140,28 @@ export default function PrivacyScreen() {
                     </Text>
 
                     <Text style={[styles.sectionTitle, { color: colors.text }]}>9. Servicios de Terceros</Text>
+
+                    <Text style={[styles.subsectionTitle, { color: colors.text }]}>9.1 Supabase</Text>
                     <Text style={[styles.paragraph, { color: colors.text }]}>
-                        La App puede usar proveedores como:{'\n'}
-                        • Supabase (almacenamiento de datos){'\n'}
-                        • APIs de IA (para análisis, transcripción, estudio, modo coach){'\n\n'}
-                        Estos servicios cumplen normativas de protección de datos estándar.
+                        • Proveedor: Supabase (supabase.com).{'\n'}
+                        • Ubicación de los servidores: EU.{'\n'}
+                        • Datos transferidos: usuario, guiones, grabaciones, análisis.{'\n'}
+                        • Política: https://supabase.com/privacy
+                    </Text>
+
+                    <Text style={[styles.subsectionTitle, { color: colors.text }]}>9.2 APIs de IA (OpenAI, Elevenlabs, etc.)</Text>
+                    <Text style={[styles.paragraph, { color: colors.text }]}>
+                        • Datos compartidos: Texto de guiones, transcripciones de audio.{'\n'}
+                        • Restricción: NUNCA se comparten grabaciones de video/audio completas.{'\n'}
+                        • Estos servicios pueden tener sus propias retenciones de datos.
+                    </Text>
+
+                    <Text style={[styles.subsectionTitle, { color: colors.text }]}>9.3 Datos no compartidos</Text>
+                    <Text style={[styles.paragraph, { color: colors.text }]}>
+                        En NINGÚN caso compartimos con terceros:{'\n'}
+                        • Grabaciones de video completas.{'\n'}
+                        • Datos de contacto de otros usuarios.{'\n'}
+                        • Historial de búsquedas o preferencias.
                     </Text>
 
                     <Text style={[styles.sectionTitle, { color: colors.text }]}>10. Cambios en esta Política</Text>

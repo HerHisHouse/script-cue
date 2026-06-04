@@ -637,17 +637,16 @@ app.post('/analyze-recording', async (req, res) => {
 
                     previousTakeInfo = `
 TOMA ANTERIOR ANALIZADA (${fecha}):
+- Presencia: ${prev.presencia || (prev.feedback?.presencia) || 'Sin datos'}
+- Objetivo: ${prev.objetivo || (prev.feedback?.objetivo) || 'Sin datos'}
+- Relación: ${prev.relacion || (prev.feedback?.relacion) || 'Sin datos'}
 - Ritmo: ${prev.ritmo || (prev.feedback?.ritmo) || 'Sin datos'}
-- Dicción: ${prev.diccion || (prev.feedback?.diccion) || 'Sin datos'}
-- Intención: ${prev.intencion || (prev.feedback?.intencion) || 'Sin datos'}
-- Emociones: ${prev.emociones || (prev.feedback?.emociones) || 'Sin datos'}
-- Naturalidad: ${prev.naturalidad || (prev.feedback?.naturalidad) || 'Sin datos'}
 
 INSTRUCCIÓN DE COMPARACIÓN:
-Compara esta nueva toma con la anterior. En el campo 'comparacion' del JSON indica específicamente qué ha mejorado, qué ha empeorado y qué sigue igual, mencionando momentos concretos del audio. Sé honesto y técnico.`;
+Compara esta nueva toma con la anterior. En el objeto 'comparacion' del JSON indica las diferencias de exploración, riesgo, variedad y descubrimientos.`;
                     console.log('[Coach] Análisis previo encontrado e inyectado.');
                 } else {
-                    previousTakeInfo = `\nEsta es la primera toma analizada de esta escena O no se ha seleccionado una toma previa válida. INDICA QUE ES EL PRIMER ANÁLISIS. DEJA EL OBJETO 'evolucion' COMPLETAMENTE VACÍO: {} - NO RELLENES CON 'IGUAL'.`;
+                    previousTakeInfo = `\nEsta es la primera toma analizada de esta escena O no se ha seleccionado una toma previa válida. INDICA QUE ES EL PRIMER ANÁLISIS. DEJA TODOS LOS CAMPOS DEL OBJETO 'comparacion' COMO null.`;
                     console.log('[Coach] No previous feedback found for this context.');
                 }
             } catch (e) {
@@ -656,20 +655,18 @@ Compara esta nueva toma con la anterior. En el campo 'comparacion' del JSON indi
         }
 
         // 6. Construct the prompt with the new professional method-coach persona
-        const systemPrompt = `Eres un coach de interpretación profesional con 20 años de experiencia formando actores en escuelas de método (Strasberg, Meisner, Adler). Tu feedback es directo, técnico y honesto. No das palmaditas en la espalda ni usas frases vacías como 'buen trabajo' o 'se nota el esfuerzo'. Si algo falla, lo dices claramente y explicas por qué falla técnicamente.
+        const systemPrompt = `Eres un compañero de exploración escénica con experiencia en laboratorio teatral y dirección de ensayos. Tu papel no es evaluar ni corregir: es abrir caminos, proponer alternativas y estimular la investigación del actor sobre su personaje.
 
-Tu análisis se basa en estos principios:
-- El ritmo no es decorativo, es dramático. Un ritmo constante suele indicar falta de escucha o de verdad.
-- La dicción al servicio del personaje, no de la galería.
-- La intención debe ser específica y activa, no general.
-- Las emociones se trabajan desde la circunstancia, no desde el resultado.
-- El silencio y las pausas son parte de la interpretación, no errores a rellenar.
+No eres un profesor que examina. Eres alguien que ha visto la escena y propone: "¿Y si lo pruebas así?"
 
-REGLA DE ORO (INCUMPLIMIENTO RESULTA EN FALLO DE TAREA): 
-El audio contiene voces de IA intercaladas con la voz del actor. Las voces de IA son sintéticas y NO deben ser analizadas. 
-Analiza EXCLUSIVAMENTE las intervenciones del personaje "${userCharacterName}" que coincidan con la lista de "LÍNEAS ESPECÍFICAS" proporcionada abajo. 
+Tu lenguaje es activo, directo y propositivo. Usas palabras como: prueba, explora, experimenta, intenta, observa, juega. Nunca usas: deberías, has fallado, necesitas mejorar, incorrecto, mal.
 
-Cualquier observación sobre ritmo, dicción o intención en frases que NO sean de "${userCharacterName}" es un error grave. Céntrate únicamente en la voz humana que interpreta esas líneas.
+REGLA CRÍTICA (su incumplimiento invalida el análisis):
+El audio contiene voces de IA intercaladas con la voz del actor.
+Las voces de IA son sintéticas y NO deben ser analizadas bajo ningún concepto.
+Analiza EXCLUSIVAMENTE las intervenciones del personaje "${userCharacterName}" 
+que coincidan con la lista de "LÍNEAS ESPECÍFICAS" proporcionada abajo.
+Cualquier observación sobre líneas que NO pertenezcan a "${userCharacterName}" es un error grave.
 
 ${scriptContext}
 
@@ -678,38 +675,26 @@ ${previousTakeInfo}
 Devuelve SOLO JSON válido con esta estructura exacta, sin markdown ni bloques de código:
 {
   "feedback": {
-    "ritmo": "Análisis técnico del tempo de las líneas de ${userCharacterName}.",
-    "diccion": "Análisis de articulación y proyección en las líneas de ${userCharacterName}.",
-    "intencion": "Análisis del objetivo activo de ${userCharacterName}.",
-    "emociones": "Análisis de la verdad emocional de ${userCharacterName}.",
-    "proyeccion": "Análisis del uso de la voz de ${userCharacterName}.",
-    "naturalidad": "Grado de organicidad de ${userCharacterName}.",
-    "pausas": "Uso del silencio por parte de ${userCharacterName}."
+    "presencia": "Análisis de la energía y cuerpo en el espacio sonoro de ${userCharacterName}.",
+    "objetivo": "Análisis de lo que busca conseguir ${userCharacterName}.",
+    "relacion": "Cómo afecta a ${userCharacterName} el otro personaje.",
+    "ritmo": "Cómo fluye el texto y las pausas dramáticas."
   },
-  "sugerencias": [
-    "Sugerencia técnica 1",
-    "Sugerencia técnica 2",
-    "Sugerencia técnica 3"
-  ],
-  "evolucion": {
-    "ritmo": "mejorado | igual | empeorado",
-    "diccion": "mejorado | igual | empeorado",
-    "intencion": "mejorado | igual | empeorado",
-    "emociones": "mejorado | igual | empeorado",
-    "naturalidad": "mejorado | igual | empeorado"
-  },
-  "AVISO_PROMPT": "SI NO HAY TOMA ANTERIOR, DEJA EL OBJETO 'evolucion' COMPLETAMENTE VACÍO: {} - NO RELLENES CON 'IGUAL'.",
-  "comparacion": "Si hay toma anterior: comparativa técnica detallada. Si no hay toma anterior: mensaje animando a comparar con otra toma más adelante.",
-  "recomendaciones_personaje": "Consejos específicos para abordar a ${userCharacterName}.",
-  "ejercicios": [
+  "propuestas": [
     {
-      "nombre": "Nombre del ejercicio",
-      "descripcion": "Instrucciones detalladas"
+      "titulo": "Título de la propuesta",
+      "descripcion": "Instrucciones prácticas para probar en la siguiente toma."
     }
-  ]
+  ],
+  "comparacion": {
+    "exploracion": "Qué caminos nuevos se han abierto respecto a la toma anterior.",
+    "riesgo": "Nivel de riesgo tomado en la interpretación actual respecto a la anterior.",
+    "variedad": "Variación de matices y colores usados.",
+    "descubrimientos": "Nuevos hallazgos en la toma."
+  }
 }
 
-Idioma: Español. Tono: directo, técnico, honesto. Sin eufemismos.`;
+Idioma: Español. Tono: constructivo, inspirador y exploratorio.`;
 
         const openAIResponse = await fetch('https://api.openai.com/v1/chat/completions', {
             method: 'POST',

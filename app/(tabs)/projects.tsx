@@ -400,7 +400,9 @@ export default function ProjectsScreen() {
     if (item.type === 'folder') {
       enterFolder(item.data as Project);
     } else if (item.type === 'script') {
-      router.push(`/scripts/${item.data.id}`);
+      const scriptData = item.data as Script;
+      const targetId = scriptData.original_script_id || scriptData.id;
+      router.push(`/scripts/${targetId}`);
     } else if (item.type === 'recording') {
       // Get all recordings in this folder for playlist
       const folderRecordings = items
@@ -487,7 +489,8 @@ export default function ProjectsScreen() {
   };
 
   return (
-    <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]} edges={['top', 'left', 'right']}>
+    <SafeAreaView style={[styles.container, { backgroundColor: colors.surface }]} edges={['top', 'left', 'right']}>
+      <View style={{ flex: 1, backgroundColor: colors.background }}>
       <ScreenHeader
         title={selectionMode ? `${selectedItems.size} seleccionados` : (currentProjectId ? breadcrumbs[breadcrumbs.length - 1].name : "Proyectos")}
         leftAction={
@@ -615,14 +618,17 @@ export default function ProjectsScreen() {
           data={filteredItems}
           renderItem={renderItem}
           keyExtractor={(item) => `${item.type} -${item.data.id} `}
-          contentContainerStyle={{ ...styles.listContent, paddingBottom: 100 + insets.bottom }}
+          contentContainerStyle={[styles.listContent, { paddingBottom: 100 + insets.bottom }, filteredItems.length === 0 && { flexGrow: 1 }]}
           numColumns={viewMode === 'grid' ? 2 : 1}
           key={viewMode} // Force re-render on mode change
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); loadContent(); }} />}
           ListEmptyComponent={
             <View style={styles.emptyState}>
-              <Text style={[styles.emptyText, { color: colors.textSecondary, textAlign: 'center', paddingHorizontal: 40 }]}>
-                {searchText ? 'No se encontraron resultados' : 'Aquí podrás organizar tus proyectos por carpetas y dentro de ellas copiar guiones o grabaciones.'}
+              <Text style={[styles.emptyTitle, { color: colors.text }]}>
+                {searchText ? 'No se encontraron resultados' : 'No hay proyectos'}
+              </Text>
+              <Text style={[styles.emptyText, { color: colors.textSecondary, paddingHorizontal: 40 }]}>
+                {searchText ? 'Intenta con otro término de búsqueda' : 'Puedes organizar tus proyectos por carpetas y enviar los guiones y grabaciones dentro'}
               </Text>
             </View>
           }
@@ -794,7 +800,7 @@ export default function ProjectsScreen() {
           </View>
         </View>
       </Modal>
-
+      </View>
     </SafeAreaView>
   );
 }
@@ -923,10 +929,17 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    padding: rp(40),
+    paddingHorizontal: rp(40),
+  },
+  emptyTitle: {
+    fontSize: rf(22),
+    fontWeight: '600',
+    marginBottom: 8,
   },
   emptyText: {
     fontSize: rf(16),
+    textAlign: 'center',
+    lineHeight: 24,
   },
   modalOverlay: {
     flex: 1,

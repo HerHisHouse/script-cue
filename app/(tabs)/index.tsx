@@ -1,12 +1,12 @@
 import React, { useEffect, useState, useCallback } from 'react'; // Force rebuild
-import { StyleSheet, View, Text, Pressable, FlatList, TouchableOpacity, Animated, Easing, Modal, TextInput, Alert, Share, useWindowDimensions, Keyboard } from 'react-native';
+import { StyleSheet, View, Text, Pressable, FlatList, TouchableOpacity, Animated, Easing, Modal, TextInput, Alert, Share, useWindowDimensions, Keyboard, RefreshControl } from 'react-native';
 import { supabase } from '@/utils/supabase';
 import { ScriptCard } from '@/components/ScriptCard';
 import { SendToModal } from '@/components/SendToModal';
 import { useAuth } from '@/contexts/AuthContext';
 import { useTheme } from '@/contexts/ThemeContext';
 import { Script } from '@/types/database';
-import { Plus, EyeOff, RefreshCw, Upload, Camera, ChevronRight, Search, Grid3x3, List, Circle, MoreVertical, Trash2, CheckSquare, Square, MinusSquare } from 'lucide-react-native';
+import { Plus, EyeOff, RefreshCw, Upload, Camera, ChevronRight, Search, Grid3x3, List, Circle, MoreVertical, Trash2, CheckSquare, Square, MinusSquare, Info, AlertCircle } from 'lucide-react-native';
 import { ScreenHeader } from '@/components/ScreenHeader';
 import { useRouter, useFocusEffect } from 'expo-router';
 import { MENU_ITEM_PADDING_V, HEADER_HORIZONTAL_PADDING, MENU_SECTION_PADDING_V } from '@/utils/ui';
@@ -16,17 +16,19 @@ import { Platform } from 'react-native';
 import logger from '@/utils/logger';
 import { deleteScript } from '@/utils/scripts';
 import { rf, rp } from '@/utils/responsive';
+import { BETA_LIMITS, isUserBetaLimited } from '@/constants/betaLimits';
 
 export default function IndexScreen() {
   const insets = useSafeAreaInsets();
   const bottomInset = insets.bottom || 0;
   const router = useRouter();
-  const { user } = useAuth();
+  const { user, profile, refreshProfile } = useAuth();
   const { colors } = useTheme();
   const [scripts, setScripts] = useState<Script[]>([]);
   const [scriptSelectionMode, setScriptSelectionMode] = useState(false);
   const [selectedScriptIds, setSelectedScriptIds] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [showHeaderMenu, setShowHeaderMenu] = useState(false);
   const [showSearch, setShowSearch] = useState(false);
   const [viewMode, setViewMode] = useState<'list' | 'grid'>('list');
@@ -55,6 +57,9 @@ export default function IndexScreen() {
   // Asegurar al menos 2 columnas en modo cuadrícula, incluso en móviles estrechos
   const gridColumns = width >= 1100 ? 4 : width >= 820 ? 3 : width >= 520 ? 2 : 2;
   const cardWidth = Math.floor((width - gridPadding * 2 - gridGap * (gridColumns - 1)) / gridColumns);
+
+  // Beta Limits Calculation
+  const isAtLimit = isUserBetaLimited(user, profile) && (profile?.total_scripts_imported || 0) >= BETA_LIMITS.MAX_SCRIPTS;
 
   async function openSendModal(scriptId: string) {
     setSendModalVisible(true);
@@ -126,6 +131,7 @@ export default function IndexScreen() {
           project_id: target.projectId,
           user_id: user.id,
           title: `${script.title || 'Sin título'} (copia)`,
+          original_script_id: script.original_script_id || id, // Si ya es copia, mantenemos el original
         };
       });
 
@@ -206,9 +212,9 @@ export default function IndexScreen() {
     }
   }
 
-  const loadScripts = useCallback(async () => {
+  const loadScripts = useCallback(async (isRefresh = false) => {
     try {
-      setLoading(true);
+      if (!isRefresh) setLoading(true);
       const query = supabase
         .from('scripts')
         .select('*')
@@ -223,8 +229,14 @@ export default function IndexScreen() {
       console.error('Error loading scripts:', error);
     } finally {
       setLoading(false);
+      setRefreshing(false);
     }
   }, [user]);
+
+  const onRefresh = useCallback(() => {
+    setRefreshing(true);
+    loadScripts(true);
+  }, [loadScripts]);
 
   useEffect(() => {
     if (!user) return;
@@ -265,7 +277,8 @@ export default function IndexScreen() {
   );
 
   return (
-    <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]} edges={['top', 'left', 'right']}>
+    <SafeAreaView style={[styles.container, { backgroundColor: colors.surface }]} edges={['top', 'left', 'right']}>
+      <View style={{ flex: 1, backgroundColor: colors.background }}>
       {/* Overlay global: cerrar header/search/add; los menús de guion usan backdrop local */}
       {(showHeaderMenu || showAddMenu) && (
         <Pressable
@@ -343,15 +356,34 @@ export default function IndexScreen() {
             <Pressable
               accessibilityRole="button"
               accessibilityLabel="Añadir guion"
-              accessibilityHint="Abre el menú para importar o escanear"
-              style={[styles.addButton, { backgroundColor: colors.primary }]}
-              onPress={() => setShowAddMenu((v) => !v)}
+              accessibilityHint={isAtLimit ? "Has alcanzado el límite de la versión beta" : "Abre el menú para importar o escanear"}
+              style={[styles.addButton, { backgroundColor: isAtLimit ? colors.surface : colors.primary }]}
+              onPress={() => {
+                if (isAtLimit) {
+                  Alert.alert(
+                    "Límite alcanzado",
+                    "Has alcanzado el límite máximo de guiones permitidos en la versión beta.",
+                    [{ text: "Entendido", style: "cancel" }]
+                  );
+                } else {
+                  setShowAddMenu((v) => !v);
+                }
+              }}
             >
-              <Plus size={22} color="#FFFFFF" />
+              <Plus size={22} color={isAtLimit ? colors.textSecondary : "#FFFFFF"} />
             </Pressable>
           </>
         }
       />
+
+      {isUserBetaLimited(user) && (
+        <View style={{ backgroundColor: isAtLimit ? 'rgba(239, 68, 68, 0.1)' : 'rgba(59, 130, 246, 0.1)', paddingHorizontal: 16, paddingVertical: 12, flexDirection: 'row', alignItems: 'center', gap: 12, borderBottomWidth: 1, borderBottomColor: isAtLimit ? 'rgba(239, 68, 68, 0.2)' : 'rgba(59, 130, 246, 0.2)' }}>
+          {isAtLimit ? <AlertCircle size={20} color="#EF4444" /> : <Info size={20} color={colors.primary} />}
+          <Text style={{ flex: 1, color: isAtLimit ? "#EF4444" : colors.primary, fontSize: rf(13), fontWeight: isAtLimit ? '600' : '400' }}>
+            {isAtLimit ? `Has alcanzado el límite máximo de ${BETA_LIMITS.MAX_SCRIPTS} guiones permitidos para la beta.` : `Estás usando la versión beta. Límite de guiones: ${scripts.length}/${BETA_LIMITS.MAX_SCRIPTS}`}
+          </Text>
+        </View>
+      )}
 
       {/* Menú de encabezado: opciones estándar (búsqueda, selección y vistas) */}
       {showHeaderMenu && (
@@ -515,24 +547,24 @@ export default function IndexScreen() {
           <RefreshCw size={24} color={colors.textSecondary} />
         </View>
       ) : scripts.length === 0 ? (
-        <View style={styles.centerContainer}>
-          <EyeOff size={24} color={colors.textSecondary} />
-          <Text style={[styles.emptyText, { color: colors.textSecondary, textAlign: 'center', paddingHorizontal: 40 }]}>
-            {searchText ? 'No se encontraron guiones' : 'Para empezar a practicar con tu primer guion pulsa el botón de "+".'}
+        <View style={styles.emptyState}>
+          <Text style={[styles.emptyTitle, { color: colors.text }]}>
+            No hay guiones
           </Text>
-          {searchText && (
-            <Text style={[styles.emptyText, { color: colors.textSecondary }]}>
-              Intenta con otro término de búsqueda
-            </Text>
-          )}
+          <Text style={[styles.emptyText, { color: colors.textSecondary, paddingHorizontal: 40 }]}>
+            Para empezar a practicar con tu primer guion pulsa el botón de "+".
+          </Text>
         </View>
       ) : (() => {
         const filteredScripts = searchText ? scripts.filter((s) => (s.title || '').toLowerCase().includes(searchText.toLowerCase())) : scripts;
         return filteredScripts.length === 0 ? (
-          <View style={styles.centerContainer}>
-            <EyeOff size={24} color={colors.textSecondary} />
-            <Text style={[styles.emptyText, { color: colors.textSecondary }]}>No se encontraron guiones</Text>
-            <Text style={[styles.emptyText, { color: colors.textSecondary }]}>Intenta con otro término de búsqueda</Text>
+          <View style={styles.emptyState}>
+            <Text style={[styles.emptyTitle, { color: colors.text }]}>
+              No se encontraron guiones
+            </Text>
+            <Text style={[styles.emptyText, { color: colors.textSecondary, paddingHorizontal: 40 }]}>
+              Intenta con otro término de búsqueda
+            </Text>
           </View>
         ) : (
           <FlatList
@@ -543,6 +575,7 @@ export default function IndexScreen() {
             keyExtractor={(item) => item.id}
             numColumns={viewMode === 'grid' ? gridColumns : 1}
             key={viewMode === 'grid' ? `grid-${gridColumns}` : 'list'}
+            refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
             renderItem={({ item }) => (
               <View style={{ width: viewMode === 'grid' ? cardWidth : '100%' }}>
                 <ScriptCard
@@ -569,8 +602,8 @@ export default function IndexScreen() {
                     setRenameScriptTitle(item.title || '');
                     setRenameModalVisible(true);
                   }}
-                  onShare={() => {
-                    Share.share({ message: `Guion: ${item.title || '(Sin título)'}\nID: ${item.id}` });
+                  onShare={async () => {
+                    await Share.share({ message: `Guion: ${item.title || '(Sin título)'}\nID: ${item.id}` });
                   }}
                   onDelete={() => {
                     Alert.alert('Eliminar guion', '¿Seguro que quieres eliminar este guion? Esta acción no se puede deshacer.', [
@@ -679,6 +712,7 @@ export default function IndexScreen() {
         }}
         onMove={performSendScript}
       />
+      </View>
     </SafeAreaView>
   );
 }
@@ -780,8 +814,21 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 12,
   },
+  emptyState: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: rp(40),
+  },
+  emptyTitle: {
+    fontSize: rf(22),
+    fontWeight: '600',
+    marginBottom: 8,
+  },
   emptyText: {
     fontSize: rf(16),
+    textAlign: 'center',
+    lineHeight: 24,
   },
   list: {
     padding: rp(16),

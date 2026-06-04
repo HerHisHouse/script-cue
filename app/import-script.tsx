@@ -56,7 +56,7 @@ interface CharacterConfig {
 export default function ImportScriptScreen() {
   const router = useRouter();
   const { scriptId, openConfig } = useLocalSearchParams();
-  const { user } = useAuth();
+  const { user, profile, refreshProfile } = useAuth();
   const { colors, isDark } = useTheme();
   const [title, setTitle] = useState('');
   const [file, setFile] = useState<any>(null);
@@ -117,7 +117,9 @@ export default function ImportScriptScreen() {
           const settings = await getSettings();
           const perMap: Record<string, { provider?: string; systemVoiceId?: string }> = ((settings as any)?.characterVoicesByScript?.[String(scriptId)] || {});
 
-          const mapped: CharacterConfig[] = (chars || []).map((c: any, idx: number) => {
+          const mapped: CharacterConfig[] = (chars || [])
+            .filter((c: any) => (c.name || '').toUpperCase() !== 'ACCIÓN')
+            .map((c: any, idx: number) => {
             const nameUpper = (c.name || '').toUpperCase();
             const per = perMap[nameUpper] || {};
             return {
@@ -167,7 +169,7 @@ export default function ImportScriptScreen() {
   async function pickDocument() {
     try {
       const result = await DocumentPicker.getDocumentAsync({
-        type: 'application/pdf',
+        type: ['application/pdf', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'application/msword'],
         copyToCacheDirectory: true,
       });
 
@@ -181,16 +183,28 @@ export default function ImportScriptScreen() {
           Alert.alert('Error', 'El archivo seleccionado no tiene una ruta válida.');
           return;
         }
-        const isPdfMime = mime.includes('pdf');
+        
         const isPdfExt = name.toLowerCase().endsWith('.pdf');
-        if (!isPdfMime && !isPdfExt) {
-          Alert.alert('Formato inválido', 'Selecciona un archivo PDF válido (.pdf).');
+        const isDocxExt = name.toLowerCase().endsWith('.docx');
+        const isDocExt = name.toLowerCase().endsWith('.doc');
+        
+        if (isDocExt) {
+          Alert.alert('Formato antiguo no soportado', 'El formato .doc es muy antiguo y no está soportado. Por favor, abre tu archivo en Word y guárdalo como .docx o .pdf.');
           return;
         }
+        
+        const isPdfMime = mime.includes('pdf');
+        const isDocxMime = mime.includes('wordprocessingml.document');
+        
+        if (!isPdfMime && !isPdfExt && !isDocxMime && !isDocxExt) {
+          Alert.alert('Formato inválido', 'Selecciona un archivo PDF válido (.pdf) o un documento de Word moderno (.docx).');
+          return;
+        }
+        
         setFile(asset);
         if (!title) {
           const fallbackName = name || uri.split('/').pop() || 'Mi Guión';
-          const fileName = fallbackName.replace(/\.pdf$/i, '');
+          const fileName = fallbackName.replace(/\.pdf$/i, '').replace(/\.docx$/i, '');
           setTitle(fileName);
         }
       }
@@ -272,8 +286,8 @@ export default function ImportScriptScreen() {
               voice_preset: 'natural',
               color: char.color,
               manually_added: true,
-              voice_id: char.voiceId || null,
-              voice_provider: char.voiceProvider || null,
+              voice_id: char.voiceId || char.systemVoiceId || null,
+              voice_provider: char.voiceProvider || char.provider || null,
             });
 
           if (insertErr) throw new Error(`No se pudo guardar el personaje "${char.name}": ${insertErr.message || insertErr}`);
@@ -366,7 +380,7 @@ export default function ImportScriptScreen() {
     }
 
     if (!file) {
-      Alert.alert('Error', 'Por favor selecciona un archivo PDF');
+      Alert.alert('Error', 'Por favor selecciona un archivo PDF o DOCX');
       return;
     }
 
@@ -381,13 +395,13 @@ export default function ImportScriptScreen() {
     }
 
     // Validación de límites de la versión beta
-    if (isUserBetaLimited(user)) {
-      const { count, error: countError } = await supabase
-        .from('scripts')
-        .select('*', { count: 'exact', head: true })
-        .eq('user_id', user.id);
+    if (isUserBetaLimited(user, profile)) {
+      // Refresh profile to get the absolute latest count before allowing upload
+      await refreshProfile();
+      const updatedProfile = await supabase.from('profiles').select('total_scripts_imported').eq('id', user.id).single();
+      const count = updatedProfile.data?.total_scripts_imported || 0;
         
-      if (!countError && count !== null && count >= BETA_LIMITS.MAX_SCRIPTS) {
+      if (count >= BETA_LIMITS.MAX_SCRIPTS) {
         Alert.alert(
           "Límite alcanzado",
           `Has alcanzado el límite máximo de ${BETA_LIMITS.MAX_SCRIPTS} guiones permitidos en la versión beta.`
@@ -449,8 +463,8 @@ export default function ImportScriptScreen() {
             line_count: 0,
             occurrence_percentage: 0,
             manually_added: true,
-            voice_id: char.voiceId || null,
-            voice_provider: char.voiceProvider || null,
+            voice_id: char.voiceId || char.systemVoiceId || null,
+            voice_provider: char.voiceProvider || char.provider || null,
           })
           .select()
           .maybeSingle();
@@ -584,7 +598,11 @@ export default function ImportScriptScreen() {
 
                 xhr.open('POST', uploadUrl, true);
                 xhr.setRequestHeader('Authorization', `Bearer ${token}`);
-                xhr.setRequestHeader('Content-Type', 'application/pdf');
+                
+                const contentType = fileExt === 'docx' 
+                  ? 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' 
+                  : 'application/pdf';
+                xhr.setRequestHeader('Content-Type', contentType);
                 xhr.setRequestHeader('x-upsert', 'true');
 
                 xhr.timeout = 300000; // 5 minutos
@@ -631,10 +649,14 @@ export default function ImportScriptScreen() {
                 dataToUpload = bytes;
               }
 
+              const contentType = fileExt === 'docx' 
+                ? 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' 
+                : 'application/pdf';
+
               const { error } = await supabase.storage
                 .from('scripts')
                 .upload(path, dataToUpload, {
-                  contentType: 'application/pdf',
+                  contentType: contentType,
                   upsert: true,
                 });
 
@@ -803,7 +825,7 @@ export default function ImportScriptScreen() {
 
           {!showConfigOnly && (
             <>
-              <Text style={[styles.label, { color: colors.text }]}>Archivo PDF</Text>
+              <Text style={[styles.label, { color: colors.text }]}>Archivo PDF o DOCX</Text>
               <TouchableOpacity
                 style={[
                   styles.uploadButton,
@@ -817,7 +839,7 @@ export default function ImportScriptScreen() {
                   styles.uploadText,
                   { color: file ? colors.success : colors.textSecondary }
                 ]}>
-                  {file ? file.name : 'Seleccionar PDF'}
+                  {file ? file.name : 'Seleccionar Archivo'}
                 </Text>
               </TouchableOpacity>
 
@@ -946,29 +968,41 @@ export default function ImportScriptScreen() {
                   {!char.isMyCharacter && (
                     <>
                       {/* Operador de voces - PRIMERO */}
-                      <Text style={[styles.label, { color: colors.text }]}>Operador de voces</Text>
+                      <View style={[styles.labelWithInfo, { marginTop: 12 }]}>
+                        <Text style={[styles.label, { color: colors.text, marginTop: 0, marginBottom: 0 }]}>Operador de voces</Text>
+                        <TouchableOpacity
+                          onPress={() => Alert.alert(
+                            'Operador de voces',
+                            'Dispones de diferentes operadores de voces para configurar tus personajes. El operador de Sistema ofrece voces más planas o robóticas (gratuitas), mientras que OpenAI, Azure y ElevenLabs ofrecen voces premium de alta calidad y realismo.',
+                            [{ text: 'Entendido', style: 'default' }]
+                          )}
+                          style={styles.infoButton}
+                        >
+                          <Info size={16} color={colors.primary} />
+                        </TouchableOpacity>
+                      </View>
                       <TouchableOpacity
                         style={[styles.picker, { backgroundColor: colors.surface, borderColor: colors.border }]}
                         onPress={() => setOpenOperatorIndex(openOperatorIndex === index ? null : index)}
                       >
                         <Text style={[styles.pickerText, { color: colors.text }]}>
                           {(() => {
-                            const prov = char.provider || 'openai';
-                            return prov === 'openai'
-                              ? 'OpenAI'
-                              : prov === 'elevenlabs'
-                                ? 'ElevenLabs'
+                            const prov = char.provider || 'system';
+                            return prov === 'system'
+                              ? 'Sistema (Gratis)'
+                              : prov === 'openai'
+                                ? 'OpenAI (Premium)'
                                 : prov === 'azure'
-                                  ? 'Azure'
-                                  : 'Sistema (offline)';
+                                  ? 'Azure (Premium)'
+                                  : 'ElevenLabs (Premium)';
                           })()}
                         </Text>
                         <ChevronDown size={20} color={colors.textSecondary} />
                       </TouchableOpacity>
                       {openOperatorIndex === index && (
                         <View style={[styles.pickerOptions, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-                          {(['openai', 'elevenlabs', 'azure', 'system'] as const).map((prov) => {
-                            const isSelected = (char.provider || 'openai') === prov;
+                          {(['system', 'openai', 'azure', 'elevenlabs'] as const).map((prov) => {
+                            const isSelected = (char.provider || 'system') === prov;
                             return (
                               <TouchableOpacity
                                 key={prov}
@@ -988,7 +1022,13 @@ export default function ImportScriptScreen() {
                                   styles.pickerOptionText,
                                   isSelected ? styles.pickerOptionTextSelected : { color: colors.textSecondary }
                                 ]}>
-                                  {prov === 'openai' ? 'OpenAI' : prov === 'elevenlabs' ? 'ElevenLabs' : prov === 'azure' ? 'Azure' : 'Sistema (offline)'}
+                                  {prov === 'system'
+                                    ? 'Sistema (Gratis)'
+                                    : prov === 'openai'
+                                      ? 'OpenAI (Premium)'
+                                      : prov === 'azure'
+                                        ? 'Azure (Premium)'
+                                        : 'ElevenLabs (Premium)'}
                                 </Text>
                               </TouchableOpacity>
                             );

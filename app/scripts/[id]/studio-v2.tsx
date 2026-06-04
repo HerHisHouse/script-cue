@@ -100,13 +100,12 @@ export default function StudioV2Screen() {
     const [literalMode, setLiteralMode] = useState(false);
     const [showStageDirections, setShowStageDirections] = useState(false); // Show parenthetical stage directions
     const [showActions, setShowActions] = useState(false); // Show action/description lines from script
-    const [allLinesWithActions, setAllLinesWithActions] = useState<DialogueLine[]>([]); // Lines + action cards merged
     const [openEditMenuLineId, setOpenEditMenuLineId] = useState<string | null>(null);
 
     // Merged lines (with action cards) - computed reactively so useEffects can use it
     const activeLines = React.useMemo(
-        () => showActions && allLinesWithActions.length > 0 ? allLinesWithActions : dialogueLines,
-        [showActions, allLinesWithActions, dialogueLines]
+        () => showActions ? dialogueLines : dialogueLines.filter(l => !l.isAction),
+        [showActions, dialogueLines]
     );
 
     // TTS State
@@ -143,6 +142,10 @@ export default function StudioV2Screen() {
     // Stage Directions Info Alert State
     const [showStageDirectionsInfo, setShowStageDirectionsInfo] = useState(false);
     const [dontShowStageDirectionsAgain, setDontShowStageDirectionsAgain] = useState(false);
+
+    // Actions Info Alert State
+    const [showActionsInfo, setShowActionsInfo] = useState(false);
+    const [dontShowActionsAgain, setDontShowActionsAgain] = useState(false);
 
     // Editing State
     const [editingLineId, setEditingLineId] = useState<string | null>(null);
@@ -277,106 +280,6 @@ export default function StudioV2Screen() {
     // Strip HTML tags and return plain text
     function stripHtmlTags(html: string): string {
         return html.replace(/<[^>]+>/g, '').trim();
-    }
-
-    // ─── PARSE ACTION LINES ─────────────────────────────────────────────────
-    /**
-     * Parse action/description lines from script_html and interleave them with
-     * the dialogue lines array as special isAction cards.
-     *
-     * HOW IT WORKS:
-     * - GPT generates: left-aligned <p> for actions/scene-headings, centered for char names/dialogue
-     * - We split by text-align: left paragraphs = potential actions
-     * - We filter out scene headings (all-caps short or starts with INT/EXT)
-     * - Each action is inserted BEFORE the dialogue line that follows it in the HTML
-     */
-    function parseActionLinesFromHtml(html: string, dialogLines: DialogueLine[]): DialogueLine[] {
-        if (!html || dialogLines.length === 0) return dialogLines;
-        try {
-            console.log("RAW HTML START:\n", html.substring(0, 1000), "\n:RAW HTML END");
-            const charNames = new Set(dialogLines.map(l => l.characterName.trim().toUpperCase()));
-            const parts = splitHtmlIntoParagraphs(html);
-
-            // Classify each <p> as: 'action', 'char-name', 'dialogue', or 'other'
-            type PType = 'action' | 'char-name' | 'dialogue' | 'other';
-            const classified: { raw: string; type: PType; text: string }[] = [];
-
-            for (const part of parts) {
-                const text = stripHtmlTags(part);
-                if (text.length === 0) {
-                    classified.push({ raw: part, type: 'other', text: '' });
-                    continue;
-                }
-
-                const isLeft = isLeftAlignedParagraph(part);
-
-                if (isLeft) {
-                    // Left-aligned: could be scene heading or action
-                    if (isSceneHeading(text, part)) {
-                        classified.push({ raw: part, type: 'other', text });
-                    } else {
-                        classified.push({ raw: part, type: 'action', text });
-                    }
-                } else {
-                    // Centered: char-name or dialogue
-                    // Check if the text (minus parenthetical) matches a known character name
-                    const cleanedText = text.replace(/\([^)]*\)/g, '').trim().toUpperCase();
-                    if (charNames.has(cleanedText)) {
-                        classified.push({ raw: part, type: 'char-name', text });
-                    } else {
-                        classified.push({ raw: part, type: 'dialogue', text });
-                    }
-                }
-            }
-
-            // Interleave: for each char-name token, flush any buffered actions before it,
-            // then push the next dialogue line
-            let dialogIdx = 0;
-            const result: DialogueLine[] = [];
-            const actionBuffer: string[] = [];
-
-            for (const c of classified) {
-                if (c.type === 'action') {
-                    actionBuffer.push(c.text);
-                } else if (c.type === 'char-name') {
-                    if (dialogIdx < dialogLines.length) {
-                        // Flush action buffer as action cards before this dialogue line
-                        for (const actionText of actionBuffer) {
-                            result.push({
-                                id: `action-${result.length}-${Date.now()}`,
-                                characterId: 'action',
-                                characterName: 'ACCIÓN',
-                                text: actionText,
-                                cleanText: actionText,
-                                color: '#8B5CF6',
-                                voiceGender: 'neutral',
-                                voicePreset: 'natural',
-                                isUserCharacter: false,
-                                orderIndex: -1,
-                                sceneId: dialogLines[dialogIdx]?.sceneId || '',
-                                isAction: true,
-                            } as DialogueLine);
-                        }
-                        actionBuffer.length = 0;
-                        result.push(dialogLines[dialogIdx]);
-                        dialogIdx++;
-                    }
-                }
-                // 'dialogue', 'other': ignored (dialogue is consumed via char-name pairing)
-            }
-
-            // Append remaining dialogue lines
-            while (dialogIdx < dialogLines.length) {
-                result.push(dialogLines[dialogIdx++]);
-            }
-
-            const actionCount = result.filter(l => (l as any).isAction).length;
-            console.log(`[Actions] Found ${actionCount} action cards in script_html (${parts.length} paragraphs scanned)`);
-            return result;
-        } catch (e) {
-            console.warn('parseActionLinesFromHtml error:', e);
-            return dialogLines;
-        }
     }
 
     // ─── REORDER DIALOGUES IN HTML ──────────────────────────────────────────
@@ -569,14 +472,6 @@ export default function StudioV2Screen() {
             const lines = await loadDialogueLines(id as string);
             setDialogueLines(lines);
 
-            // Parse action lines from script_html and store them for later merging
-            if (script?.script_html) {
-                const actionLines = parseActionLinesFromHtml(script.script_html, lines);
-                setAllLinesWithActions(actionLines);
-            } else {
-                setAllLinesWithActions(lines);
-            }
-
             // Load characters for adding new lines
             const { data: charactersData } = await supabase
                 .from('characters')
@@ -637,9 +532,11 @@ export default function StudioV2Screen() {
         if (activeLines.length === 0 || !isPlaying) return;
 
         const line = activeLines[currentIndex];
+        
+        if (!line) return;
 
         // If it's an action card, show briefly and auto-advance (IA ignores it)
-        if (line?.isAction) {
+        if (line.isAction) {
             const timer = setTimeout(() => handleNext(), 1500);
             return () => clearTimeout(timer);
         }
@@ -710,14 +607,7 @@ export default function StudioV2Screen() {
 
             // Use cloud TTS (OpenAI, ElevenLabs, Google) with cache
             try {
-                const { getCachedAudio, generateAndCacheAudio } = await import('@/utils/ttsCache');
-                const Crypto = await import('expo-crypto');
-
-                // Calculate text hash for cache lookup - use cleanText (without stage directions)
-                const textHash = await Crypto.digestStringAsync(
-                    Crypto.CryptoDigestAlgorithm.SHA256,
-                    line.cleanText
-                );
+                const { generateAndCacheAudio } = await import('@/utils/ttsCache');
 
                 // Determine provider and voice from character-specific settings
                 const characterName = line.characterName.toUpperCase();
@@ -733,16 +623,13 @@ export default function StudioV2Screen() {
                 let voiceId: string | null = null;
 
                 if (character?.voice_id && character?.voice_provider) {
-                    // Use voice from character configuration
                     effectiveProvider = character.voice_provider;
                     voiceId = character.voice_id;
                     console.log(`[Studio] Using character voice: ${voiceId} (${effectiveProvider})`);
                 } else if (characterConfig?.provider) {
-                    // Use character-specific provider from settings
                     effectiveProvider = characterConfig.provider;
                     voiceId = characterConfig.systemVoiceId || null;
                 } else {
-                    // Fall back to global setting
                     effectiveProvider = ttsProvider;
                 }
 
@@ -750,26 +637,15 @@ export default function StudioV2Screen() {
                 if (effectiveProvider === 'google') effectiveProvider = 'openai';
 
                 if (effectiveProvider === 'system') {
-                    // Use system TTS for this character with specific voice
                     const systemVoiceId = voiceId || characterConfig?.systemVoiceId;
                     console.log(`[Studio] Using system TTS for ${characterName}, voiceId: ${systemVoiceId}`);
-
-                    // Find the voice object from available voices
                     const voices = await Speech.getAvailableVoicesAsync();
                     const selectedVoice = voices.find(v => v.identifier === systemVoiceId);
-
-                    // Use cleanText to avoid reading stage directions
                     Speech.speak(line.cleanText, {
                         language: selectedVoice?.language || 'es-ES',
                         voice: selectedVoice?.identifier,
-                        onDone: () => {
-                            setIsSpeaking(false);
-                            setTimeout(handleNext, 800);
-                        },
-                        onError: () => {
-                            setIsSpeaking(false);
-                            setTimeout(handleNext, 800);
-                        }
+                        onDone: () => { setIsSpeaking(false); setTimeout(handleNext, 800); },
+                        onError: () => { setIsSpeaking(false); setTimeout(handleNext, 800); }
                     });
                     console.warn('[speakLine] System TTS used - no AI segment will be saved');
                     return;
@@ -777,22 +653,18 @@ export default function StudioV2Screen() {
 
                 const provider: 'openai' | 'elevenlabs' | 'azure' = effectiveProvider as 'openai' | 'elevenlabs' | 'azure';
 
-                // Try to get from cache first
-                let audioUri = await getCachedAudio(line.id, provider as any, voiceId, textHash);
-
-                // If not in cache, generate and cache
-                if (!audioUri && user) {
-                    console.log(`Generating audio for ${line.characterName} with voice ${voiceId || 'default'}...`);
-                    // Use cleanText to avoid generating audio with stage directions
-                    audioUri = await generateAndCacheAudio(
-                        id as string,
-                        line.id,
-                        line.characterName,
-                        line.cleanText,
-                        { provider: provider as any, voiceId: voiceId || undefined },
-                        user.id
-                    );
-                }
+                // generateAndCacheAudio maneja internamente la caché y la emoción
+                // Pasamos line.voiceDirection para que el adapter aplique el prefijo correcto
+                console.log(`[Studio] speakLine → generateAndCacheAudio para ${characterName}, voiceDirection:`, JSON.stringify(line.voiceDirection));
+                let audioUri = user ? await generateAndCacheAudio(
+                    id as string,
+                    line.id,
+                    line.characterName,
+                    line.text,
+                    { provider: provider as any, voiceId: voiceId || undefined },
+                    user.id,
+                    line.voiceDirection ?? null
+                ) : null;
 
                 if (!audioUri) {
                     // Azure (or any provider) failed — fall back to system TTS silently
@@ -1733,14 +1605,16 @@ export default function StudioV2Screen() {
                         voiceId: character.voice_id || undefined
                     };
 
-                    // Regenerate TTS audio in background
+                    // Regenerate TTS audio in background — fetch voice_direction from current line state
+                    const editedLineState = dialogueLines.find(l => l.id === editingLineId);
                     generateAndCacheAudio(
                         id as string,
                         editingLineId,
                         editedLine.characterName,
                         editedText.trim(),
                         voiceConfig,
-                        user.id
+                        user.id,
+                        editedLineState?.voiceDirection ?? null
                     ).catch(err => {
                         console.error('Error regenerating TTS:', err);
                     });
@@ -2083,14 +1957,15 @@ export default function StudioV2Screen() {
                     voiceId: selectedCharacter.voice_id || undefined
                 };
 
-                // Generate TTS audio in background
+                // Generate TTS audio in background (new lines start neutral, no voiceDirection yet)
                 generateAndCacheAudio(
                     id as string,
                     newLine.id,
                     selectedCharacter.name,
                     newLineText.trim(),
                     voiceConfig,
-                    user.id
+                    user.id,
+                    null
                 ).catch(err => {
                     console.error('Error generating TTS for new line:', err);
                 });
@@ -2359,13 +2234,20 @@ export default function StudioV2Screen() {
 
                                 <TouchableOpacity
                                     style={[styles.menuItem, { borderBottomWidth: 0 }]}
-                                    onPress={() => {
+                                    onPress={async () => {
                                         setShowMenu(false);
+                                        // If activating, check if we should show the info modal
+                                        if (!showActions) {
+                                            const hidden = await AsyncStorage.getItem('hideActionsInfoV2');
+                                            if (hidden !== 'true') {
+                                                setShowActionsInfo(true);
+                                            }
+                                        }
                                         setShowActions(p => !p);
                                     }}
                                 >
-                                    <Clapperboard size={20} color={showActions ? '#8B5CF6' : colors.text} />
-                                    <Text style={[styles.menuItemText, { color: showActions ? '#8B5CF6' : colors.text }]}>
+                                    <Clapperboard size={20} color={showActions ? colors.primary : colors.text} />
+                                    <Text style={[styles.menuItemText, { color: showActions ? colors.primary : colors.text }]}>
                                         {showActions ? 'Acciones (Activo)' : 'Acciones'}
                                     </Text>
                                 </TouchableOpacity>
@@ -2465,6 +2347,51 @@ export default function StudioV2Screen() {
                         </View>
                     </Modal>
 
+
+                    {/* Actions Info Modal */}
+                    <Modal
+                        visible={showActionsInfo}
+                        transparent={true}
+                        animationType="fade"
+                        onRequestClose={() => setShowActionsInfo(false)}
+                    >
+                        <View style={styles.modalOverlay}>
+                            <View style={[styles.modalContent, { backgroundColor: colors.surface }]}>
+                                <View style={styles.modalHeader}>
+                                    <Clapperboard size={32} color={colors.primary} />
+                                    <Text style={[styles.modalTitle, { color: colors.text }]}>Acciones</Text>
+                                </View>
+
+                                <Text style={[styles.modalText, { color: colors.textSecondary }]}>
+                                    Al activar "Acciones" se mostrarán las tarjetas de acción extraídas del guion para ofrecer más información sobre la escena. Si quieres que desaparezcan vuelve a pulsar para desactivarlas.
+                                </Text>
+
+                                <TouchableOpacity
+                                    style={styles.checkboxContainer}
+                                    onPress={() => setDontShowActionsAgain(!dontShowActionsAgain)}
+                                >
+                                    <View style={[styles.checkbox, { borderColor: colors.textSecondary, backgroundColor: dontShowActionsAgain ? colors.primary : 'transparent' }]}>
+                                        {dontShowActionsAgain && <Check size={12} color="#FFFFFF" />}
+                                    </View>
+                                    <Text style={[styles.checkboxText, { color: colors.textSecondary }]}>No volver a mostrar este mensaje</Text>
+                                </TouchableOpacity>
+
+                                <View style={styles.modalButtons}>
+                                    <TouchableOpacity
+                                        style={[styles.modalButton, { backgroundColor: colors.primary, flex: 1 }]}
+                                        onPress={async () => {
+                                            if (dontShowActionsAgain) {
+                                                await AsyncStorage.setItem('hideActionsInfoV2', 'true');
+                                            }
+                                            setShowActionsInfo(false);
+                                        }}
+                                    >
+                                        <Text style={[styles.modalButtonText, { color: '#FFFFFF' }]}>Entendido</Text>
+                                    </TouchableOpacity>
+                                </View>
+                            </View>
+                        </View>
+                    </Modal>
 
                     {/* Reorder Info Modal */}
                     <Modal
@@ -2765,13 +2692,13 @@ export default function StudioV2Screen() {
                                     {/* Current Card - special style for action cards */}
                                     <View style={[styles.card, {
                                         backgroundColor: currentLine.isAction ? 'rgba(139,92,246,0.08)' : colors.background,
-                                        borderColor: currentLine.isAction ? '#8B5CF6' : (currentLine.isUserCharacter ? '#10B981' : currentLine.color || colors.primary),
+                                        borderColor: currentLine.isAction ? colors.primary : (currentLine.isUserCharacter ? '#10B981' : currentLine.color || colors.primary),
                                         borderWidth: currentLine.isAction ? 2 : 4,
                                         borderStyle: currentLine.isAction ? 'dashed' : 'solid',
                                         padding: 0, overflow: 'hidden'
                                     }]}>
                                         {/* Header */}
-                                        <View style={[styles.cardHeaderBanner, { backgroundColor: currentLine.isAction ? '#8B5CF6' : (currentLine.isUserCharacter ? '#10B981' : currentLine.color || colors.primary) }]}>
+                                        <View style={[styles.cardHeaderBanner, { backgroundColor: currentLine.isAction ? colors.primary : (currentLine.isUserCharacter ? '#10B981' : currentLine.color || colors.primary) }]}>
                                             {!currentLine.isAction && !isPlaying && !isRecording && !isSpeaking && !isListening && (
                                                 <TouchableOpacity onPress={() => setOpenEditMenuLineId(openEditMenuLineId === currentLine.id ? null : currentLine.id)} style={styles.menuButtonAbsolute}>
                                                     <MoreVertical size={20} color={colors.background} />
@@ -2807,7 +2734,7 @@ export default function StudioV2Screen() {
                                                             <Text style={[styles.hiddenLineText, { color: colors.textSecondary }]}>Línea oculta</Text>
                                                         </View>
                                                     ) : (
-                                                        <Text style={[styles.dialogueText, { color: currentLine.isAction ? '#8B5CF6' : colors.text, fontStyle: currentLine.isAction ? 'italic' : 'normal' }]}>{currentLine.isAction ? currentLine.text : renderTextWithStageDirections(showStageDirections ? currentLine.text : currentLine.cleanText)}</Text>
+                                                        <Text style={[styles.dialogueText, { color: currentLine.isAction ? colors.primary : colors.text, fontStyle: currentLine.isAction ? 'italic' : 'normal' }]}>{currentLine.isAction ? currentLine.text : renderTextWithStageDirections(showStageDirections ? currentLine.text : currentLine.cleanText)}</Text>
                                                     )}
                                                 </>
                                             )}
@@ -2824,14 +2751,14 @@ export default function StudioV2Screen() {
                                             styles.card, styles.nextCard,
                                             {
                                                 backgroundColor: line.isAction ? 'rgba(139,92,246,0.08)' : colors.background,
-                                                borderColor: line.isAction ? '#8B5CF6' : (line.isUserCharacter ? '#10B981' : line.color || colors.primary),
+                                                borderColor: line.isAction ? colors.primary : (line.isUserCharacter ? '#10B981' : line.color || colors.primary),
                                                 borderWidth: line.isAction ? 2 : 4,
                                                 opacity: 0.5, padding: 0, overflow: 'hidden',
                                                 marginTop: index === 0 ? 16 : 12,
                                                 borderStyle: line.isAction ? 'dashed' : 'solid',
                                             }
                                         ]}>
-                                            <View style={[styles.cardHeaderBanner, { backgroundColor: line.isAction ? '#8B5CF6' : (line.isUserCharacter ? '#10B981' : line.color || colors.primary) }]}>
+                                            <View style={[styles.cardHeaderBanner, { backgroundColor: line.isAction ? colors.primary : (line.isUserCharacter ? '#10B981' : line.color || colors.primary) }]}>
                                                 <Text style={[styles.characterName, { color: colors.background }]}>{line.isAction ? '⚡ ACCIÓN' : line.characterName}</Text>
                                                 {!line.isAction && <View style={[styles.badge, { backgroundColor: 'rgba(0,0,0,0.2)' }]}><Text style={[styles.badgeText, { color: colors.background }]}>{line.isUserCharacter ? 'TÚ' : 'IA'}</Text></View>}
                                             </View>
@@ -2842,7 +2769,7 @@ export default function StudioV2Screen() {
                                                         <Text style={[styles.hiddenLineText, { color: colors.textSecondary, fontSize: rf(12) }]}>Oculta</Text>
                                                     </View>
                                                 ) : (
-                                                    <Text style={[styles.dialogueText, { color: line.isAction ? '#8B5CF6' : colors.text, fontStyle: line.isAction ? 'italic' : 'normal' }]} numberOfLines={2}>{line.text}</Text>
+                                                    <Text style={[styles.dialogueText, { color: line.isAction ? colors.primary : colors.text, fontStyle: line.isAction ? 'italic' : 'normal' }]} numberOfLines={2}>{line.text}</Text>
                                                 )}
                                             </View>
                                         </View>

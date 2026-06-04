@@ -195,32 +195,29 @@ export default function ScriptEditorScreen() {
             if (error) throw error;
 
             // Priority:
-            // 1. script_html (contains full formatting with descriptions/action lines from OpenAI)
-            // 2. Reconstruct from scenes/lines (dialogues only, for backward compatibility)
+            // 1. Reconstruct from scenes/lines (ALWAYS reflects Review screen changes)
+            // 2. script_html (contains full formatting with descriptions/action lines from OpenAI)
             // 3. Raw text fallback
 
-            if (data.script_html) {
+            const reconstructed = await reconstructScriptFromData();
+
+            if (reconstructed) {
+                setInitialHtml(reconstructed);
+                htmlContentRef.current = reconstructed;
+            } else if (data.script_html) {
                 // Use the full HTML from OpenAI which includes descriptions, action lines, etc.
                 setInitialHtml(data.script_html);
                 htmlContentRef.current = data.script_html;
+            } else if (data.content) {
+                setInitialHtml(data.content);
+                htmlContentRef.current = data.content;
+            } else if (data.script_raw || data.parsed_text) {
+                const rawText = data.script_raw || data.parsed_text;
+                const formattedHtml = parseScriptLocally(rawText, data.title);
+                setInitialHtml(formattedHtml);
+                htmlContentRef.current = formattedHtml;
             } else {
-                // Try to reconstruct from scenes/lines (dialogues only)
-                const reconstructed = await reconstructScriptFromData();
-
-                if (reconstructed) {
-                    setInitialHtml(reconstructed);
-                    htmlContentRef.current = reconstructed;
-                } else if (data.content) {
-                    setInitialHtml(data.content);
-                    htmlContentRef.current = data.content;
-                } else if (data.script_raw || data.parsed_text) {
-                    const rawText = data.script_raw || data.parsed_text;
-                    const formattedHtml = parseScriptLocally(rawText, data.title);
-                    setInitialHtml(formattedHtml);
-                    htmlContentRef.current = formattedHtml;
-                } else {
-                    setInitialHtml('<p>No se encontró contenido.</p>');
-                }
+                setInitialHtml('<p>No se encontró contenido.</p>');
             }
 
             // Load drawing layer if exists
@@ -426,8 +423,8 @@ export default function ScriptEditorScreen() {
 
                     charName = charName?.toUpperCase() || 'PERSONAJE';
 
-                    // Check if line is action/description (no character assigned or specific type)
-                    if (line.type === 'action' || line.type === 'description' || !line.character_name) {
+                    // Check if line is action/description (is_action flag, no character assigned, or specific type)
+                    if (line.is_action || line.character_name === 'ACCIÓN' || line.type === 'action' || line.type === 'description' || !line.character_name) {
                         // Action/Description - LEFT aligned
                         html += `
                         <p style="text-align: left; margin-top: 10px; margin-bottom: 15px; font-size: 14px;">
