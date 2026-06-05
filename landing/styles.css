@@ -715,9 +715,11 @@ section {
     border: 1px solid var(--border-color);
     border-radius: 20px;
     padding: 32px;
-    transition: var(--transition-normal);
+    transition: all 0.4s cubic-bezier(0.16, 1, 0.3, 1);
     position: relative;
     overflow: hidden;
+    transform: translateY(0);
+    will-change: transform, box-shadow, border-color;
 }
 
 .mode-card::before {
@@ -729,16 +731,25 @@ section {
     height: 3px;
     background: var(--gradient-primary);
     opacity: 0;
-    transition: var(--transition-normal);
+    transition: opacity 0.4s ease;
 }
 
 .mode-card:hover {
-    transform: translateY(-4px);
+    transform: translateY(-12px);
     border-color: var(--border-color-hover);
+    box-shadow: 0 20px 40px rgba(0, 0, 0, 0.3), 0 0 20px rgba(168, 85, 247, 0.1);
+    z-index: 10;
 }
 
 .mode-card:hover::before {
     opacity: 1;
+}
+
+.mode-header {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    margin-bottom: 16px;
 }
 
 .mode-icon {
@@ -749,7 +760,6 @@ section {
     display: flex;
     align-items: center;
     justify-content: center;
-    margin-bottom: 20px;
 }
 
 .mode-icon svg {
@@ -761,7 +771,7 @@ section {
 .mode-title {
     font-size: 1.25rem;
     font-weight: 600;
-    margin-bottom: 12px;
+    margin-bottom: 0;
 }
 
 .mode-description {

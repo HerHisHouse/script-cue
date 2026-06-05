@@ -92,7 +92,7 @@ export default function MemoryModeScreen() {
         setUserCharacterName(userChar?.name || 'Tu personaje');
         setCharacters(characters || []);
 
-        const lines = await loadDialogueLines(id as string);
+        const lines = (await loadDialogueLines(id as string)).filter(l => !l.isAction);
         setDialogueLines(lines);
       } catch (error: any) {
         console.error('Error loading memory mode:', error);

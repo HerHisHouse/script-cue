@@ -15,23 +15,23 @@ interface FAQ {
 const faqs: FAQ[] = [
     {
         category: 'General',
-        question: '¿Qué es Script Cue?',
-        answer: 'Script Cue es una aplicación diseñada para actores y actrices que te ayuda a memorizar y practicar tus guiones de manera efectiva. Ofrece múltiples modos de estudio, de memorización, grabación de selftape con la réplica por IA, análisis de personajes, escenas y mucho más.',
+        question: '¿Qué es ScriptCue?',
+        answer: 'ScriptCue es una aplicación diseñada para actores y actrices que te ayuda a memorizar y practicar tus guiones de manera efectiva. Ofrece múltiples modos de estudio, de memorización, grabación de selftape con la réplica por IA, análisis de personajes, laboratorio escénico y mucho más.',
     },
     {
         category: 'General',
         question: '¿Cómo importo un guión?',
-        answer: 'Puedes importar guiones de dos formas:\n\n1. Importar PDF: Toca el botón "+" en la pantalla "Mis guiones" y selecciona "Importar guion". Elige un archivo PDF de tu dispositivo.\n\n2. Escanear: Usa la cámara para escanear páginas de guiones físicos, o sube imágenes desde la galería de tu terminal. La app convertirá el texto automáticamente.',
+        answer: 'Puedes importar guiones de dos formas:\n\n1. Importar PDF o DOCX: Toca el botón "+" en la pantalla "Mis guiones" y selecciona "Importar guion". Elige un archivo PDF o DOCX de tu dispositivo.\n\n2. Escanear: Usa la cámara para escanear páginas de guiones físicos, o sube imágenes desde la galería de tu terminal. La app convertirá el texto automáticamente.',
     },
     {
         category: 'Modos de Estudio',
         question: '¿Qué es el Modo Estudio?',
-        answer: 'El Modo Estudio es perfecto para memorizar tus líneas. La IA lee las líneas de los otros personajes mientras tú practicas las tuyas. Puedes:\n\n• Escuchar las líneas de la IA\n• Grabar tus propias líneas\n• Practicar con reconocimiento de voz\n• Editar guion: Un completo editor de texto que te permitirá revisar el guión completo, editar los diálogos, tomar notas y dibujos sobre el propio guión y guardar los cambios para poder consultarlos cuando lo necesites\n• Modo texto literal: Activa esta opción si quieres llevar tu memorización a otro nivel. Mientras practicas o grabas una sesión debes de decir tu texto literal sin poder variar ni añadir palabras, si lo haces la app te lo notificará\n• Crear nuevas tarjetas: Usa el botón "+" para añadir diálogos personalizados\n• Menú de tarjeta (...): Cada tarjeta tiene opciones para editar el diálogo y moverla arriba o abajo',
+        answer: 'El Modo Estudio es perfecto para memorizar tus líneas. La IA lee las líneas de los otros personajes mientras tú practicas las tuyas. Puedes:\n\n• Escuchar las líneas de la IA\n• Grabar tus propias líneas\n• Practicar con reconocimiento de voz\n• Editar guion: Un completo editor de texto que te permitirá revisar el guión completo, editar los diálogos, tomar notas y dibujos sobre el propio guión y guardar los cambios\n• Modo texto literal: Activa esta opción si quieres llevar tu memorización a otro nivel. Mientras practicas o grabas una sesión debes de decir tu texto literal sin poder variar ni añadir palabras\n• Crear nuevas tarjetas: Usa el botón "+" para añadir diálogos personalizados\n• Menú de tarjeta (...): Cada tarjeta tiene opciones para editar el diálogo y moverla arriba o abajo\n• Ocultar mis líneas: permite al usuario que se oculten sólo las líneas de su tarjeta para practicar la memorización.\n• Acotaciones: Si el guión cuenta con acotaciones entre paréntesis como (gritando), (sin mirarle) o (llorando) esto se mostrará en las tarjetas de diálogos para dar más información sobre la escena. Estas acotaciones nunca serán leidas por la IA.\n• Acciones: Si el guion dispone de acciones, al activar esta opción se mostrarán tarjetas específicas en color morado narrando las acciones para una mayor comprensión de la escena.',
     },
     {
         category: 'Modos de Estudio',
         question: '¿Qué es el Modo Casting?',
-        answer: 'El Modo Casting te permite grabar video de tu actuación mientras la IA lee las líneas de los otros personajes. Es ideal para:\n\n• Crear self-tapes profesionales\n• Practicar audiciones\n• Revisar tu actuación\n\nEl video final incluye tanto tu actuación como el audio de la IA mezclado.\n\nPuedes configurar:\n• Duración de líneas: Ajusta cuánto tiempo aparece cada línea en pantalla antes de avanzar automáticamente\n• Líneas de acción: Crea líneas personalizadas con indicaciones de acción (ej: "*Se levanta y camina hacia la puerta*") que aparecerán durante la grabación',
+        answer: 'El Modo Casting te permite grabar video de tu actuación mientras la IA lee las líneas de los otros personajes. Es ideal para:\n\n• Crear self-tapes profesionales\n• Practicar audiciones\n• Revisar tu actuación\n\nEl video final incluye tanto tu actuación como el audio de la IA mezclado.\n\nPuedes configurar:\n\n• Duración de líneas: Ajusta cuánto tiempo aparece cada línea en pantalla antes de avanzar automáticamente\n• Líneas de acción: Crea líneas personalizadas con indicaciones de acción (ej: "*Se levanta y camina hacia la puerta*") que aparecerán durante la grabación para darle un timing más real a la escena.\n\nEl modo casting te muestra todo lo que va ocurriendo en la escena mediante un teleprompter. Al igual que en el modo estudio puedes activar:\n\n• Ocultar mis líneas\n• Ocultar/mostrar acciones\n• Ocultar/mostrar acotaciones\n• Ocultar/mostrar el teleprompter.\n\nSi necesitas fijar un tiempo extra cuando empieces la grabación para que la escena empiece más tarde, puedes configurar un temporizador que activará el comienzo de la lectura de líneas.\n\nTeleprompter libre: El modo casting cuenta con un apartado de teleprompter que no muestra ningún guión. Puedes escribir el texto que necesites y grabarte como con un teleprompter profesional. Puede venir bien para cuando te piden hacer presentaciones en la que tienes que contar varios temas, así lo puedes estructurar y no olvidarte de nada.',
     },
     {
         category: 'Modos de Estudio',
@@ -40,13 +40,23 @@ const faqs: FAQ[] = [
     },
     {
         category: 'Modos de Estudio',
+        question: '¿Qué es el Modo Memoria?',
+        answer: 'Memoriza tus líneas a través de juegos y desafíos para potenciar el aprendizaje. El sistema identifica tus puntos débiles y refuerza automáticamente las partes que necesitan más práctica.',
+    },
+    {
+        category: 'Modos de Estudio',
         question: '¿Qué es el Modo Coche?',
-        answer: 'El Modo Coche está diseñado para practicar mientras conduces o haces otras actividades. Funciona completamente con voz:\n\n• Modo manos libres\n• La IA lee todas las líneas automáticamente\n• Reconocimiento de voz para tus líneas\n• Avance automático',
+        answer: 'El Modo Coche está diseñado para practicar mientras conduces o haces otras actividades. Está preparado para reproducir la escena en bucle y esta estará interpretada exclusivamente por la IA, es decir, las líneas de tu personaje también las leerá la IA.\n\nPara ello en la pantalla de "Configurar voces" del modo coche te aparecerán tarjetas con los nombres de todos los personajes que salgan en esa escena y debes de elegir qué voz le asignas a cada personaje y luego pulsas el botón "EMPEZAR".\n\n• La app preparará todo el guion con las voces correspondientes.\n• Se reproduce en bucle por defecto.\n• Tiene una interfaz minimalista y con botones grandes para evitar distracciones al volante. Aconsejamos configurar las voces antes de empezar a conducir.\n• La secuencia seguirá sonando aunque bloquees el teléfono.\n• Si pulsas el menú de los (...) tines la opción "Descargar audio de escena". Esto generará un archivo de audio y lo guardará en la pantalla de Grabaciones. Lo que te permite reproducirlo también en el reproductor nativo de la app.',
+    },
+    {
+        category: 'Modos de Estudio',
+        question: '¿Qué es el Modo Análisis?',
+        answer: 'El modo Análisis te permite profundizar en las necesidades de tu personaje en la escena en concreto a trabajar. Al entrar en el modo Análisis tienes 3 opciones:\n\n• Análisis manual: Esta opción te recarga una plantilla con 10 preguntas para profundizar en los deseos, necesidades o conflictos de tu personaje. Puedes rellenar las 10 preguntas para comprender mejor el guion.\n• Análisis asistido por IA: Esta opción envía a la IA la misma plantilla con 10 preguntas y esta analiza el guion y te da respuesta a cada una de ellas con lo que considera sobre tu personaje según la escena.\n• Análisis personalizado: Esta opción no recarga ninguna plantilla y te permite que te hagas las preguntas que consideres de manera personalizada. Esto te preparará para un conocimiento mucho más genuino de tu personaje.',
     },
     {
         category: 'Grabaciones',
         question: '¿Dónde se guardan mis grabaciones?',
-        answer: 'Tus grabaciones se guardan en la pestaña "Grabaciones". Puedes:\n\n• Reproducir audio y video\n• Copiar los archivos a tus proyectos usando "Enviar a..." (el archivo se mantiene también en Grabaciones)\n• Compartir con otras personas\n• Eliminar las que no necesites\n\nPor defecto se sincronizan con la nube, pero puedes activar "Almacenamiento local" en Ajustes.',
+        answer: 'Tus grabaciones se guardan en la pestaña "Grabaciones". Puedes:\n\n• Reproducir audio y video\n• Copiar los archivos a tus proyectos usando "Enviar a..." (el archivo se mantiene también en Grabaciones)\n• Compartir con otras personas\n• Eliminar las que no necesites\n• El reproductor se puede usar con el teléfono bloqueado.\n• Puedes modificar la velocidad de la reproducción\n• Si seleccionas en el menú "Offline" permite descargar el archivo a tu terminal para que lo puedas escuchar sin conexión a internet.\n• El menú en Grabaciones permite hacer búsquedas avanzadas por nombre, seleccionar múltiples archivos o cambiar la vista entre Lista/Cuadrícula.\n\nPor defecto se sincronizan con la nube, pero puedes activar "Almacenamiento local" en Ajustes.',
     },
     {
         category: 'Grabaciones',
@@ -56,22 +66,12 @@ const faqs: FAQ[] = [
     {
         category: 'Proyectos',
         question: '¿Qué son los proyectos?',
-        answer: 'Los proyectos te ayudan a organizar tus guiones y grabaciones. Puedes:\n\n• Crear carpetas para diferentes producciones\n• Copiar guiones a proyectos\n• Copiar grabaciones a proyectos\n• Organizar todo tu trabajo\n\nCuando usas "Enviar a...", el archivo se copia a la carpeta de destino, manteniéndose también en su ubicación original.',
-    },
-    {
-        category: 'Análisis',
-        question: '¿Qué es el Modo Análisis?',
-        answer: 'El Modo Análisis te ayuda a profundizar en tu rol usando 10 puntos clave de actuación:\n\n1. Objetivo del personaje\n2. Obstáculos\n3. Relaciones\n4. Contexto y circunstancias\n5. Subtexto\n6. Arco emocional\n7. Acciones físicas\n8. Voz y lenguaje\n9. Preparación y calentamiento\n10. Reflexión post-ensayo\n\nPuedes hacer análisis manual o usar IA para generar uno automáticamente.',
+        answer: 'Los proyectos te ayudan a organizar tus guiones y grabaciones. Puedes:\n\n• Crear carpetas para diferentes producciones\n• Se pueden crear carpetas dentro de carpetas.\n• Copiar guiones a proyectos\n• Copiar grabaciones a proyectos\n• Organizar todo tu trabajo\n\nCuando usas "Enviar a...", el archivo se copia a la carpeta de destino, manteniéndose también en su ubicación original.',
     },
     {
         category: 'Configuración',
         question: '¿Cómo cambio las voces de la IA?',
-        answer: 'Script Cue ofrece múltiples opciones de voces para la IA:\n\n• Voces de OpenAI: Voces de alta calidad con entonación natural\n• Voces de ElevenLabs: Voces premium con mayor realismo y expresividad\n• Voces del sistema: Voces por defecto de tu dispositivo\n• Asignar voces a personajes: Puedes asignar voces específicas a cada personaje de tu guión',
-    },
-    {
-        category: 'Configuración',
-        question: '¿Qué es el almacenamiento local?',
-        answer: 'El almacenamiento local guarda tus grabaciones solo en tu dispositivo, sin subirlas a la nube. Actívalo en Ajustes si:\n\n• Tienes conexión limitada\n• Prefieres privacidad total\n• Quieres ahorrar datos\n\nNota: Las grabaciones locales no se sincronizan entre dispositivos.',
+        answer: 'ScriptCue ofrece múltiples opciones de voces para la IA:\n\n• Voces del sistema: Voces por defecto de tu dispositivo (gratis)\n• Voces de Azure: Voces realistas de Microsoft Azure IA (Actualmente no son muy buenas en castellano)\n• Voces de OpenAI: Voces de calidad con entonación natural (premium)\n• Voces de ElevenLabs: Voces premium con mayor realismo y expresividad permite agregar emociones a las líneas agregando [] corchetes antes de la frase. (Premium)\n\nAsignar voces a personajes: Puedes asignar voces específicas de diferentes proveedores a cada personaje de un mismo guión.',
     },
 ];
 

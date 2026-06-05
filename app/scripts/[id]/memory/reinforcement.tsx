@@ -69,7 +69,7 @@ export default function ReinforcementScreen() {
         const loadData = async () => {
             try {
                 setLoading(true);
-                const lines = await loadDialogueLines(id as string);
+                const lines = (await loadDialogueLines(id as string)).filter(l => !l.isAction);
                 const failures = await getFailedLines(id as string, user.id);
 
                 console.log('[Reinforcement] Loaded failures:', failures.length);

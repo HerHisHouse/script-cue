@@ -16,6 +16,7 @@ import { supabase } from '@/utils/supabase';
 import { ArrowLeft, Check, X, Heart, Trophy, Brain, AlertTriangle, Info } from 'lucide-react-native';
 import { saveScore } from '@/utils/gamification';
 import { rf, rp } from '@/utils/responsive';
+import { loadDialogueLines } from '@/utils/loadDialogueLines';
 
 interface Question {
     question: string;
@@ -106,14 +107,11 @@ export default function QuizModeScreen() {
                 console.log('[Quiz] No existe quiz, generando nuevo...');
                 setShowWelcome(true);
                 
-                // Obtener texto completo del guion
-                const { data: script } = await supabase
-                    .from('scripts')
-                    .select('script_raw')
-                    .eq('id', scriptId)
-                    .single();
+                // Obtener texto del guion pero sin las tarjetas de acción
+                const lines = (await loadDialogueLines(scriptId)).filter(l => !l.isAction);
+                const scriptTextForQuiz = lines.map(l => `${l.characterName}: ${l.text}`).join('\n');
                 
-                if (!script) throw new Error('Script no encontrado');
+                if (!scriptTextForQuiz || scriptTextForQuiz.trim().length === 0) throw new Error('Script no encontrado o vacío');
 
                 // Llamar al backend para generar quiz
                 console.log('[Quiz Frontend] Script ID que se enviará:', scriptId);
@@ -123,7 +121,7 @@ export default function QuizModeScreen() {
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ 
                         script_id: scriptId,
-                        script_text: script.script_raw 
+                        script_text: scriptTextForQuiz 
                     })
                 });
                 

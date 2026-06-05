@@ -100,7 +100,7 @@ export default function EchoModeScreen() {
                     .eq('script_id', id);
                 setCharacters(charactersData || []);
 
-                const lines = await loadDialogueLines(id as string);
+                const lines = (await loadDialogueLines(id as string)).filter(l => !l.isAction);
                 setDialogueLines(lines); // Cargar TODAS las líneas
 
                 // Check if user wants to skip intro

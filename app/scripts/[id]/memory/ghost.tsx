@@ -79,7 +79,7 @@ export default function GhostModeScreen() {
         const loadData = async () => {
             try {
                 setLoading(true);
-                const lines = await loadDialogueLines(id as string);
+                const lines = (await loadDialogueLines(id as string)).filter(l => !l.isAction);
                 setAllLines(lines);
 
                 // Check if user wants to skip intro
