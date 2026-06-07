@@ -1275,10 +1275,15 @@ section {
         margin: 0 auto;
     }
 
+    .cascade-column:first-child,
+    .cascade-column:last-child {
+        display: none;
+    }
+
     .cascade-container {
-        transform: scale(0.6);
+        transform: scale(0.7);
         transform-origin: top center;
-        height: 510px;
+        height: 600px;
     }
 
     .section-title {
@@ -1301,12 +1306,13 @@ section {
 
     .steps {
         flex-direction: column;
+        align-items: center;
         gap: 24px;
     }
 
     .step-connector {
-        width: 2px;
-        height: 40px;
+        width: 4px;
+        height: 80px;
         margin: 0;
     }
 
@@ -1353,9 +1359,9 @@ section {
     }
 
     .cascade-container {
-        transform: scale(0.45);
+        transform: scale(0.55);
         transform-origin: top center;
-        height: 380px;
+        height: 470px;
     }
 
     .footer-links {
