@@ -474,9 +474,10 @@ img {
     animation: scroll-down 22s linear infinite;
 }
 
-.cascade-column.delay {
-    animation-delay: -11s;
-}
+.cascade-column.delay-1 { animation-delay: -4.4s; }
+.cascade-column.delay-2 { animation-delay: -8.8s; }
+.cascade-column.delay-3 { animation-delay: -13.2s; }
+.cascade-column.delay-4 { animation-delay: -17.6s; }
 
 @keyframes scroll-up {
     0% { transform: translateY(0); }
@@ -492,7 +493,7 @@ img {
 /* Hero Scroll Indicator */
 .hero-scroll {
     position: absolute;
-    bottom: 40px;
+    bottom: 10px;
     left: 50%;
     transform: translateX(-50%);
     display: flex;

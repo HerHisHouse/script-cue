@@ -20,8 +20,10 @@ import { useRouter, useLocalSearchParams, Stack, useFocusEffect } from 'expo-rou
 import { useTheme } from '@/contexts/ThemeContext';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/utils/supabase';
+import { formatTimestamp } from '@/utils/formatters';
 import { DialogueLine } from '@/utils/dialogueParser';
 import { loadDialogueLines } from '@/utils/loadDialogueLines';
+import { calculateSimilarity } from '@/utils/stringUtils';
 import {
     ArrowLeft,
     Mic,
@@ -829,19 +831,7 @@ export default function StudioV2Screen() {
         }
     }
 
-    function calculateSimilarity(str1: string, str2: string): number {
-        const s1 = str1.toLowerCase().replace(/[^\w\s]/g, '').trim();
-        const s2 = str2.toLowerCase().replace(/[^\w\s]/g, '').trim();
-
-        if (s1 === s2) return 1;
-        if (!s1 || !s2) return 0;
-
-        const words1 = s1.split(/\s+/);
-        const words2 = s2.split(/\s+/);
-        const intersection = words1.filter(w => words2.includes(w));
-
-        return intersection.length / Math.max(words1.length, words2.length);
-    }
+    // removed calculateSimilarity
 
     async function finishLine(hasAudio: boolean) {
         if (processingRef.current) return;

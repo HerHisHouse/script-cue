@@ -22,6 +22,7 @@ import { Audio } from 'expo-av';
 import * as Speech from 'expo-speech';
 import { transcribeAudio } from '@/services/transcription';
 import { rf, rp } from '@/utils/responsive';
+import { calculateSimilarity } from '@/utils/stringUtils';
 
 interface FailedLineWithData extends FailedLine {
     line: DialogueLine;
@@ -398,17 +399,6 @@ export default function ReinforcementScreen() {
             recordingRef.current = null;
         }
         if (silenceTimerRef.current) clearTimeout(silenceTimerRef.current);
-    };
-
-    const calculateSimilarity = (str1: string, str2: string) => {
-        const s1 = str1.toLowerCase().replace(/[^\w\s]/g, '').trim();
-        const s2 = str2.toLowerCase().replace(/[^\w\s]/g, '').trim();
-        if (s1 === s2) return 1;
-        if (!s1 || !s2) return 0;
-        const words1 = s1.split(/\s+/);
-        const words2 = s2.split(/\s+/);
-        const intersection = words1.filter(w => words2.includes(w));
-        return intersection.length / Math.max(words1.length, words2.length);
     };
 
     const finishEchoLine = async (hasAudio: boolean) => {

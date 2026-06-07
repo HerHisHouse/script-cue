@@ -24,6 +24,7 @@ import { getIntroPreferences, setIntroPreference } from '@/utils/introPreference
 import { getSettings } from '@/utils/appSettings';
 import { rf, rp } from '@/utils/responsive';
 import { supabase } from '@/utils/supabase';
+import { calculateSimilarity } from '@/utils/stringUtils';
 
 type Phase = 'read' | 'speak' | 'feedback' | 'ai-speaking';
 
@@ -355,17 +356,6 @@ export default function EchoModeScreen() {
             console.error('Error recording:', e);
             setPhase('read');
         }
-    }
-
-    function calculateSimilarity(str1: string, str2: string): number {
-        const s1 = str1.toLowerCase().replace(/[^\w\s]/g, '').trim();
-        const s2 = str2.toLowerCase().replace(/[^\w\s]/g, '').trim();
-        if (s1 === s2) return 1;
-        if (!s1 || !s2) return 0;
-        const words1 = s1.split(/\s+/);
-        const words2 = s2.split(/\s+/);
-        const intersection = words1.filter(w => words2.includes(w));
-        return intersection.length / Math.max(words1.length, words2.length);
     }
 
     async function finishLine(hasAudio: boolean) {
