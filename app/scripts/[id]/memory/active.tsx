@@ -30,7 +30,8 @@ import {
 import * as Speech from 'expo-speech';
 import { FixedFooter } from '@/components/FixedFooter';
 import { getSettings } from '@/utils/appSettings';
-import { getCachedAudio } from '@/utils/ttsCache';
+import { setAudioModeForPlayback } from '@/utils/audioMode';
+import { generateAndCacheAudio } from '@/utils/ttsCache';
 import * as Crypto from 'expo-crypto';
 import { Audio } from 'expo-av';
 import { getIntroPreferences, setIntroPreference } from '@/utils/introPreferences';
@@ -151,11 +152,6 @@ export default function MemoryModeScreen() {
       setIsPlaying(true);
       const textToSpeak = currentLine.cleanText || currentLine.text;
 
-      const textHash = await Crypto.digestStringAsync(
-        Crypto.CryptoDigestAlgorithm.SHA256,
-        textToSpeak
-      );
-
       // Find character to get voice_id
       const characterName = currentLine.characterName.toUpperCase();
       const character = characters.find(
@@ -174,16 +170,21 @@ export default function MemoryModeScreen() {
 
       const provider: 'openai' | 'elevenlabs' = effectiveProvider === 'system' ? 'openai' : effectiveProvider as 'openai' | 'elevenlabs';
 
-      // Try cache with configured provider
-      const audioUri = await getCachedAudio(currentLine.id, provider, voiceId, textHash);
+      let audioUri = null;
+      if (user) {
+         audioUri = await generateAndCacheAudio(
+             currentLine.id,
+             provider,
+             voiceId || '',
+             textToSpeak,
+             user.id,
+             currentLine.voiceDirection
+         );
+      }
 
       if (audioUri) {
         // Configurar audio mode para reproducir por altavoz (no auricular)
-        await Audio.setAudioModeAsync({
-          allowsRecordingIOS: false,
-          playsInSilentModeIOS: true,
-          staysActiveInBackground: false,
-        });
+        await setAudioModeForPlayback(false);
 
         // Play from cache
         const { sound } = await Audio.Sound.createAsync(

@@ -239,13 +239,8 @@ export default function EchoModeScreen() {
             }
 
             // Intentar usar caché de TTS
-            const { getCachedAudio } = await import('@/utils/ttsCache');
-            const Crypto = await import('expo-crypto');
-
-            const textHash = await Crypto.digestStringAsync(
-                Crypto.CryptoDigestAlgorithm.SHA256,
-                line.text
-            );
+            const { generateAndCacheAudio } = await import('@/utils/ttsCache');
+            const { setAudioModeForPlayback } = await import('@/utils/audioMode');
 
             // Find character to get voice_id
             const characterName = line.characterName.toUpperCase();
@@ -265,14 +260,21 @@ export default function EchoModeScreen() {
 
             const provider: 'openai' | 'elevenlabs' = effectiveProvider as 'openai' | 'elevenlabs';
 
-            const audioUri = await getCachedAudio(line.id, provider, voiceId, textHash);
+            let audioUri = null;
+            if (user) {
+                audioUri = await generateAndCacheAudio(
+                    line.id,
+                    provider,
+                    voiceId || '',
+                    line.text,
+                    user.id,
+                    line.voiceDirection
+                );
+            }
 
             if (audioUri) {
                 // Configurar audio mode para altavoz
-                await Audio.setAudioModeAsync({
-                    allowsRecordingIOS: false,
-                    playsInSilentModeIOS: true,
-                });
+                await setAudioModeForPlayback(false);
 
                 const { sound } = await Audio.Sound.createAsync(
                     { uri: audioUri },
@@ -331,11 +333,8 @@ export default function EchoModeScreen() {
             setPhase('speak');
 
             await Audio.requestPermissionsAsync();
-            await Audio.setAudioModeAsync({
-                allowsRecordingIOS: true,
-                playsInSilentModeIOS: true,
-                staysActiveInBackground: true,
-            });
+            const { enableRecordingMode } = await import('@/utils/audioMode');
+            await enableRecordingMode();
 
             const { recording } = await Audio.Recording.createAsync(
                 Audio.RecordingOptionsPresets.HIGH_QUALITY
