@@ -1359,9 +1359,10 @@ section {
     }
 
     .cascade-container {
-        transform: scale(0.55);
+        transform: scale(0.95);
         transform-origin: top center;
-        height: 470px;
+        height: 800px;
+        gap: 12px;
     }
 
     .footer-links {
