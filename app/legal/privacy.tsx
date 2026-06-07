@@ -22,8 +22,6 @@ export default function PrivacyScreen() {
                 </View>
 
                 <ScrollView style={styles.content} contentContainerStyle={styles.contentContainer}>
-                    <Text style={[styles.date, { color: colors.textSecondary }]}>Última actualización: 10 de diciembre de 2024</Text>
-
                     <Text style={[styles.paragraph, { color: colors.text }]}>
                         Esta Política de Privacidad describe cómo Script Cue ("la Aplicación", "nosotros") recopila, utiliza y protege los datos personales del usuario ("tú").
                     </Text>

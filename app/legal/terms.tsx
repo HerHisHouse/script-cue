@@ -22,8 +22,6 @@ export default function TermsScreen() {
                 </View>
 
                 <ScrollView style={styles.content} contentContainerStyle={styles.contentContainer}>
-                    <Text style={[styles.date, { color: colors.textSecondary }]}>Última actualización: 10 de diciembre de 2024</Text>
-
                     <Text style={[styles.paragraph, { color: colors.text }]}>
                         Te doy la bienvenida a Script Cue.{'\n'}
                         Al crear una cuenta y utilizar nuestros servicios, aceptas estos Términos y Condiciones de Uso. Por favor, léelos cuidadosamente. Si no estás de acuerdo, no debes utilizar la Aplicación.
