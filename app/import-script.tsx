@@ -2,7 +2,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, TextInput, ActivityIndicator, Alert, ScrollView, Platform } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, useLocalSearchParams } from 'expo-router';
-import { Upload, ArrowLeft, Check, ChevronDown, Camera, Info } from 'lucide-react-native';
+import { Upload, ArrowLeft, Check, ChevronDown, Camera, Info, X } from 'lucide-react-native';
 import * as DocumentPicker from 'expo-document-picker';
 import * as FileSystem from 'expo-file-system/legacy';
 import { useAuth } from '@/contexts/AuthContext';
@@ -117,29 +117,73 @@ export default function ImportScriptScreen() {
           const settings = await getSettings();
           const perMap: Record<string, { provider?: string; systemVoiceId?: string }> = ((settings as any)?.characterVoicesByScript?.[String(scriptId)] || {});
 
-          const mapped: CharacterConfig[] = (chars || [])
-            .filter((c: any) => (c.name || '').toUpperCase() !== 'ACCIÓN')
-            .map((c: any, idx: number) => {
-            const nameUpper = (c.name || '').toUpperCase();
-            const per = perMap[nameUpper] || {};
-            return {
-              id: String(c.id),
-              name: nameUpper,
-              isMyCharacter: !!c.is_user_character,
-              gender: (c.voice_gender === 'female' ? 'female' : c.voice_gender === 'neutral' ? 'neutral' : 'male'),
-              color: c.color || CHARACTER_COLORS[idx % CHARACTER_COLORS.length].value,
-              voiceId: c.voice_id || undefined,
-              voiceProvider: (c.voice_provider as 'openai' | 'elevenlabs' | 'azure' | 'system') || undefined,
-              provider: c.is_user_character ? undefined : ((per.provider as any) || 'system'),
-              systemVoiceId: c.is_user_character ? undefined : (per.systemVoiceId || defaultSystemVoiceId || ''),
-            };
-          });
+          let mapped: CharacterConfig[] = [];
+          
+          if (chars && chars.length > 0) {
+            mapped = chars
+              .filter((c: any) => (c.name || '').toUpperCase() !== 'ACCIÓN')
+              .map((c: any, idx: number) => {
+              const nameUpper = (c.name || '').toUpperCase();
+              const per = perMap[nameUpper] || {};
+              return {
+                id: String(c.id),
+                name: nameUpper,
+                isMyCharacter: !!c.is_user_character,
+                gender: (c.voice_gender === 'female' ? 'female' : c.voice_gender === 'neutral' ? 'neutral' : 'male'),
+                color: c.color || CHARACTER_COLORS[idx % CHARACTER_COLORS.length].value,
+                voiceId: c.voice_id || undefined,
+                voiceProvider: (c.voice_provider as 'openai' | 'elevenlabs' | 'azure' | 'system') || undefined,
+                provider: c.is_user_character ? undefined : ((per.provider as any) || 'system'),
+                systemVoiceId: c.is_user_character ? undefined : (per.systemVoiceId || defaultSystemVoiceId || ''),
+              };
+            });
+          } else {
+            // 1. Obtener todas las escenas de este script
+            const { data: scenesData, error: scenesError } = await supabase
+              .from('scenes')
+              .select('id')
+              .eq('script_id', scriptId);
+              
+            let linesData: any[] = [];
+            let linesError = null;
+
+            if (!scenesError && scenesData && scenesData.length > 0) {
+              const sceneIds = scenesData.map(s => s.id);
+              // 2. Obtener las líneas de esas escenas
+              const { data: lData, error: lErr } = await supabase
+                .from('lines')
+                .select('character_name')
+                .in('scene_id', sceneIds);
+              
+              linesData = lData || [];
+              linesError = lErr;
+            }
+              
+            if (!linesError && linesData && linesData.length > 0) {
+              const uniqueNames = Array.from(new Set(linesData.map(l => l.character_name)))
+                .filter(name => name && name.toUpperCase() !== 'ACCIÓN');
+                
+              mapped = uniqueNames.map((nameUpper, idx) => {
+                const per = perMap[nameUpper] || {};
+                return {
+                  id: `${Date.now()}-${Math.random().toString(36).slice(2)}`,
+                  name: nameUpper,
+                  isMyCharacter: idx === 0, // Por defecto el primero es el usuario
+                  gender: 'male',
+                  color: idx === 0 ? GREEN_COLOR : CHARACTER_COLORS[(idx - 1) % CHARACTER_COLORS.length].value,
+                  provider: idx === 0 ? undefined : ((per.provider as any) || 'system'),
+                  systemVoiceId: idx === 0 ? undefined : (per.systemVoiceId || defaultSystemVoiceId || ''),
+                };
+              });
+            }
+          }
+
           setCharacters(mapped);
           // Asegurar que haya al menos 1 personaje para configurar
           const finalCount = mapped.length > 0 ? mapped.length : 1;
           setCharacterCount(finalCount);
 
-          // Si no hay personajes, crear uno por defecto
+          // Si no hay personajes (ni en DB ni extraídos), crear uno por defecto
           if (mapped.length === 0) {
             setCharacters([
               { id: `${Date.now()}-${Math.random().toString(36).slice(2)}`, name: '', isMyCharacter: true, gender: 'male', color: GREEN_COLOR }
@@ -410,13 +454,6 @@ export default function ImportScriptScreen() {
       }
     }
 
-    for (let i = 0; i < characters.length; i++) {
-      if (!characters[i].name.trim()) {
-        Alert.alert('Error', `Por favor ingresa el nombre del personaje ${i + 1}`);
-        return;
-      }
-    }
-
     setUploading(true);
     setUploadProgress(0);
 
@@ -435,7 +472,7 @@ export default function ImportScriptScreen() {
         status: 'processing',
         metadata: {
           original_filename: file?.name ?? file?.uri?.split('/').pop() ?? 'script.pdf',
-          characterCount: characters.length,
+          characterCount: 0,
         },
       };
 
@@ -447,53 +484,6 @@ export default function ImportScriptScreen() {
 
       if (scriptError) throw scriptError;
       if (!scriptData) throw new Error('Failed to create script');
-
-      for (const char of characters) {
-        const voiceGender = char.isMyCharacter ? 'neutral' : char.gender;
-
-        const { error: charErr } = await supabase
-          .from('characters')
-          .insert({
-            script_id: scriptData.id,
-            name: char.name.toUpperCase(),
-            is_user_character: char.isMyCharacter,
-            voice_gender: voiceGender,
-            voice_preset: 'natural',
-            color: char.color,
-            line_count: 0,
-            occurrence_percentage: 0,
-            manually_added: true,
-            voice_id: char.voiceId || char.systemVoiceId || null,
-            voice_provider: char.voiceProvider || char.provider || null,
-          })
-          .select()
-          .maybeSingle();
-
-        if (charErr) {
-          throw new Error(`No se pudo crear el personaje "${char.name}": ${charErr.message || charErr}`);
-        }
-      }
-
-      // Guardar configuración de voces por personaje para este guión en ajustes locales
-      try {
-        const currentSettings = await getSettings() as ExtendedAppSettings;
-        const perCharacterVoices: Record<string, { provider: string; systemVoiceId?: string }> = {};
-        for (const c of characters) {
-          if (!c.isMyCharacter) {
-            perCharacterVoices[(c.name || '').toUpperCase()] = {
-              provider: (c.provider || 'system'),
-              systemVoiceId: c.systemVoiceId || '',
-            };
-          }
-        }
-        const extendedSettings: ExtendedAppSettings = {
-          characterVoicesByScript: {
-            ...(currentSettings.characterVoicesByScript || {}),
-            [scriptData.id]: perCharacterVoices,
-          },
-        };
-        await setSettings(mergeSettings(currentSettings as AppSettings, extendedSettings));
-      } catch { }
       // Subir PDF a Storage y obtener path con manejo de errores
       let filePath: string;
       try {
@@ -736,17 +726,15 @@ export default function ImportScriptScreen() {
             scriptId: scriptData.id,
             filePath,
             fileName: file?.name ?? 'script.pdf',
-            // choose true/false according to desired behavior: 
-            // skipCharacterDetection: true  -> keep current behavior (skip auto detect) 
             // skipCharacterDetection: false -> run detection in backend 
-            skipCharacterDetection: true,
+            skipCharacterDetection: false,
             // preserveFormatting: false -> generate full HTML with descriptions/actions for editor
             preserveFormatting: false,
           }),
         });
 
         if (!res.ok) {
-          const text = await res.text().catch(() => '<no body>');
+          const text = await res.text();
           console.error('parse-pdf failed:', res.status, text);
           throw new Error(`parse-pdf returned ${res.status}`);
         }
@@ -778,8 +766,8 @@ export default function ImportScriptScreen() {
       }
       // ---------- END: Replace existing parse-pdf fetch block ----------
 
-      // Volver al Resumen del guion (flujo de revisión)
-      router.replace(`/scripts/${scriptData.id}/review`);
+      // Ir a la configuración de personajes
+      router.replace(`/import-script?scriptId=${scriptData.id}&openConfig=1`);
     } catch (error: any) {
       logger.error('Error uploading script:', error);
       Alert.alert('Error', error.message || 'No se pudo cargar el guión');
@@ -861,61 +849,17 @@ export default function ImportScriptScreen() {
             </>
           )}
 
-          {(file || showConfigOnly) && (
+          {showConfigOnly && (
             <>
               <View onLayout={(e) => setConfigSectionY(e.nativeEvent.layout.y)}>
                 <Text style={[styles.sectionTitle, { color: colors.text }]}>Configuración de Personajes</Text>
               </View>
 
               <View style={[styles.labelWithInfo, { marginTop: 12, marginBottom: 8 }]}>
-                <Text style={[styles.label, { color: colors.text, marginTop: 0, marginBottom: 0 }]}>Número de Personajes</Text>
-                <TouchableOpacity
-                  onPress={() => Alert.alert(
-                    'Número de personajes',
-                    'Elige el número de personajes que tiene el guion importado hasta un máximo de 10 personajes.',
-                    [{ text: 'Entendido', style: 'default' }]
-                  )}
-                  style={styles.infoButton}
-                >
-                  <Info size={16} color={colors.primary} />
-                </TouchableOpacity>
+                <Text style={[styles.label, { color: colors.text, marginTop: 0, marginBottom: 0 }]}>
+                  Personajes Detectados ({characters.length})
+                </Text>
               </View>
-              <TouchableOpacity
-                style={[styles.picker, { backgroundColor: colors.surface, borderColor: colors.border }]}
-                onPress={() => setShowCountPicker(!showCountPicker)}
-              >
-                <Text style={[styles.pickerText, { color: colors.text }]}>{characterCount}</Text>
-                <ChevronDown size={20} color={colors.textSecondary} />
-              </TouchableOpacity>
-
-              {showCountPicker && (
-                <ScrollView
-                  style={[styles.pickerOptions, { backgroundColor: colors.surface, borderColor: colors.border, maxHeight: 180 }]}
-                  nestedScrollEnabled={true}
-                >
-                  {[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((count) => {
-                    const isSelected = count === characterCount;
-                    return (
-                      <TouchableOpacity
-                        key={count}
-                        style={styles.pickerOption}
-                        onPress={() => handleCharacterCountChange(count)}
-                      >
-                        <Text style={[
-                          styles.pickerOptionText,
-                          isSelected ? { color: colors.primary, fontWeight: '600' } : { color: colors.textSecondary }
-                        ]}>
-                          {count}
-                        </Text>
-                      </TouchableOpacity>
-                    );
-                  })}
-                </ScrollView>
-              )}
-
-              {characterCount > 0 && (
-                <View style={{ marginTop: 24 }} />
-              )}
 
               {characters.map((char, index) => (
                 <View key={char.id} style={[styles.characterCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
@@ -926,20 +870,28 @@ export default function ImportScriptScreen() {
                         <Text style={[styles.myCharacterBadgeText, { color: colors.primary }]}>Mi personaje</Text>
                       </View>
                     )}
+                    <TouchableOpacity 
+                      onPress={() => {
+                        if (characters.length > 1) {
+                          const newChars = characters.filter((_, i) => i !== index);
+                          // Si borramos el personaje activo, hacer el primero activo
+                          if (char.isMyCharacter) {
+                            newChars[0].isMyCharacter = true;
+                            newChars[0].color = GREEN_COLOR;
+                          }
+                          setCharacters(newChars);
+                        } else {
+                          Alert.alert('Error', 'Debe haber al menos un personaje.');
+                        }
+                      }}
+                      style={{ padding: 4 }}
+                    >
+                      <X size={20} color={colors.textSecondary} />
+                    </TouchableOpacity>
                   </View>
 
                   <View style={styles.labelWithInfo}>
                     <Text style={[styles.label, { color: colors.text }]}>Nombre</Text>
-                    <TouchableOpacity
-                      onPress={() => Alert.alert(
-                        'Nombre del personaje',
-                        'Escribe el nombre exactamente como aparece en el guión.\n\n• Si lleva tildes, escríbelas\n• Si lleva comillas, inclúyelas\n• Si tiene caracteres especiales, cópialos\n\nEsto permite que la app detecte correctamente los diálogos.',
-                        [{ text: 'Entendido', style: 'default' }]
-                      )}
-                      style={styles.infoButton}
-                    >
-                      <Info size={16} color={colors.primary} />
-                    </TouchableOpacity>
                   </View>
                   <TextInput
                     style={[styles.input, { backgroundColor: colors.input, color: colors.text, borderColor: colors.border }]}
@@ -969,11 +921,11 @@ export default function ImportScriptScreen() {
                     <>
                       {/* Operador de voces - PRIMERO */}
                       <View style={[styles.labelWithInfo, { marginTop: 12 }]}>
-                        <Text style={[styles.label, { color: colors.text, marginTop: 0, marginBottom: 0 }]}>Operador de voces</Text>
+                        <Text style={[styles.label, { color: colors.text, marginTop: 0, marginBottom: 0 }]}>Proveedor de voz</Text>
                         <TouchableOpacity
                           onPress={() => Alert.alert(
-                            'Operador de voces',
-                            'Dispones de diferentes operadores de voces para configurar tus personajes. El operador de Sistema ofrece voces más planas o robóticas (gratuitas), mientras que OpenAI, Azure y ElevenLabs ofrecen voces premium de alta calidad y realismo.',
+                            'Proveedor de Voz',
+                            'Selecciona qué motor de inteligencia artificial leerá las líneas de este personaje.\n\nOpenAI y ElevenLabs suenan muy humanos. Sistema es la voz robótica por defecto del dispositivo.',
                             [{ text: 'Entendido', style: 'default' }]
                           )}
                           style={styles.infoButton}
@@ -981,21 +933,13 @@ export default function ImportScriptScreen() {
                           <Info size={16} color={colors.primary} />
                         </TouchableOpacity>
                       </View>
+
                       <TouchableOpacity
                         style={[styles.picker, { backgroundColor: colors.surface, borderColor: colors.border }]}
                         onPress={() => setOpenOperatorIndex(openOperatorIndex === index ? null : index)}
                       >
                         <Text style={[styles.pickerText, { color: colors.text }]}>
-                          {(() => {
-                            const prov = char.provider || 'system';
-                            return prov === 'system'
-                              ? 'Sistema (Gratis)'
-                              : prov === 'openai'
-                                ? 'OpenAI (Premium)'
-                                : prov === 'azure'
-                                  ? 'Azure (Premium)'
-                                  : 'ElevenLabs (Premium)';
-                          })()}
+                          {char.provider === 'openai' ? 'OpenAI' : char.provider === 'elevenlabs' ? 'ElevenLabs' : char.provider === 'azure' ? 'Microsoft Azure' : 'Voz del sistema'}
                         </Text>
                         <ChevronDown size={20} color={colors.textSecondary} />
                       </TouchableOpacity>
@@ -1127,7 +1071,27 @@ export default function ImportScriptScreen() {
                 </View>
               ))}
 
-              {/* Selectores de voz globales eliminados; ahora por personaje */}
+              <TouchableOpacity
+                style={[styles.uploadButton, { backgroundColor: colors.surface, borderColor: colors.border, marginTop: 16, marginBottom: 24 }]}
+                onPress={() => {
+                  setCharacters([
+                    ...characters,
+                    { 
+                      id: `${Date.now()}-${Math.random().toString(36).slice(2)}`, 
+                      name: '', 
+                      isMyCharacter: false, 
+                      gender: 'male',
+                      color: CHARACTER_COLORS[characters.length % CHARACTER_COLORS.length].value,
+                      provider: 'system',
+                      systemVoiceId: defaultSystemVoiceId
+                    }
+                  ]);
+                }}
+              >
+                <Text style={[styles.uploadText, { color: colors.primary }]}>
+                  + Añadir Personaje Manualmente
+                </Text>
+              </TouchableOpacity>
             </>
           )}
 
@@ -1140,10 +1104,10 @@ export default function ImportScriptScreen() {
             onPress={handleUpload}
             disabled={uploading || loadingExisting}
           >
-            {uploading ? (
+            {uploading && !showConfigOnly ? (
               <ActivityIndicator color="#FFFFFF" />
             ) : (
-              <Text style={styles.submitText}>{showConfigOnly ? 'Guardar cambios' : 'Importar Guión'}</Text>
+              <Text style={styles.submitText}>{showConfigOnly ? 'Guardar y Continuar' : 'Subir y Analizar'}</Text>
             )}
           </TouchableOpacity>
         </View>

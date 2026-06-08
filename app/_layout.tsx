@@ -90,8 +90,25 @@ function AppRoot() {
   useEffect(() => {
     async function setupPlayer() {
       if (!TrackPlayer) return;
+      
+      let isSetup = false;
       try {
-        await TrackPlayer.setupPlayer();
+        await TrackPlayer.getCurrentTrack();
+        isSetup = true;
+      } catch {
+        // Not initialized
+      }
+
+      if (!isSetup) {
+        try {
+          await TrackPlayer.setupPlayer();
+          console.log('[_layout] TrackPlayer setup successful');
+        } catch (error) {
+          console.warn('[_layout] TrackPlayer setup error:', error);
+        }
+      }
+
+      try {
         const { AppKilledPlaybackBehavior, Capability } = require('react-native-track-player');
         await TrackPlayer.updateOptions({
           android: {
@@ -108,9 +125,9 @@ function AppRoot() {
           compactCapabilities: [Capability.Play, Capability.Pause, Capability.SkipToNext, Capability.SkipToPrevious],
           notificationCapabilities: [Capability.Play, Capability.Pause, Capability.SkipToNext, Capability.SkipToPrevious],
         });
-        console.log('[_layout] TrackPlayer setup successful');
-      } catch (error) {
-        console.warn('[_layout] TrackPlayer setup error (might be already initialized):', error);
+        console.log('[_layout] TrackPlayer options updated');
+      } catch (e) {
+        console.warn('[_layout] TrackPlayer updateOptions error:', e);
       }
     }
     setupPlayer();

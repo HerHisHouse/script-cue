@@ -47,9 +47,8 @@ module.exports = function withAndroidNetworkConfig(config) {
             application.$ = {};
         }
 
-        // Permitir tráfico de texto claro solo en modo debug
-        // En producción, Supabase usa HTTPS así que esto no afecta la seguridad
-        application.$['android:usesCleartextTraffic'] = 'false';
+        // Permitir tráfico de texto claro para que Expo Dev Client conecte con localhost (HTTP)
+        application.$['android:usesCleartextTraffic'] = 'true';
 
         // Configurar networkSecurityConfig para mejor compatibilidad
         application.$['android:networkSecurityConfig'] = '@xml/network_security_config';

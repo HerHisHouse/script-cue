@@ -20,7 +20,6 @@ import { useRouter, useLocalSearchParams, Stack, useFocusEffect } from 'expo-rou
 import { useTheme } from '@/contexts/ThemeContext';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/utils/supabase';
-import { formatTimestamp } from '@/utils/formatters';
 import { DialogueLine } from '@/utils/dialogueParser';
 import { loadDialogueLines } from '@/utils/loadDialogueLines';
 import { calculateSimilarity } from '@/utils/stringUtils';

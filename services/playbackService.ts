@@ -8,6 +8,7 @@
  */
 
 import TrackPlayer, { Event } from 'react-native-track-player';
+import { DeviceEventEmitter } from 'react-native';
 
 /**
  * Servicio de playback que maneja eventos remotos
@@ -17,30 +18,35 @@ export async function PlaybackService() {
   // Evento: Remote Play (botón de play en pantalla de bloqueo)
   TrackPlayer.addEventListener(Event.RemotePlay, () => {
     console.log('[PlaybackService] Remote Play');
+    DeviceEventEmitter.emit('onRemotePlay');
     TrackPlayer.play();
   });
 
   // Evento: Remote Pause (botón de pause en pantalla de bloqueo)
   TrackPlayer.addEventListener(Event.RemotePause, () => {
     console.log('[PlaybackService] Remote Pause');
+    DeviceEventEmitter.emit('onRemotePause');
     TrackPlayer.pause();
   });
 
   // Evento: Remote Stop
   TrackPlayer.addEventListener(Event.RemoteStop, () => {
     console.log('[PlaybackService] Remote Stop');
+    DeviceEventEmitter.emit('onRemoteStop');
     TrackPlayer.stop();
   });
 
   // Evento: Remote Next (botón siguiente en pantalla de bloqueo)
   TrackPlayer.addEventListener(Event.RemoteNext, () => {
     console.log('[PlaybackService] Remote Next');
+    DeviceEventEmitter.emit('onRemoteNext');
     TrackPlayer.skipToNext();
   });
 
   // Evento: Remote Previous (botón anterior en pantalla de bloqueo)
   TrackPlayer.addEventListener(Event.RemotePrevious, () => {
     console.log('[PlaybackService] Remote Previous');
+    DeviceEventEmitter.emit('onRemotePrevious');
     TrackPlayer.skipToPrevious();
   });
 

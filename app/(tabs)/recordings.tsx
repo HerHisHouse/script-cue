@@ -1244,6 +1244,91 @@ export default function RecordingsScreen() {
     }
   }
 
+  async function forcePlay() {
+    const current = queue[currentIndex];
+    if (current?.type === 'video') {
+      await videoRef.current?.playAsync();
+      setIsPlaying(true);
+      return;
+    }
+    if (await isTrackPlayerReady()) {
+      try {
+        await TrackPlayer.play();
+        setIsPlaying(true);
+        return;
+      } catch (e) { console.log('[forcePlay] TrackPlayer error:', e); }
+    }
+    if (sound) {
+      const st = await sound.getStatusAsync();
+      if (st.isLoaded) {
+        await sound.playAsync();
+        setIsPlaying(true);
+      }
+    }
+  }
+
+  async function forcePause() {
+    const current = queue[currentIndex];
+    if (current?.type === 'video') {
+      await videoRef.current?.pauseAsync();
+      setIsPlaying(false);
+      return;
+    }
+    if (await isTrackPlayerReady()) {
+      try {
+        await TrackPlayer.pause();
+        setIsPlaying(false);
+        return;
+      } catch (e) { console.log('[forcePause] TrackPlayer error:', e); }
+    }
+    if (sound) {
+      const st = await sound.getStatusAsync();
+      if (st.isLoaded) {
+        await sound.pauseAsync();
+        setIsPlaying(false);
+      }
+    }
+  }
+
+  // Reference for callbacks to avoid stale closures in native listeners
+  const playbackCallbacksRef = useRef({ forcePlay, forcePause, playNext, playPrevious: () => {
+    const prev = (currentIndex - 1 + queue.length) % queue.length;
+    loadAndPlay(prev);
+  }});
+
+  useEffect(() => {
+    playbackCallbacksRef.current = { forcePlay, forcePause, playNext, playPrevious: () => {
+      const prev = (currentIndex - 1 + queue.length) % queue.length;
+      loadAndPlay(prev);
+    }};
+  }, [forcePlay, forcePause, playNext, currentIndex, queue, loadAndPlay]);
+
+  useEffect(() => {
+    if (!nativeTrackPlayerAvailable || !TrackPlayerEvent) return;
+    
+    // Register local listeners for lock screen controls
+    const subs = [
+      TrackPlayer.addEventListener(TrackPlayerEvent.RemotePlay, () => {
+        playbackCallbacksRef.current.forcePlay();
+      }),
+      TrackPlayer.addEventListener(TrackPlayerEvent.RemotePause, () => {
+        playbackCallbacksRef.current.forcePause();
+      }),
+      TrackPlayer.addEventListener(TrackPlayerEvent.RemoteNext, () => {
+        playbackCallbacksRef.current.playNext();
+      }),
+      TrackPlayer.addEventListener(TrackPlayerEvent.RemotePrevious, () => {
+        playbackCallbacksRef.current.playPrevious();
+      }),
+    ];
+
+    return () => {
+      subs.forEach(s => {
+        try { s.remove(); } catch {}
+      });
+    };
+  }, []);
+
   // Show/hide controls functions
   function showControls() {
     if (hideControlsTimerRef.current) {

@@ -9,6 +9,7 @@ import {
   AppState,
   AppStateStatus,
   ScrollView,
+  DeviceEventEmitter,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, useLocalSearchParams } from 'expo-router';
@@ -39,72 +40,20 @@ import { Stack } from 'expo-router';
 let TrackPlayer: any = null;
 let TrackPlayerCapability: any = null;
 let TrackPlayerEvent: any = null;
+let TrackPlayerRepeatMode: any = null;
 try {
   const tp = require('react-native-track-player');
   TrackPlayer = tp.default;
   TrackPlayerCapability = tp.Capability;
   TrackPlayerEvent = tp.Event;
+  TrackPlayerRepeatMode = tp.RepeatMode;
   console.log('[Car Mode] TrackPlayer loaded for lock screen controls');
 } catch {
   console.log('[Car Mode] TrackPlayer not available, lock screen controls disabled');
 }
 
-// Setup TrackPlayer for Car Mode lock screen controls
-// Returns cleanup function for event listeners
-async function setupCarModeTrackPlayer(
-  scriptTitle: string,
-  onRemotePlay: () => void,
-  onRemotePause: () => void,
-  onRemoteNext: () => void,
-  onRemotePrev: () => void
-): Promise<(() => void) | null> {
-  if (!TrackPlayer || !TrackPlayerEvent) return null;
-  try {
-    // setupPlayer may throw if already initialized — that's OK
-    try {
-      await TrackPlayer.setupPlayer();
-    } catch {
-      // Already initialized by _layout.tsx — continue
-    }
-    await TrackPlayer.updateOptions({
-      capabilities: [
-        TrackPlayerCapability.Play,
-        TrackPlayerCapability.Pause,
-        TrackPlayerCapability.SkipToNext,
-        TrackPlayerCapability.SkipToPrevious,
-        TrackPlayerCapability.Stop,
-      ],
-      compactCapabilities: [
-        TrackPlayerCapability.Play,
-        TrackPlayerCapability.Pause,
-        TrackPlayerCapability.SkipToNext,
-      ],
-    });
-
-    // Register lock screen button listeners
-    const subPlay = TrackPlayer.addEventListener(TrackPlayerEvent.RemotePlay, onRemotePlay);
-    const subPause = TrackPlayer.addEventListener(TrackPlayerEvent.RemotePause, onRemotePause);
-    const subNext = TrackPlayer.addEventListener(TrackPlayerEvent.RemoteNext, onRemoteNext);
-    const subPrev = TrackPlayer.addEventListener(TrackPlayerEvent.RemotePrevious, onRemotePrev);
-
-    console.log('[Car Mode] TrackPlayer setup and listeners registered');
-
-    // Return cleanup function
-    return () => {
-      try {
-        subPlay?.remove?.();
-        subPause?.remove?.();
-        subNext?.remove?.();
-        subPrev?.remove?.();
-      } catch (e) {
-        console.log('[Car Mode] Error removing listeners:', e);
-      }
-    };
-  } catch (e) {
-    console.log('[Car Mode] TrackPlayer setup error:', e);
-    return null;
-  }
-}
+// We no longer use a global setupCarModeTrackPlayer because we need access
+// to the latest component state via refs to pause/play expo-av audio.
 
 // Update lock screen Now Playing info for Car Mode
 async function updateCarModeLockScreen(
@@ -118,7 +67,7 @@ async function updateCarModeLockScreen(
     const queue = await TrackPlayer.getQueue();
     const track = {
       id: `car_mode_${Date.now()}`,
-      url: 'silence://car_mode', // Placeholder - actual audio played by expo-av
+      url: require('../../../assets/sounds/silence.wav'), // Real silence file to satisfy Android Exoplayer
       title: `${characterName}`,
       artist: scriptTitle,
       album: 'Modo Coche',
@@ -126,12 +75,24 @@ async function updateCarModeLockScreen(
     if (queue.length === 0) {
       await TrackPlayer.add([track]);
     } else {
-      await TrackPlayer.remove([0]);
-      await TrackPlayer.add([track]);
+      if (typeof TrackPlayer.updateNowPlayingMetadata === 'function') {
+        await TrackPlayer.updateNowPlayingMetadata({ title: track.title, artist: track.artist, album: track.album });
+      } else {
+        await TrackPlayer.remove([0]);
+        await TrackPlayer.add([track]);
+      }
     }
+    
+    // Force repeat so the track never ends and keeps the Android Foreground Service alive
+    if (TrackPlayerRepeatMode) {
+      await TrackPlayer.setRepeatMode(TrackPlayerRepeatMode.Track);
+    }
+    
     if (isPlaying) {
-      // We don't call TrackPlayer.play() as expo-av handles the actual audio.
-      // The lock screen info is updated via metadata only.
+      // We MUST call play() on Android to spawn the Foreground Service notification!
+      await TrackPlayer.play();
+    } else {
+      await TrackPlayer.pause();
     }
   } catch (e) {
     console.log('[Car Mode] Lock screen update error:', e);
@@ -255,27 +216,8 @@ export default function CarModeScreen() {
         const title = scriptData?.title || 'Modo Coche';
         setScriptTitle(title);
 
-        // Setup TrackPlayer for lock screen controls with real callbacks
-        if (!trackPlayerCleanupRef.current) {
-          const cleanup = await setupCarModeTrackPlayer(
-            title,
-            () => { // onRemotePlay
-              setIsPaused(false);
-            },
-            () => { // onRemotePause
-              setIsPaused(true);
-            },
-            () => { // onRemoteNext
-              sequenceRef.current++;
-              advanceToNext();
-            },
-            () => { // onRemotePrev
-              sequenceRef.current++;
-              setCurrentIndex(p => Math.max(0, p - 1));
-            },
-          );
-          trackPlayerCleanupRef.current = cleanup;
-        }
+        // Setup TrackPlayer for lock screen controls is now handled by a dedicated useEffect
+        // so that it can access the latest component methods via refs.
       } catch (e) {
         console.error('[Car Mode] Error loading dialogue:', e);
         Alert.alert('Error', 'No se pudo cargar el guión');
@@ -531,12 +473,69 @@ export default function CarModeScreen() {
     await cleanupAllAudio();
     setStatusText('Pausado');
     setPhase('idle');
+    
+    // Sync TrackPlayer state
+    if (TrackPlayer) TrackPlayer.pause().catch(() => {});
   };
 
   const handleResume = () => {
     setIsPaused(false);
+    // Sync TrackPlayer state
+    if (TrackPlayer) TrackPlayer.play().catch(() => {});
     processCurrentLine();
   };
+
+  // Keep references to latest callbacks for TrackPlayer events
+  const callbacksRef = useRef({
+    play: handleResume,
+    pause: handlePause,
+    next: handleManualNext,
+    prev: handleManualPrev,
+  });
+
+  // Update refs on every render
+  useEffect(() => {
+    callbacksRef.current = {
+      play: handleResume,
+      pause: handlePause,
+      next: handleManualNext,
+      prev: handleManualPrev,
+    };
+  });
+
+  // Register TrackPlayer listeners ONCE for remote background actions
+  useEffect(() => {
+    if (!TrackPlayer || !TrackPlayerEvent) return;
+    
+    console.log('[Car Mode] Registering native TrackPlayer listeners');
+    const subPlay = TrackPlayer.addEventListener(TrackPlayerEvent.RemotePlay, () => {
+      console.log('[Car Mode] Remote Play pressed');
+      callbacksRef.current.play();
+    });
+    const subPause = TrackPlayer.addEventListener(TrackPlayerEvent.RemotePause, () => {
+      console.log('[Car Mode] Remote Pause pressed');
+      callbacksRef.current.pause();
+    });
+    const subNext = TrackPlayer.addEventListener(TrackPlayerEvent.RemoteNext, () => {
+      console.log('[Car Mode] Remote Next pressed');
+      callbacksRef.current.next();
+    });
+    const subPrev = TrackPlayer.addEventListener(TrackPlayerEvent.RemotePrevious, () => {
+      console.log('[Car Mode] Remote Prev pressed');
+      callbacksRef.current.prev();
+    });
+
+    return () => {
+      try {
+        subPlay?.remove?.();
+        subPause?.remove?.();
+        subNext?.remove?.();
+        subPrev?.remove?.();
+      } catch (e) {
+        console.log('[Car Mode] Error removing TrackPlayer listeners', e);
+      }
+    };
+  }, []);
 
   // =============================================
   // CONFIGURATION SCREEN FUNCTIONS
