@@ -263,10 +263,11 @@ export default function EchoModeScreen() {
             let audioUri = null;
             if (user) {
                 audioUri = await generateAndCacheAudio(
+                    id as string,
                     line.id,
-                    provider,
-                    voiceId || '',
+                    line.characterName,
                     line.text,
+                    { provider, voiceId: voiceId || undefined },
                     user.id,
                     line.voiceDirection
                 );

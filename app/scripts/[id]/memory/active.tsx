@@ -173,10 +173,11 @@ export default function MemoryModeScreen() {
       let audioUri = null;
       if (user) {
          audioUri = await generateAndCacheAudio(
+             id as string,
              currentLine.id,
-             provider,
-             voiceId || '',
+             currentLine.characterName,
              textToSpeak,
+             { provider, voiceId: voiceId || undefined },
              user.id,
              currentLine.voiceDirection
          );
