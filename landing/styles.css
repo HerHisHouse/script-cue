@@ -1369,3 +1369,202 @@ section {
         grid-template-columns: 1fr;
     }
 }
+
+/* =============================================
+   Video Tutorial
+   ============================================= */
+.video-tutorial {
+    background: transparent;
+}
+
+.video-placeholder {
+    max-width: 800px;
+    margin: 0 auto;
+    height: 450px;
+    background: var(--bg-card);
+    border: 1px solid var(--border-color);
+    border-radius: 20px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    position: relative;
+    cursor: pointer;
+    box-shadow: var(--shadow-glow);
+    transition: var(--transition-normal);
+}
+
+.video-placeholder:hover {
+    border-color: var(--accent-primary);
+    transform: translateY(-5px);
+}
+
+.play-button {
+    width: 80px;
+    height: 80px;
+    background: var(--gradient-primary);
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: white;
+    box-shadow: 0 10px 20px rgba(168, 85, 247, 0.4);
+    transition: var(--transition-normal);
+}
+
+.play-button svg {
+    width: 32px;
+    height: 32px;
+    margin-left: 6px;
+}
+
+.video-placeholder:hover .play-button {
+    transform: scale(1.1);
+}
+
+/* =============================================
+   Reviews
+   ============================================= */
+.reviews {
+    background: transparent;
+}
+
+.reviews-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+    gap: 30px;
+    margin-top: 40px;
+}
+
+.review-card {
+    background: var(--bg-card);
+    border: 1px solid var(--border-color);
+    border-radius: 20px;
+    padding: 30px;
+    transition: var(--transition-normal);
+}
+
+.review-card:hover {
+    border-color: var(--border-color-hover);
+    transform: translateY(-5px);
+}
+
+.review-stars {
+    color: #F59E0B;
+    font-size: 1.5rem;
+    margin-bottom: 16px;
+    letter-spacing: 2px;
+}
+
+.review-text {
+    font-size: 1.05rem;
+    color: var(--text-primary);
+    line-height: 1.6;
+    margin-bottom: 20px;
+    font-style: italic;
+}
+
+.review-author {
+    font-size: 0.9rem;
+    color: var(--text-secondary);
+    font-weight: 500;
+}
+
+/* =============================================
+   Pricing
+   ============================================= */
+.pricing {
+    background: transparent;
+}
+
+.pricing-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+    gap: 30px;
+    margin-top: 40px;
+    align-items: center;
+}
+
+.pricing-card {
+    background: var(--bg-card);
+    border: 1px solid var(--border-color);
+    border-radius: 24px;
+    padding: 40px;
+    display: flex;
+    flex-direction: column;
+    position: relative;
+    transition: var(--transition-normal);
+}
+
+.pricing-card:hover {
+    border-color: var(--border-color-hover);
+    transform: translateY(-5px);
+}
+
+.pricing-card.highlighted {
+    border-color: var(--accent-primary);
+    background: linear-gradient(180deg, rgba(168, 85, 247, 0.05) 0%, rgba(15, 23, 42, 0) 100%);
+    box-shadow: var(--shadow-glow);
+    padding: 50px 40px;
+}
+
+.pricing-badge {
+    position: absolute;
+    top: -14px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: var(--gradient-primary);
+    color: white;
+    padding: 6px 16px;
+    border-radius: 20px;
+    font-size: 0.85rem;
+    font-weight: 600;
+    box-shadow: 0 4px 10px rgba(168, 85, 247, 0.4);
+}
+
+.pricing-title {
+    font-size: 1.5rem;
+    font-weight: 600;
+    margin-bottom: 16px;
+    color: var(--text-primary);
+}
+
+.pricing-price {
+    font-size: 3rem;
+    font-weight: 700;
+    margin-bottom: 30px;
+    color: var(--text-primary);
+}
+
+.pricing-price span {
+    font-size: 1rem;
+    color: var(--text-secondary);
+    font-weight: 400;
+}
+
+.pricing-features {
+    list-style: none;
+    padding: 0;
+    margin: 0 0 40px 0;
+    flex-grow: 1;
+}
+
+.pricing-features li {
+    padding: 12px 0;
+    border-bottom: 1px solid var(--border-color);
+    color: var(--text-secondary);
+    font-size: 0.95rem;
+    display: flex;
+    align-items: center;
+}
+
+.pricing-features li::before {
+    content: "✓";
+    color: var(--accent-primary);
+    font-weight: bold;
+    margin-right: 12px;
+}
+
+.pricing-btn {
+    width: 100%;
+    justify-content: center;
+}
