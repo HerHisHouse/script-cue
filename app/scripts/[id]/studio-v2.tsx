@@ -584,28 +584,7 @@ export default function StudioV2Screen() {
                 return;
             }
 
-            // Use system TTS provider if that's selected
-            if (ttsProvider === 'system') {
-                // Use cleanText to avoid reading stage directions (parentheticals)
-                Speech.speak(line.cleanText, {
-                    language: 'es-ES',
-                    onDone: () => {
-                        if (mySequence === audioSequenceRef.current) {
-                            setIsSpeaking(false);
-                            setTimeout(handleNext, 800);
-                        }
-                    },
-                    onError: () => {
-                        if (mySequence === audioSequenceRef.current) {
-                            setIsSpeaking(false);
-                            setTimeout(handleNext, 800);
-                        }
-                    }
-                });
-                // Note: System TTS doesn't generate a file, so we can't upload it
-                console.warn('[speakLine] System TTS used - no AI segment will be saved');
-                return;
-            }
+
 
             // Use cloud TTS (OpenAI, ElevenLabs, Google) with cache
             try {

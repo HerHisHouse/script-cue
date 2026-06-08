@@ -222,21 +222,7 @@ export default function EchoModeScreen() {
         try {
             await cleanupSound();
 
-            // Si es System TTS, usar expo-speech
-            if (ttsProvider === 'system') {
-                Speech.speak(line.text, {
-                    language: 'es-ES',
-                    onDone: () => {
-                        setIsSpeaking(false);
-                        setTimeout(() => handleNext(), 800);
-                    },
-                    onError: () => {
-                        setIsSpeaking(false);
-                        setTimeout(() => handleNext(), 800);
-                    }
-                });
-                return;
-            }
+
 
             // Intentar usar caché de TTS
             const { generateAndCacheAudio } = await import('@/utils/ttsCache');
@@ -258,7 +244,7 @@ export default function EchoModeScreen() {
                 console.log(`[Memory Echo] Using character voice: ${voiceId} (${effectiveProvider})`);
             }
 
-            const provider: 'openai' | 'elevenlabs' = effectiveProvider as 'openai' | 'elevenlabs';
+            const provider: 'openai' | 'elevenlabs' = effectiveProvider === 'system' ? 'openai' : effectiveProvider as 'openai' | 'elevenlabs';
 
             let audioUri = null;
             if (user) {
