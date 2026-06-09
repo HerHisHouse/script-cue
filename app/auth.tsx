@@ -232,8 +232,8 @@ export default function AuthScreen() {
                 resizeMode="contain"
               />
             </View>
-            <Text style={[styles.title, { color: colors.text }]}>Script Cue</Text>
-            <Text style={[styles.subtitle, { color: colors.textSecondary }]}>Practica tus guiones con IA</Text>
+            <Text style={[styles.title, { color: colors.text }]}>ScriptCue</Text>
+            <Text style={[styles.subtitle, { color: colors.textSecondary }]}>Ensaya, memoriza e interpreta.{"\n"}Todo en un solo lugar.</Text>
           </View>
 
           <View style={[styles.form, { backgroundColor: colors.surface }]}>

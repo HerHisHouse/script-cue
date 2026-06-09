@@ -1,93 +1,92 @@
 /**
  * Playback Service - Required by react-native-track-player
- * 
+ *
  * Este servicio maneja los eventos de control remoto (pantalla de bloqueo,
  * auriculares, CarPlay, etc.)
- * 
- * Se registra automáticamente por el plugin de react-native-track-player
+ *
+ * Se registra automáticamente por el plugin de react-native-track-player.
+ *
+ * IMPORTANTE (Android): Este callback se ejecuta en un hilo de Headless JS
+ * separado. No puede llamar directamente a funciones de la UI.
+ * Usamos AsyncStorage como "buzón" de comandos que los componentes de UI
+ * pueden leer mediante polling.
  */
 
 import TrackPlayer, { Event } from 'react-native-track-player';
-import { DeviceEventEmitter } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
-/**
- * Servicio de playback que maneja eventos remotos
- * Este callback se ejecuta cuando la app está en background
- */
+const REMOTE_CMD_KEY = 'SC_REMOTE_CMD';
+
+async function postCommand(cmd: string) {
+  try {
+    // Write timestamp so listeners can detect new commands even if cmd is same
+    await AsyncStorage.setItem(REMOTE_CMD_KEY, `${cmd}:${Date.now()}`);
+  } catch { }
+}
+
 export async function PlaybackService() {
-  // Evento: Remote Play (botón de play en pantalla de bloqueo)
-  TrackPlayer.addEventListener(Event.RemotePlay, () => {
+  TrackPlayer.addEventListener(Event.RemotePlay, async () => {
     console.log('[PlaybackService] Remote Play');
-    DeviceEventEmitter.emit('onRemotePlay');
+    await postCommand('play');
     TrackPlayer.play();
   });
 
-  // Evento: Remote Pause (botón de pause en pantalla de bloqueo)
-  TrackPlayer.addEventListener(Event.RemotePause, () => {
+  TrackPlayer.addEventListener(Event.RemotePause, async () => {
     console.log('[PlaybackService] Remote Pause');
-    DeviceEventEmitter.emit('onRemotePause');
+    await postCommand('pause');
     TrackPlayer.pause();
   });
 
-  // Evento: Remote Stop
-  TrackPlayer.addEventListener(Event.RemoteStop, () => {
+  TrackPlayer.addEventListener(Event.RemoteStop, async () => {
     console.log('[PlaybackService] Remote Stop');
-    DeviceEventEmitter.emit('onRemoteStop');
+    await postCommand('stop');
     TrackPlayer.stop();
   });
 
-  // Evento: Remote Next (botón siguiente en pantalla de bloqueo)
-  TrackPlayer.addEventListener(Event.RemoteNext, () => {
+  TrackPlayer.addEventListener(Event.RemoteNext, async () => {
     console.log('[PlaybackService] Remote Next');
-    DeviceEventEmitter.emit('onRemoteNext');
-    TrackPlayer.skipToNext();
+    await postCommand('next');
+    TrackPlayer.skipToNext().catch(() => {});
   });
 
-  // Evento: Remote Previous (botón anterior en pantalla de bloqueo)
-  TrackPlayer.addEventListener(Event.RemotePrevious, () => {
+  TrackPlayer.addEventListener(Event.RemotePrevious, async () => {
     console.log('[PlaybackService] Remote Previous');
-    DeviceEventEmitter.emit('onRemotePrevious');
-    TrackPlayer.skipToPrevious();
+    await postCommand('previous');
+    TrackPlayer.skipToPrevious().catch(() => {});
   });
 
-  // Evento: Remote Seek (barra de progreso en pantalla de bloqueo)
-  TrackPlayer.addEventListener(Event.RemoteSeek, (event) => {
+  TrackPlayer.addEventListener(Event.RemoteSeek, (event: { position: number }) => {
     console.log('[PlaybackService] Remote Seek to:', event.position);
     TrackPlayer.seekTo(event.position);
   });
 
-  // Evento: Remote Duck (bajar volumen cuando hay otra app de audio)
-  TrackPlayer.addEventListener(Event.RemoteDuck, async (event) => {
+  TrackPlayer.addEventListener(Event.RemoteDuck, async (event: { permanent: boolean; paused: boolean }) => {
     console.log('[PlaybackService] Remote Duck:', event);
     if (event.permanent) {
-      // Otra app tomó el control del audio permanentemente
+      await postCommand('stop');
       await TrackPlayer.stop();
     } else if (event.paused) {
-      // Otra app pausó nuestro audio temporalmente
+      await postCommand('pause');
       await TrackPlayer.pause();
     } else {
-      // Podemos continuar (el volumen se baja automáticamente)
+      await postCommand('play');
       await TrackPlayer.play();
     }
   });
 
-  // Evento: Playback Queue Ended (cola terminada)
-  TrackPlayer.addEventListener(Event.PlaybackQueueEnded, (event) => {
+  TrackPlayer.addEventListener(Event.PlaybackQueueEnded, (event: any) => {
     console.log('[PlaybackService] Queue Ended:', event);
   });
 
-  // Evento: Playback State (cambio de estado de reproducción)
-  TrackPlayer.addEventListener(Event.PlaybackState, (event) => {
+  TrackPlayer.addEventListener(Event.PlaybackState, (event: any) => {
     console.log('[PlaybackService] Playback State:', event.state);
   });
 
-  // Evento: Playback Error
-  TrackPlayer.addEventListener(Event.PlaybackError, (event) => {
+  TrackPlayer.addEventListener(Event.PlaybackError, (event: any) => {
     console.error('[PlaybackService] Playback Error:', event);
   });
 
-  // Evento: Playback Track Changed
-  TrackPlayer.addEventListener(Event.PlaybackActiveTrackChanged, (event) => {
+  TrackPlayer.addEventListener(Event.PlaybackActiveTrackChanged, (event: any) => {
     console.log('[PlaybackService] Track Changed:', event.index, event.track?.title);
   });
 
@@ -95,3 +94,4 @@ export async function PlaybackService() {
 }
 
 export default PlaybackService;
+export { REMOTE_CMD_KEY };

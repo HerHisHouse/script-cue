@@ -35,6 +35,8 @@ import {
 } from '@/utils/voiceService';
 
 import { Stack } from 'expo-router';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { REMOTE_CMD_KEY } from '@/services/playbackService';
 
 // TrackPlayer for lock screen controls - Optional (only works in native builds)
 let TrackPlayer: any = null;
@@ -105,7 +107,7 @@ type VoiceProviderType = 'openai' | 'elevenlabs' | 'azure' | 'system';
 interface CharacterVoiceConfig {
   characterName: string;
   provider: VoiceProviderType;
-  voiceId: string;
+  voiceId: string | null;
 }
 
 export default function CarModeScreen() {
@@ -202,7 +204,7 @@ export default function CarModeScreen() {
           return {
             characterName: charName,
             provider: (char?.voice_provider as VoiceProviderType) || 'openai',
-            voiceId: char?.voice_id || 'nova',
+            voiceId: char?.voice_id || null,
           };
         });
         setCharacterVoiceConfigs(configs);
@@ -326,7 +328,7 @@ export default function CarModeScreen() {
 
     const voiceConfig = getVoiceConfigForCharacter(line.characterName);
     const effectiveProvider = voiceConfig?.provider || 'openai';
-    const voiceId = voiceConfig?.voiceId || 'nova';
+    const voiceId = voiceConfig?.voiceId || undefined;
 
     console.log(`[Car Mode] Playing line for ${line.characterName}: provider=${effectiveProvider}, voiceId=${voiceId}`);
 
@@ -537,11 +539,36 @@ export default function CarModeScreen() {
     };
   }, []);
 
+  // Poll AsyncStorage for remote commands from PlaybackService (Android background thread)
+  // This is needed because Headless JS runs in a separate thread and cannot call UI functions.
+  const lastRemoteCmdRef = useRef<string | null>(null);
+  useEffect(() => {
+    const interval = setInterval(async () => {
+      try {
+        const raw = await AsyncStorage.getItem(REMOTE_CMD_KEY);
+        if (raw && raw !== lastRemoteCmdRef.current) {
+          lastRemoteCmdRef.current = raw;
+          const cmd = raw.split(':')[0];
+          console.log('[Car Mode] AsyncStorage remote command:', cmd);
+          switch (cmd) {
+            case 'play': callbacksRef.current.play(); break;
+            case 'pause': callbacksRef.current.pause(); break;
+            case 'next': callbacksRef.current.next(); break;
+            case 'previous': callbacksRef.current.prev(); break;
+            case 'stop': callbacksRef.current.pause(); break;
+          }
+        }
+      } catch { }
+    }, 350);
+    return () => clearInterval(interval);
+  }, []);
+
+
   // =============================================
   // CONFIGURATION SCREEN FUNCTIONS
   // =============================================
 
-  const updateCharacterVoice = (characterName: string, provider: VoiceProviderType, voiceId: string) => {
+  const updateCharacterVoice = (characterName: string, provider: VoiceProviderType, voiceId: string | null) => {
     setCharacterVoiceConfigs(prev =>
       prev.map(config =>
         config.characterName === characterName
@@ -568,10 +595,11 @@ export default function CarModeScreen() {
     }
   };
 
-  const getVoiceName = (provider: VoiceProviderType, voiceId: string) => {
+  const getVoiceName = (provider: VoiceProviderType, voiceId: string | null) => {
+    if (!voiceId) return 'Voz por defecto';
     const voices = getVoicesForProvider(provider);
     const voice = voices.find(v => v.id === voiceId);
-    return voice?.name || 'Seleccionar voz';
+    return voice?.name || 'Voz por defecto';
   };
 
   const getProviderEmoji = (provider: VoiceProviderType) => {
@@ -702,7 +730,7 @@ export default function CarModeScreen() {
             line.text,
             {
               provider: voiceConfig.provider,
-              voiceId: voiceConfig.voiceId,
+              voiceId: voiceConfig.voiceId || undefined,
             },
             currentUser.id,
             line.voiceDirection
@@ -801,7 +829,7 @@ export default function CarModeScreen() {
           line.id,
           line.characterName,
           line.text, // Must be the raw text so the adapter detects the tags
-          { provider: voiceConfig.provider as 'openai' | 'elevenlabs' | 'azure' | 'system', voiceId: voiceConfig.voiceId },
+          { provider: voiceConfig.provider as 'openai' | 'elevenlabs' | 'azure' | 'system', voiceId: voiceConfig.voiceId || undefined },
           currentUser.id,
           line.voiceDirection // Important: pass the DB saved emotion
         );
@@ -1136,24 +1164,27 @@ export default function CarModeScreen() {
 
       {/* Main Content */}
       <View style={styles.content}>
-        <>
-          <Text style={[styles.statusText, { color: colors.primary }]}>
-            {statusText}
-          </Text>
+        <Text style={[styles.statusText, { color: colors.primary }]}>
+          {statusText}
+        </Text>
 
-          {currentLine && (
-            <View style={styles.lineInfo}>
-              <Text style={[styles.charName, { color: currentLine.color || colors.primary }]}>
-                {currentLine.characterName}
-              </Text>
-              <Text style={[styles.lineText, { color: colors.text }]}>
-                {renderTextWithStageDirections(
-                  showStageDirections ? currentLine.text : currentLine.cleanText
-                )}
-              </Text>
-            </View>
-          )}
-        </>
+        {currentLine && (
+          <ScrollView 
+            style={styles.dialogueBox}
+            contentContainerStyle={styles.dialogueBoxContent}
+            showsVerticalScrollIndicator={true}
+            indicatorStyle="white"
+          >
+            <Text style={[styles.charName, { color: currentLine.color || colors.primary }]}>
+              {currentLine.characterName}
+            </Text>
+            <Text style={[styles.lineText, { color: colors.text }]}>
+              {renderTextWithStageDirections(
+                showStageDirections ? currentLine.text : currentLine.cleanText
+              )}
+            </Text>
+          </ScrollView>
+        )}
       </View>
 
       {/* Controls */}
@@ -1254,10 +1285,12 @@ const styles = StyleSheet.create({
   closeButton: { flexDirection: 'row', alignItems: 'center', backgroundColor: 'rgba(239, 68, 68, 0.2)', padding: rp(12), borderRadius: 16 },
   closeText: { fontSize: rf(20), fontWeight: 'bold', marginLeft: rp(8) },
   settingsButton: { padding: rp(12) },
-  content: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: rp(20) },
-  statusText: { fontSize: rf(24), fontWeight: 'bold', marginBottom: rp(40), textTransform: 'uppercase', letterSpacing: 2 },
+  content: { flex: 1, alignItems: 'center', padding: rp(20), paddingBottom: 0 },
+  statusText: { fontSize: rf(24), fontWeight: 'bold', marginBottom: rp(20), textTransform: 'uppercase', letterSpacing: 2, textAlign: 'center' },
+  dialogueBox: { flex: 1, width: '100%' },
+  dialogueBoxContent: { alignItems: 'center', justifyContent: 'center', minHeight: '100%', paddingBottom: rp(40) },
   lineInfo: { alignItems: 'center', width: '100%' },
-  charName: { fontSize: rf(32), fontWeight: '800', marginBottom: rp(20), textTransform: 'uppercase' },
+  charName: { fontSize: rf(32), fontWeight: '800', marginBottom: rp(20), textTransform: 'uppercase', textAlign: 'center' },
   lineText: { fontSize: rf(28), textAlign: 'center', fontWeight: '500', lineHeight: rp(38) },
   controlsContainer: { paddingBottom: rp(40), paddingTop: rp(20), gap: rp(20) },
   controlsRow: { flexDirection: 'row', justifyContent: 'space-evenly', alignItems: 'center' },

@@ -43,6 +43,8 @@ import { validateAndNormalizeFilename, buildNewPath, RenameError, performRename 
 import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { setAudioModeForPlayback, setAudioModeForBackgroundPlayback } from '@/utils/audioMode';
 import { rf, rp } from '@/utils/responsive';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { REMOTE_CMD_KEY } from '@/services/playbackService';
 
 // TrackPlayer for lock screen controls - Optional (only works in native builds)
 let TrackPlayer: any = null;
@@ -1306,7 +1308,7 @@ export default function RecordingsScreen() {
   useEffect(() => {
     if (!nativeTrackPlayerAvailable || !TrackPlayerEvent) return;
     
-    // Register local listeners for lock screen controls
+    // Register local listeners for lock screen controls (works in foreground)
     const subs = [
       TrackPlayer.addEventListener(TrackPlayerEvent.RemotePlay, () => {
         playbackCallbacksRef.current.forcePlay();
@@ -1328,6 +1330,31 @@ export default function RecordingsScreen() {
       });
     };
   }, []);
+
+  // Poll AsyncStorage for remote commands from PlaybackService (Android background thread).
+  // Headless JS cannot call into the UI thread directly so we use AsyncStorage as a relay.
+  const lastRecordingsCmdRef = useRef<string | null>(null);
+  useEffect(() => {
+    const interval = setInterval(async () => {
+      try {
+        const raw = await AsyncStorage.getItem(REMOTE_CMD_KEY);
+        if (raw && raw !== lastRecordingsCmdRef.current) {
+          lastRecordingsCmdRef.current = raw;
+          const cmd = raw.split(':')[0];
+          console.log('[Recordings] AsyncStorage remote command:', cmd);
+          switch (cmd) {
+            case 'play': playbackCallbacksRef.current.forcePlay(); break;
+            case 'pause': playbackCallbacksRef.current.forcePause(); break;
+            case 'next': playbackCallbacksRef.current.playNext(); break;
+            case 'previous': playbackCallbacksRef.current.playPrevious(); break;
+            case 'stop': playbackCallbacksRef.current.forcePause(); break;
+          }
+        }
+      } catch { }
+    }, 350);
+    return () => clearInterval(interval);
+  }, []);
+
 
   // Show/hide controls functions
   function showControls() {
