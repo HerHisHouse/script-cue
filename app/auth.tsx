@@ -531,6 +531,7 @@ const styles = StyleSheet.create({
   subtitle: {
     fontSize: rf(16),
     color: '#6B7280',
+    textAlign: 'center',
   },
   form: {
     backgroundColor: '#FFFFFF',

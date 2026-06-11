@@ -29,7 +29,7 @@ export default function PrivacyScreen() {
                     <Text style={[styles.sectionTitle, { color: colors.text }]}>1. Responsable del Tratamiento</Text>
                     <Text style={[styles.paragraph, { color: colors.text }]}>
                         Script Cue{'\n'}
-                        Email: scriptcue@gmail.com
+                        Email: info@scriptcue.es
                     </Text>
 
                     <Text style={[styles.sectionTitle, { color: colors.text }]}>2. Datos que recopilamos</Text>
@@ -134,7 +134,7 @@ export default function PrivacyScreen() {
                         • rectificación,{'\n'}
                         • eliminación completa,{'\n'}
                         • suspensión de cuenta.{'\n\n'}
-                        Para ejercer tus derechos, escribe a scriptcue@gmail.com
+                        Para ejercer tus derechos, escribe a info@scriptcue.es
                     </Text>
 
                     <Text style={[styles.sectionTitle, { color: colors.text }]}>9. Servicios de Terceros</Text>

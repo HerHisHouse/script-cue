@@ -87,7 +87,7 @@ export default function FAQScreen() {
     };
 
     const handleEmailPress = () => {
-        Linking.openURL('mailto:scriptcue@gmail.com');
+        Linking.openURL('mailto:info@scriptcue.es');
     };
 
     return (
@@ -160,7 +160,7 @@ export default function FAQScreen() {
                     >
                         <Mail size={20} color={colors.primary} />
                         <Text style={[styles.emailText, { color: colors.primary }]}>
-                            scriptcue@gmail.com
+                            info@scriptcue.es
                         </Text>
                     </TouchableOpacity>
 

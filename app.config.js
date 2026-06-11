@@ -18,7 +18,7 @@ export default ({ config }) => {
   return {
     // IMPORTANT: return top-level keys (no nested `expo` here)
     ...config,
-    name: "Script Cue",
+    name: "ScriptCue",
     slug: "script-cue",
     scheme: "myapp",
     ios: {

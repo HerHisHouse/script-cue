@@ -57,47 +57,23 @@ try {
 // We no longer use a global setupCarModeTrackPlayer because we need access
 // to the latest component state via refs to pause/play expo-av audio.
 
-// Update lock screen Now Playing info for Car Mode
-async function updateCarModeLockScreen(
+// Update lock screen metadata for Car Mode (Android: TrackPlayer IS the real player)
+async function updateCarModeMetadata(
   characterName: string,
   lineText: string,
   scriptTitle: string,
-  isPlaying: boolean
 ): Promise<void> {
   if (!TrackPlayer) return;
   try {
-    const queue = await TrackPlayer.getQueue();
-    const track = {
-      id: `car_mode_${Date.now()}`,
-      url: require('../../../assets/sounds/silence.wav'), // Real silence file to satisfy Android Exoplayer
-      title: `${characterName}`,
-      artist: scriptTitle,
-      album: 'Modo Coche',
-    };
-    if (queue.length === 0) {
-      await TrackPlayer.add([track]);
-    } else {
-      if (typeof TrackPlayer.updateNowPlayingMetadata === 'function') {
-        await TrackPlayer.updateNowPlayingMetadata({ title: track.title, artist: track.artist, album: track.album });
-      } else {
-        await TrackPlayer.remove([0]);
-        await TrackPlayer.add([track]);
-      }
-    }
-    
-    // Force repeat so the track never ends and keeps the Android Foreground Service alive
-    if (TrackPlayerRepeatMode) {
-      await TrackPlayer.setRepeatMode(TrackPlayerRepeatMode.Track);
-    }
-    
-    if (isPlaying) {
-      // We MUST call play() on Android to spawn the Foreground Service notification!
-      await TrackPlayer.play();
-    } else {
-      await TrackPlayer.pause();
+    if (typeof TrackPlayer.updateNowPlayingMetadata === 'function') {
+      await TrackPlayer.updateNowPlayingMetadata({
+        title: characterName,
+        artist: scriptTitle || 'Script Cue',
+        album: 'Modo Coche',
+      });
     }
   } catch (e) {
-    console.log('[Car Mode] Lock screen update error:', e);
+    console.log('[Car Mode] Metadata update error:', e);
   }
 }
 
@@ -166,8 +142,10 @@ export default function CarModeScreen() {
 
   const recordingRef = useRef<Audio.Recording | null>(null);
   const silenceTimerRef = useRef<NodeJS.Timeout | null>(null);
-  const appState = useRef(AppState.currentState);
+  // Ref to the expo-av Sound (iOS only). On Android, TrackPlayer is the real audio player.
   const soundRef = useRef<Audio.Sound | null>(null);
+  // Callback set by processCurrentLine so the PlaybackQueueEnded listener can trigger it
+  const audioFinishedCallbackRef = useRef<(() => void) | null>(null);
   // Sequence ID to cancel stale audio operations
   const sequenceRef = useRef(0);
   const isCleaningUpRef = useRef(false);
@@ -284,16 +262,25 @@ export default function CarModeScreen() {
 
     try {
       Speech.stop();
-      if (soundRef.current) {
-        try {
-          const status = await soundRef.current.getStatusAsync();
-          if (status.isLoaded) {
-            await soundRef.current.stopAsync();
-            await soundRef.current.unloadAsync();
-          }
-        } catch (e) { }
-        soundRef.current = null;
+
+      if (Platform.OS === 'android' && TrackPlayer) {
+        // On Android, TrackPlayer IS the real audio player. Pause it (don't reset —
+        // processCurrentLine will call reset+add for the next track).
+        try { await TrackPlayer.pause(); } catch { }
+      } else {
+        // iOS: expo-av
+        if (soundRef.current) {
+          try {
+            const status = await soundRef.current.getStatusAsync();
+            if (status.isLoaded) {
+              await soundRef.current.stopAsync();
+              await soundRef.current.unloadAsync();
+            }
+          } catch (e) { }
+          soundRef.current = null;
+        }
       }
+
       await stopRecording();
     } finally {
       isCleaningUpRef.current = false;
@@ -318,13 +305,15 @@ export default function CarModeScreen() {
     setPhase('playing_ai');
     setStatusText(`${line.characterName}...`);
 
-    // Update lock screen Now Playing info
-    updateCarModeLockScreen(
-      line.characterName,
-      line.cleanText,
-      scriptTitle,
-      true
-    ).catch(() => {});
+    // Also update lock screen metadata (Android: TrackPlayer.reset+add below handles it;
+    // iOS: we call updateCarModeMetadata separately in the audio branch)
+    if (Platform.OS !== 'android') {
+      updateCarModeMetadata(
+        line.characterName,
+        line.cleanText,
+        scriptTitle,
+      ).catch(() => {});
+    }
 
     const voiceConfig = getVoiceConfigForCharacter(line.characterName);
     const effectiveProvider = voiceConfig?.provider || 'openai';
@@ -381,29 +370,68 @@ export default function CarModeScreen() {
         if (audioUri) {
           console.log('[Car Mode] Playing cached audio:', audioUri);
 
-          await Audio.setAudioModeAsync({
-            allowsRecordingIOS: false,
-            playsInSilentModeIOS: true,
-            staysActiveInBackground: true,
-            shouldDuckAndroid: true,
-          });
-
           if (mySequence !== sequenceRef.current) return;
 
-          const { sound } = await Audio.Sound.createAsync(
-            { uri: audioUri },
-            { shouldPlay: true, rate: speechRate }
-          );
-
-          soundRef.current = sound;
-
-          sound.setOnPlaybackStatusUpdate((status) => {
-            if (status.isLoaded && status.didJustFinish) {
-              if (mySequence === sequenceRef.current) {
-                handleAudioFinished();
+          if (Platform.OS === 'android' && TrackPlayer) {
+            // ─── ANDROID: TrackPlayer is the real audio player ───────────────────
+            // Using TrackPlayer means lock screen Play/Pause control this audio
+            // natively via the MusicService patch, without any JS bridge needed.
+            try {
+              await TrackPlayer.reset();
+              await TrackPlayer.add([
+                {
+                  id: `car-${mySequence}`,
+                  url: audioUri,
+                  title: line.characterName,
+                  artist: scriptTitle || 'Script Cue',
+                  album: 'Modo Coche',
+                },
+              ]);
+              if (TrackPlayerRepeatMode) {
+                await TrackPlayer.setRepeatMode(TrackPlayerRepeatMode.Off);
               }
+              audioFinishedCallbackRef.current = handleAudioFinished;
+              await TrackPlayer.setRate(speechRate);
+              await TrackPlayer.play();
+            } catch (tpErr) {
+              console.error('[Car Mode] TrackPlayer error, falling back to expo-av:', tpErr);
+              // Fallback to expo-av if TrackPlayer fails
+              const { sound } = await Audio.Sound.createAsync(
+                { uri: audioUri },
+                { shouldPlay: true, rate: speechRate }
+              );
+              soundRef.current = sound;
+              sound.setOnPlaybackStatusUpdate((status) => {
+                if (status.isLoaded && status.didJustFinish) {
+                  if (mySequence === sequenceRef.current) handleAudioFinished();
+                }
+              });
             }
-          });
+          } else {
+            // ─── iOS: expo-av (already works perfectly) ───────────────────────────
+            await Audio.setAudioModeAsync({
+              allowsRecordingIOS: false,
+              playsInSilentModeIOS: true,
+              staysActiveInBackground: true,
+              shouldDuckAndroid: true,
+            });
+
+            if (mySequence !== sequenceRef.current) return;
+
+            const { sound } = await Audio.Sound.createAsync(
+              { uri: audioUri },
+              { shouldPlay: true, rate: speechRate }
+            );
+            soundRef.current = sound;
+            sound.setOnPlaybackStatusUpdate((status) => {
+              if (status.isLoaded && status.didJustFinish) {
+                if (mySequence === sequenceRef.current) handleAudioFinished();
+              }
+            });
+
+            // iOS: update lock screen metadata
+            updateCarModeMetadata(line.characterName, line.text, scriptTitle).catch(() => {});
+          }
           return;
         } else {
           console.log('[Car Mode] Cache miss - falling back to System TTS');
@@ -472,19 +500,40 @@ export default function CarModeScreen() {
   const handlePause = async () => {
     sequenceRef.current++; // Invalidate pending callbacks
     setIsPaused(true);
-    await cleanupAllAudio();
     setStatusText('Pausado');
     setPhase('idle');
-    
-    // Sync TrackPlayer state
-    if (TrackPlayer) TrackPlayer.pause().catch(() => {});
+
+    Speech.stop(); // Stop system TTS if active
+
+    if (Platform.OS === 'android' && TrackPlayer) {
+      // Android: TrackPlayer IS the real audio player — just pause it.
+      // The audio stays loaded so the user can resume from the same position.
+      TrackPlayer.pause().catch(() => {});
+    } else {
+      // iOS: expo-av, must destroy the sound
+      await cleanupAllAudio();
+    }
   };
 
-  const handleResume = () => {
+  const handleResume = async () => {
     setIsPaused(false);
-    // Sync TrackPlayer state
-    if (TrackPlayer) TrackPlayer.play().catch(() => {});
-    processCurrentLine();
+
+    if (Platform.OS === 'android' && TrackPlayer) {
+      // Android: check if TrackPlayer has audio paused mid-track
+      try {
+        const { state } = await TrackPlayer.getPlaybackState();
+        if (state === 'paused' || state === 'ready') {
+          // Audio is loaded and paused — resume from where we left off
+          await TrackPlayer.play();
+          return;
+        }
+      } catch { }
+      // No audio loaded (e.g. system TTS was active) — restart the current line
+      processCurrentLine();
+    } else {
+      // iOS: expo-av was destroyed on pause, restart the line
+      processCurrentLine();
+    }
   };
 
   // Keep references to latest callbacks for TrackPlayer events
@@ -539,10 +588,43 @@ export default function CarModeScreen() {
     };
   }, []);
 
-  // Poll AsyncStorage for remote commands from PlaybackService (Android background thread)
-  // This is needed because Headless JS runs in a separate thread and cannot call UI functions.
+  // Listen for TrackPlayer audio end (Android: TrackPlayer IS the real audio player)
+  // We use BOTH PlaybackQueueEnded AND PlaybackState='ended' for reliability.
+  // The ref-clearing trick prevents double-advancing if both events fire.
+  useEffect(() => {
+    if (!TrackPlayer || !TrackPlayerEvent || Platform.OS !== 'android') return;
+
+    const triggerAdvance = () => {
+      const cb = audioFinishedCallbackRef.current;
+      if (!cb) return;
+      audioFinishedCallbackRef.current = null; // Clear to prevent double-call
+      console.log('[Car Mode] Audio ended → advancing to next line');
+      cb();
+    };
+
+    // Primary: PlaybackQueueEnded fires when queue is exhausted
+    const subEnded = TrackPlayer.addEventListener(TrackPlayerEvent.PlaybackQueueEnded, triggerAdvance);
+
+    // Fallback: PlaybackState='ended' is emitted natively when track finishes
+    // (more reliable than PlaybackQueueEnded in background/locked scenarios)
+    const subState = TrackPlayer.addEventListener(TrackPlayerEvent.PlaybackState, (event: any) => {
+      if (event?.state === 'ended') {
+        console.log('[Car Mode] PlaybackState=ended → advancing');
+        triggerAdvance();
+      }
+    });
+
+    return () => {
+      try { subEnded?.remove?.(); } catch { }
+      try { subState?.remove?.(); } catch { }
+    };
+  }, []);
+
+  // AsyncStorage polling as secondary fallback for lock screen commands
+  // (primary: native MusicService patch + TrackPlayer event listeners above)
   const lastRemoteCmdRef = useRef<string | null>(null);
   useEffect(() => {
+    if (Platform.OS !== 'android') return;
     const interval = setInterval(async () => {
       try {
         const raw = await AsyncStorage.getItem(REMOTE_CMD_KEY);

@@ -161,7 +161,7 @@ export default function TermsScreen() {
                     <Text style={[styles.sectionTitle, { color: colors.text }]}>11. Contacto</Text>
                     <Text style={[styles.paragraph, { color: colors.text }]}>
                         Para consultas o soporte:{'\n\n'}
-                        Email: scriptcue@gmail.com{'\n'}
+                        Email: info@scriptcue.es{'\n'}
                         Responsable: Alex Díaz
                     </Text>
 

@@ -93,7 +93,7 @@ export default function AIUsageScreen() {
 
                     <Text style={[styles.contact, { color: colors.textSecondary }]}>
                         ¿Preguntas sobre el uso de IA?{'\n'}
-                        Contacta con nosotros: scriptcue@gmail.com
+                        Contacta con nosotros: info@scriptcue.es
                     </Text>
                 </ScrollView>
             </SafeAreaView>

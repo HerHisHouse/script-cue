@@ -131,7 +131,7 @@ export default function SettingsScreen() {
     return localPart || 'Usuario';
   }, [profile?.username, profile?.full_name, user?.email]);
 
-  const appName = 'Script Cue';
+  const appName = 'ScriptCue';
   const appVersion = `v${appConfig?.expo?.version ?? '1.0.0'}`;
 
   async function confirmSignOut() {
