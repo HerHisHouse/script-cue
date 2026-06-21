@@ -190,9 +190,9 @@ export default function CommunityScreen() {
                 <CheckCircle size={64} color={PURPLE} />
               </View>
 
-              <Text style={[styles.confirmTitle, { color: colors.text }]}>¡Apuntado!</Text>
+              <Text style={[styles.confirmTitle, { color: colors.text }]}>¡Listo!</Text>
               <Text style={[styles.confirmText, { color: colors.textSecondary }]}>
-                Te avisaremos en cuanto la comunidad esté lista.{'\n'}
+                Te avisaremos en cuanto la comunidad esté activa.{'\n'}
                 Mientras tanto, sigue ensayando 🎭
               </Text>
 
