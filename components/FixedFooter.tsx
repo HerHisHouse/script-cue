@@ -2,11 +2,11 @@ import React from 'react';
 import { View, TouchableOpacity, StyleSheet, Platform, Text } from 'react-native';
 import { useTheme } from '@/contexts/ThemeContext';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Folder, FileText, Mic, Settings } from 'lucide-react-native';
+import { Folder, FileText, Mic, Settings, Users } from 'lucide-react-native';
 import { useRouter } from 'expo-router';
 import { rf, rp } from '@/utils/responsive';
 
-type Props = { activeKey?: 'projects' | 'index' | 'recordings' | 'settings' };
+type Props = { activeKey?: 'projects' | 'index' | 'recordings' | 'settings' | 'community' };
 
 export function FixedFooter({ activeKey }: Props) {
   const { colors } = useTheme();
@@ -18,7 +18,7 @@ export function FixedFooter({ activeKey }: Props) {
   const inactive = colors.textSecondary;
 
   // Component for tab icon with background highlight when focused
-  const TabIcon = ({ Icon, isActive }: { Icon: any; isActive: boolean }) => (
+  const TabIcon = ({ Icon, isActive, badge }: { Icon: any; isActive: boolean; badge?: boolean }) => (
     <View
       style={{
         width: 50,
@@ -35,6 +35,19 @@ export function FixedFooter({ activeKey }: Props) {
       }}
     >
       <Icon size={24} color={isActive ? active : inactive} />
+      {badge && !isActive && (
+        <View
+          style={{
+            position: 'absolute',
+            top: 4,
+            right: 8,
+            width: 7,
+            height: 7,
+            borderRadius: 3.5,
+            backgroundColor: '#a78bfa',
+          }}
+        />
+      )}
     </View>
   );
 
@@ -51,6 +64,10 @@ export function FixedFooter({ activeKey }: Props) {
       <TouchableOpacity style={styles.item} activeOpacity={0.7} onPress={() => router.replace('/(tabs)/projects')}>
         <TabIcon Icon={Folder} isActive={activeKey === 'projects'} />
         <Text style={[styles.label, { color: activeKey === 'projects' ? active : inactive }]}>Proyectos</Text>
+      </TouchableOpacity>
+      <TouchableOpacity style={styles.item} activeOpacity={0.7} onPress={() => router.replace('/(tabs)/community')}>
+        <TabIcon Icon={Users} isActive={activeKey === 'community'} badge={true} />
+        <Text style={[styles.label, { color: activeKey === 'community' ? active : inactive }]}>Comunidad</Text>
       </TouchableOpacity>
       <TouchableOpacity style={styles.item} activeOpacity={0.7} onPress={() => router.replace('/(tabs)/settings')}>
         <TabIcon Icon={Settings} isActive={activeKey === 'settings'} />

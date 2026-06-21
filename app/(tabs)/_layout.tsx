@@ -113,20 +113,20 @@ export default function TabLayout() {
         }}
       />
       <Tabs.Screen
-        name="settings"
-        options={{
-          title: 'Ajustes',
-          tabBarIcon: ({ size, color, focused }) => (
-            <TabIcon Icon={Settings} size={size} color={color} focused={focused} />
-          ),
-        }}
-      />
-      <Tabs.Screen
         name="community"
         options={{
           title: 'Comunidad',
           tabBarIcon: ({ size, color, focused }) => (
             <TabIcon Icon={Users} size={size} color={color} focused={focused} badge={true} />
+          ),
+        }}
+      />
+      <Tabs.Screen
+        name="settings"
+        options={{
+          title: 'Ajustes',
+          tabBarIcon: ({ size, color, focused }) => (
+            <TabIcon Icon={Settings} size={size} color={color} focused={focused} />
           ),
         }}
       />
