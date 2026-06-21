@@ -1,5 +1,5 @@
 import { Tabs } from 'expo-router';
-import { FileText, Mic, Settings, Folder } from 'lucide-react-native';
+import { FileText, Mic, Settings, Folder, Users } from 'lucide-react-native';
 import { useTheme } from '@/contexts/ThemeContext';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Platform, View } from 'react-native';
@@ -15,7 +15,19 @@ export default function TabLayout() {
   const baseHeight = Platform.OS === 'ios' ? 49 : 56; // Altura base recomendada por plataforma
 
   // Component for tab icon with background highlight when focused
-  const TabIcon = ({ Icon, size, color, focused }: { Icon: any; size: number; color: string; focused: boolean }) => (
+  const TabIcon = ({
+    Icon,
+    size,
+    color,
+    focused,
+    badge,
+  }: {
+    Icon: any;
+    size: number;
+    color: string;
+    focused: boolean;
+    badge?: boolean;
+  }) => (
     <View
       style={{
         width: 50,
@@ -32,6 +44,19 @@ export default function TabLayout() {
       }}
     >
       <Icon size={size} color={color} />
+      {badge && !focused && (
+        <View
+          style={{
+            position: 'absolute',
+            top: 4,
+            right: 8,
+            width: 7,
+            height: 7,
+            borderRadius: 3.5,
+            backgroundColor: '#a78bfa',
+          }}
+        />
+      )}
     </View>
   );
 
@@ -93,6 +118,15 @@ export default function TabLayout() {
           title: 'Ajustes',
           tabBarIcon: ({ size, color, focused }) => (
             <TabIcon Icon={Settings} size={size} color={color} focused={focused} />
+          ),
+        }}
+      />
+      <Tabs.Screen
+        name="community"
+        options={{
+          title: 'Comunidad',
+          tabBarIcon: ({ size, color, focused }) => (
+            <TabIcon Icon={Users} size={size} color={color} focused={focused} badge={true} />
           ),
         }}
       />
