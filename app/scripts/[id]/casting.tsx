@@ -131,6 +131,7 @@ export default function CastingModeScreen() {
   type CastingMode = 'selection' | 'script_config' | 'free_input' | 'recording';
   const [castingMode, setCastingMode] = useState<CastingMode>('selection');
   const [castingType, setCastingType] = useState<'script' | 'free' | null>(null);
+  const [useHeadphones, setUseHeadphones] = useState(false); // Por defecto: sin auriculares (más seguro)
 
   // --- Rich Text para Teleprompter Libre ---
   // Cada segmento tiene su propio formato independiente
@@ -1548,6 +1549,7 @@ export default function CastingModeScreen() {
       formData.append('scriptId', id as string);
       formData.append('userId', user?.id || '');
       formData.append('lineTimings', JSON.stringify(lineTimings));
+      formData.append('useHeadphones', useHeadphones ? 'true' : 'false');
 
       // Add video file
       // Note: React Native FormData expects { uri, name, type }
@@ -2157,6 +2159,40 @@ export default function CastingModeScreen() {
 
           {/* Start Recording Button */}
           <View style={styles.configFooter}>
+            {/* SECCIÓN: CONFIGURACIÓN DE AUDIO */}
+            <View style={styles.audioConfigSection}>
+              <Text style={styles.audioConfigTitle}>🎧 ¿Cómo vas a grabar?</Text>
+              <Text style={styles.audioConfigSubtitle}>Esto afecta a cómo se mezcla el audio final</Text>
+              <View style={styles.audioOptionsRow}>
+                {/* Opción: Sin auriculares */}
+                <TouchableOpacity
+                  style={[styles.audioOption, !useHeadphones && styles.audioOptionSelected]}
+                  onPress={() => setUseHeadphones(false)}
+                >
+                  <Text style={styles.audioOptionIcon}>📱</Text>
+                  <Text style={[styles.audioOptionLabel, !useHeadphones && styles.audioOptionLabelSelected]}>
+                    Sin auriculares
+                  </Text>
+                  <Text style={styles.audioOptionHint}>
+                    La IA reemplaza el audio para evitar el eco
+                  </Text>
+                </TouchableOpacity>
+                {/* Opción: Con auriculares */}
+                <TouchableOpacity
+                  style={[styles.audioOption, useHeadphones && styles.audioOptionSelected]}
+                  onPress={() => setUseHeadphones(true)}
+                >
+                  <Text style={styles.audioOptionIcon}>🎧</Text>
+                  <Text style={[styles.audioOptionLabel, useHeadphones && styles.audioOptionLabelSelected]}>
+                    Con auriculares
+                  </Text>
+                  <Text style={styles.audioOptionHint}>
+                    Se mezclan ambas voces con calidad máxima
+                  </Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+
             <TouchableOpacity
               onPress={startScriptCasting}
               style={styles.startRecordingBtn}
@@ -3495,6 +3531,63 @@ const styles = StyleSheet.create({
   configFooter: {
     padding: rp(16),
     paddingBottom: rp(24),
+  },
+  // Audio config section styles
+  audioConfigSection: {
+    backgroundColor: 'rgba(124, 106, 247, 0.08)',
+    borderRadius: rp(16),
+    padding: rp(16),
+    marginBottom: rp(16),
+    borderWidth: 1,
+    borderColor: 'rgba(124, 106, 247, 0.2)',
+  },
+  audioConfigTitle: {
+    color: '#ffffff',
+    fontSize: rf(15),
+    fontWeight: '700',
+    marginBottom: rp(4),
+  },
+  audioConfigSubtitle: {
+    color: '#9090b0',
+    fontSize: rf(13),
+    marginBottom: rp(14),
+  },
+  audioOptionsRow: {
+    flexDirection: 'row',
+    gap: rp(10),
+  },
+  audioOption: {
+    flex: 1,
+    backgroundColor: 'rgba(255,255,255,0.05)',
+    borderRadius: rp(12),
+    padding: rp(14),
+    borderWidth: 1.5,
+    borderColor: 'rgba(255,255,255,0.1)',
+    alignItems: 'center',
+  },
+  audioOptionSelected: {
+    borderColor: '#a78bfa',
+    backgroundColor: 'rgba(124, 106, 247, 0.15)',
+  },
+  audioOptionIcon: {
+    fontSize: rf(24),
+    marginBottom: rp(6),
+  },
+  audioOptionLabel: {
+    color: '#9090b0',
+    fontSize: rf(13),
+    fontWeight: '600',
+    textAlign: 'center',
+    marginBottom: rp(4),
+  },
+  audioOptionLabelSelected: {
+    color: '#ffffff',
+  },
+  audioOptionHint: {
+    color: '#666',
+    fontSize: rf(11),
+    textAlign: 'center',
+    lineHeight: rf(14),
   },
   startRecordingBtn: {
     backgroundColor: '#10B981',
