@@ -277,48 +277,64 @@ app.post('/process-casting', upload.any(), async (req, res) => {
 
         console.log(`[Casting] Processed ${aiSegments.length} AI audio segments`);
 
-        // 4. ESTRATEGIA: Superposición simple sin ducking
-        console.log('[Casting] Usando estrategia de superposición simple...');
+        console.log('[Casting] Estrategia: superposición con ducking suave...');
+
         const filterParts = [];
 
-        // 1. Audio del usuario: limpieza suave sin agresividad
+        // 1. Audio del usuario
+        // Normalización conservadora + reducción de ruido suave
         filterParts.push(
-            '[0:a]highpass=f=80,loudnorm=I=-16:TP=-1.5:LRA=11[user_clean]'
+            '[0:a]highpass=f=80,afftdn=nf=-20,loudnorm=I=-18:TP=-2:LRA=11[user_norm]'
         );
 
-        // 2. Cada segmento de IA: normalización + fade suave + delay exacto
+        // 2. Construir expresión de ducking
+        // Cuando la IA habla, bajar el usuario al 35% (no al 0%)
+        // Esto reduce el eco sin eliminar la voz del usuario
+        let duckExpression = '1';
+        if (aiSegments.length > 0) {
+            const conditions = aiSegments.map(segment => {
+                // Añadir 100ms de margen antes y después para transición suave
+                const start = Math.max(0, (segment.startTime - 0.1)).toFixed(3);
+                const end = (segment.startTime + segment.duration + 0.1).toFixed(3);
+                return `between(t,${start},${end})`;
+            });
+            const combined = conditions.join('+');
+            // 0.35 = usuario al 35% cuando habla la IA (audible pero el eco no molesta)
+            duckExpression = `if(gte(${combined},1),0.35,1)`;
+        }
+
+        filterParts.push(
+            `[user_norm]volume='${duckExpression}':eval=frame[user_ducked]`
+        );
+
+        // 3. Cada segmento de IA
+        // La IA va a -14 LUFS (algo más alta que el usuario a -18)
+        // para que destaque limpia sobre el ducking
         aiSegments.forEach((segment, idx) => {
             const delayMs = Math.round(segment.startTime * 1000);
             const duration = segment.duration || 3;
-            const fadeDuration = Math.min(0.05, duration * 0.1).toFixed(3);
-            const fadeOutStart = Math.max(0, duration - parseFloat(fadeDuration)).toFixed(3);
+            const fade = Math.min(0.08, duration * 0.1).toFixed(3);
+            const fadeOut = Math.max(0, duration - parseFloat(fade)).toFixed(3);
 
             filterParts.push(
-                `[${idx + 1}:a]loudnorm=I=-16:TP=-1.5:LRA=9,` +
-                `afade=t=in:st=0:d=${fadeDuration},` +
-                `afade=t=out:st=${fadeOutStart}:d=${fadeDuration},` +
+                `[${idx + 1}:a]loudnorm=I=-14:TP=-1:LRA=7,` +
+                `afade=t=in:st=0:d=${fade},` +
+                `afade=t=out:st=${fadeOut}:d=${fade},` +
                 `adelay=${delayMs}|${delayMs}[ai${idx}]`
             );
         });
 
-        // 3. Mezclar todo sin normalización del conjunto
-        // normalize=0 es crítico: cada pista suena a su propio volumen
-        const allInputStreams = [
-            '[user_clean]',
+        // 4. Mezcla final
+        const allStreams = [
+            '[user_ducked]',
             ...aiSegments.map((_, i) => `[ai${i}]`)
         ].join('');
 
-        const totalInputs = aiSegments.length + 1;
-
-        if (aiSegments.length > 0) {
-            filterParts.push(
-                `${allInputStreams}amix=inputs=${totalInputs}:` +
-                `duration=longest:dropout_transition=0:normalize=0[outa]`
-            );
-        } else {
-            // Sin segmentos de IA: pasar el audio del usuario directamente
-            filterParts.push('[user_clean]acopy[outa]');
-        }
+        filterParts.push(
+            `${allStreams}amix=inputs=${aiSegments.length + 1}:` +
+            `duration=longest:dropout_transition=0:normalize=0,` +
+            `alimiter=limit=0.95:attack=2:release=50[outa]`
+        );
 
         const filterComplex = filterParts.join(';');
         console.log('[Casting] Filter complex:', filterComplex);
@@ -337,7 +353,7 @@ app.post('/process-casting', upload.any(), async (req, res) => {
                 .map('[outa]')
                 .audioCodec('aac')
                 .audioBitrate('192k')
-                .audioChannels(2) // Stereo para mejor calidad
+                .audioChannels(1) // Mono para evitar fase
                 .audioFrequency(44100)
                 .output(mixedAudioFile)
                 .on('start', (cmd) => console.log('[FFmpeg] Mix command:', cmd))

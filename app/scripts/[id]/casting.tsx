@@ -53,7 +53,7 @@ import {
 type SceneItem = ParsedScript['scenes'][0];
 
 const ActionTimingInput = ({ actionId, isManualAction, duration, adjustment, updateActionDuration, adjustLineTiming, colors, styles }: any) => {
-  const effectiveValue = isManualAction ? duration : Math.max(0, duration + adjustment);
+  const effectiveValue = Math.max(0, duration);
   const [val, setVal] = useState(String(effectiveValue));
 
   useEffect(() => {
@@ -73,7 +73,7 @@ const ActionTimingInput = ({ actionId, isManualAction, duration, adjustment, upd
         setVal(newVal);
         if (newVal === '') {
           if (isManualAction) updateActionDuration(actionId, 0);
-          else adjustLineTiming(actionId, -duration);
+          else adjustLineTiming(actionId, adjustment - duration);
           return;
         }
         const parsed = parseInt(newVal.replace(/[^0-9]/g, ''), 10);
@@ -81,7 +81,8 @@ const ActionTimingInput = ({ actionId, isManualAction, duration, adjustment, upd
           if (isManualAction) {
             updateActionDuration(actionId, parsed);
           } else {
-            adjustLineTiming(actionId, parsed - duration);
+            const diff = parsed - duration;
+            adjustLineTiming(actionId, adjustment + diff);
           }
         }
       }}
@@ -1068,6 +1069,12 @@ export default function CastingModeScreen() {
   // Get duration for a line (calculated + adjustment)
   function getLineDuration(line: DialogueLine): number {
     const adjustment = sceneConfig?.lineTimings.find(lt => lt.lineId === line.id)?.timingAdjustment || 0;
+    
+    // Si es una tarjeta de acción (isAction = true), usar tiempo base fijo de 2s en lugar del cálculo por palabras.
+    if (line.isAction || line.characterName === 'ACCIÓN') {
+      return Math.max(0, 2 + adjustment);
+    }
+
     // Use cleanText for duration calculation
     return calculateLineDuration(line.cleanText, adjustment);
   }
