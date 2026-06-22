@@ -52,6 +52,43 @@ import {
 
 type SceneItem = ParsedScript['scenes'][0];
 
+const ActionTimingInput = ({ actionId, isManualAction, duration, adjustment, updateActionDuration, adjustLineTiming, colors, styles }: any) => {
+  const effectiveValue = isManualAction ? duration : Math.max(0, duration + adjustment);
+  const [val, setVal] = useState(String(effectiveValue));
+
+  useEffect(() => {
+    const numericVal = val === '' ? 0 : parseInt(val, 10);
+    if (numericVal !== effectiveValue) {
+      setVal(String(effectiveValue));
+    }
+  }, [effectiveValue]); // Intentionally omitting `val` to avoid loop
+
+  return (
+    <TextInput
+      style={[styles.timingTextInput, { color: colors.text }]}
+      value={val}
+      keyboardType="number-pad"
+      selectTextOnFocus
+      onChangeText={(newVal) => {
+        setVal(newVal);
+        if (newVal === '') {
+          if (isManualAction) updateActionDuration(actionId, 0);
+          else adjustLineTiming(actionId, -duration);
+          return;
+        }
+        const parsed = parseInt(newVal.replace(/[^0-9]/g, ''), 10);
+        if (!isNaN(parsed) && parsed >= 0) {
+          if (isManualAction) {
+            updateActionDuration(actionId, parsed);
+          } else {
+            adjustLineTiming(actionId, parsed - duration);
+          }
+        }
+      }}
+    />
+  );
+};
+
 export default function CastingModeScreen() {
   const router = useRouter();
   const { id } = useLocalSearchParams();
@@ -111,6 +148,7 @@ export default function CastingModeScreen() {
 
   // OpenAI TTS State
   const [ttsCache, setTtsCache] = useState<Map<string, string>>(new Map());
+  const ttsCacheRef = useRef<Map<string, string>>(new Map());
   const [loadingAudio, setLoadingAudio] = useState(false);
   const [audioProgress, setAudioProgress] = useState(0);
   const [perCharacterVoices, setPerCharacterVoices] = useState<Record<string, { provider?: string; systemVoiceId?: string }>>({});
@@ -526,7 +564,7 @@ export default function CastingModeScreen() {
     return () => {
       import('expo-speech-recognition').then(({ ExpoSpeechRecognitionModule }) => {
         try { ExpoSpeechRecognitionModule.abort(); } catch { }
-      }).catch(() => {});
+      }).catch(() => { });
       cleanupSound();
       if (autoAdvanceTimerRef.current) clearTimeout(autoAdvanceTimerRef.current);
       if (silenceTimerRef.current) clearTimeout(silenceTimerRef.current);
@@ -703,7 +741,7 @@ export default function CastingModeScreen() {
     (async () => {
       try {
         console.log('🎙️ Checking TTS audio cache in background...');
-        const newCache = new Map(ttsCache);
+        const newCache = new Map(ttsCacheRef.current);
         let missingCount = 0;
 
         for (let i = 0; i < aiLines.length; i++) {
@@ -773,7 +811,8 @@ export default function CastingModeScreen() {
           }
         }
 
-        if (newCache.size > ttsCache.size) {
+        if (newCache.size > ttsCacheRef.current.size) {
+          ttsCacheRef.current = new Map(newCache);
           setTtsCache(new Map(newCache));
         }
 
@@ -887,7 +926,7 @@ export default function CastingModeScreen() {
 
     try {
       // 1. Verificar si ya está en cache en memoria (pre-generado)
-      const cachedUri = ttsCache.get(line.id);
+      const cachedUri = ttsCacheRef.current.get(line.id);
       if (cachedUri) {
         console.log(`[TTS] ✅ Playing from memory cache: ${line.characterName}`);
         await playLocalAudio(cachedUri);
@@ -930,7 +969,9 @@ export default function CastingModeScreen() {
 
       if (audioUri) {
         // Guardar en cache de memoria para futuras repeticiones
-        setTtsCache(prev => new Map(prev).set(line.id, audioUri!));
+        const nextCache = new Map(ttsCacheRef.current).set(line.id, audioUri!);
+        ttsCacheRef.current = nextCache;
+        setTtsCache(nextCache);
         console.log(`[TTS] ▶️ Playing generated audio for: ${line.characterName}`);
         await playLocalAudio(audioUri);
       } else {
@@ -1924,8 +1965,8 @@ export default function CastingModeScreen() {
               <Clapperboard color={colors.primary} size={rp(24)} />
               <Text style={[styles.configTitle, { color: colors.text }]}>Configurar Escena</Text>
             </View>
-            <TouchableOpacity 
-              onPress={() => Alert.alert('Añadir acción', '"Añadir acción" sirve para configurar el tiempo que requieran las acciones por guión antes de decir una frase.')} 
+            <TouchableOpacity
+              onPress={() => Alert.alert('Añadir acción', '"Añadir acción" sirve para configurar el tiempo que requieran las acciones por guión antes de decir una frase.')}
               style={{ width: rp(44), alignItems: 'center', justifyContent: 'center' }}
             >
               <Info color={colors.primary} size={rp(24)} />
@@ -2031,26 +2072,15 @@ export default function CastingModeScreen() {
                       </TouchableOpacity>
                       <View style={styles.timingDisplay}>
                         <Timer size={rp(14)} color={colors.primary} />
-                        <TextInput
-                          style={[styles.timingTextInput, { color: colors.text }]}
-                          value={String(Math.max(0, duration + (isScriptAction ? adjustment : 0)))}
-                          keyboardType="number-pad"
-                          selectTextOnFocus
-                          onChangeText={(val) => {
-                            if (val === '') {
-                              if (isManualAction) updateActionDuration(actionId, 0);
-                              else adjustLineTiming(actionId, -duration);
-                              return;
-                            }
-                            const parsed = parseInt(val.replace(/[^0-9]/g, ''), 10);
-                            if (!isNaN(parsed) && parsed >= 0) {
-                              if (isManualAction) {
-                                updateActionDuration(actionId, parsed);
-                              } else {
-                                adjustLineTiming(actionId, parsed - duration);
-                              }
-                            }
-                          }}
+                        <ActionTimingInput 
+                          actionId={actionId}
+                          isManualAction={isManualAction}
+                          duration={duration}
+                          adjustment={adjustment}
+                          updateActionDuration={updateActionDuration}
+                          adjustLineTiming={adjustLineTiming}
+                          colors={colors}
+                          styles={styles}
                         />
                         <Text style={[styles.timingText, { color: colors.text }]}>s</Text>
                       </View>
@@ -2325,14 +2355,14 @@ export default function CastingModeScreen() {
                             style={[
                               styles.teleprompterActionCard,
                               isActive && styles.teleprompterActionCardActive,
-                              { 
-                                opacity, 
+                              {
+                                opacity,
                                 borderLeftWidth: 4,
                                 borderLeftColor: colors.primary,
-                                borderColor: colors.primary, 
-                                borderWidth: 2, 
-                                borderStyle: 'dashed', 
-                                backgroundColor: 'transparent' 
+                                borderColor: colors.primary,
+                                borderWidth: 2,
+                                borderStyle: 'dashed',
+                                backgroundColor: 'transparent'
                               }
                             ]}
                           >

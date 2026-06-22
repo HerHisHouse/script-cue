@@ -18,18 +18,33 @@ const ExpoCameraView = forwardRef((props: ExpoCameraProps, ref) => {
 
     useImperativeHandle(ref, () => ({
         startRecording: async () => {
-            recordingPromise.current = cameraRef.current?.recordAsync({
-                maxDuration: 600,
-            }) || null;
-            return true;
+            try {
+                const promise = cameraRef.current?.recordAsync({
+                    maxDuration: 600,
+                });
+                if (promise) {
+                    recordingPromise.current = promise.catch(e => {
+                        console.warn('[Camera] Failed to record (expected on simulator):', e);
+                        return null;
+                    });
+                } else {
+                    recordingPromise.current = null;
+                }
+                return true;
+            } catch (e) {
+                console.warn('[Camera] startRecording error:', e);
+                return true;
+            }
         },
         stopRecording: async () => {
-            cameraRef.current?.stopRecording();
+            try { cameraRef.current?.stopRecording(); } catch (e) {}
             return await recordingPromise.current;
         },
         cancelRecording: () => {
-            (cameraRef.current as any)._cancelRecording = true;
-            cameraRef.current?.stopRecording();
+            try {
+                (cameraRef.current as any)._cancelRecording = true;
+                cameraRef.current?.stopRecording();
+            } catch (e) {}
         },
         minZoom: 1,
         neutralZoom: 1,
