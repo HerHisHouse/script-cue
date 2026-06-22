@@ -49,6 +49,7 @@ import {
   calculateLineDuration,
   generateActionId
 } from '@/utils/sceneConfig';
+import { activateAEC, deactivateAEC } from '@/modules/audio-echo-cancellation';
 
 type SceneItem = ParsedScript['scenes'][0];
 
@@ -1473,6 +1474,12 @@ export default function CastingModeScreen() {
     if (!cameraRef.current) return;
 
     try {
+      // Activar AEC nativo ANTES de que la cámara empiece a grabar
+      activateAEC();
+
+      // Pequeña pausa para que el sistema aplique el nuevo modo de audio
+      await new Promise(resolve => setTimeout(resolve, 200));
+
       // CRITICAL: Reconfirm audio mode
       await Audio.setAudioModeAsync({
         allowsRecordingIOS: true,
@@ -1538,6 +1545,8 @@ export default function CastingModeScreen() {
 
     try {
       const video = await cameraRef.current.stopRecording();
+      // Desactivar AEC al terminar la grabación
+      deactivateAEC();
       if (video && recordingTimeRef.current >= 2) {
         if (castingType === 'free') {
           saveFreeRecording(video.path || video.uri);
@@ -1547,6 +1556,8 @@ export default function CastingModeScreen() {
       }
     } catch (e) {
       console.error("Error stopping recording:", e);
+      // Desactivar AEC incluso si hay error
+      deactivateAEC();
     }
   }
 

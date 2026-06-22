@@ -49,7 +49,8 @@
           "microphonePermission": "Necesitamos acceso al micrófono para grabar tus sesiones de estudio y detectar la lectura de tus líneas."
         }
       ],
-      "./plugins/withAndroidNetworkConfig.js"
+      "./plugins/withAndroidNetworkConfig.js",
+      "./plugins/withAudioEchoCancellation.js"
     ],
     "experiments": {
       "typedRoutes": true

@@ -277,56 +277,34 @@ app.post('/process-casting', upload.any(), async (req, res) => {
 
         console.log(`[Casting] Processed ${aiSegments.length} AI audio segments`);
 
-        console.log('[Casting] Estrategia: superposición con ducking suave...');
+        console.log('[Casting] Estrategia: superposición simple (AEC activo en dispositivo)...');
 
         const filterParts = [];
 
-        // 1. Audio del usuario
-        // Normalización conservadora + reducción de ruido suave
+        // 1. Audio del usuario: normalización + filtro paso-alto
+        // Con AEC el micrófono llega limpio, no necesitamos ducking
         filterParts.push(
-            '[0:a]highpass=f=80,afftdn=nf=-20,loudnorm=I=-18:TP=-2:LRA=11[user_norm]'
+            '[0:a]highpass=f=80,loudnorm=I=-16:TP=-1.5:LRA=11[user_clean]'
         );
 
-        // 2. Construir expresión de ducking
-        // Cuando la IA habla, bajar el usuario al 35% (no al 0%)
-        // Esto reduce el eco sin eliminar la voz del usuario
-        let duckExpression = '1';
-        if (aiSegments.length > 0) {
-            const conditions = aiSegments.map(segment => {
-                // Añadir 100ms de margen antes y después para transición suave
-                const start = Math.max(0, (segment.startTime - 0.1)).toFixed(3);
-                const end = (segment.startTime + segment.duration + 0.1).toFixed(3);
-                return `between(t,${start},${end})`;
-            });
-            const combined = conditions.join('+');
-            // 0.35 = usuario al 35% cuando habla la IA (audible pero el eco no molesta)
-            duckExpression = `if(gte(${combined},1),0.35,1)`;
-        }
-
-        filterParts.push(
-            `[user_norm]volume='${duckExpression}':eval=frame[user_ducked]`
-        );
-
-        // 3. Cada segmento de IA
-        // La IA va a -14 LUFS (algo más alta que el usuario a -18)
-        // para que destaque limpia sobre el ducking
+        // 2. Cada segmento de IA
         aiSegments.forEach((segment, idx) => {
             const delayMs = Math.round(segment.startTime * 1000);
             const duration = segment.duration || 3;
-            const fade = Math.min(0.08, duration * 0.1).toFixed(3);
+            const fade = Math.min(0.05, duration * 0.1).toFixed(3);
             const fadeOut = Math.max(0, duration - parseFloat(fade)).toFixed(3);
 
             filterParts.push(
-                `[${idx + 1}:a]loudnorm=I=-14:TP=-1:LRA=7,` +
+                `[${idx + 1}:a]loudnorm=I=-16:TP=-1.5:LRA=7,` +
                 `afade=t=in:st=0:d=${fade},` +
                 `afade=t=out:st=${fadeOut}:d=${fade},` +
                 `adelay=${delayMs}|${delayMs}[ai${idx}]`
             );
         });
 
-        // 4. Mezcla final
+        // 3. Mezcla final
         const allStreams = [
-            '[user_ducked]',
+            '[user_clean]',
             ...aiSegments.map((_, i) => `[ai${i}]`)
         ].join('');
 
