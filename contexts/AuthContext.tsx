@@ -52,7 +52,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return () => subscription.unsubscribe();
   }, []);
 
-  async function loadProfile(userId: string) {
+  async function loadProfile(userId: string, retries = 3) {
     try {
       const { data, error } = await supabase
         .from('profiles')
@@ -61,6 +61,20 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         .maybeSingle();
 
       if (error) throw error;
+
+      if (!data && retries > 0) {
+        // Race condition con el trigger on_auth_user_created (Google OAuth).
+        // El perfil puede no existir aún. Reintentamos después de un breve delay.
+        await new Promise(resolve => setTimeout(resolve, 800));
+        return loadProfile(userId, retries - 1);
+      }
+
+      // Normalizar total_scripts_imported si es null (usuarios Google antiguos
+      // o creados antes de la migración 20260523)
+      if (data && data.total_scripts_imported === null) {
+        data.total_scripts_imported = 0;
+      }
+
       setProfile(data);
     } catch (error) {
       console.error('Error loading profile:', error);

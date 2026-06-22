@@ -195,6 +195,7 @@ export default function AuthScreen() {
                 username: username,
                 full_name: sessionData.session.user.user_metadata?.full_name,
                 avatar_url: sessionData.session.user.user_metadata?.avatar_url,
+                total_scripts_imported: 0,
               });
             }
 

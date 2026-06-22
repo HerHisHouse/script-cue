@@ -184,95 +184,12 @@ const upload = multer({
 });
 
 // =============================================================================
-// AUDIO MIXING STRATEGY HELPERS
+// AUDIO MIXING STRATEGY — SUPERPOSICIÓN SIMPLE
 // =============================================================================
-
-/**
- * ESTRATEGIA A — SIN AURICULARES
- * El micrófono del dispositivo captura el audio de la IA por el altavoz,
- * generando eco. Solución: silenciar el usuario al 15% cuando habla la IA.
- */
-function buildFilterWithoutHeadphones(filterParts, aiSegments) {
-    // Reducción de ruido + normalización conservadora para el usuario
-    filterParts.push(
-        '[0:a]highpass=f=100,afftdn=nf=-25,loudnorm=I=-16:TP=-1.5:LRA=11[user_normalized]'
-    );
-
-    // Silenciar usuario cuando habla la IA (evitar eco)
-    // Baja al 15% en vez de 0% para conservar algo de presión sonora
-    let volumeExpression = '1';
-    if (aiSegments.length > 0) {
-        const conditions = aiSegments.map(segment => {
-            const start = (segment.startTime - 0.08).toFixed(3); // 80ms antes
-            const end = (segment.startTime + segment.duration + 0.08).toFixed(3); // 80ms después
-            return `between(t,${start},${end})`;
-        });
-        const combinedCondition = conditions.join('+');
-        volumeExpression = `if(gte(${combinedCondition},1),0.15,1)`;
-    }
-    filterParts.push(
-        `[user_normalized]volume='${volumeExpression}':eval=frame[user_controlled]`
-    );
-
-    // Audio IA con fade in/out suave de 60ms para evitar clicks
-    aiSegments.forEach((segment, idx) => {
-        const delayMs = Math.round(segment.startTime * 1000);
-        const fadeDur = Math.max(0, (segment.duration - 0.06)).toFixed(3);
-        filterParts.push(
-            `[${idx + 1}:a]highpass=f=100,loudnorm=I=-18:TP=-1.5:LRA=7,afade=t=in:st=0:d=0.06,afade=t=out:st=${fadeDur}:d=0.06,adelay=${delayMs}|${delayMs}[ai${idx}]`
-        );
-    });
-}
-
-/**
- * ESTRATEGIA B — CON AURICULARES
- * El usuario lleva auriculares: no hay eco posible porque el micro
- * no capta el audio de la IA. Se mezclan ambas voces con plenos derechos.
- */
-function buildFilterWithHeadphones(filterParts, aiSegments) {
-    // Sin reducción agresiva: calidad máxima para el usuario
-    filterParts.push(
-        '[0:a]highpass=f=80,loudnorm=I=-14:TP=-1.0:LRA=9[user_normalized]'
-    );
-
-    // NO silenciar al usuario en ningún momento
-    filterParts.push('[user_normalized]acopy[user_controlled]');
-
-    // Audio IA: normalización equilibrada, un poco más baja que el usuario
-    // (-18 LUFS vs -14 del usuario) para que el actor sea protagonista
-    aiSegments.forEach((segment, idx) => {
-        const delayMs = Math.round(segment.startTime * 1000);
-        const fadeDur = Math.max(0, (segment.duration - 0.04)).toFixed(3);
-        filterParts.push(
-            `[${idx + 1}:a]highpass=f=80,loudnorm=I=-18:TP=-1.5:LRA=7,afade=t=in:st=0:d=0.04,afade=t=out:st=${fadeDur}:d=0.04,adelay=${delayMs}|${delayMs}[ai${idx}]`
-        );
-    });
-}
-
-/**
- * MEZCLA FINAL COMPARTIDA
- * Aplica amix secuencial + compresor + limitador.
- * Funciona igual independientemente de la estrategia de preparación.
- */
-function buildFinalMix(filterParts, aiSegments) {
-    if (aiSegments.length > 0) {
-        let currentStream = '[user_controlled]';
-        aiSegments.forEach((segment, idx) => {
-            const nextStream = idx === aiSegments.length - 1 ? '[mixed]' : `[mix${idx}]`;
-            filterParts.push(
-                `${currentStream}[ai${idx}]amix=inputs=2:duration=longest:dropout_transition=0:normalize=0:weights=1 1${nextStream}`
-            );
-            currentStream = nextStream;
-        });
-        // Compresor final suave + limitador anti-clip
-        filterParts.push(
-            '[mixed]acompressor=threshold=-20dB:ratio=2.5:attack=8:release=150:makeup=1,alimiter=limit=0.92:attack=2:release=80[outa]'
-        );
-    } else {
-        // Sin segmentos de IA: pasar el audio del usuario directamente
-        filterParts.push('[user_controlled]acopy[outa]');
-    }
-}
+// El audio del usuario NO se silencia en ningún momento.
+// La IA se añade como pistas adicionales en sus timestamps exactos.
+// Ambas suenan simultáneamente. Sin ducking. Sin silenciado.
+// =============================================================================
 
 // Process Casting Video endpoint
 // Now accepts multipart/form-data
@@ -281,17 +198,14 @@ function buildFinalMix(filterParts, aiSegments) {
 // - aiAudio_0, aiAudio_1, ...: AI audio files
 // - scriptId, userId: text fields
 // - lineTimings: JSON string
-// - useHeadphones: 'true' | 'false'
 app.post('/process-casting', upload.any(), async (req, res) => {
     console.log('[Casting] Received request');
 
     let processTempDir = null; // Declare processTempDir here for broader scope
 
     try {
-        const { scriptId, userId, lineTimings: lineTimingsJson, useHeadphones: useHeadphonesRaw } = req.body;
+        const { scriptId, userId, lineTimings: lineTimingsJson } = req.body;
         const files = req.files;
-        const useHeadphones = useHeadphonesRaw === 'true' || useHeadphonesRaw === true;
-        console.log(`[Casting] Modo audio: ${useHeadphones ? 'CON auriculares (mezcla completa)' : 'SIN auriculares (supresión de eco)'}`);
 
         if (!files || files.length === 0 || !scriptId || !userId || !lineTimingsJson) {
             return res.status(400).json({ error: 'Missing required fields or files' });
@@ -340,7 +254,6 @@ app.post('/process-casting', upload.any(), async (req, res) => {
         const aiSegments = [];
 
         // Map uploaded files to timings
-        // We expect files to be named like aiAudio_{index} in the form data
         for (const timing of lineTimings) {
             if (timing.type === 'ai') {
                 const fieldName = `aiAudio_${timing.index}`;
@@ -364,47 +277,73 @@ app.post('/process-casting', upload.any(), async (req, res) => {
 
         console.log(`[Casting] Processed ${aiSegments.length} AI audio segments`);
 
-        // 4. Crear la pista de audio mezclada con la estrategia adecuada
-        console.log('[Casting] Construyendo filtros de audio...');
+        // 4. ESTRATEGIA: Superposición simple sin ducking
+        console.log('[Casting] Usando estrategia de superposición simple...');
         const filterParts = [];
 
-        if (useHeadphones) {
-            console.log('[Casting] Aplicando estrategia CON AURICULARES...');
-            buildFilterWithHeadphones(filterParts, aiSegments);
+        // 1. Audio del usuario: limpieza suave sin agresividad
+        filterParts.push(
+            '[0:a]highpass=f=80,loudnorm=I=-16:TP=-1.5:LRA=11[user_clean]'
+        );
+
+        // 2. Cada segmento de IA: normalización + fade suave + delay exacto
+        aiSegments.forEach((segment, idx) => {
+            const delayMs = Math.round(segment.startTime * 1000);
+            const duration = segment.duration || 3;
+            const fadeDuration = Math.min(0.05, duration * 0.1).toFixed(3);
+            const fadeOutStart = Math.max(0, duration - parseFloat(fadeDuration)).toFixed(3);
+
+            filterParts.push(
+                `[${idx + 1}:a]loudnorm=I=-16:TP=-1.5:LRA=9,` +
+                `afade=t=in:st=0:d=${fadeDuration},` +
+                `afade=t=out:st=${fadeOutStart}:d=${fadeDuration},` +
+                `adelay=${delayMs}|${delayMs}[ai${idx}]`
+            );
+        });
+
+        // 3. Mezclar todo sin normalización del conjunto
+        // normalize=0 es crítico: cada pista suena a su propio volumen
+        const allInputStreams = [
+            '[user_clean]',
+            ...aiSegments.map((_, i) => `[ai${i}]`)
+        ].join('');
+
+        const totalInputs = aiSegments.length + 1;
+
+        if (aiSegments.length > 0) {
+            filterParts.push(
+                `${allInputStreams}amix=inputs=${totalInputs}:` +
+                `duration=longest:dropout_transition=0:normalize=0[outa]`
+            );
         } else {
-            console.log('[Casting] Aplicando estrategia SIN AURICULARES (supresión de eco)...');
-            buildFilterWithoutHeadphones(filterParts, aiSegments);
+            // Sin segmentos de IA: pasar el audio del usuario directamente
+            filterParts.push('[user_clean]acopy[outa]');
         }
 
-        buildFinalMix(filterParts, aiSegments);
-
         const filterComplex = filterParts.join(';');
-
         console.log('[Casting] Filter complex:', filterComplex);
 
         await new Promise((resolve, reject) => {
             const command = ffmpeg();
 
-            // Add user audio as first input
-            command.input(userAudioFile);
+            command.input(userAudioFile); // Entrada 0: audio original del usuario
 
-            // Add all AI segments as inputs
             aiSegments.forEach(segment => {
-                command.input(segment.file);
+                command.input(segment.file); // Entradas 1..N: audios de la IA
             });
 
             command
                 .complexFilter(filterComplex)
                 .map('[outa]')
                 .audioCodec('aac')
-                .audioBitrate('192k') // Increased bitrate for better quality
-                .audioChannels(1) // Mono to reduce echo from stereo artifacts
+                .audioBitrate('192k')
+                .audioChannels(2) // Stereo para mejor calidad
                 .audioFrequency(44100)
                 .output(mixedAudioFile)
                 .on('start', (cmd) => console.log('[FFmpeg] Mix command:', cmd))
                 .on('progress', (progress) => console.log(`[FFmpeg] Mixing: ${progress.percent?.toFixed(1)}%`))
                 .on('end', () => {
-                    console.log('[Casting] Audio mixing completed with AI voice replacement');
+                    console.log('[Casting] Audio mixing completed');
                     resolve();
                 })
                 .on('error', reject)

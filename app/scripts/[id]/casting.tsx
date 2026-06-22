@@ -18,6 +18,10 @@ import {
   KeyboardAvoidingView,
   Keyboard,
 } from 'react-native';
+import {
+  ExpoSpeechRecognitionModule,
+  useSpeechRecognitionEvent,
+} from 'expo-speech-recognition';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter, useLocalSearchParams, Stack } from 'expo-router';
 import Constants from 'expo-constants';
@@ -131,7 +135,10 @@ export default function CastingModeScreen() {
   type CastingMode = 'selection' | 'script_config' | 'free_input' | 'recording';
   const [castingMode, setCastingMode] = useState<CastingMode>('selection');
   const [castingType, setCastingType] = useState<'script' | 'free' | null>(null);
-  const [useHeadphones, setUseHeadphones] = useState(false); // Por defecto: sin auriculares (más seguro)
+  // Voice recognition speech event handlers (assigned inside startListening)
+  const onSpeechStartRef = useRef<(() => void) | null>(null);
+  const onSpeechEndRef = useRef<(() => void) | null>(null);
+  const onSpeechErrorRef = useRef<((e: any) => void) | null>(null);
 
   // --- Rich Text para Teleprompter Libre ---
   // Cada segmento tiene su propio formato independiente
@@ -519,8 +526,11 @@ export default function CastingModeScreen() {
     });
 
     return () => {
+      try { ExpoSpeechRecognitionModule.abort(); } catch { }
       cleanupSound();
       if (autoAdvanceTimerRef.current) clearTimeout(autoAdvanceTimerRef.current);
+      if (silenceTimerRef.current) clearTimeout(silenceTimerRef.current);
+      if (noSpeechTimerRef.current) clearTimeout(noSpeechTimerRef.current);
     };
   }, []);
 
@@ -687,8 +697,7 @@ export default function CastingModeScreen() {
 
     // Check if we have enough cached audio to start immediately
     // We'll run the full check in background
-    const { getCachedAudio } = await import('@/utils/ttsCache');
-    const Crypto = await import('expo-crypto');
+    const { generateAndCacheAudio } = await import('@/utils/ttsCache');
 
     // Start background loading
     (async () => {
@@ -731,31 +740,35 @@ export default function CastingModeScreen() {
 
           if (provider === 'system') continue;
 
-          const textHash = await Crypto.digestStringAsync(
-            Crypto.CryptoDigestAlgorithm.SHA256,
-            text
-          );
+          const effectiveProvider = (provider === 'google' ? 'openai' : provider) as 'openai' | 'elevenlabs';
 
           // FIX: If provider is OpenAI but voiceId looks like a system voice (com.apple...), 
           // ignore it and use null (default OpenAI voice) to find the cached audio.
-          if (provider === 'openai' && voiceId && voiceId.includes('com.apple')) {
+          if (effectiveProvider === 'openai' && voiceId && voiceId.includes('com.apple')) {
             console.log(`[Cache Debug] Ignoring system voice ID for OpenAI provider: ${voiceId}`);
             voiceId = null;
           }
 
           console.log(`[Cache Debug] Line: ${line.orderIndex}, Char: ${characterName}`);
-          console.log(`[Cache Debug] Provider: ${provider}, VoiceId: ${voiceId}`);
+          console.log(`[Cache Debug] Provider: ${effectiveProvider}, VoiceId: ${voiceId}`);
           console.log(`[Cache Debug] Text: "${text.substring(0, 20)}..."`);
-          console.log(`[Cache Debug] Hash: ${textHash.substring(0, 10)}...`);
 
-          // Just check cache, don't generate yet
-          const localPath = await getCachedAudio(line.id, provider, voiceId, textHash);
+          // Obtener de caché o generar en background
+          const localPath = await generateAndCacheAudio(
+            id as string,
+            line.id,
+            line.characterName,
+            text,
+            { provider: effectiveProvider, voiceId: voiceId || undefined },
+            user.id,
+            (line as any).voiceDirection
+          );
 
           if (localPath) {
-            console.log(`[Cache Debug] ✅ HIT for line ${line.orderIndex}`);
+            console.log(`[Cache Debug] ✅ Audio ready for line ${line.orderIndex}`);
             newCache.set(line.id, localPath);
           } else {
-            console.log(`[Cache Debug] ❌ MISS for line ${line.orderIndex}`);
+            console.log(`[Cache Debug] ❌ Audio failed for line ${line.orderIndex}`);
             missingCount++;
           }
         }
@@ -895,27 +908,23 @@ export default function CastingModeScreen() {
         return;
       }
 
-      // 4. Intentar obtener del cache en disco (Supabase Storage / FileSystem)
-      const { getCachedAudio, generateAndCacheAudio } = await import('@/utils/ttsCache');
-      const Crypto = await import('expo-crypto');
+      // 4. Intentar obtener del cache en disco (Supabase Storage / FileSystem) o generar
+      const { generateAndCacheAudio } = await import('@/utils/ttsCache');
       const text = line.cleanText || line.text;
-      const textHash = await Crypto.digestStringAsync(Crypto.CryptoDigestAlgorithm.SHA256, text);
 
       const effectiveProvider = (provider === 'google' ? 'openai' : provider) as 'openai' | 'elevenlabs';
       const effectiveVoiceId = voiceId;
 
-      let audioUri = await getCachedAudio(line.id, effectiveProvider, effectiveVoiceId, textHash);
-
-      // 5. Si no está en disco, GENERAR ahora con OpenAI / ElevenLabs
-      if (!audioUri && user) {
-        console.log(`[TTS] 🎙️ Generating on-demand with ${effectiveProvider} for: ${line.characterName}`);
+      let audioUri = null;
+      if (user) {
         audioUri = await generateAndCacheAudio(
           id as string,
           line.id,
           line.characterName,
           text,
           { provider: effectiveProvider, voiceId: effectiveVoiceId || undefined },
-          user.id
+          user.id,
+          (line as any).voiceDirection
         );
       }
 
@@ -1068,7 +1077,35 @@ export default function CastingModeScreen() {
   };
 
   // Start script recording
-  function startScriptCasting() {
+  async function startScriptCasting() {
+    // Mostrar aviso de auriculares (solo si el usuario no ha elegido 'no volver a mostrar')
+    const AsyncStorage = (await import('@react-native-async-storage/async-storage')).default;
+    const hideWarning = await AsyncStorage.getItem('casting_hide_headphone_warning');
+
+    if (hideWarning !== 'true') {
+      await new Promise<void>((resolve) => {
+        Alert.alert(
+          '🎧 Consejo de grabación',
+          'Para obtener la mejor calidad de audio en tu selftape, ' +
+          'te recomendamos usar auriculares con micrófono.\n\n' +
+          'Sin auriculares también funciona correctamente.',
+          [
+            {
+              text: 'No volver a mostrar',
+              onPress: async () => {
+                await AsyncStorage.setItem('casting_hide_headphone_warning', 'true');
+                resolve();
+              }
+            },
+            {
+              text: 'Entendido',
+              onPress: () => resolve()
+            }
+          ]
+        );
+      });
+    }
+
     setCastingMode('recording');
     setCastingType('script');
     setCurrentIndex(0);
@@ -1165,79 +1202,76 @@ export default function CastingModeScreen() {
 
 
 
-  // --- Transcription Logic (Replaces VAD) ---
+  // --- Speech Recognition (expo-speech-recognition) ---
+
+  // Listen to speech recognition events via hooks
+  useSpeechRecognitionEvent('start', () => {
+    onSpeechStartRef.current?.();
+  });
+  useSpeechRecognitionEvent('end', () => {
+    onSpeechEndRef.current?.();
+  });
+  useSpeechRecognitionEvent('error', (e: any) => {
+    onSpeechErrorRef.current?.(e);
+  });
+
+  function useTimerFallback() {
+    const item = configuredLines[currentIndex];
+    if (!item || 'afterLineId' in item) return;
+    const line = item as DialogueLine;
+    const wordCount = (line.cleanText || line.text).split(' ').length;
+    // ~130 palabras/minuto = ~460ms/palabra, mínimo 3s
+    const estimatedMs = Math.max(3000, wordCount * 460);
+    console.log(`[Casting] Timer fallback: ${estimatedMs}ms`);
+    silenceTimerRef.current = setTimeout(() => {
+      nextLine();
+    }, estimatedMs) as any;
+  }
 
   async function startListening() {
     try {
-      if (transcriptionRecordingRef.current) {
-        await stopListening();
-      }
+      console.log('[Casting] Starting speech recognition...');
 
-      console.log('[Casting] Starting transcription listener...');
-
-      // Safety timer: If no speech detected in 5s, try to process anyway
-      // This helps if the user speaks too quietly for the threshold
-      if (noSpeechTimerRef.current) clearTimeout(noSpeechTimerRef.current);
-      noSpeechTimerRef.current = setTimeout(() => {
-        if (!isUserSpeakingRef.current && !processingRef.current) {
-          console.log('[Casting] No speech detected for 5s, trying to process anyway...');
-          processUserAudio();
+      // Wire handlers
+      onSpeechStartRef.current = () => {
+        console.log('[Casting] Habla detectada');
+        isUserSpeakingRef.current = true;
+        if (noSpeechTimerRef.current) {
+          clearTimeout(noSpeechTimerRef.current);
+          noSpeechTimerRef.current = null;
         }
-      }, 5000) as any;
+      };
+      onSpeechEndRef.current = () => {
+        console.log('[Casting] Silencio detectado');
+        if (silenceTimerRef.current) clearTimeout(silenceTimerRef.current);
+        silenceTimerRef.current = setTimeout(() => {
+          try { ExpoSpeechRecognitionModule.stop(); } catch { }
+          nextLine();
+        }, 800) as any;
+      };
+      onSpeechErrorRef.current = (e: any) => {
+        console.warn('[Casting] Voice error, usando timer:', e);
+        useTimerFallback();
+      };
 
-      const { recording } = await Audio.Recording.createAsync(
-        Audio.RecordingOptionsPresets.HIGH_QUALITY,
-        (status) => {
-          if (status.metering !== undefined) {
-            setMetering(status.metering);
+      await ExpoSpeechRecognitionModule.start({
+        lang: 'es-ES',
+        interimResults: false,
+        continuous: false,
+      });
 
-            // Simple VAD to detect end of speech
-            if (status.metering > SILENCE_THRESHOLD) {
-              if (!isUserSpeakingRef.current) {
-                console.log('[Casting] Speech detected!');
-                // Clear safety timer as we detected speech
-                if (noSpeechTimerRef.current) clearTimeout(noSpeechTimerRef.current);
-              }
-              isUserSpeakingRef.current = true;
-              if (silenceTimerRef.current) {
-                clearTimeout(silenceTimerRef.current);
-                silenceTimerRef.current = null;
-              }
-            } else if (isUserSpeakingRef.current) {
-              // Silence after speech
-              if (!silenceTimerRef.current) {
-                console.log('[Casting] Silence detected, waiting to process...');
-                silenceTimerRef.current = setTimeout(() => {
-                  console.log('[Casting] Silence timeout, processing audio...');
-                  processUserAudio();
-                }, 1500) as any; // 1.5s silence
-              }
-            }
-          }
-        },
-        100
-      );
-
-      transcriptionRecordingRef.current = recording;
       isUserSpeakingRef.current = false;
-      setMetering(-160);
+
+      // Timer de seguridad: 10 segundos máximo por línea
+      noSpeechTimerRef.current = setTimeout(() => {
+        console.log('[Casting] Timer de seguridad: avanzando línea');
+        try { ExpoSpeechRecognitionModule.abort(); } catch { }
+        nextLine();
+      }, 10000) as any;
 
     } catch (e) {
-      console.warn('[Casting] Start listening failed:', e);
-      // Fallback: Auto-advance after delay using configured timing
-      // When camera is recording, iOS doesn't allow separate audio recording
-      // So we use the pre-configured timing from scene setup
-      const item = configuredLines[currentIndex];
-      // Only apply if it's a dialogue line (not an action)
-      if (item && !('afterLineId' in item)) {
-        const line = item as DialogueLine;
-        // Get configured duration (includes any user adjustments)
-        const duration = getLineDuration(line) * 1000; // Convert to ms
-        console.log(`[Casting] Using configured timer: ${duration}ms for line ${currentIndex}`);
-        silenceTimerRef.current = setTimeout(() => {
-          nextLine();
-        }, duration) as any;
-      }
+      console.warn('[Casting] Speech recognition no disponible, usando timer fallback:', e);
+      useTimerFallback();
     }
   }
 
@@ -1250,13 +1284,10 @@ export default function CastingModeScreen() {
       clearTimeout(noSpeechTimerRef.current);
       noSpeechTimerRef.current = null;
     }
-
-    if (transcriptionRecordingRef.current) {
-      try {
-        await transcriptionRecordingRef.current.stopAndUnloadAsync();
-      } catch { }
-      transcriptionRecordingRef.current = null;
-    }
+    onSpeechStartRef.current = null;
+    onSpeechEndRef.current = null;
+    onSpeechErrorRef.current = null;
+    try { ExpoSpeechRecognitionModule.stop(); } catch { }
     isUserSpeakingRef.current = false;
   }
 
@@ -1549,7 +1580,6 @@ export default function CastingModeScreen() {
       formData.append('scriptId', id as string);
       formData.append('userId', user?.id || '');
       formData.append('lineTimings', JSON.stringify(lineTimings));
-      formData.append('useHeadphones', useHeadphones ? 'true' : 'false');
 
       // Add video file
       // Note: React Native FormData expects { uri, name, type }
@@ -2011,7 +2041,14 @@ export default function CastingModeScreen() {
                 };
 
                 return (
-                  <View key={actionId} style={[styles.actionCard, { backgroundColor: 'transparent', borderLeftWidth: 2, borderWidth: 2, borderStyle: 'dashed', borderColor: colors.primary }]}>
+                  <View key={actionId} style={[styles.actionCard, {
+                    backgroundColor: 'transparent',
+                    borderLeftWidth: 4,
+                    borderLeftColor: colors.primary,
+                    borderWidth: 1,
+                    borderStyle: 'dashed',
+                    borderColor: colors.primary,
+                  }]}>
                     <View style={styles.actionCardHeader}>
                       <Clapperboard color={colors.primary} size={rp(16)} />
                       <Text style={[styles.actionCardLabel, { color: colors.primary }]}>ACCIÓN</Text>
@@ -2031,12 +2068,23 @@ export default function CastingModeScreen() {
                       </TouchableOpacity>
                       <View style={styles.timingDisplay}>
                         <Timer size={rp(14)} color={colors.primary} />
-                        <Text style={[styles.timingText, { color: colors.text }]}>{duration}s</Text>
-                        {isScriptAction && adjustment !== 0 && (
-                          <Text style={[styles.timingAdjustment, { color: adjustment > 0 ? '#10B981' : '#EF4444' }]}>
-                            {adjustment > 0 ? `+${adjustment}` : adjustment}
-                          </Text>
-                        )}
+                        <TextInput
+                          style={[styles.timingTextInput, { color: colors.text }]}
+                          value={String(duration + (isScriptAction ? adjustment : 0))}
+                          keyboardType="number-pad"
+                          selectTextOnFocus
+                          onChangeText={(val) => {
+                            const parsed = parseInt(val, 10);
+                            if (!isNaN(parsed) && parsed >= 0) {
+                              if (isManualAction) {
+                                updateActionDuration(actionId, parsed);
+                              } else {
+                                adjustLineTiming(actionId, parsed - duration);
+                              }
+                            }
+                          }}
+                        />
+                        <Text style={[styles.timingText, { color: colors.text }]}>s</Text>
                       </View>
                       <TouchableOpacity
                         onPress={handlePlus}
@@ -2081,34 +2129,7 @@ export default function CastingModeScreen() {
                       )}
                     </Text>
 
-                    {/* Timing controls (only for user lines) */}
-                    {line.isUserCharacter && (
-                      <View style={styles.configTimingRow}>
-                        <TouchableOpacity
-                          onPress={() => adjustLineTiming(line.id, adjustment - 1)}
-                          style={[styles.timingBtn, { backgroundColor: 'rgba(0,0,0,0.2)' }]}
-                        >
-                          <Minus size={rp(16)} color={colors.text} />
-                        </TouchableOpacity>
-                        <View style={styles.timingDisplay}>
-                          <Timer size={rp(14)} color={colors.primary} />
-                          <Text style={[styles.timingText, { color: colors.text }]}>{lineDuration}s</Text>
-                          {adjustment !== 0 && (
-                            <Text style={[styles.timingAdjustment, { color: adjustment > 0 ? '#10B981' : '#EF4444' }]}>
-                              {adjustment > 0 ? `+${adjustment}` : adjustment}
-                            </Text>
-                          )}
-                        </View>
-                        <TouchableOpacity
-                          onPress={() => adjustLineTiming(line.id, adjustment + 1)}
-                          style={[styles.timingBtn, { backgroundColor: 'rgba(0,0,0,0.2)' }]}
-                        >
-                          <Plus size={rp(16)} color={colors.text} />
-                        </TouchableOpacity>
-                      </View>
-                    )}
-
-                    {/* AI badge shows "Auto" timing */}
+                    {/* AI badge shows "Auto" timing — user lines have no timer controls */}
                     {!line.isUserCharacter && (
                       <View style={styles.configAutoTiming}>
                         <Timer size={rp(12)} color={colors.textSecondary} />
@@ -2159,40 +2180,6 @@ export default function CastingModeScreen() {
 
           {/* Start Recording Button */}
           <View style={styles.configFooter}>
-            {/* SECCIÓN: CONFIGURACIÓN DE AUDIO */}
-            <View style={styles.audioConfigSection}>
-              <Text style={styles.audioConfigTitle}>🎧 ¿Cómo vas a grabar?</Text>
-              <Text style={styles.audioConfigSubtitle}>Esto afecta a cómo se mezcla el audio final</Text>
-              <View style={styles.audioOptionsRow}>
-                {/* Opción: Sin auriculares */}
-                <TouchableOpacity
-                  style={[styles.audioOption, !useHeadphones && styles.audioOptionSelected]}
-                  onPress={() => setUseHeadphones(false)}
-                >
-                  <Text style={styles.audioOptionIcon}>📱</Text>
-                  <Text style={[styles.audioOptionLabel, !useHeadphones && styles.audioOptionLabelSelected]}>
-                    Sin auriculares
-                  </Text>
-                  <Text style={styles.audioOptionHint}>
-                    La IA reemplaza el audio para evitar el eco
-                  </Text>
-                </TouchableOpacity>
-                {/* Opción: Con auriculares */}
-                <TouchableOpacity
-                  style={[styles.audioOption, useHeadphones && styles.audioOptionSelected]}
-                  onPress={() => setUseHeadphones(true)}
-                >
-                  <Text style={styles.audioOptionIcon}>🎧</Text>
-                  <Text style={[styles.audioOptionLabel, useHeadphones && styles.audioOptionLabelSelected]}>
-                    Con auriculares
-                  </Text>
-                  <Text style={styles.audioOptionHint}>
-                    Se mezclan ambas voces con calidad máxima
-                  </Text>
-                </TouchableOpacity>
-              </View>
-            </View>
-
             <TouchableOpacity
               onPress={startScriptCasting}
               style={styles.startRecordingBtn}
@@ -3435,6 +3422,14 @@ const styles = StyleSheet.create({
   timingText: {
     fontSize: rf(13),
     fontWeight: '600',
+  },
+  timingTextInput: {
+    fontSize: rf(13),
+    fontWeight: '600',
+    minWidth: rp(28),
+    textAlign: 'center',
+    paddingVertical: 0,
+    paddingHorizontal: rp(2),
   },
   timingAdjustment: {
     fontSize: rf(11),

@@ -77,6 +77,45 @@ async function updateCarModeMetadata(
   }
 }
 
+// iOS lock screen: play silence.wav on repeat via TrackPlayer so the media
+// module appears on the lock screen (expo-av doesn't trigger it on iOS).
+async function setupIosLockScreen(
+  characterName: string,
+  scriptTitle: string,
+): Promise<void> {
+  if (!TrackPlayer || Platform.OS !== 'ios') return;
+  try {
+    const queue = await TrackPlayer.getQueue();
+    const track = {
+      id: `car_ios_${Date.now()}`,
+      url: require('../../../assets/sounds/silence.wav'),
+      title: characterName,
+      artist: scriptTitle || 'Script Cue',
+      album: 'Modo Coche',
+    };
+    if (queue.length === 0) {
+      await TrackPlayer.add([track]);
+    } else {
+      if (typeof TrackPlayer.updateNowPlayingMetadata === 'function') {
+        await TrackPlayer.updateNowPlayingMetadata({
+          title: characterName,
+          artist: scriptTitle || 'Script Cue',
+          album: 'Modo Coche',
+        });
+      } else {
+        await TrackPlayer.remove([0]);
+        await TrackPlayer.add([track]);
+      }
+    }
+    if (TrackPlayerRepeatMode) {
+      await TrackPlayer.setRepeatMode(TrackPlayerRepeatMode.Track);
+    }
+    await TrackPlayer.play();
+  } catch (e) {
+    console.log('[Car Mode] iOS lock screen setup error:', e);
+  }
+}
+
 type CarModePhase = 'idle' | 'playing_ai' | 'listening_user' | 'processing_command' | 'auto_advancing';
 type VoiceProviderType = 'openai' | 'elevenlabs' | 'azure' | 'system';
 
@@ -146,6 +185,8 @@ export default function CarModeScreen() {
   const soundRef = useRef<Audio.Sound | null>(null);
   // Callback set by processCurrentLine so the PlaybackQueueEnded listener can trigger it
   const audioFinishedCallbackRef = useRef<(() => void) | null>(null);
+  // Polling interval used on Android to reliably detect when TrackPlayer audio ends
+  const audioEndPollingRef = useRef<NodeJS.Timeout | null>(null);
   // Sequence ID to cancel stale audio operations
   const sequenceRef = useRef(0);
   const isCleaningUpRef = useRef(false);
@@ -218,6 +259,13 @@ export default function CarModeScreen() {
 
     return () => {
       deactivateKeepAwake();
+      // Stop audio end polling (Android) — MUST be cleared on unmount or it
+      // keeps calling TrackPlayer.getPlaybackState() every 500ms after navigation,
+      // interfering with other players and draining battery.
+      if (audioEndPollingRef.current) {
+        clearInterval(audioEndPollingRef.current);
+        audioEndPollingRef.current = null;
+      }
       stopRecording();
       Speech.stop();
       stopVoicePreview();
@@ -259,6 +307,12 @@ export default function CarModeScreen() {
   const cleanupAllAudio = async () => {
     if (isCleaningUpRef.current) return;
     isCleaningUpRef.current = true;
+
+    // Stop any active end-of-track polling
+    if (audioEndPollingRef.current) {
+      clearInterval(audioEndPollingRef.current);
+      audioEndPollingRef.current = null;
+    }
 
     try {
       Speech.stop();
@@ -305,15 +359,7 @@ export default function CarModeScreen() {
     setPhase('playing_ai');
     setStatusText(`${line.characterName}...`);
 
-    // Also update lock screen metadata (Android: TrackPlayer.reset+add below handles it;
-    // iOS: we call updateCarModeMetadata separately in the audio branch)
-    if (Platform.OS !== 'android') {
-      updateCarModeMetadata(
-        line.characterName,
-        line.cleanText,
-        scriptTitle,
-      ).catch(() => {});
-    }
+
 
     const voiceConfig = getVoiceConfigForCharacter(line.characterName);
     const effectiveProvider = voiceConfig?.provider || 'openai';
@@ -393,6 +439,32 @@ export default function CarModeScreen() {
               audioFinishedCallbackRef.current = handleAudioFinished;
               await TrackPlayer.setRate(speechRate);
               await TrackPlayer.play();
+
+              // ── Polling fallback to detect audio end ──────────────────────────
+              // Native events (PlaybackQueueEnded / PlaybackState) can be silently
+              // dropped if currentReactContext is null. Polling is 100% reliable.
+              if (audioEndPollingRef.current) clearInterval(audioEndPollingRef.current);
+              const pollSeq = mySequence;
+              audioEndPollingRef.current = setInterval(async () => {
+                if (pollSeq !== sequenceRef.current) {
+                  clearInterval(audioEndPollingRef.current!);
+                  audioEndPollingRef.current = null;
+                  return;
+                }
+                try {
+                  const { state } = await TrackPlayer.getPlaybackState();
+                  if (state === 'ended') {
+                    clearInterval(audioEndPollingRef.current!);
+                    audioEndPollingRef.current = null;
+                    const cb = audioFinishedCallbackRef.current;
+                    audioFinishedCallbackRef.current = null;
+                    if (cb) cb();
+                  }
+                } catch {
+                  clearInterval(audioEndPollingRef.current!);
+                  audioEndPollingRef.current = null;
+                }
+              }, 500);
             } catch (tpErr) {
               console.error('[Car Mode] TrackPlayer error, falling back to expo-av:', tpErr);
               // Fallback to expo-av if TrackPlayer fails
@@ -429,8 +501,8 @@ export default function CarModeScreen() {
               }
             });
 
-            // iOS: update lock screen metadata
-            updateCarModeMetadata(line.characterName, line.text, scriptTitle).catch(() => {});
+            // iOS: set up TrackPlayer lock screen module (silence.wav on repeat)
+            setupIosLockScreen(line.characterName, scriptTitle).catch(() => {});
           }
           return;
         } else {

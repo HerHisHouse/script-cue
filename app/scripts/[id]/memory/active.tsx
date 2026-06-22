@@ -176,7 +176,7 @@ export default function MemoryModeScreen() {
              id as string,
              currentLine.id,
              currentLine.characterName,
-             textToSpeak,
+             currentLine.text,
              { provider, voiceId: voiceId || undefined },
              user.id,
              currentLine.voiceDirection

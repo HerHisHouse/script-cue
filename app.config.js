@@ -21,6 +21,10 @@ export default ({ config }) => {
     name: "ScriptCue",
     slug: "script-cue",
     scheme: "myapp",
+    plugins: [
+      ...(config.plugins || []),
+      "expo-speech-recognition",
+    ],
     ios: {
       ...(config.ios || {}),
       bundleIdentifier,
