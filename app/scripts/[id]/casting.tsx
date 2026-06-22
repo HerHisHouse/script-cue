@@ -49,7 +49,7 @@ import {
   calculateLineDuration,
   generateActionId
 } from '@/utils/sceneConfig';
-import { activateAEC, deactivateAEC } from '@/modules/audio-echo-cancellation';
+import { activateAEC, deactivateAEC, detectHeadphones } from '@/modules/audio-echo-cancellation';
 
 type SceneItem = ParsedScript['scenes'][0];
 
@@ -1474,11 +1474,59 @@ export default function CastingModeScreen() {
     if (!cameraRef.current) return;
 
     try {
-      // Activar AEC nativo ANTES de que la cámara empiece a grabar
-      activateAEC();
+      // Detectar auriculares ANTES de activar AEC
+      const hasHeadphones = await detectHeadphones();
+
+      // Mostrar aviso de auriculares (solo una vez si el usuario lo descarta)
+      const AsyncStorage =
+        (await import('@react-native-async-storage/async-storage')).default;
+      const hideWarning =
+        await AsyncStorage.getItem('casting_hide_headphone_warning');
+
+      if (hideWarning !== 'true') {
+        await new Promise<void>((resolve) => {
+          if (hasHeadphones) {
+            // Con auriculares: mensaje positivo, continuar directamente
+            Alert.alert(
+              '\uD83C\uDFA7 Auriculares detectados',
+              'Perfecto. Grabarás con la máxima calidad de audio.',
+              [{ text: 'Empezar', onPress: () => resolve() }]
+            );
+          } else {
+            // Sin auriculares: advertencia clara con opción de no volver a mostrar
+            Alert.alert(
+              '\uD83D\uDCF1 Sin auriculares',
+              'Para obtener la mejor calidad en tu selftape ' +
+              'te recomendamos usar auriculares.\n\n' +
+              'Sin auriculares puede haber algo de eco en el audio final.',
+              [
+                {
+                  text: 'No volver a mostrar',
+                  onPress: async () => {
+                    await AsyncStorage.setItem(
+                      'casting_hide_headphone_warning', 'true'
+                    );
+                    resolve();
+                  }
+                },
+                { text: 'Continuar de todas formas', onPress: () => resolve() }
+              ]
+            );
+          }
+        });
+      }
+
+      // Activar AEC nativo con el modo correcto según auriculares
+      activateAEC(hasHeadphones);
 
       // Pequeña pausa para que el sistema aplique el nuevo modo de audio
       await new Promise(resolve => setTimeout(resolve, 200));
+
+      // Sin auriculares: bajar volumen de la IA para reducir eco residual
+      if (!hasHeadphones) {
+        setTtsVolume(0.6);
+        console.log('[Casting] Sin auriculares: volumen IA reducido a 60%');
+      }
 
       // CRITICAL: Reconfirm audio mode
       await Audio.setAudioModeAsync({
@@ -1523,6 +1571,8 @@ export default function CastingModeScreen() {
         }
 
         setIsPlaying(true);
+        // Store hasHeadphones for use in stopRecording
+        (startRecording as any)._lastHasHeadphones = hasHeadphones;
       }
 
     } catch (e) {
@@ -1536,6 +1586,9 @@ export default function CastingModeScreen() {
   async function stopRecording() {
     if (!cameraRef.current) return;
 
+    // Recuperar si había auriculares en la última grabación
+    const lastHasHeadphones = (startRecording as any)._lastHasHeadphones ?? false;
+
     // Signal countdown cancellation
     countdownCancelledRef.current = true;
     // Setting isRecording=false will trigger the timer useEffect cleanup automatically
@@ -1547,17 +1600,20 @@ export default function CastingModeScreen() {
       const video = await cameraRef.current.stopRecording();
       // Desactivar AEC al terminar la grabación
       deactivateAEC();
+      // Restaurar volumen de la IA
+      setTtsVolume(1.0);
       if (video && recordingTimeRef.current >= 2) {
         if (castingType === 'free') {
           saveFreeRecording(video.path || video.uri);
         } else {
-          handleRecordingFinished(video.path || video.uri);
+          handleRecordingFinished(video.path || video.uri, lastHasHeadphones);
         }
       }
     } catch (e) {
       console.error("Error stopping recording:", e);
-      // Desactivar AEC incluso si hay error
+      // Desactivar AEC y restaurar volumen incluso si hay error
       deactivateAEC();
+      setTtsVolume(1.0);
     }
   }
 
@@ -1626,7 +1682,7 @@ export default function CastingModeScreen() {
     }
   }
 
-  async function handleRecordingFinished(uri: string) {
+  async function handleRecordingFinished(uri: string, hasHeadphones: boolean = false) {
     // Verificar si la grabación fue cancelada
     if ((cameraRef.current as any)?._cancelRecording) {
       (cameraRef.current as any)._cancelRecording = false;
@@ -1651,6 +1707,8 @@ export default function CastingModeScreen() {
       formData.append('scriptId', id as string);
       formData.append('userId', user?.id || '');
       formData.append('lineTimings', JSON.stringify(lineTimings));
+      formData.append('hasHeadphones', hasHeadphones ? 'true' : 'false');
+      console.log(`[Casting] Auriculares: ${hasHeadphones ? 'SÍ' : 'NO'} — estrategia Render: ${hasHeadphones ? 'superposición simple' : 'ducking anti-eco'}`);
 
       // Add video file
       // Note: React Native FormData expects { uri, name, type }

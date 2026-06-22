@@ -2,18 +2,16 @@ import { NativeModules, Platform } from 'react-native';
 
 const { AudioEchoCancellationModule } = NativeModules;
 
-export function activateAEC(): void {
+export function activateAEC(hasHeadphones: boolean = false): void {
   if (Platform.OS === 'ios') {
     try {
-      AudioEchoCancellationModule?.activate();
-      console.log('[AEC] Activado en iOS');
+      AudioEchoCancellationModule?.activateWithHeadphones(hasHeadphones);
     } catch (e) {
       console.warn('[AEC] No disponible:', e);
     }
   } else if (Platform.OS === 'android') {
     try {
       AudioEchoCancellationModule?.activate();
-      console.log('[AEC] Activado en Android');
     } catch (e) {
       console.warn('[AEC] No disponible:', e);
     }
@@ -23,8 +21,24 @@ export function activateAEC(): void {
 export function deactivateAEC(): void {
   try {
     AudioEchoCancellationModule?.deactivate();
-    console.log('[AEC] Desactivado');
   } catch (e) {
-    console.warn('[AEC] Error desactivando:', e);
+    console.warn('[AEC] Error:', e);
   }
+}
+
+export function detectHeadphones(): Promise<boolean> {
+  return new Promise((resolve) => {
+    if (Platform.OS === 'ios') {
+      if (AudioEchoCancellationModule?.isHeadphonesConnected) {
+        AudioEchoCancellationModule.isHeadphonesConnected((result: boolean) => {
+          resolve(result);
+        });
+      } else {
+        resolve(false);
+      }
+    } else {
+      // Android: asumir sin auriculares (AEC de hardware siempre activo en MODE_IN_COMMUNICATION)
+      resolve(false);
+    }
+  });
 }

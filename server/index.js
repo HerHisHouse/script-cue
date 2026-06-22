@@ -275,47 +275,107 @@ app.post('/process-casting', upload.any(), async (req, res) => {
             }
         }
 
-        console.log(`[Casting] Processed ${aiSegments.length} AI audio segments`);
-
-        console.log('[Casting] Estrategia: superposición simple (AEC activo en dispositivo)...');
+        const hasHeadphones = req.body.hasHeadphones === 'true';
+        console.log(`[Casting] Auriculares: ${hasHeadphones ? 'SÍ' : 'NO'}`);
 
         const filterParts = [];
 
-        // 1. Audio del usuario: normalización + filtro paso-alto
-        // Con AEC el micrófono llega limpio, no necesitamos ducking
-        filterParts.push(
-            '[0:a]highpass=f=80,loudnorm=I=-16:TP=-1.5:LRA=11[user_clean]'
-        );
+        if (hasHeadphones) {
+            // ── ESTRATEGIA AURICULARES ──────────────────────────────────────
+            // Superposición simple: el AEC de hardware ya garantiza audio limpio
+            console.log('[Casting] Estrategia auriculares: superposición simple');
 
-        // 2. Cada segmento de IA
-        aiSegments.forEach((segment, idx) => {
-            const delayMs = Math.round(segment.startTime * 1000);
-            const duration = segment.duration || 3;
-            const fade = Math.min(0.05, duration * 0.1).toFixed(3);
-            const fadeOut = Math.max(0, duration - parseFloat(fade)).toFixed(3);
+            // 1. Audio del usuario: normalización + filtro paso-alto
+            filterParts.push(
+                '[0:a]highpass=f=80,loudnorm=I=-16:TP=-1.5:LRA=11[user_clean]'
+            );
+
+            // 2. Cada segmento de IA a mismo nivel que el usuario
+            aiSegments.forEach((segment, idx) => {
+                const delayMs = Math.round(segment.startTime * 1000);
+                const duration = segment.duration || 3;
+                const fade = Math.min(0.05, duration * 0.1).toFixed(3);
+                const fadeOut = Math.max(0, duration - parseFloat(fade)).toFixed(3);
+
+                filterParts.push(
+                    `[${idx + 1}:a]loudnorm=I=-16:TP=-1.5:LRA=7,` +
+                    `afade=t=in:st=0:d=${fade},` +
+                    `afade=t=out:st=${fadeOut}:d=${fade},` +
+                    `adelay=${delayMs}|${delayMs}[ai${idx}]`
+                );
+            });
+
+            // 3. Mezcla final
+            const allStreams = [
+                '[user_clean]',
+                ...aiSegments.map((_, i) => `[ai${i}]`)
+            ].join('');
 
             filterParts.push(
-                `[${idx + 1}:a]loudnorm=I=-16:TP=-1.5:LRA=7,` +
-                `afade=t=in:st=0:d=${fade},` +
-                `afade=t=out:st=${fadeOut}:d=${fade},` +
-                `adelay=${delayMs}|${delayMs}[ai${idx}]`
+                `${allStreams}amix=inputs=${aiSegments.length + 1}:` +
+                `duration=longest:dropout_transition=0:normalize=0,` +
+                `alimiter=limit=0.95:attack=2:release=50[outa]`
             );
-        });
 
-        // 3. Mezcla final
-        const allStreams = [
-            '[user_clean]',
-            ...aiSegments.map((_, i) => `[ai${i}]`)
-        ].join('');
+        } else {
+            // ── ESTRATEGIA SIN AURICULARES ──────────────────────────────────
+            // Ducking suave al 50%: minimiza el eco residual que el AEC no cancela
+            console.log('[Casting] Estrategia sin auriculares: ducking suave anti-eco');
 
-        filterParts.push(
-            `${allStreams}amix=inputs=${aiSegments.length + 1}:` +
-            `duration=longest:dropout_transition=0:normalize=0,` +
-            `alimiter=limit=0.95:attack=2:release=50[outa]`
-        );
+            // 1. Audio del usuario: normalización + reducción de ruido
+            filterParts.push(
+                '[0:a]highpass=f=80,afftdn=nf=-20,' +
+                'loudnorm=I=-16:TP=-1.5:LRA=11[user_norm]'
+            );
+
+            // 2. Ducking expression: usuario al 50% cuando habla la IA
+            // Más permisivo que el 35% anterior porque el AEC de hardware ya ayudó
+            let duckExpression = '1';
+            if (aiSegments.length > 0) {
+                const conditions = aiSegments.map(segment => {
+                    const start = Math.max(0, segment.startTime - 0.15).toFixed(3);
+                    const end = (segment.startTime + segment.duration + 0.15).toFixed(3);
+                    return `between(t,${start},${end})`;
+                });
+                const combined = conditions.join('+');
+                duckExpression = `if(gte(${combined},1),0.5,1)`;
+            }
+
+            filterParts.push(
+                `[user_norm]volume='${duckExpression}':eval=frame[user_clean]`
+            );
+
+            // 3. Cada segmento de IA al mismo nivel que el usuario
+            aiSegments.forEach((segment, idx) => {
+                const delayMs = Math.round(segment.startTime * 1000);
+                const duration = segment.duration || 3;
+                const fade = Math.min(0.05, duration * 0.1).toFixed(3);
+                const fadeOut = Math.max(0, duration - parseFloat(fade)).toFixed(3);
+
+                filterParts.push(
+                    `[${idx + 1}:a]loudnorm=I=-16:TP=-1.5:LRA=7,` +
+                    `afade=t=in:st=0:d=${fade},` +
+                    `afade=t=out:st=${fadeOut}:d=${fade},` +
+                    `adelay=${delayMs}|${delayMs}[ai${idx}]`
+                );
+            });
+
+            // 4. Mezcla final
+            const allStreams = [
+                '[user_clean]',
+                ...aiSegments.map((_, i) => `[ai${i}]`)
+            ].join('');
+
+            filterParts.push(
+                `${allStreams}amix=inputs=${aiSegments.length + 1}:` +
+                `duration=longest:dropout_transition=0:normalize=0,` +
+                `alimiter=limit=0.95:attack=2:release=50[outa]`
+            );
+        }
 
         const filterComplex = filterParts.join(';');
         console.log('[Casting] Filter complex:', filterComplex);
+
 
         await new Promise((resolve, reject) => {
             const command = ffmpeg();
