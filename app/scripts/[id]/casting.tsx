@@ -18,10 +18,7 @@ import {
   KeyboardAvoidingView,
   Keyboard,
 } from 'react-native';
-import {
-  ExpoSpeechRecognitionModule,
-  useSpeechRecognitionEvent,
-} from 'expo-speech-recognition';
+
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter, useLocalSearchParams, Stack } from 'expo-router';
 import Constants from 'expo-constants';
@@ -74,7 +71,7 @@ export default function CastingModeScreen() {
         let component;
         // Siempre usamos ExpoCameraView porque expo-camera funciona tanto en Go como en build nativo
         component = require('../../../components/ExpoCameraView');
-        
+
         if (component) {
           CameraComponent.current = component.default || component;
           setIsCameraLoaded(true);
@@ -370,7 +367,7 @@ export default function CastingModeScreen() {
           const parsed = JSON.parse(savedSegments) as TextSegment[];
           setRichSegments(parsed);
           setFreeText(parsed.map(s => s.text).join(''));
-          
+
           // Sincronizar el formato activo con el primer segmento para corregir el bug de alineación
           if (parsed.length > 0) {
             const firstSeg = parsed[0];
@@ -526,7 +523,9 @@ export default function CastingModeScreen() {
     });
 
     return () => {
-      try { ExpoSpeechRecognitionModule.abort(); } catch { }
+      import('expo-speech-recognition').then(({ ExpoSpeechRecognitionModule }) => {
+        try { ExpoSpeechRecognitionModule.abort(); } catch { }
+      }).catch(() => {});
       cleanupSound();
       if (autoAdvanceTimerRef.current) clearTimeout(autoAdvanceTimerRef.current);
       if (silenceTimerRef.current) clearTimeout(silenceTimerRef.current);
@@ -833,7 +832,7 @@ export default function CastingModeScreen() {
     // Helper interno para reproducir un URI de audio local
     const playLocalAudio = async (audioUri: string) => {
       if (soundRef.current) {
-        try { await soundRef.current.unloadAsync(); } catch {}
+        try { await soundRef.current.unloadAsync(); } catch { }
       }
       const { sound } = await Audio.Sound.createAsync(
         { uri: audioUri },
@@ -1115,7 +1114,7 @@ export default function CastingModeScreen() {
   async function startFreeCasting() {
     setCastingMode('recording');
     setCastingType('free');
-    
+
     // Guardar borrador (richSegments y texto plano para compatibilidad)
     try {
       const AsyncStorage = (await import('@react-native-async-storage/async-storage')).default;
@@ -1124,7 +1123,7 @@ export default function CastingModeScreen() {
     } catch (e) {
       console.error('Error saving free text:', e);
     }
-    
+
     scrollOffsetRef.current = 0;
     freeScrollViewRef.current?.scrollTo({ y: 0, animated: false });
     setIsPlaying(false); // No auto-arrancar
@@ -1203,17 +1202,8 @@ export default function CastingModeScreen() {
 
 
   // --- Speech Recognition (expo-speech-recognition) ---
-
-  // Listen to speech recognition events via hooks
-  useSpeechRecognitionEvent('start', () => {
-    onSpeechStartRef.current?.();
-  });
-  useSpeechRecognitionEvent('end', () => {
-    onSpeechEndRef.current?.();
-  });
-  useSpeechRecognitionEvent('error', (e: any) => {
-    onSpeechErrorRef.current?.(e);
-  });
+  // Listeners are registered dynamically inside startListening to avoid
+  // crashing when the native module is not yet initialized.
 
   function useTimerFallback() {
     const item = configuredLines[currentIndex];
@@ -1230,29 +1220,36 @@ export default function CastingModeScreen() {
 
   async function startListening() {
     try {
+      const { ExpoSpeechRecognitionModule } = await import('expo-speech-recognition');
       console.log('[Casting] Starting speech recognition...');
 
-      // Wire handlers
-      onSpeechStartRef.current = () => {
+      // Clean up any previous listeners before adding new ones
+      ExpoSpeechRecognitionModule.removeAllListeners('start');
+      ExpoSpeechRecognitionModule.removeAllListeners('end');
+      ExpoSpeechRecognitionModule.removeAllListeners('error');
+
+      ExpoSpeechRecognitionModule.addListener('start', () => {
         console.log('[Casting] Habla detectada');
         isUserSpeakingRef.current = true;
         if (noSpeechTimerRef.current) {
           clearTimeout(noSpeechTimerRef.current);
           noSpeechTimerRef.current = null;
         }
-      };
-      onSpeechEndRef.current = () => {
+      });
+
+      ExpoSpeechRecognitionModule.addListener('end', () => {
         console.log('[Casting] Silencio detectado');
         if (silenceTimerRef.current) clearTimeout(silenceTimerRef.current);
         silenceTimerRef.current = setTimeout(() => {
           try { ExpoSpeechRecognitionModule.stop(); } catch { }
           nextLine();
         }, 800) as any;
-      };
-      onSpeechErrorRef.current = (e: any) => {
+      });
+
+      ExpoSpeechRecognitionModule.addListener('error', (e: any) => {
         console.warn('[Casting] Voice error, usando timer:', e);
         useTimerFallback();
-      };
+      });
 
       await ExpoSpeechRecognitionModule.start({
         lang: 'es-ES',
@@ -1284,66 +1281,17 @@ export default function CastingModeScreen() {
       clearTimeout(noSpeechTimerRef.current);
       noSpeechTimerRef.current = null;
     }
-    onSpeechStartRef.current = null;
-    onSpeechEndRef.current = null;
-    onSpeechErrorRef.current = null;
-    try { ExpoSpeechRecognitionModule.stop(); } catch { }
+    try {
+      const { ExpoSpeechRecognitionModule } = await import('expo-speech-recognition');
+      ExpoSpeechRecognitionModule.removeAllListeners('start');
+      ExpoSpeechRecognitionModule.removeAllListeners('end');
+      ExpoSpeechRecognitionModule.removeAllListeners('error');
+      ExpoSpeechRecognitionModule.stop();
+    } catch { }
     isUserSpeakingRef.current = false;
   }
 
   async function processUserAudio() {
-    if (processingRef.current) return;
-    processingRef.current = true;
-    setIsTranscribing(true);
-
-    try {
-      const uri = transcriptionRecordingRef.current?.getURI();
-      await stopListening();
-
-      if (!uri) {
-        nextLine(); // Fallback
-        return;
-      }
-
-      console.log('[Casting] Transcribing audio:', uri);
-      const text = await transcribeAudio(uri);
-      console.log('[Casting] Transcribed:', text);
-
-      // Check similarity
-      const currentLine = dialogueLines[currentIndex];
-      if (currentLine) {
-        // Simple similarity check
-        const s1 = text.toLowerCase().replace(/[^\w\s]/g, '').trim();
-        const s2 = currentLine.text.toLowerCase().replace(/[^\w\s]/g, '').trim();
-
-        // Calculate Levenshtein or simple word match
-        // For now, let's use a simple inclusion or word overlap
-        const words1 = s1.split(/\s+/);
-        const words2 = s2.split(/\s+/);
-        const intersection = words1.filter(w => words2.includes(w));
-        const similarity = intersection.length / Math.max(words1.length, words2.length);
-
-        console.log('[Casting] Similarity:', similarity);
-
-        if (similarity > 0.4 || text.length > 5) { // Low threshold or just some speech
-          console.log('[Casting] Match found or speech detected, advancing');
-          nextLine();
-        } else {
-          // Retry? Or just advance? User prefers flow.
-          // Let's advance but maybe log it.
-          console.log('[Casting] Low similarity, but advancing to keep flow');
-          nextLine();
-        }
-      } else {
-        nextLine();
-      }
-
-    } catch (e) {
-      console.error('[Casting] Transcription failed:', e);
-      nextLine(); // Always advance on error to not get stuck
-    } finally {
-      setIsTranscribing(false);
-      processingRef.current = false;
     }
   }
 
@@ -1499,17 +1447,17 @@ export default function CastingModeScreen() {
     try {
       setIsProcessing(true);
       setProcessingProgress(20);
-      
+
       const localPath = `${FileSystem.documentDirectory}free_casting_${Date.now()}.mp4`;
       await FileSystem.copyAsync({ from: uri, to: localPath });
       setProcessingProgress(60);
-      
+
       const { error: dbError } = await supabase.from('recordings').insert({
         user_id: user?.id,
         script_id: id,
         project_id: null,
         title: `Teleprompter - Libre`,
-        audio_url: localPath, 
+        audio_url: localPath,
         type: 'video',
         duration_seconds: recordingTimeRef.current,
         file_size_bytes: 0,
@@ -1758,24 +1706,24 @@ export default function CastingModeScreen() {
             </View>
             <View style={{ width: rp(44) }} />
           </View>
-          
+
           <View style={{ flex: 1, padding: rp(24), gap: rp(24), justifyContent: 'center' }}>
-            <TouchableOpacity 
+            <TouchableOpacity
               style={[styles.btn, { backgroundColor: colors.card, padding: rp(32), borderRadius: rp(16), alignItems: 'center', width: '100%' }]}
               onPress={() => setCastingMode('script_config')}
             >
-               <FileText size={rp(48)} color={colors.primary} style={{marginBottom: 16}} />
-               <Text style={{ color: colors.text, fontSize: rf(20), fontWeight: '700' }}>Usar Guion</Text>
-               <Text style={{ color: colors.textSecondary, fontSize: rf(14), textAlign: 'center', marginTop: 8 }}>Ensaya con las líneas de los personajes y autocompletado de voz IA.</Text>
+              <FileText size={rp(48)} color={colors.primary} style={{ marginBottom: 16 }} />
+              <Text style={{ color: colors.text, fontSize: rf(20), fontWeight: '700' }}>Usar Guion</Text>
+              <Text style={{ color: colors.textSecondary, fontSize: rf(14), textAlign: 'center', marginTop: 8 }}>Ensaya con las líneas de los personajes y autocompletado de voz IA.</Text>
             </TouchableOpacity>
 
-            <TouchableOpacity 
+            <TouchableOpacity
               style={[styles.btn, { backgroundColor: colors.card, padding: rp(32), borderRadius: rp(16), alignItems: 'center', width: '100%' }]}
               onPress={() => setCastingMode('free_input')}
             >
-               <Type size={rp(48)} color="#10B981" style={{marginBottom: 16}} />
-               <Text style={{ color: colors.text, fontSize: rf(20), fontWeight: '700' }}>Teleprompter Libre</Text>
-               <Text style={{ color: colors.textSecondary, fontSize: rf(14), textAlign: 'center', marginTop: 8 }}>Escribe o pega cualquier texto para usar el teleprompter automático continuo.</Text>
+              <Type size={rp(48)} color="#10B981" style={{ marginBottom: 16 }} />
+              <Text style={{ color: colors.text, fontSize: rf(20), fontWeight: '700' }}>Teleprompter Libre</Text>
+              <Text style={{ color: colors.textSecondary, fontSize: rf(14), textAlign: 'center', marginTop: 8 }}>Escribe o pega cualquier texto para usar el teleprompter automático continuo.</Text>
             </TouchableOpacity>
           </View>
         </SafeAreaView>
@@ -1796,9 +1744,9 @@ export default function CastingModeScreen() {
               <Text style={[styles.startRecordingText, { fontSize: rf(14) }]}>Continuar</Text>
             </TouchableOpacity>
           </View>
-          
-          <KeyboardAvoidingView 
-            behavior={Platform.OS === 'ios' ? 'padding' : 'height'} 
+
+          <KeyboardAvoidingView
+            behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
             style={{ flex: 1 }}
           >
             {/* Leyenda de ayuda */}
@@ -1875,8 +1823,8 @@ export default function CastingModeScreen() {
               </ScrollView>
 
               <TouchableOpacity onPress={() => Keyboard.dismiss()} style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: 'rgba(255,255,255,0.1)', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 8, marginLeft: 12 }}>
-                <KeyboardIcon size={rp(16)} color={colors.text} style={{marginRight: 4}} />
-                <Text style={{color: colors.text, fontSize: rf(12)}}>Ocultar</Text>
+                <KeyboardIcon size={rp(16)} color={colors.text} style={{ marginRight: 4 }} />
+                <Text style={{ color: colors.text, fontSize: rf(12) }}>Ocultar</Text>
               </TouchableOpacity>
             </View>
 
@@ -1923,14 +1871,14 @@ export default function CastingModeScreen() {
                 onSelectionChange={(e) => {
                   const sel = e.nativeEvent.selection;
                   setTextSelection(sel);
-                  
+
                   // Sólo persistimos en el ref si el TextInput tiene el foco REAL
                   // o si el rango seleccionado tiene longitud > 0.
                   // Esto evita que el {0,0} automático del blur destruya nuestra selección.
                   if (isTextInputFocusedRef.current || sel.start !== sel.end) {
                     lastSelectionRef.current = sel;
                   }
-                  
+
                   updateActiveFormatFromCursor(richSegments, sel.start);
                 }}
                 onFocus={() => {
@@ -1971,7 +1919,7 @@ export default function CastingModeScreen() {
 
           {/* Lines List */}
           <ScrollView style={styles.configList} contentContainerStyle={{ paddingBottom: rp(100) }}>
-            
+
             {/* Add Action Button at the very beginning */}
             {addingActionAfterLineId === 'start' ? (
               <View style={styles.addActionForm}>
@@ -2016,7 +1964,7 @@ export default function CastingModeScreen() {
                 const actionId = item.id;
                 const text = isManualAction ? (item as ActionCard).text : (item as DialogueLine).text;
                 let duration = 0;
-                
+
                 if (isManualAction) {
                   duration = (item as ActionCard).duration;
                 } else {
@@ -2024,20 +1972,20 @@ export default function CastingModeScreen() {
                 }
 
                 const adjustment = isScriptAction ? (sceneConfig?.lineTimings.find(lt => lt.lineId === actionId)?.timingAdjustment || 0) : 0;
-                
+
                 const handleMinus = () => {
-                   if (isManualAction) {
-                      updateActionDuration(actionId, duration - 1);
-                   } else {
-                      adjustLineTiming(actionId, adjustment - 1);
-                   }
+                  if (isManualAction) {
+                    updateActionDuration(actionId, duration - 1);
+                  } else {
+                    adjustLineTiming(actionId, adjustment - 1);
+                  }
                 };
                 const handlePlus = () => {
-                   if (isManualAction) {
-                      updateActionDuration(actionId, duration + 1);
-                   } else {
-                      adjustLineTiming(actionId, adjustment + 1);
-                   }
+                  if (isManualAction) {
+                    updateActionDuration(actionId, duration + 1);
+                  } else {
+                    adjustLineTiming(actionId, adjustment + 1);
+                  }
                 };
 
                 return (
@@ -2214,7 +2162,7 @@ export default function CastingModeScreen() {
                   <ArrowLeft color="white" size={rp(24)} />
                 </TouchableOpacity>
                 {castingType === 'free' && (
-                  <TouchableOpacity 
+                  <TouchableOpacity
                     onPress={() => { setCastingMode('free_input'); isPlaying && setIsPlaying(false); }}
                     style={{ backgroundColor: 'rgba(0,0,0,0.5)', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 20 }}
                   >
@@ -2231,19 +2179,19 @@ export default function CastingModeScreen() {
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
                 <View style={{ position: 'relative', zIndex: 100 }}>
                   <TouchableOpacity onPress={() => setIsZoomMenuOpen(!isZoomMenuOpen)} style={[styles.activeZoomBtnHeader, { backgroundColor: 'rgba(0,0,0,0.5)' }]}>
-                     <Text style={styles.zoomTextHeader}>
-                       {zoom === 0 ? '0.5x' : zoom === 0.08 ? '1x' : '2x'}
-                     </Text>
+                    <Text style={styles.zoomTextHeader}>
+                      {zoom === 0 ? '0.5x' : zoom === 0.08 ? '1x' : '2x'}
+                    </Text>
                   </TouchableOpacity>
                   {isZoomMenuOpen && (
                     <View style={{ position: 'absolute', top: 44, left: 0, backgroundColor: 'rgba(0,0,0,0.6)', borderRadius: 18, paddingVertical: 4 }}>
-                      <TouchableOpacity onPress={() => {setZoom(0); setIsZoomMenuOpen(false)}} style={[styles.zoomBtnHeader, zoom===0 && styles.activeZoomBtnHeader]}>
+                      <TouchableOpacity onPress={() => { setZoom(0); setIsZoomMenuOpen(false) }} style={[styles.zoomBtnHeader, zoom === 0 && styles.activeZoomBtnHeader]}>
                         <Text style={styles.zoomTextHeader}>0.5x</Text>
                       </TouchableOpacity>
-                      <TouchableOpacity onPress={() => {setZoom(0.08); setIsZoomMenuOpen(false)}} style={[styles.zoomBtnHeader, zoom===0.08 && styles.activeZoomBtnHeader]}>
+                      <TouchableOpacity onPress={() => { setZoom(0.08); setIsZoomMenuOpen(false) }} style={[styles.zoomBtnHeader, zoom === 0.08 && styles.activeZoomBtnHeader]}>
                         <Text style={styles.zoomTextHeader}>1x</Text>
                       </TouchableOpacity>
-                      <TouchableOpacity onPress={() => {setZoom(0.15); setIsZoomMenuOpen(false)}} style={[styles.zoomBtnHeader, zoom===0.15 && styles.activeZoomBtnHeader]}>
+                      <TouchableOpacity onPress={() => { setZoom(0.15); setIsZoomMenuOpen(false) }} style={[styles.zoomBtnHeader, zoom === 0.15 && styles.activeZoomBtnHeader]}>
                         <Text style={styles.zoomTextHeader}>2x</Text>
                       </TouchableOpacity>
                     </View>
@@ -2347,7 +2295,7 @@ export default function CastingModeScreen() {
                       if (isAction) {
                         // If hideActions is true, don't render action cards
                         // if (hideActions) return null; // hideActions doesn't exist here!
-                        
+
                         const actionId = item.id;
                         const text = isManualAction ? (item as ActionCard).text : (item as DialogueLine).text;
                         const duration = isManualAction ? (item as ActionCard).duration : getLineDuration(item as DialogueLine);
@@ -2517,7 +2465,7 @@ export default function CastingModeScreen() {
                   <TouchableOpacity
                     onPress={togglePracticeMode}
                     style={[
-                      styles.practiceBtn, 
+                      styles.practiceBtn,
                       isPlaying && styles.practiceBtnActive,
                       castingType === 'free' && { backgroundColor: '#10B981', width: rp(60), height: rp(60), borderRadius: rp(30), borderColor: 'white', borderWidth: 2 }
                     ]}
@@ -2530,7 +2478,7 @@ export default function CastingModeScreen() {
                 <TouchableOpacity
                   onPress={toggleRecording}
                   style={[
-                    styles.recordBtn, 
+                    styles.recordBtn,
                     isRecording && styles.recordingBtnActive,
                     castingType === 'free' && { width: rp(60), height: rp(60), borderRadius: rp(30), borderWidth: 2, padding: 4 }
                   ]}
@@ -2546,7 +2494,7 @@ export default function CastingModeScreen() {
                 )}
 
                 {/* Menu */}
-                <TouchableOpacity onPress={() => setShowMenu(!showMenu)} style={[styles.controlBtn, {backgroundColor: 'rgba(0,0,0,0.5)', width: rp(48), height: rp(48), borderRadius: rp(24), alignItems: 'center', justifyContent: 'center'}]}>
+                <TouchableOpacity onPress={() => setShowMenu(!showMenu)} style={[styles.controlBtn, { backgroundColor: 'rgba(0,0,0,0.5)', width: rp(48), height: rp(48), borderRadius: rp(24), alignItems: 'center', justifyContent: 'center' }]}>
                   <MoreVertical color="white" size={rp(24)} />
                 </TouchableOpacity>
               </View>
@@ -2560,190 +2508,190 @@ export default function CastingModeScreen() {
                   />
                   <View style={styles.menuDropdown}>
                     <ScrollView style={{ maxHeight: rp(300) }} showsVerticalScrollIndicator={false}>
-                      
-                    {castingType === 'script' ? (
-                      <>
-                        <TouchableOpacity
-                          onPress={() => { setHideUserLines(!hideUserLines); setShowMenu(false); }}
-                          style={styles.menuItem}
-                        >
-                          {hideUserLines ? (
-                            <Eye size={rp(20)} color="white" />
-                          ) : (
-                            <EyeOff size={rp(20)} color="white" />
-                          )}
-                          <Text style={styles.menuText}>
-                            {hideUserLines ? 'Mostrar mis líneas' : 'Ocultar mis líneas'}
-                          </Text>
-                        </TouchableOpacity>
-                        <View style={styles.menuSeparator} />
-                        <TouchableOpacity
-                          onPress={() => { setHideTeleprompter(!hideTeleprompter); setShowMenu(false); }}
-                          style={styles.menuItem}
-                        >
-                          <EyeOff size={rp(20)} color="white" />
-                          <Text style={styles.menuText}>
-                            {hideTeleprompter ? 'Mostrar Teleprompter' : 'Ocultar Teleprompter'}
-                          </Text>
-                        </TouchableOpacity>
-                        <View style={styles.menuSeparator} />
-                        <TouchableOpacity
-                          onPress={() => { setHideActions(!hideActions); setShowMenu(false); }}
-                          style={styles.menuItem}
-                        >
-                          {hideActions ? (
-                            <Eye size={rp(20)} color="#F59E0B" />
-                          ) : (
-                            <EyeOff size={rp(20)} color="#F59E0B" />
-                          )}
-                          <Text style={styles.menuText}>
-                            {hideActions ? 'Mostrar acciones' : 'Ocultar acciones'}
-                          </Text>
-                        </TouchableOpacity>
-                        <View style={styles.menuSeparator} />
-                        <TouchableOpacity
-                          onPress={() => { setShowStageDirections(!showStageDirections); setShowMenu(false); }}
-                          style={styles.menuItem}
-                        >
-                          <MessageSquare size={rp(20)} color={showStageDirections ? '#FFA500' : 'white'} />
-                          <Text style={[styles.menuText, showStageDirections && { color: '#FFA500' }]}>
-                            {showStageDirections ? 'Ocultar Acotaciones' : 'Mostrar Acotaciones'}
-                          </Text>
-                        </TouchableOpacity>
-                        <View style={styles.menuSeparator} />
-                        {/* Control de volumen en el menú */}
-                        <View style={styles.menuItem}>
-                          <Volume2 size={rp(20)} color="white" />
-                          <Text style={styles.menuText}>Volumen voz IA</Text>
-                        </View>
-                        <View style={styles.volumeControlMenu}>
-                          <TouchableOpacity
-                            onPress={() => setTtsVolume(Math.max(0.1, ttsVolume - 0.1))}
-                            style={styles.volumeBtnMenu}
-                          >
-                            <Minus size={rp(18)} color="white" />
-                          </TouchableOpacity>
-                          <View style={styles.volumeDisplayMenu}>
-                            <Text style={styles.volumeTextMenu}>{Math.round(ttsVolume * 100)}%</Text>
-                          </View>
-                          <TouchableOpacity
-                            onPress={() => setTtsVolume(Math.min(1.0, ttsVolume + 0.1))}
-                            style={styles.volumeBtnMenu}
-                          >
-                            <Plus size={rp(18)} color="white" />
-                          </TouchableOpacity>
-                        </View>
-                        <View style={styles.menuSeparator} />
-                        {/* Delay de inicio */}
-                        <View style={styles.menuItem}>
-                          <Timer size={rp(20)} color="white" />
-                          <Text style={styles.menuText}>Espera inicial</Text>
-                        </View>
-                        <View style={styles.volumeControlMenu}>
-                          <TouchableOpacity
-                            onPress={() => setStartDelay(Math.max(0, startDelay - 5))}
-                            style={styles.volumeBtnMenu}
-                          >
-                            <Minus size={rp(18)} color="white" />
-                          </TouchableOpacity>
-                          <View style={styles.volumeDisplayMenu}>
-                            <Text style={styles.volumeTextMenu}>{startDelay === 0 ? 'Off' : `${startDelay}s`}</Text>
-                          </View>
-                          <TouchableOpacity
-                            onPress={() => setStartDelay(Math.min(60, startDelay + 5))}
-                            style={styles.volumeBtnMenu}
-                          >
-                            <Plus size={rp(18)} color="white" />
-                          </TouchableOpacity>
-                        </View>
-                      </>
-                    ) : (
-                      <>
-                        {/* Delay de inicio */}
-                        <View style={styles.menuItem}>
-                          <Timer size={rp(20)} color="white" />
-                          <Text style={styles.menuText}>Espera inicial</Text>
-                        </View>
-                        <View style={styles.volumeControlMenu}>
-                          <TouchableOpacity
-                            onPress={() => setStartDelay(Math.max(0, startDelay - 5))}
-                            style={styles.volumeBtnMenu}
-                          >
-                            <Minus size={rp(18)} color="white" />
-                          </TouchableOpacity>
-                          <View style={styles.volumeDisplayMenu}>
-                            <Text style={styles.volumeTextMenu}>{startDelay === 0 ? 'Off' : `${startDelay}s`}</Text>
-                          </View>
-                          <TouchableOpacity
-                            onPress={() => setStartDelay(Math.min(60, startDelay + 5))}
-                            style={styles.volumeBtnMenu}
-                          >
-                            <Plus size={rp(18)} color="white" />
-                          </TouchableOpacity>
-                        </View>
-                        <View style={styles.menuSeparator} />
 
-                        <TouchableOpacity
-                          onPress={() => { setIsMirrored(!isMirrored); setShowMenu(false); }}
-                          style={styles.menuItem}
-                        >
-                          <FlipHorizontal size={rp(20)} color={isMirrored ? '#10B981' : 'white'} />
-                          <Text style={[styles.menuText, isMirrored && { color: '#10B981' }]}>
-                            {isMirrored ? 'Espejo Activado' : 'Modo Espejo'}
-                          </Text>
-                        </TouchableOpacity>
-                        <View style={styles.menuSeparator} />
-                        
-                        {/* Tamaño de texto */}
-                        <View style={styles.menuItem}>
-                          <Type size={rp(20)} color="white" />
-                          <Text style={styles.menuText}>Tamaño de texto</Text>
-                        </View>
-                        <View style={styles.volumeControlMenu}>
+                      {castingType === 'script' ? (
+                        <>
                           <TouchableOpacity
-                            onPress={() => setFreeFontSize(Math.max(rf(16), freeFontSize - rf(4)))}
-                            style={styles.volumeBtnMenu}
+                            onPress={() => { setHideUserLines(!hideUserLines); setShowMenu(false); }}
+                            style={styles.menuItem}
                           >
-                            <Minus size={rp(18)} color="white" />
+                            {hideUserLines ? (
+                              <Eye size={rp(20)} color="white" />
+                            ) : (
+                              <EyeOff size={rp(20)} color="white" />
+                            )}
+                            <Text style={styles.menuText}>
+                              {hideUserLines ? 'Mostrar mis líneas' : 'Ocultar mis líneas'}
+                            </Text>
                           </TouchableOpacity>
-                          <View style={styles.volumeDisplayMenu}>
-                            <Text style={styles.volumeTextMenu}>{Math.round(freeFontSize)}</Text>
+                          <View style={styles.menuSeparator} />
+                          <TouchableOpacity
+                            onPress={() => { setHideTeleprompter(!hideTeleprompter); setShowMenu(false); }}
+                            style={styles.menuItem}
+                          >
+                            <EyeOff size={rp(20)} color="white" />
+                            <Text style={styles.menuText}>
+                              {hideTeleprompter ? 'Mostrar Teleprompter' : 'Ocultar Teleprompter'}
+                            </Text>
+                          </TouchableOpacity>
+                          <View style={styles.menuSeparator} />
+                          <TouchableOpacity
+                            onPress={() => { setHideActions(!hideActions); setShowMenu(false); }}
+                            style={styles.menuItem}
+                          >
+                            {hideActions ? (
+                              <Eye size={rp(20)} color="#F59E0B" />
+                            ) : (
+                              <EyeOff size={rp(20)} color="#F59E0B" />
+                            )}
+                            <Text style={styles.menuText}>
+                              {hideActions ? 'Mostrar acciones' : 'Ocultar acciones'}
+                            </Text>
+                          </TouchableOpacity>
+                          <View style={styles.menuSeparator} />
+                          <TouchableOpacity
+                            onPress={() => { setShowStageDirections(!showStageDirections); setShowMenu(false); }}
+                            style={styles.menuItem}
+                          >
+                            <MessageSquare size={rp(20)} color={showStageDirections ? '#FFA500' : 'white'} />
+                            <Text style={[styles.menuText, showStageDirections && { color: '#FFA500' }]}>
+                              {showStageDirections ? 'Ocultar Acotaciones' : 'Mostrar Acotaciones'}
+                            </Text>
+                          </TouchableOpacity>
+                          <View style={styles.menuSeparator} />
+                          {/* Control de volumen en el menú */}
+                          <View style={styles.menuItem}>
+                            <Volume2 size={rp(20)} color="white" />
+                            <Text style={styles.menuText}>Volumen voz IA</Text>
                           </View>
-                          <TouchableOpacity
-                            onPress={() => setFreeFontSize(Math.min(rf(72), freeFontSize + rf(4)))}
-                            style={styles.volumeBtnMenu}
-                          >
-                            <Plus size={rp(18)} color="white" />
-                          </TouchableOpacity>
-                        </View>
-                        
-                        <View style={styles.menuSeparator} />
-                        
-                        {/* Velocidad */}
-                        <View style={styles.menuItem}>
-                          <Snail size={rp(20)} color="white" />
-                          <Text style={styles.menuText}>Velocidad</Text>
-                          <Rabbit size={rp(20)} color="white" style={{marginLeft: 'auto'}} />
-                        </View>
-                        <View style={styles.volumeControlMenu}>
-                          <TouchableOpacity
-                            onPress={() => setFreeScrollSpeed(Math.max(1, freeScrollSpeed - 1))}
-                            style={styles.volumeBtnMenu}
-                          >
-                            <Minus size={rp(18)} color="white" />
-                          </TouchableOpacity>
-                          <View style={styles.volumeDisplayMenu}>
-                            <Text style={styles.volumeTextMenu}>{freeScrollSpeed}</Text>
+                          <View style={styles.volumeControlMenu}>
+                            <TouchableOpacity
+                              onPress={() => setTtsVolume(Math.max(0.1, ttsVolume - 0.1))}
+                              style={styles.volumeBtnMenu}
+                            >
+                              <Minus size={rp(18)} color="white" />
+                            </TouchableOpacity>
+                            <View style={styles.volumeDisplayMenu}>
+                              <Text style={styles.volumeTextMenu}>{Math.round(ttsVolume * 100)}%</Text>
+                            </View>
+                            <TouchableOpacity
+                              onPress={() => setTtsVolume(Math.min(1.0, ttsVolume + 0.1))}
+                              style={styles.volumeBtnMenu}
+                            >
+                              <Plus size={rp(18)} color="white" />
+                            </TouchableOpacity>
                           </View>
+                          <View style={styles.menuSeparator} />
+                          {/* Delay de inicio */}
+                          <View style={styles.menuItem}>
+                            <Timer size={rp(20)} color="white" />
+                            <Text style={styles.menuText}>Espera inicial</Text>
+                          </View>
+                          <View style={styles.volumeControlMenu}>
+                            <TouchableOpacity
+                              onPress={() => setStartDelay(Math.max(0, startDelay - 5))}
+                              style={styles.volumeBtnMenu}
+                            >
+                              <Minus size={rp(18)} color="white" />
+                            </TouchableOpacity>
+                            <View style={styles.volumeDisplayMenu}>
+                              <Text style={styles.volumeTextMenu}>{startDelay === 0 ? 'Off' : `${startDelay}s`}</Text>
+                            </View>
+                            <TouchableOpacity
+                              onPress={() => setStartDelay(Math.min(60, startDelay + 5))}
+                              style={styles.volumeBtnMenu}
+                            >
+                              <Plus size={rp(18)} color="white" />
+                            </TouchableOpacity>
+                          </View>
+                        </>
+                      ) : (
+                        <>
+                          {/* Delay de inicio */}
+                          <View style={styles.menuItem}>
+                            <Timer size={rp(20)} color="white" />
+                            <Text style={styles.menuText}>Espera inicial</Text>
+                          </View>
+                          <View style={styles.volumeControlMenu}>
+                            <TouchableOpacity
+                              onPress={() => setStartDelay(Math.max(0, startDelay - 5))}
+                              style={styles.volumeBtnMenu}
+                            >
+                              <Minus size={rp(18)} color="white" />
+                            </TouchableOpacity>
+                            <View style={styles.volumeDisplayMenu}>
+                              <Text style={styles.volumeTextMenu}>{startDelay === 0 ? 'Off' : `${startDelay}s`}</Text>
+                            </View>
+                            <TouchableOpacity
+                              onPress={() => setStartDelay(Math.min(60, startDelay + 5))}
+                              style={styles.volumeBtnMenu}
+                            >
+                              <Plus size={rp(18)} color="white" />
+                            </TouchableOpacity>
+                          </View>
+                          <View style={styles.menuSeparator} />
+
                           <TouchableOpacity
-                            onPress={() => setFreeScrollSpeed(Math.min(10, freeScrollSpeed + 1))}
-                            style={styles.volumeBtnMenu}
+                            onPress={() => { setIsMirrored(!isMirrored); setShowMenu(false); }}
+                            style={styles.menuItem}
                           >
-                            <Plus size={rp(18)} color="white" />
+                            <FlipHorizontal size={rp(20)} color={isMirrored ? '#10B981' : 'white'} />
+                            <Text style={[styles.menuText, isMirrored && { color: '#10B981' }]}>
+                              {isMirrored ? 'Espejo Activado' : 'Modo Espejo'}
+                            </Text>
                           </TouchableOpacity>
-                        </View>
-                      </>
-                    )}
+                          <View style={styles.menuSeparator} />
+
+                          {/* Tamaño de texto */}
+                          <View style={styles.menuItem}>
+                            <Type size={rp(20)} color="white" />
+                            <Text style={styles.menuText}>Tamaño de texto</Text>
+                          </View>
+                          <View style={styles.volumeControlMenu}>
+                            <TouchableOpacity
+                              onPress={() => setFreeFontSize(Math.max(rf(16), freeFontSize - rf(4)))}
+                              style={styles.volumeBtnMenu}
+                            >
+                              <Minus size={rp(18)} color="white" />
+                            </TouchableOpacity>
+                            <View style={styles.volumeDisplayMenu}>
+                              <Text style={styles.volumeTextMenu}>{Math.round(freeFontSize)}</Text>
+                            </View>
+                            <TouchableOpacity
+                              onPress={() => setFreeFontSize(Math.min(rf(72), freeFontSize + rf(4)))}
+                              style={styles.volumeBtnMenu}
+                            >
+                              <Plus size={rp(18)} color="white" />
+                            </TouchableOpacity>
+                          </View>
+
+                          <View style={styles.menuSeparator} />
+
+                          {/* Velocidad */}
+                          <View style={styles.menuItem}>
+                            <Snail size={rp(20)} color="white" />
+                            <Text style={styles.menuText}>Velocidad</Text>
+                            <Rabbit size={rp(20)} color="white" style={{ marginLeft: 'auto' }} />
+                          </View>
+                          <View style={styles.volumeControlMenu}>
+                            <TouchableOpacity
+                              onPress={() => setFreeScrollSpeed(Math.max(1, freeScrollSpeed - 1))}
+                              style={styles.volumeBtnMenu}
+                            >
+                              <Minus size={rp(18)} color="white" />
+                            </TouchableOpacity>
+                            <View style={styles.volumeDisplayMenu}>
+                              <Text style={styles.volumeTextMenu}>{freeScrollSpeed}</Text>
+                            </View>
+                            <TouchableOpacity
+                              onPress={() => setFreeScrollSpeed(Math.min(10, freeScrollSpeed + 1))}
+                              style={styles.volumeBtnMenu}
+                            >
+                              <Plus size={rp(18)} color="white" />
+                            </TouchableOpacity>
+                          </View>
+                        </>
+                      )}
                     </ScrollView>
                   </View>
                 </>
