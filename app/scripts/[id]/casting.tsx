@@ -505,7 +505,7 @@ export default function CastingModeScreen() {
   const [processingProgress, setProcessingProgress] = useState(0);
 
   // Transcription State (replacing VAD)
-  const [isTranscribing, setIsTranscribing] = useState(false);
+  // Transcription State (replacing VAD)
   const transcriptionRecordingRef = useRef<Audio.Recording | null>(null);
   const silenceTimerRef = useRef<NodeJS.Timeout | null>(null);
   const noSpeechTimerRef = useRef<NodeJS.Timeout | null>(null); // Safety timer
@@ -1261,69 +1261,100 @@ export default function CastingModeScreen() {
   // Listeners are registered dynamically inside startListening to avoid
   // crashing when the native module is not yet initialized.
 
-  function useTimerFallback() {
-    const item = configuredLines[currentIndex];
-    if (!item || 'afterLineId' in item) return;
-    const line = item as DialogueLine;
-    const wordCount = (line.cleanText || line.text).split(' ').length;
-    // ~130 palabras/minuto = ~460ms/palabra, mínimo 3s
-    const estimatedMs = Math.max(3000, wordCount * 460);
-    console.log(`[Casting] Timer fallback: ${estimatedMs}ms`);
-    silenceTimerRef.current = setTimeout(() => {
-      nextLine();
-    }, estimatedMs) as any;
-  }
+  const VOICE_THRESHOLD = -40; // dB — ajustar si hace falta
+  const SILENCE_AFTER_SPEECH_MS = 1200; // ms de silencio para avanzar
+  const MAX_LINE_DURATION_MS = 12000;   // máximo 12s por línea
 
   async function startListening() {
+    // Limpiar estado previo
+    isUserSpeakingRef.current = false;
+    processingRef.current = false;
+    
+    if (silenceTimerRef.current) clearTimeout(silenceTimerRef.current);
+    if (noSpeechTimerRef.current) clearTimeout(noSpeechTimerRef.current);
+
     try {
-      const { ExpoSpeechRecognitionModule } = await import('expo-speech-recognition');
-      console.log('[Casting] Starting speech recognition...');
-
-      // Clean up any previous listeners before adding new ones
-      ExpoSpeechRecognitionModule.removeAllListeners('start');
-      ExpoSpeechRecognitionModule.removeAllListeners('end');
-      ExpoSpeechRecognitionModule.removeAllListeners('error');
-
-      ExpoSpeechRecognitionModule.addListener('start', () => {
-        console.log('[Casting] Habla detectada');
-        isUserSpeakingRef.current = true;
-        if (noSpeechTimerRef.current) {
-          clearTimeout(noSpeechTimerRef.current);
-          noSpeechTimerRef.current = null;
-        }
+      // Asegurar modo de audio correcto
+      await Audio.setAudioModeAsync({
+        allowsRecordingIOS: true,
+        playsInSilentModeIOS: true,
+        interruptionModeIOS: InterruptionModeIOS.MixWithOthers,
+        shouldDuckAndroid: false,
+        playThroughEarpieceAndroid: false,
       });
 
-      ExpoSpeechRecognitionModule.addListener('end', () => {
-        console.log('[Casting] Silencio detectado');
-        if (silenceTimerRef.current) clearTimeout(silenceTimerRef.current);
-        silenceTimerRef.current = setTimeout(() => {
-          try { ExpoSpeechRecognitionModule.stop(); } catch { }
-          nextLine();
-        }, 800) as any;
-      });
+      const { recording } = await Audio.Recording.createAsync(
+        {
+          isMeteringEnabled: true,
+          android: {
+            extension: '.m4a',
+            outputFormat: Audio.AndroidOutputFormat.MPEG_4,
+            audioEncoder: Audio.AndroidAudioEncoder.AAC,
+            sampleRate: 16000,
+            numberOfChannels: 1,
+            bitRate: 32000,
+          },
+          ios: {
+            extension: '.m4a',
+            outputFormat: Audio.IOSOutputFormat.MPEG4AAC,
+            audioQuality: Audio.IOSAudioQuality.LOW,
+            sampleRate: 16000,
+            numberOfChannels: 1,
+            bitRate: 32000,
+            linearPCMBitDepth: 16,
+            linearPCMIsBigEndian: false,
+            linearPCMIsFloat: false,
+          },
+          web: {},
+        },
+        (status) => {
+          if (!status.isRecording) return;
+          const db = status.metering ?? -160;
 
-      ExpoSpeechRecognitionModule.addListener('error', (e: any) => {
-        console.warn('[Casting] Voice error, usando timer:', e);
-        useTimerFallback();
-      });
+          if (db > VOICE_THRESHOLD) {
+            // Usuario hablando
+            if (!isUserSpeakingRef.current) {
+              console.log('[Casting VAD] Voz detectada:', db, 'dB');
+              isUserSpeakingRef.current = true;
+              // Cancelar timer de seguridad
+              if (noSpeechTimerRef.current) {
+                clearTimeout(noSpeechTimerRef.current);
+                noSpeechTimerRef.current = null;
+              }
+            }
+            // Resetear timer de silencio
+            if (silenceTimerRef.current) {
+              clearTimeout(silenceTimerRef.current);
+              silenceTimerRef.current = null;
+            }
+          } else if (isUserSpeakingRef.current) {
+            // Silencio después de hablar
+            if (!silenceTimerRef.current) {
+              console.log('[Casting VAD] Silencio detectado, esperando', SILENCE_AFTER_SPEECH_MS, 'ms...');
+              silenceTimerRef.current = setTimeout(async () => {
+                console.log('[Casting VAD] Avanzando línea por silencio');
+                await stopListening();
+                nextLine();
+              }, SILENCE_AFTER_SPEECH_MS) as any;
+            }
+          }
+        },
+        50 // polling cada 50ms
+      );
 
-      await ExpoSpeechRecognitionModule.start({
-        lang: 'es-ES',
-        interimResults: false,
-        continuous: false,
-      });
+      transcriptionRecordingRef.current = recording;
+      console.log('[Casting VAD] Escuchando...');
 
-      isUserSpeakingRef.current = false;
-
-      // Timer de seguridad: 10 segundos máximo por línea
-      noSpeechTimerRef.current = setTimeout(() => {
-        console.log('[Casting] Timer de seguridad: avanzando línea');
-        try { ExpoSpeechRecognitionModule.abort(); } catch { }
+      // Timer de seguridad: máximo MAX_LINE_DURATION_MS por línea
+      noSpeechTimerRef.current = setTimeout(async () => {
+        console.log('[Casting VAD] Timer de seguridad activado, avanzando...');
+        await stopListening();
         nextLine();
-      }, 10000) as any;
+      }, MAX_LINE_DURATION_MS) as any;
 
     } catch (e) {
-      console.warn('[Casting] Speech recognition no disponible, usando timer fallback:', e);
+      console.warn('[Casting VAD] No se pudo abrir el micrófono:', e);
+      // Fallback: timer estimado por número de palabras
       useTimerFallback();
     }
   }
@@ -1337,20 +1368,38 @@ export default function CastingModeScreen() {
       clearTimeout(noSpeechTimerRef.current);
       noSpeechTimerRef.current = null;
     }
-    try {
-      const { ExpoSpeechRecognitionModule } = await import('expo-speech-recognition');
-      ExpoSpeechRecognitionModule.removeAllListeners('start');
-      ExpoSpeechRecognitionModule.removeAllListeners('end');
-      ExpoSpeechRecognitionModule.removeAllListeners('error');
-      ExpoSpeechRecognitionModule.stop();
-    } catch { }
+
+    if (transcriptionRecordingRef.current) {
+      try {
+        await transcriptionRecordingRef.current.stopAndUnloadAsync();
+      } catch { }
+      // Descartar el archivo — solo necesitábamos el metering
+      const uri = transcriptionRecordingRef.current.getURI();
+      if (uri) {
+        try {
+          await FileSystem.deleteAsync(uri, { idempotent: true });
+        } catch { }
+      }
+      transcriptionRecordingRef.current = null;
+    }
+
     isUserSpeakingRef.current = false;
   }
 
-  async function processUserAudio() {
-    // Legacy stub — con speech recognition, nextLine() se llama
-    // directamente desde el handler del evento 'end'.
-    nextLine();
+  function useTimerFallback() {
+    const item = configuredLines[currentIndex];
+    if (!item || 'afterLineId' in item) return;
+
+    const line = item as DialogueLine;
+    const wordCount = (line.cleanText || line.text).trim().split(/\s+/).length;
+    // 130 palabras/minuto ≈ 460ms por palabra, mínimo 3s, máximo 15s
+    const estimatedMs = Math.min(15000, Math.max(3000, wordCount * 460));
+
+    console.log(`[Casting] Fallback timer: ${estimatedMs}ms (${wordCount} palabras)`);
+    silenceTimerRef.current = setTimeout(async () => {
+      await stopListening();
+      nextLine();
+    }, estimatedMs) as any;
   }
 
   function nextLine() {
@@ -2072,7 +2121,7 @@ export default function CastingModeScreen() {
                       </TouchableOpacity>
                       <View style={styles.timingDisplay}>
                         <Timer size={rp(14)} color={colors.primary} />
-                        <ActionTimingInput 
+                        <ActionTimingInput
                           actionId={actionId}
                           isManualAction={isManualAction}
                           duration={duration}
