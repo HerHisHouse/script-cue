@@ -10,6 +10,7 @@ import {
   AppStateStatus,
   ScrollView,
   DeviceEventEmitter,
+  Platform,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, useLocalSearchParams } from 'expo-router';
@@ -464,7 +465,7 @@ export default function CarModeScreen() {
                   clearInterval(audioEndPollingRef.current!);
                   audioEndPollingRef.current = null;
                 }
-              }, 500);
+              }, 500) as any;
             } catch (tpErr) {
               console.error('[Car Mode] TrackPlayer error, falling back to expo-av:', tpErr);
               // Fallback to expo-av if TrackPlayer fails

@@ -1267,7 +1267,7 @@ export default function CastingModeScreen() {
     // Limpiar estado previo
     isUserSpeakingRef.current = false;
     processingRef.current = false;
-    
+
     if (silenceTimerRef.current) clearTimeout(silenceTimerRef.current);
     if (noSpeechTimerRef.current) clearTimeout(noSpeechTimerRef.current);
 
