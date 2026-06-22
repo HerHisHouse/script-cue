@@ -562,9 +562,7 @@ export default function CastingModeScreen() {
     });
 
     return () => {
-      import('expo-speech-recognition').then(({ ExpoSpeechRecognitionModule }) => {
-        try { ExpoSpeechRecognitionModule.abort(); } catch { }
-      }).catch(() => { });
+
       cleanupSound();
       if (autoAdvanceTimerRef.current) clearTimeout(autoAdvanceTimerRef.current);
       if (silenceTimerRef.current) clearTimeout(silenceTimerRef.current);
