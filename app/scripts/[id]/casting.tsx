@@ -1292,7 +1292,9 @@ export default function CastingModeScreen() {
   }
 
   async function processUserAudio() {
-    }
+    // Legacy stub — con speech recognition, nextLine() se llama
+    // directamente desde el handler del evento 'end'.
+    nextLine();
   }
 
   function nextLine() {
