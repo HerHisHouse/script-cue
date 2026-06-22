@@ -23,7 +23,6 @@ export default ({ config }) => {
     scheme: "myapp",
     plugins: [
       ...(config.plugins || []),
-      "expo-speech-recognition",
     ],
     ios: {
       ...(config.ios || {}),
