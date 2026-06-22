@@ -28,7 +28,7 @@ import { Audio, InterruptionModeIOS, InterruptionModeAndroid } from 'expo-av';
 import * as FileSystem from 'expo-file-system/legacy'; // Fix: Use legacy API
 import { transcribeAudio } from '@/services/transcription'; // Import transcription service
 import { calculateSimilarity } from '@/utils/stringUtils'; // Helper for similarity
-import { ArrowLeft, Mic, RotateCcw, Play, Pause, Square, Video, SwitchCamera, Settings2, SkipBack, SkipForward, MoreVertical, EyeOff, Eye, Minus, Plus, Volume2, GripHorizontal, X, Timer, Clapperboard, Trash2, ChevronRight, MessageSquare, FileText, Type, Snail, Rabbit, FlipHorizontal, Bold, Italic, Underline, AlignLeft, AlignCenter, AlignRight, Keyboard as KeyboardIcon } from 'lucide-react-native';
+import { ArrowLeft, Mic, RotateCcw, Play, Pause, Square, Video, SwitchCamera, Settings2, SkipBack, SkipForward, MoreVertical, EyeOff, Eye, Minus, Plus, Volume2, GripHorizontal, X, Timer, Clapperboard, Trash2, ChevronRight, MessageSquare, FileText, Type, Snail, Rabbit, FlipHorizontal, Bold, Italic, Underline, AlignLeft, AlignCenter, AlignRight, Keyboard as KeyboardIcon, Info } from 'lucide-react-native';
 import { supabase } from '@/utils/supabase';
 import client from '@/utils/openaiClient';
 import { generateElevenLabsAudio } from '@/utils/elevenLabsClient';
@@ -124,6 +124,7 @@ export default function CastingModeScreen() {
   const [hideUserLines, setHideUserLines] = useState(false);
   const [hideTeleprompter, setHideTeleprompter] = useState(false);
   const [hideActions, setHideActions] = useState(false); // Hide action cards in teleprompter
+  const [actionTimeLeft, setActionTimeLeft] = useState<number | null>(null);
   const [showStageDirections, setShowStageDirections] = useState(false); // Toggle for stage directions visibility
   const [startDelay, setStartDelay] = useState(5); // Delay in seconds before first line (0, 5, 10, 15... up to 60)
   const [countdown, setCountdown] = useState<number | null>(null); // Countdown display
@@ -1129,7 +1130,18 @@ export default function CastingModeScreen() {
     setIsPlaying(false); // No auto-arrancar
   }
 
-  // 2. Logic: Handle Line Change
+  useEffect(() => {
+    let interval: any;
+    if (actionTimeLeft !== null && actionTimeLeft > 0 && (isPlaying || isRecording)) {
+      interval = setInterval(() => {
+        setActionTimeLeft(prev => (prev && prev > 0 ? prev - 1 : null));
+      }, 1000);
+    }
+    return () => {
+      if (interval) clearInterval(interval);
+    };
+  }, [actionTimeLeft, isPlaying, isRecording]);
+
   useEffect(() => {
     // Auto-scroll to current index - Subir hasta el margen superior
     if (configuredLines.length > 0 && flatListRef.current) {
@@ -1158,15 +1170,18 @@ export default function CastingModeScreen() {
       // Action: just wait for the configured duration and advance
       let duration = 0;
       if (isManualAction) {
-        duration = (item as ActionCard).duration * 1000;
+        duration = (item as ActionCard).duration;
       } else {
-        duration = getLineDuration(item as DialogueLine) * 1000;
+        duration = getLineDuration(item as DialogueLine);
       }
-      console.log(`[Casting] Action card: waiting ${duration / 1000}s`);
+      console.log(`[Casting] Action card: waiting ${duration}s`);
+
+      setActionTimeLeft(duration);
 
       silenceTimerRef.current = setTimeout(() => {
+        setActionTimeLeft(null);
         nextLine();
-      }, duration) as any;
+      }, duration * 1000) as any;
       return;
     }
 
@@ -1909,14 +1924,12 @@ export default function CastingModeScreen() {
               <Clapperboard color={colors.primary} size={rp(24)} />
               <Text style={[styles.configTitle, { color: colors.text }]}>Configurar Escena</Text>
             </View>
-            <View style={{ width: rp(44) }} />
-          </View>
-
-          {/* Instructions */}
-          <View style={[styles.configInstructions, { backgroundColor: colors.card }]}>
-            <Text style={[styles.configInstructionsText, { color: colors.textSecondary }]}>
-              Ajusta el tiempo de cada línea con los botones +/- y añade acciones entre diálogos si necesitas tiempo extra para moverte.
-            </Text>
+            <TouchableOpacity 
+              onPress={() => Alert.alert('Añadir acción', '"Añadir acción" sirve para configurar el tiempo que requieran las acciones por guión antes de decir una frase.')} 
+              style={{ width: rp(44), alignItems: 'center', justifyContent: 'center' }}
+            >
+              <Info color={colors.primary} size={rp(24)} />
+            </TouchableOpacity>
           </View>
 
           {/* Lines List */}
@@ -2020,11 +2033,16 @@ export default function CastingModeScreen() {
                         <Timer size={rp(14)} color={colors.primary} />
                         <TextInput
                           style={[styles.timingTextInput, { color: colors.text }]}
-                          value={String(duration + (isScriptAction ? adjustment : 0))}
+                          value={String(Math.max(0, duration + (isScriptAction ? adjustment : 0)))}
                           keyboardType="number-pad"
                           selectTextOnFocus
                           onChangeText={(val) => {
-                            const parsed = parseInt(val, 10);
+                            if (val === '') {
+                              if (isManualAction) updateActionDuration(actionId, 0);
+                              else adjustLineTiming(actionId, -duration);
+                              return;
+                            }
+                            const parsed = parseInt(val.replace(/[^0-9]/g, ''), 10);
                             if (!isNaN(parsed) && parsed >= 0) {
                               if (isManualAction) {
                                 updateActionDuration(actionId, parsed);
@@ -2295,19 +2313,27 @@ export default function CastingModeScreen() {
 
                       // Render Action Card
                       if (isAction) {
-                        // If hideActions is true, don't render action cards
-                        // if (hideActions) return null; // hideActions doesn't exist here!
+                        if (hideActions) return null;
 
                         const actionId = item.id;
                         const text = isManualAction ? (item as ActionCard).text : (item as DialogueLine).text;
                         const duration = isManualAction ? (item as ActionCard).duration : getLineDuration(item as DialogueLine);
+                        const displayDuration = isActive && actionTimeLeft !== null ? actionTimeLeft : duration;
 
                         return (
                           <View
                             style={[
                               styles.teleprompterActionCard,
                               isActive && styles.teleprompterActionCardActive,
-                              { opacity, borderColor: colors.primary, borderWidth: 2, borderStyle: 'dashed', backgroundColor: 'transparent' }
+                              { 
+                                opacity, 
+                                borderLeftWidth: 4,
+                                borderLeftColor: colors.primary,
+                                borderColor: colors.primary, 
+                                borderWidth: 2, 
+                                borderStyle: 'dashed', 
+                                backgroundColor: 'transparent' 
+                              }
                             ]}
                           >
                             <View style={styles.teleprompterActionHeader}>
@@ -2315,7 +2341,7 @@ export default function CastingModeScreen() {
                               <Text style={[styles.teleprompterActionLabel, { color: colors.primary }]}>ACCIÓN</Text>
                               <View style={styles.teleprompterActionDuration}>
                                 <Timer size={rp(12)} color={colors.primary} />
-                                <Text style={[styles.teleprompterActionDurationText, { color: colors.text }]}>{duration}s</Text>
+                                <Text style={[styles.teleprompterActionDurationText, { color: colors.text }]}>{displayDuration}s</Text>
                               </View>
                             </View>
                             <Text style={[styles.teleprompterActionText, { color: colors.text }, isActive && { fontWeight: '700' }]}>
@@ -2513,77 +2539,6 @@ export default function CastingModeScreen() {
 
                       {castingType === 'script' ? (
                         <>
-                          <TouchableOpacity
-                            onPress={() => { setHideUserLines(!hideUserLines); setShowMenu(false); }}
-                            style={styles.menuItem}
-                          >
-                            {hideUserLines ? (
-                              <Eye size={rp(20)} color="white" />
-                            ) : (
-                              <EyeOff size={rp(20)} color="white" />
-                            )}
-                            <Text style={styles.menuText}>
-                              {hideUserLines ? 'Mostrar mis líneas' : 'Ocultar mis líneas'}
-                            </Text>
-                          </TouchableOpacity>
-                          <View style={styles.menuSeparator} />
-                          <TouchableOpacity
-                            onPress={() => { setHideTeleprompter(!hideTeleprompter); setShowMenu(false); }}
-                            style={styles.menuItem}
-                          >
-                            <EyeOff size={rp(20)} color="white" />
-                            <Text style={styles.menuText}>
-                              {hideTeleprompter ? 'Mostrar Teleprompter' : 'Ocultar Teleprompter'}
-                            </Text>
-                          </TouchableOpacity>
-                          <View style={styles.menuSeparator} />
-                          <TouchableOpacity
-                            onPress={() => { setHideActions(!hideActions); setShowMenu(false); }}
-                            style={styles.menuItem}
-                          >
-                            {hideActions ? (
-                              <Eye size={rp(20)} color="#F59E0B" />
-                            ) : (
-                              <EyeOff size={rp(20)} color="#F59E0B" />
-                            )}
-                            <Text style={styles.menuText}>
-                              {hideActions ? 'Mostrar acciones' : 'Ocultar acciones'}
-                            </Text>
-                          </TouchableOpacity>
-                          <View style={styles.menuSeparator} />
-                          <TouchableOpacity
-                            onPress={() => { setShowStageDirections(!showStageDirections); setShowMenu(false); }}
-                            style={styles.menuItem}
-                          >
-                            <MessageSquare size={rp(20)} color={showStageDirections ? '#FFA500' : 'white'} />
-                            <Text style={[styles.menuText, showStageDirections && { color: '#FFA500' }]}>
-                              {showStageDirections ? 'Ocultar Acotaciones' : 'Mostrar Acotaciones'}
-                            </Text>
-                          </TouchableOpacity>
-                          <View style={styles.menuSeparator} />
-                          {/* Control de volumen en el menú */}
-                          <View style={styles.menuItem}>
-                            <Volume2 size={rp(20)} color="white" />
-                            <Text style={styles.menuText}>Volumen voz IA</Text>
-                          </View>
-                          <View style={styles.volumeControlMenu}>
-                            <TouchableOpacity
-                              onPress={() => setTtsVolume(Math.max(0.1, ttsVolume - 0.1))}
-                              style={styles.volumeBtnMenu}
-                            >
-                              <Minus size={rp(18)} color="white" />
-                            </TouchableOpacity>
-                            <View style={styles.volumeDisplayMenu}>
-                              <Text style={styles.volumeTextMenu}>{Math.round(ttsVolume * 100)}%</Text>
-                            </View>
-                            <TouchableOpacity
-                              onPress={() => setTtsVolume(Math.min(1.0, ttsVolume + 0.1))}
-                              style={styles.volumeBtnMenu}
-                            >
-                              <Plus size={rp(18)} color="white" />
-                            </TouchableOpacity>
-                          </View>
-                          <View style={styles.menuSeparator} />
                           {/* Delay de inicio */}
                           <View style={styles.menuItem}>
                             <Timer size={rp(20)} color="white" />
@@ -2606,6 +2561,82 @@ export default function CastingModeScreen() {
                               <Plus size={rp(18)} color="white" />
                             </TouchableOpacity>
                           </View>
+                          <View style={styles.menuSeparator} />
+
+                          {/* Control de volumen IA */}
+                          <View style={styles.menuItem}>
+                            <Volume2 size={rp(20)} color="white" />
+                            <Text style={styles.menuText}>Volumen voz IA</Text>
+                          </View>
+                          <View style={styles.volumeControlMenu}>
+                            <TouchableOpacity
+                              onPress={() => setTtsVolume(Math.max(0.1, ttsVolume - 0.1))}
+                              style={styles.volumeBtnMenu}
+                            >
+                              <Minus size={rp(18)} color="white" />
+                            </TouchableOpacity>
+                            <View style={styles.volumeDisplayMenu}>
+                              <Text style={styles.volumeTextMenu}>{Math.round(ttsVolume * 100)}%</Text>
+                            </View>
+                            <TouchableOpacity
+                              onPress={() => setTtsVolume(Math.min(1.0, ttsVolume + 0.1))}
+                              style={styles.volumeBtnMenu}
+                            >
+                              <Plus size={rp(18)} color="white" />
+                            </TouchableOpacity>
+                          </View>
+                          <View style={styles.menuSeparator} />
+
+                          <TouchableOpacity
+                            onPress={() => { setHideUserLines(!hideUserLines); setShowMenu(false); }}
+                            style={styles.menuItem}
+                          >
+                            {hideUserLines ? (
+                              <Eye size={rp(20)} color="white" />
+                            ) : (
+                              <EyeOff size={rp(20)} color="white" />
+                            )}
+                            <Text style={styles.menuText}>
+                              {hideUserLines ? 'Mostrar mis líneas' : 'Ocultar mis líneas'}
+                            </Text>
+                          </TouchableOpacity>
+                          <View style={styles.menuSeparator} />
+
+                          <TouchableOpacity
+                            onPress={() => { setHideTeleprompter(!hideTeleprompter); setShowMenu(false); }}
+                            style={styles.menuItem}
+                          >
+                            <EyeOff size={rp(20)} color="white" />
+                            <Text style={styles.menuText}>
+                              {hideTeleprompter ? 'Mostrar Teleprompter' : 'Ocultar Teleprompter'}
+                            </Text>
+                          </TouchableOpacity>
+                          <View style={styles.menuSeparator} />
+
+                          <TouchableOpacity
+                            onPress={() => { setHideActions(!hideActions); setShowMenu(false); }}
+                            style={styles.menuItem}
+                          >
+                            {hideActions ? (
+                              <Eye size={rp(20)} color="#F59E0B" />
+                            ) : (
+                              <EyeOff size={rp(20)} color="#F59E0B" />
+                            )}
+                            <Text style={styles.menuText}>
+                              {hideActions ? 'Mostrar acciones' : 'Ocultar acciones'}
+                            </Text>
+                          </TouchableOpacity>
+                          <View style={styles.menuSeparator} />
+
+                          <TouchableOpacity
+                            onPress={() => { setShowStageDirections(!showStageDirections); setShowMenu(false); }}
+                            style={styles.menuItem}
+                          >
+                            <MessageSquare size={rp(20)} color={showStageDirections ? '#FFA500' : 'white'} />
+                            <Text style={[styles.menuText, showStageDirections && { color: '#FFA500' }]}>
+                              {showStageDirections ? 'Ocultar Acotaciones' : 'Mostrar Acotaciones'}
+                            </Text>
+                          </TouchableOpacity>
                         </>
                       ) : (
                         <>
