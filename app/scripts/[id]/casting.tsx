@@ -1627,16 +1627,36 @@ export default function CastingModeScreen() {
       setIsProcessing(true);
       setProcessingProgress(20);
 
-      const localPath = `${FileSystem.documentDirectory}free_casting_${Date.now()}.mp4`;
-      await FileSystem.copyAsync({ from: uri, to: localPath });
+      // Subir a Supabase Storage
+      const fileExt = uri.split('.').pop() || 'mp4';
+      const fileName = `video_${Date.now()}.${fileExt}`;
+      const storagePath = `${user?.id}/${fileName}`;
+      const uploadUrl = `${process.env.EXPO_PUBLIC_SUPABASE_URL}/storage/v1/object/casting-audio/${storagePath}`;
+
       setProcessingProgress(60);
+
+      const uploadResult = await FileSystem.uploadAsync(uploadUrl, uri, {
+        httpMethod: 'POST',
+        uploadType: FileSystem.FileSystemUploadType.BINARY_CONTENT,
+        headers: {
+          'Authorization': `Bearer ${process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY}`,
+          'apikey': process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY || '',
+          'Content-Type': `video/${fileExt === 'mp4' ? 'mp4' : 'quicktime'}`,
+        },
+      });
+
+      if (uploadResult.status !== 200 && uploadResult.status !== 201) {
+        throw new Error(`Error subiendo video: ${uploadResult.body}`);
+      }
+
+      setProcessingProgress(80);
 
       const { error: dbError } = await supabase.from('recordings').insert({
         user_id: user?.id,
         script_id: id,
         project_id: null,
         title: `Teleprompter - Libre`,
-        audio_url: localPath,
+        audio_url: storagePath,
         type: 'video',
         duration_seconds: recordingTimeRef.current,
         file_size_bytes: 0,
@@ -1804,14 +1824,37 @@ export default function CastingModeScreen() {
         console.log('[Casting] Video downloaded to:', downloadResult.uri);
         setProcessingProgress(90);
 
-        // Insert into DB with local path
+        // Upload to Supabase Storage
+        console.log('[Casting] Uploading processed video to Supabase Storage...');
+        const fileExt = downloadResult.uri.split('.').pop() || 'mp4';
+        const fileName = `video_${Date.now()}.${fileExt}`;
+        const storagePath = `${user?.id}/${fileName}`;
+        const uploadUrl = `${process.env.EXPO_PUBLIC_SUPABASE_URL}/storage/v1/object/casting-audio/${storagePath}`;
+
+        const uploadResult = await FileSystem.uploadAsync(uploadUrl, downloadResult.uri, {
+          httpMethod: 'POST',
+          uploadType: FileSystem.FileSystemUploadType.BINARY_CONTENT,
+          headers: {
+            'Authorization': `Bearer ${process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY}`,
+            'apikey': process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY || '',
+            'Content-Type': `video/${fileExt === 'mp4' ? 'mp4' : 'quicktime'}`,
+          },
+        });
+
+        if (uploadResult.status !== 200 && uploadResult.status !== 201) {
+          throw new Error(`Error subiendo video a la nube: ${uploadResult.body}`);
+        }
+
+        setProcessingProgress(95);
+
+        // Insert into DB with cloud path
         const { error: dbError } = await supabase.from('recordings').insert({
           user_id: user?.id,
           script_id: id,
           scene_id: dialogueLines[currentIndex]?.sceneId ?? dialogueLines[0]?.sceneId,
           project_id: null,
           title: `Casting - ${script?.title || 'Guión'}`,
-          audio_url: downloadResult.uri, // Store local path
+          audio_url: storagePath, // Store cloud path relative to bucket
           type: 'video',
           duration_seconds: recordingTimeRef.current,
           file_size_bytes: 0,
@@ -1820,6 +1863,13 @@ export default function CastingModeScreen() {
         if (dbError) {
           console.error('[Casting] DB Error:', dbError);
           throw new Error(`Error al guardar en base de datos: ${dbError.message}`);
+        }
+
+        // Clean up local downloaded file
+        try {
+          await FileSystem.deleteAsync(downloadResult.uri, { idempotent: true });
+        } catch (e) {
+          console.warn('[Casting] Could not delete local video file', e);
         }
 
         setProcessingProgress(100);
