@@ -1,12 +1,13 @@
 import React, { useEffect, useState, useCallback } from 'react'; // Force rebuild
 import { StyleSheet, View, Text, Pressable, FlatList, TouchableOpacity, Animated, Easing, Modal, TextInput, Alert, Share, useWindowDimensions, Keyboard, RefreshControl } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { supabase } from '@/utils/supabase';
 import { ScriptCard } from '@/components/ScriptCard';
 import { SendToModal } from '@/components/SendToModal';
 import { useAuth } from '@/contexts/AuthContext';
 import { useTheme } from '@/contexts/ThemeContext';
 import { Script } from '@/types/database';
-import { Plus, EyeOff, RefreshCw, Upload, Camera, ChevronRight, Search, Grid3x3, List, Circle, MoreVertical, Trash2, CheckSquare, Square, MinusSquare, Info, AlertCircle } from 'lucide-react-native';
+import { Plus, EyeOff, RefreshCw, Upload, Camera, ChevronRight, Search, Grid3x3, List, Circle, MoreVertical, Trash2, CheckSquare, Square, MinusSquare, Info, AlertCircle, ArrowUpAZ, Clock, Calendar, Check } from 'lucide-react-native';
 import { ScreenHeader } from '@/components/ScreenHeader';
 import { useRouter, useFocusEffect } from 'expo-router';
 import { MENU_ITEM_PADDING_V, HEADER_HORIZONTAL_PADDING, MENU_SECTION_PADDING_V } from '@/utils/ui';
@@ -17,6 +18,9 @@ import logger from '@/utils/logger';
 import { deleteScript } from '@/utils/scripts';
 import { rf, rp } from '@/utils/responsive';
 import { BETA_LIMITS, isUserBetaLimited } from '@/constants/betaLimits';
+
+type SortOrder = 'az' | 'last_opened' | 'date';
+const SORT_STORAGE_KEY = 'guiones_sort_order';
 
 export default function IndexScreen() {
   const insets = useSafeAreaInsets();
@@ -50,6 +54,11 @@ export default function IndexScreen() {
   // Eliminación masiva
   const [bulkDeleteModalVisible, setBulkDeleteModalVisible] = useState(false);
   const [bulkDeleteLoading, setBulkDeleteLoading] = useState(false);
+  // Duplicar
+  const [duplicateLoading, setDuplicateLoading] = useState(false);
+  // Ordenar
+  const [sortOrder, setSortOrder] = useState<SortOrder>('date');
+  const [showSortMenu, setShowSortMenu] = useState(false);
   // Cuadrícula responsiva: columnas y tamaños según ancho
   const { width } = useWindowDimensions();
   const gridPadding = 20; // padding horizontal dentro de filas
@@ -215,14 +224,12 @@ export default function IndexScreen() {
   const loadScripts = useCallback(async (isRefresh = false) => {
     try {
       if (!isRefresh) setLoading(true);
-      const query = supabase
+      const { data, error } = await supabase
         .from('scripts')
         .select('*')
-        .order('updated_at', { ascending: false })
         .eq('user_id', user!.id)
         .is('project_id', null);
 
-      const { data, error } = await query;
       if (error) throw error;
       setScripts(data || []);
     } catch (error) {
@@ -233,6 +240,149 @@ export default function IndexScreen() {
     }
   }, [user]);
 
+  // Ordenación client-side
+  function getSortedScripts(list: Script[]): Script[] {
+    const copy = [...list];
+    switch (sortOrder) {
+      case 'az':
+        return copy.sort((a, b) =>
+          (a.title || '').localeCompare(b.title || '', 'es', { sensitivity: 'base' })
+        );
+      case 'last_opened':
+        return copy.sort((a, b) => {
+          const ta = a.last_opened_at ? new Date(a.last_opened_at).getTime() : 0;
+          const tb = b.last_opened_at ? new Date(b.last_opened_at).getTime() : 0;
+          return tb - ta;
+        });
+      case 'date':
+      default:
+        return copy.sort((a, b) => {
+          const ta = a.created_at ? new Date(a.created_at).getTime() : 0;
+          const tb = b.created_at ? new Date(b.created_at).getTime() : 0;
+          return tb - ta;
+        });
+    }
+  }
+
+  async function performDuplicateScript(scriptId: string) {
+    if (!user || duplicateLoading) return;
+    setDuplicateLoading(true);
+    try {
+      // 1. Obtener el guión original
+      const { data: original, error: fetchError } = await supabase
+        .from('scripts')
+        .select('*')
+        .eq('id', scriptId)
+        .eq('user_id', user.id)
+        .single();
+      if (fetchError || !original) throw fetchError || new Error('Guión no encontrado');
+
+      // 2. Insertar copia del guión
+      const { id: _id, created_at: _ca, updated_at: _ua, last_opened_at: _loa, ...scriptData } = original as any;
+      const { data: newScript, error: insertError } = await supabase
+        .from('scripts')
+        .insert({
+          ...scriptData,
+          title: `${original.title || 'Sin título'} (copia)`,
+          original_script_id: original.original_script_id || original.id,
+          user_id: user.id,
+        })
+        .select()
+        .single();
+      if (insertError || !newScript) throw insertError || new Error('Error al duplicar');
+
+      const newScriptId = newScript.id;
+
+      // 3. Copiar personajes (characters)
+      const { data: characters } = await supabase
+        .from('characters')
+        .select('*')
+        .eq('script_id', scriptId);
+
+      let charIdMap: Record<string, string> = {};
+      if (characters && characters.length > 0) {
+        const charInserts = characters.map(({ id: _cid, created_at: _cca, ...c }: any) => ({
+          ...c,
+          script_id: newScriptId,
+        }));
+        const { data: newCharacters, error: charError } = await supabase
+          .from('characters')
+          .insert(charInserts)
+          .select();
+        
+        if (charError) throw charError;
+        
+        if (newCharacters) {
+          characters.forEach(oldChar => {
+            const newChar = newCharacters.find(nc => nc.name === oldChar.name);
+            if (newChar) {
+              charIdMap[oldChar.id] = newChar.id;
+            }
+          });
+        }
+      }
+
+      // 4. Copiar líneas de diálogo (dialogues)
+      const { data: dialogues } = await supabase
+        .from('dialogues')
+        .select('*')
+        .eq('script_id', scriptId);
+
+      if (dialogues && dialogues.length > 0) {
+        const dlgInserts = dialogues.map(({ id: _did, created_at: _dca, ...d }: any) => ({
+          ...d,
+          script_id: newScriptId,
+          character_id: d.character_id ? (charIdMap[d.character_id] || d.character_id) : null,
+        }));
+        // Insertar en lotes de 500 para evitar límites
+        const CHUNK = 500;
+        for (let i = 0; i < dlgInserts.length; i += CHUNK) {
+          await supabase.from('dialogues').insert(dlgInserts.slice(i, i + CHUNK));
+        }
+      }
+
+      logger.log('[Duplicar] Guión duplicado con éxito:', newScriptId);
+      Alert.alert('✓ Duplicado', `"${original.title || 'Sin título'} (copia)" ha sido creado.`);
+      await loadScripts();
+    } catch (e: any) {
+      logger.error('[Duplicar] Error:', e?.message || e);
+      Alert.alert('Error', 'No se pudo duplicar el guión. Inténtalo de nuevo.');
+    } finally {
+      setDuplicateLoading(false);
+    }
+  }
+
+  async function updateLastOpened(scriptId: string) {
+    if (!user) return;
+    try {
+      await supabase
+        .from('scripts')
+        .update({ last_opened_at: new Date().toISOString() })
+        .eq('id', scriptId)
+        .eq('user_id', user.id);
+    } catch (e) {
+      // No bloquear la navegación si falla
+      logger.error('[lastOpened] Error actualizando:', e);
+    }
+  }
+
+  async function changeSortOrder(order: SortOrder) {
+    setSortOrder(order);
+    setShowSortMenu(false);
+    try {
+      await AsyncStorage.setItem(SORT_STORAGE_KEY, order);
+    } catch {}
+    // Animar cierre del header menu
+    Animated.timing(headerMenuOpacity, {
+      toValue: 0,
+      duration: 200,
+      easing: Easing.inOut(Easing.ease),
+      useNativeDriver: true,
+    }).start(({ finished }) => {
+      if (finished) setShowHeaderMenu(false);
+    });
+  }
+
   const onRefresh = useCallback(() => {
     setRefreshing(true);
     loadScripts(true);
@@ -242,6 +392,15 @@ export default function IndexScreen() {
     if (!user) return;
     loadScripts();
   }, [user, loadScripts]);
+
+  // Cargar preferencia de ordenación guardada
+  useEffect(() => {
+    AsyncStorage.getItem(SORT_STORAGE_KEY).then((saved) => {
+      if (saved === 'az' || saved === 'last_opened' || saved === 'date') {
+        setSortOrder(saved);
+      }
+    }).catch(() => {});
+  }, []);
 
   // Animación de entrada/salida del menú (fade + scale)
   useEffect(() => {
@@ -385,7 +544,7 @@ export default function IndexScreen() {
         </View>
       )}
 
-      {/* Menú de encabezado: opciones estándar (búsqueda, selección y vistas) */}
+      {/* Menú de encabezado: opciones estándar (búsqueda, selección, vistas y ordenación) */}
       {showHeaderMenu && (
         <Animated.View
           accessibilityRole="menu"
@@ -399,6 +558,7 @@ export default function IndexScreen() {
             style={makeHeaderMenuStyles(colors).item}
             onPress={() => {
               setShowSearch((v) => !v);
+              setShowSortMenu(false);
               Animated.timing(headerMenuOpacity, {
                 toValue: 0,
                 duration: 200,
@@ -421,6 +581,7 @@ export default function IndexScreen() {
             onPress={() => {
               setScriptSelectionMode((v) => !v);
               setSelectedScriptIds(new Set());
+              setShowSortMenu(false);
               Animated.timing(headerMenuOpacity, {
                 toValue: 0,
                 duration: 200,
@@ -443,6 +604,7 @@ export default function IndexScreen() {
               style={makeHeaderMenuStyles(colors).item}
               onPress={() => {
                 setViewMode('grid');
+                setShowSortMenu(false);
                 Animated.timing(headerMenuOpacity, {
                   toValue: 0,
                   duration: 200,
@@ -462,6 +624,7 @@ export default function IndexScreen() {
               style={makeHeaderMenuStyles(colors).item}
               onPress={() => {
                 setViewMode('list');
+                setShowSortMenu(false);
                 Animated.timing(headerMenuOpacity, {
                   toValue: 0,
                   duration: 200,
@@ -475,6 +638,66 @@ export default function IndexScreen() {
               <List size={18} color={colors.text} />
               <Text style={[styles.menuText, { color: colors.text }]}>Vista de lista</Text>
             </Pressable>
+          )}
+
+          <View style={makeHeaderMenuStyles(colors).separator} />
+
+          {/* Sección Ordenar por */}
+          <Pressable
+            accessibilityRole="menuitem"
+            style={[makeHeaderMenuStyles(colors).item, { justifyContent: 'space-between' }]}
+            onPress={() => setShowSortMenu((v) => !v)}
+          >
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+              <ArrowUpAZ size={18} color={colors.text} />
+              <Text style={[styles.menuText, { color: colors.text }]}>Ordenar por…</Text>
+            </View>
+            <Text style={{ color: colors.textSecondary, fontSize: rf(13), marginLeft: 8 }}>
+              {sortOrder === 'az' ? 'A–Z' : sortOrder === 'last_opened' ? 'Última apertura' : 'Fecha'}
+            </Text>
+          </Pressable>
+
+          {showSortMenu && (
+            <View style={[
+              styles.sortSubmenu,
+              { backgroundColor: colors.input, borderColor: colors.border },
+            ]}>
+              {/* A-Z */}
+              <Pressable
+                accessibilityRole="menuitem"
+                style={[styles.sortOption, { borderBottomWidth: 1, borderBottomColor: colors.border }]}
+                onPress={() => changeSortOrder('az')}
+              >
+                <Text style={[styles.sortOptionText, { color: colors.text }]}>A–Z</Text>
+                {sortOrder === 'az' && <Check size={16} color={colors.primary} />}
+              </Pressable>
+
+              {/* Última apertura */}
+              <Pressable
+                accessibilityRole="menuitem"
+                style={[styles.sortOption, { borderBottomWidth: 1, borderBottomColor: colors.border }]}
+                onPress={() => changeSortOrder('last_opened')}
+              >
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                  <Clock size={14} color={colors.textSecondary} />
+                  <Text style={[styles.sortOptionText, { color: colors.text }]}>Última apertura</Text>
+                </View>
+                {sortOrder === 'last_opened' && <Check size={16} color={colors.primary} />}
+              </Pressable>
+
+              {/* Fecha */}
+              <Pressable
+                accessibilityRole="menuitem"
+                style={styles.sortOption}
+                onPress={() => changeSortOrder('date')}
+              >
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                  <Calendar size={14} color={colors.textSecondary} />
+                  <Text style={[styles.sortOptionText, { color: colors.text }]}>Fecha</Text>
+                </View>
+                {sortOrder === 'date' && <Check size={16} color={colors.primary} />}
+              </Pressable>
+            </View>
           )}
         </Animated.View>
       )}
@@ -556,7 +779,9 @@ export default function IndexScreen() {
           </Text>
         </View>
       ) : (() => {
-        const filteredScripts = searchText ? scripts.filter((s) => (s.title || '').toLowerCase().includes(searchText.toLowerCase())) : scripts;
+        const filteredScripts = getSortedScripts(
+          searchText ? scripts.filter((s) => (s.title || '').toLowerCase().includes(searchText.toLowerCase())) : scripts
+        );
         return filteredScripts.length === 0 ? (
           <View style={styles.emptyState}>
             <Text style={[styles.emptyTitle, { color: colors.text }]}>
@@ -588,6 +813,7 @@ export default function IndexScreen() {
                     if (scriptSelectionMode) {
                       toggleScriptSelection(item.id);
                     } else {
+                      updateLastOpened(item.id);
                       router.push(`/scripts/${item.id}`);
                     }
                   }}
@@ -605,6 +831,7 @@ export default function IndexScreen() {
                   onShare={async () => {
                     await Share.share({ message: `Guion: ${item.title || '(Sin título)'}\nID: ${item.id}` });
                   }}
+                  onDuplicate={() => performDuplicateScript(item.id)}
                   onDelete={() => {
                     Alert.alert('Eliminar guion', '¿Seguro que quieres eliminar este guion? Esta acción no se puede deshacer.', [
                       { text: 'Cancelar', style: 'cancel' },
@@ -917,6 +1144,24 @@ const styles = StyleSheet.create({
     padding: rp(8),
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  sortSubmenu: {
+    marginTop: 4,
+    marginHorizontal: 4,
+    borderRadius: 8,
+    borderWidth: 1,
+    overflow: 'hidden',
+  },
+  sortOption: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 14,
+    paddingVertical: 11,
+  },
+  sortOptionText: {
+    fontSize: rf(14),
+    fontWeight: '500',
   },
 });
 
