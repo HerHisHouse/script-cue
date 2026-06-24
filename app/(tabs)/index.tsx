@@ -322,22 +322,51 @@ export default function IndexScreen() {
         }
       }
 
-      // 4. Copiar líneas de diálogo (dialogues)
-      const { data: dialogues } = await supabase
-        .from('dialogues')
+      // 4. Copiar escenas (scenes) y líneas (lines)
+      const { data: scenes } = await supabase
+        .from('scenes')
         .select('*')
         .eq('script_id', scriptId);
 
-      if (dialogues && dialogues.length > 0) {
-        const dlgInserts = dialogues.map(({ id: _did, created_at: _dca, ...d }: any) => ({
-          ...d,
+      if (scenes && scenes.length > 0) {
+        let sceneIdMap: Record<string, string> = {};
+        const sceneInserts = scenes.map(({ id: _sid, created_at: _sca, ...s }: any) => ({
+          ...s,
           script_id: newScriptId,
-          character_id: d.character_id ? (charIdMap[d.character_id] || d.character_id) : null,
         }));
-        // Insertar en lotes de 500 para evitar límites
-        const CHUNK = 500;
-        for (let i = 0; i < dlgInserts.length; i += CHUNK) {
-          await supabase.from('dialogues').insert(dlgInserts.slice(i, i + CHUNK));
+        
+        const { data: newScenes, error: scenesError } = await supabase
+          .from('scenes')
+          .insert(sceneInserts)
+          .select();
+          
+        if (scenesError) throw scenesError;
+        
+        if (newScenes) {
+          scenes.forEach((oldScene: any) => {
+             const newScene = newScenes.find((ns: any) => ns.order_index === oldScene.order_index);
+             if (newScene) {
+                sceneIdMap[oldScene.id] = newScene.id;
+             }
+          });
+        }
+
+        const oldSceneIds = scenes.map((s: any) => s.id);
+        const { data: lines } = await supabase
+          .from('lines')
+          .select('*')
+          .in('scene_id', oldSceneIds);
+
+        if (lines && lines.length > 0) {
+          const lineInserts = lines.map(({ id: _lid, created_at: _lca, ...l }: any) => ({
+            ...l,
+            scene_id: sceneIdMap[l.scene_id] || l.scene_id,
+          }));
+          
+          const CHUNK = 500;
+          for (let i = 0; i < lineInserts.length; i += CHUNK) {
+            await supabase.from('lines').insert(lineInserts.slice(i, i + CHUNK));
+          }
         }
       }
 
