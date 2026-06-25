@@ -21,7 +21,7 @@ import {
 import { Dimensions } from 'react-native';
 import { PinchGestureHandler, State } from 'react-native-gesture-handler';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Play, Pause, Trash2, Clock, FileAudio, MoreVertical, Edit2, Share2, Search, Grid3x3, List, Send, ChevronRight, Circle, SkipBack, SkipForward, Volume2, VolumeX, Repeat, X, Maximize2, Minimize2, Video as VideoIcon, Cast, Waves, Music, Clapperboard, CheckSquare, Gauge, Download } from 'lucide-react-native';
+import { Play, Pause, Trash2, Clock, FileAudio, MoreVertical, Edit2, Share2, Search, Grid3x3, List, Send, ChevronRight, Circle, SkipBack, SkipForward, Volume2, VolumeX, Repeat, X, Maximize2, Minimize2, Video as VideoIcon, Cast, Waves, Music, Clapperboard, CheckSquare, Gauge, Download, Filter, ArrowUpAZ, Check, Calendar } from 'lucide-react-native';
 import { AudioVisualizer } from '@/components/AudioVisualizer';
 import { SendToModal } from '@/components/SendToModal';
 import { ScreenHeader } from '@/components/ScreenHeader';
@@ -251,8 +251,49 @@ export default function RecordingsScreen() {
   const [debouncedSearch, setDebouncedSearch] = useState('');
   const [searching, setSearching] = useState(false);
   const searchCache = useRef<Map<string, Recording[]>>(new Map());
-  const [sortBy, setSortBy] = useState<'created_at' | 'duration_seconds' | 'title'>('created_at');
-  const [sortAsc, setSortAsc] = useState(false);
+  const [sortOrder, setSortOrder] = useState<'date' | 'az' | 'last_opened'>('date');
+  const [filterType, setFilterType] = useState<'all' | 'audio' | 'video'>('all');
+  const [showSortMenu, setShowSortMenu] = useState(false);
+  const [showFilterMenu, setShowFilterMenu] = useState(false);
+
+  // Load saved preferences
+  useEffect(() => {
+    const loadPreferences = async () => {
+      try {
+        const savedSort = await AsyncStorage.getItem('grabaciones_sort_order');
+        if (savedSort === 'az' || savedSort === 'last_opened' || savedSort === 'date') {
+          setSortOrder(savedSort);
+        }
+        const savedFilter = await AsyncStorage.getItem('grabaciones_filter_type');
+        if (savedFilter === 'all' || savedFilter === 'audio' || savedFilter === 'video') {
+          setFilterType(savedFilter);
+        }
+      } catch (error) {
+        console.error('Error loading preferences:', error);
+      }
+    };
+    loadPreferences();
+  }, []);
+
+  const changeSortOrder = async (order: 'date' | 'az' | 'last_opened') => {
+    setSortOrder(order);
+    setShowSortMenu(false);
+    try {
+      await AsyncStorage.setItem('grabaciones_sort_order', order);
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  const changeFilterType = async (type: 'all' | 'audio' | 'video') => {
+    setFilterType(type);
+    setShowFilterMenu(false);
+    try {
+      await AsyncStorage.setItem('grabaciones_filter_type', type);
+    } catch (e) {
+      console.error(e);
+    }
+  };
 
   // Pagination
   const PAGE_SIZE = 24;
@@ -389,6 +430,13 @@ export default function RecordingsScreen() {
       // Siempre ocultar elementos marcados como ocultos
       query = query.eq('hidden', false);
 
+      // Filtro de tipo (Audio/Vídeo)
+      if (filterType === 'audio') {
+        query = query.eq('type', 'audio');
+      } else if (filterType === 'video') {
+        query = query.eq('type', 'video');
+      }
+
       const termRaw = debouncedSearch.trim();
       if (opts?.fromSearch && termRaw) {
         const key = termRaw.toLowerCase();
@@ -410,7 +458,13 @@ export default function RecordingsScreen() {
       }
 
       // Sorting & pagination
-      query = query.order(sortBy, { ascending: sortAsc });
+      if (sortOrder === 'az') {
+        query = query.order('title', { ascending: true, nullsFirst: false });
+      } else if (sortOrder === 'last_opened') {
+        query = query.order('last_opened_at', { ascending: false, nullsFirst: false });
+      } else { // date
+        query = query.order('created_at', { ascending: false });
+      }
       const from = currentPage * PAGE_SIZE;
       const to = from + PAGE_SIZE - 1;
       query = query.range(from, to);
@@ -466,7 +520,7 @@ export default function RecordingsScreen() {
       setSearching(false);
       setLoadingMore(false);
     }
-  }, [user?.id, sortBy, sortAsc, debouncedSearch]);
+  }, [user?.id, sortOrder, filterType, debouncedSearch]);
 
   // Debounce de la búsqueda para fluidez de teclado
   useEffect(() => {
@@ -479,7 +533,7 @@ export default function RecordingsScreen() {
       const fromSearch = Boolean(debouncedSearch);
       loadRecordings(true, { fromSearch });
     }
-  }, [user?.id, debouncedSearch, sortBy, sortAsc]);
+  }, [user?.id, debouncedSearch, sortOrder, filterType]);
 
   useEffect(() => {
     return () => {
@@ -623,6 +677,23 @@ export default function RecordingsScreen() {
       setDownloadingId(null);
     }
   }
+  async function updateLastOpened(recordingId: string) {
+    if (!user) return;
+    try {
+      const { error } = await supabase
+        .from('recordings')
+        .update({ last_opened_at: new Date().toISOString() })
+        .eq('id', recordingId)
+        .eq('user_id', user.id);
+
+      if (error) {
+        console.error('Error updating last_opened_at:', error);
+      }
+    } catch (e) {
+      console.error('Exception updating last_opened_at:', e);
+    }
+  }
+
 
   // Update Now Playing Info for lock screen controls
   async function updateNowPlayingInfo(recording: Recording, isPlaying: boolean, position: number = 0, duration: number = 0) {
@@ -653,6 +724,8 @@ export default function RecordingsScreen() {
     const currentQueue = specificQueue || queue;
     const recording = currentQueue[index];
     if (!recording) return;
+
+    updateLastOpened(recording.id);
 
     // Handle Video - Videos still use expo-av
     if (recording.type === 'video') {
@@ -1017,10 +1090,14 @@ export default function RecordingsScreen() {
     };
   }, []);
 
-  // Fallback function using expo-av (for when TrackPlayer is not available)
+  // Fallback para reproducir con expo-av si TrackPlayer falla
   async function loadAndPlayWithExpoAv(index: number, currentQueue: Recording[]) {
     const recording = currentQueue[index];
     if (!recording) return;
+
+    updateLastOpened(recording.id);
+
+    setPlayingId(recording.id);
 
     // Stop existing sound
     if (sound) {
@@ -2214,94 +2291,179 @@ export default function RecordingsScreen() {
         />
 
 
-        {showHeaderMenu && (
-          <>
-            <Pressable
-              accessibilityRole="button"
-              accessibilityLabel="Cerrar menú"
-              style={styles.backdrop}
-              onPress={() => {
-                Animated.timing(headerMenuOpacity, {
-                  toValue: 0,
-                  duration: 200,
-                  easing: Easing.inOut(Easing.ease),
-                  useNativeDriver: true,
-                }).start(({ finished }) => {
-                  if (finished) setShowHeaderMenu(false);
-                });
-              }}
-            />
-            <Animated.View
-              accessibilityRole="menu"
-              style={[
-                makeHeaderMenuStyles(colors).container,
-                { top: headerHeight + 16, opacity: headerMenuOpacity },
-              ]}
-            >
+        <Modal
+          visible={showHeaderMenu}
+          transparent
+          animationType="fade"
+          onRequestClose={() => {
+            setShowHeaderMenu(false);
+            setShowSortMenu(false);
+            setShowFilterMenu(false);
+          }}
+        >
+          <TouchableOpacity
+            style={styles.bottomSheetOverlay}
+            activeOpacity={1}
+            onPress={() => {
+              setShowHeaderMenu(false);
+              setShowSortMenu(false);
+              setShowFilterMenu(false);
+            }}
+          >
+            <View style={[styles.optionsContent, { backgroundColor: colors.surface }]}>
               <TouchableOpacity
-                accessibilityRole="menuitem"
-                style={makeHeaderMenuStyles(colors).item}
+                style={styles.optionItem}
                 onPress={() => {
-                  setShowSearch(!showSearch);
-                  Animated.timing(headerMenuOpacity, {
-                    toValue: 0,
-                    duration: 200,
-                    easing: Easing.inOut(Easing.ease),
-                    useNativeDriver: true,
-                  }).start(({ finished }) => {
-                    if (finished) setShowHeaderMenu(false);
-                  });
+                  setShowHeaderMenu(false);
+                  setShowSortMenu(false);
+                  setShowFilterMenu(false);
+                  setTimeout(() => setShowSearch(!showSearch), 300);
                 }}
               >
-                <Search size={18} color={colors.text} />
-                <Text style={[styles.menuText, { color: colors.text }]}>Búsqueda avanzada</Text>
+                <Search size={20} color={colors.text} />
+                <Text style={[styles.optionText, { color: colors.text }]}>Búsqueda avanzada</Text>
               </TouchableOpacity>
-              <View style={makeHeaderMenuStyles(colors).separator} />
+
               <TouchableOpacity
-                accessibilityRole="menuitem"
-                style={makeHeaderMenuStyles(colors).item}
+                style={styles.optionItem}
                 onPress={() => {
-                  setSelectionMode(!selectionMode);
-                  setSelectedIds(new Set());
-                  Animated.timing(headerMenuOpacity, {
-                    toValue: 0,
-                    duration: 200,
-                    easing: Easing.inOut(Easing.ease),
-                    useNativeDriver: true,
-                  }).start(({ finished }) => {
-                    if (finished) setShowHeaderMenu(false);
-                  });
+                  setShowHeaderMenu(false);
+                  setShowSortMenu(false);
+                  setShowFilterMenu(false);
+                  setTimeout(() => {
+                    setSelectionMode(!selectionMode);
+                    setSelectedIds(new Set());
+                  }, 300);
                 }}
               >
-                <CheckSquare size={18} color={colors.text} />
-                <Text style={[styles.menuText, { color: colors.text }]}>
+                <CheckSquare size={20} color={colors.text} />
+                <Text style={[styles.optionText, { color: colors.text }]}>
                   {selectionMode ? 'Cancelar selección' : 'Selección múltiple'}
                 </Text>
               </TouchableOpacity>
-              <View style={makeHeaderMenuStyles(colors).separator} />
+
               <TouchableOpacity
-                style={makeHeaderMenuStyles(colors).item}
+                style={styles.optionItem}
                 onPress={() => {
-                  LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
-                  setViewMode(prev => (prev === 'grid' ? 'list' : 'grid'));
                   setShowHeaderMenu(false);
+                  setShowSortMenu(false);
+                  setShowFilterMenu(false);
+                  setTimeout(() => {
+                    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+                    setViewMode(prev => (prev === 'grid' ? 'list' : 'grid'));
+                  }, 300);
                 }}
               >
-                {viewMode === 'list' ? (
-                  <>
-                    <Grid3x3 size={18} color={colors.text} />
-                    <Text style={[styles.menuText, { color: colors.text }]}>Vista de cuadrícula</Text>
-                  </>
-                ) : (
-                  <>
-                    <List size={18} color={colors.text} />
-                    <Text style={[styles.menuText, { color: colors.text }]}>Vista de lista</Text>
-                  </>
-                )}
+                {viewMode === 'grid' ? <List size={20} color={colors.text} /> : <Grid3x3 size={20} color={colors.text} />}
+                <Text style={[styles.optionText, { color: colors.text }]}>
+                  {viewMode === 'grid' ? 'Vista de lista' : 'Vista de cuadrícula'}
+                </Text>
               </TouchableOpacity>
-            </Animated.View>
-          </>
-        )}
+
+              {/* Filtrar por */}
+              <TouchableOpacity
+                style={[styles.optionItem, { borderTopWidth: 1, borderTopColor: isDark ? '#333' : '#eee', justifyContent: 'space-between' }]}
+                onPress={() => { setShowFilterMenu((v) => !v); setShowSortMenu(false); }}
+              >
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+                  <Filter size={20} color={colors.text} />
+                  <Text style={[styles.optionText, { color: colors.text }]}>Filtrar</Text>
+                </View>
+                <Text style={{ color: colors.textSecondary, fontSize: rf(13) }}>
+                  {filterType === 'audio' ? 'Solo audio' : filterType === 'video' ? 'Solo vídeo' : 'Todos'}
+                </Text>
+              </TouchableOpacity>
+
+              {showFilterMenu && (
+                <View style={[
+                  styles.sortSubmenu,
+                  { backgroundColor: colors.input, borderColor: colors.border },
+                ]}>
+                  <TouchableOpacity
+                    style={[styles.sortOption, { borderBottomWidth: 1, borderBottomColor: colors.border }]}
+                    onPress={() => changeFilterType('all')}
+                  >
+                    <Text style={[styles.optionText, { color: colors.text }]}>Todos los archivos</Text>
+                    {filterType === 'all' && <Check size={16} color={colors.primary} />}
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    style={[styles.sortOption, { borderBottomWidth: 1, borderBottomColor: colors.border }]}
+                    onPress={() => changeFilterType('audio')}
+                  >
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                      <FileAudio size={14} color={colors.textSecondary} />
+                      <Text style={[styles.optionText, { color: colors.text }]}>Solo audio</Text>
+                    </View>
+                    {filterType === 'audio' && <Check size={16} color={colors.primary} />}
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    style={styles.sortOption}
+                    onPress={() => changeFilterType('video')}
+                  >
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                      <VideoIcon size={14} color={colors.textSecondary} />
+                      <Text style={[styles.optionText, { color: colors.text }]}>Solo vídeo</Text>
+                    </View>
+                    {filterType === 'video' && <Check size={16} color={colors.primary} />}
+                  </TouchableOpacity>
+                </View>
+              )}
+
+              {/* Ordenar por */}
+              <TouchableOpacity
+                style={[styles.optionItem, { borderTopWidth: 1, borderTopColor: isDark ? '#333' : '#eee', justifyContent: 'space-between' }]}
+                onPress={() => { setShowSortMenu((v) => !v); setShowFilterMenu(false); }}
+              >
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+                  <ArrowUpAZ size={20} color={colors.text} />
+                  <Text style={[styles.optionText, { color: colors.text }]}>Ordenar por…</Text>
+                </View>
+                <Text style={{ color: colors.textSecondary, fontSize: rf(13) }}>
+                  {sortOrder === 'az' ? 'A–Z' : sortOrder === 'last_opened' ? 'Última apertura' : 'Fecha'}
+                </Text>
+              </TouchableOpacity>
+
+              {showSortMenu && (
+                <View style={[
+                  styles.sortSubmenu,
+                  { backgroundColor: colors.input, borderColor: colors.border },
+                ]}>
+                  <TouchableOpacity
+                    style={[styles.sortOption, { borderBottomWidth: 1, borderBottomColor: colors.border }]}
+                    onPress={() => changeSortOrder('az')}
+                  >
+                    <Text style={[styles.optionText, { color: colors.text }]}>A–Z</Text>
+                    {sortOrder === 'az' && <Check size={16} color={colors.primary} />}
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    style={[styles.sortOption, { borderBottomWidth: 1, borderBottomColor: colors.border }]}
+                    onPress={() => changeSortOrder('last_opened')}
+                  >
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                      <Clock size={14} color={colors.textSecondary} />
+                      <Text style={[styles.optionText, { color: colors.text }]}>Última apertura</Text>
+                    </View>
+                    {sortOrder === 'last_opened' && <Check size={16} color={colors.primary} />}
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    style={styles.sortOption}
+                    onPress={() => changeSortOrder('date')}
+                  >
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                      <Calendar size={14} color={colors.textSecondary} />
+                      <Text style={[styles.optionText, { color: colors.text }]}>Fecha</Text>
+                    </View>
+                    {sortOrder === 'date' && <Check size={16} color={colors.primary} />}
+                  </TouchableOpacity>
+                </View>
+              )}
+            </View>
+          </TouchableOpacity>
+        </Modal>
 
         {/* Search bar moved into FlatList header to avoid remount/focus loss */}
 
@@ -3490,8 +3652,28 @@ const styles = StyleSheet.create({
     padding: rp(16),
     gap: rp(16),
   },
+
+  bottomSheetOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    justifyContent: 'flex-end',
+  },
   optionText: {
-    fontSize: rf(16),
+    fontSize: rf(17),
     fontWeight: '500',
+  },
+  sortSubmenu: {
+    marginTop: rp(8),
+    marginBottom: rp(16),
+    borderRadius: 16,
+    overflow: 'hidden',
+    borderWidth: 1,
+  },
+  sortOption: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: rp(20),
+    paddingHorizontal: rp(24),
   },
 });

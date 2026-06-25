@@ -29,6 +29,8 @@ export interface Script {
   project_id?: string | null; // <-- AÑADIDO
   original_script_id?: string | null; // <-- AÑADIDO: Referencia al guión original si es una copia
   created_at?: string; // Opcional
+  updated_at?: string; // Última modificación
+  last_opened_at?: string | null; // Última vez que se abrió el guión
 }
 
 // ** PROJECT NUEVO **
@@ -126,6 +128,7 @@ export interface Recording {
   scene_id?: string | null;
   character_id?: string | null;
   created_at: string;
+  last_opened_at?: string;
 }
 
 export interface TTSCache {

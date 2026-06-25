@@ -11,6 +11,8 @@ import {
   ScrollView,
   DeviceEventEmitter,
   Platform,
+  Switch,
+  Pressable,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, useLocalSearchParams } from 'expo-router';
@@ -19,7 +21,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/utils/supabase';
 import { DialogueLine } from '@/utils/dialogueParser';
 import { loadDialogueLines } from '@/utils/loadDialogueLines';
-import { X, Settings, Mic, Play, SkipForward, SkipBack, Repeat, RotateCcw, Pause, ChevronDown, Volume2, Info, Car, MessageSquare, MoreVertical, Download } from 'lucide-react-native';
+import { X, Settings, Mic, Play, SkipForward, SkipBack, Repeat, RotateCcw, Pause, ChevronDown, Volume2, Info, Car, MessageSquare, MoreVertical, Download, ChevronRight } from 'lucide-react-native';
 import { Audio } from 'expo-av';
 import * as Speech from 'expo-speech';
 import { rf, rp } from '@/utils/responsive';
@@ -164,7 +166,8 @@ export default function CarModeScreen() {
   const [isRecording, setIsRecording] = useState(false);
   const [loopEnabled, setLoopEnabled] = useState(true); // Default: loop enabled for Car Mode
   const [showStageDirections, setShowStageDirections] = useState(false); // Toggle for stage directions
-  const [showMenu, setShowMenu] = useState(false); // Menu visibility
+  const [showMenu, setShowMenu] = useState(false);
+  const [viewMode, setViewMode] = useState('Guion'); // Menu visibility
   const [isGeneratingAudio, setIsGeneratingAudio] = useState(false); // Audio generation in progress
   const [generatingProgress, setGeneratingProgress] = useState(0); // Progress 0-100
 
@@ -1107,64 +1110,139 @@ export default function CarModeScreen() {
   // =============================================
 
   if (loading) return (
-    <View style={[styles.container, { backgroundColor: colors.background, justifyContent: 'center', alignItems: 'center' }]}>
+    <View style={[styles.container, { backgroundColor: '#0a0a0a', justifyContent: 'center', alignItems: 'center' }]}>
       <ActivityIndicator size="large" color={colors.primary} />
-      <Text style={{ color: colors.text, marginTop: rp(20) }}>Cargando Modo Coche...</Text>
+      <Text style={{ color: 'white', marginTop: rp(20) }}>Cargando Modo Coche...</Text>
     </View>
   );
 
   // Configuration Screen
   if (showConfig) {
     return (
-      <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
+      <SafeAreaView style={{ flex: 1, backgroundColor: '#0a0a0a' }}>
         <Stack.Screen options={{ headerShown: false }} />
 
-        {/* Header */}
-        <View style={styles.configHeader}>
-          <TouchableOpacity onPress={() => router.back()} style={styles.closeButton}>
-            <X size={28} color={colors.error} />
+        {/* Header minimalista estilo iOS */}
+        <View style={{
+          flexDirection: 'row',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          paddingHorizontal: 16,
+          paddingVertical: 12,
+        }}>
+          {/* Botón salir estilo iOS — pill rojo */}
+          <TouchableOpacity
+            onPress={() => router.back()}
+            style={{
+              flexDirection: 'row',
+              alignItems: 'center',
+              gap: 6,
+              backgroundColor: 'rgba(180, 30, 30, 0.85)',
+              paddingHorizontal: 14,
+              paddingVertical: 8,
+              borderRadius: 20,
+            }}
+          >
+            <X size={14} color="white" />
+            <Text style={{ color: 'white', fontSize: 13, fontWeight: '600' }}>
+              Salir
+            </Text>
           </TouchableOpacity>
-          <View style={styles.configTitleContainer}>
-            <Car size={24} color={colors.primary} />
-            <Text style={[styles.configTitle, { color: colors.text }]}>Modo Coche</Text>
-          </View>
-          <TouchableOpacity onPress={() => setShowMenu(true)} style={styles.menuButton}>
-            <MoreVertical size={24} color={colors.text} />
-          </TouchableOpacity>
+
+          {/* Título centrado */}
+          <Text style={{
+            color: 'white',
+            fontSize: 17,
+            fontWeight: '600',
+            letterSpacing: -0.3,
+          }}>
+            Modo Coche
+          </Text>
+
+          {/* Menú opciones */}
+          <View style={{ width: 36, height: 36 }} />
         </View>
 
-        <ScrollView style={styles.configContent} showsVerticalScrollIndicator={false}>
-          {/* Info Banner */}
-          <View style={styles.infoBanner}>
-            <Info size={20} color="#F59E0B" />
-            <Text style={styles.infoBannerText}>
-              El modo coche está diseñado para que escuches la secuencia en bucle interpretada exclusivamente por voces IA. Configura las voces según los personajes.
-            </Text>
-          </View>
+        {/* Aviso info — más discreto */}
+        <View style={{
+          marginHorizontal: 20,
+          marginTop: 8,
+          marginBottom: 24,
+          backgroundColor: 'rgba(255,160,0,0.1)',
+          borderLeftWidth: 3,
+          borderLeftColor: 'rgba(255,160,0,0.6)',
+          borderRadius: 8,
+          padding: 14,
+        }}>
+          <Text style={{
+            color: 'rgba(255,160,0,0.9)',
+            fontSize: 13,
+            lineHeight: 18,
+          }}>
+            Escucha la escena en bucle interpretada por voces IA.
+            Configura las voces según los personajes.
+          </Text>
+        </View>
 
-          {/* Character Voice Configurations */}
-          <Text style={styles.sectionTitle}>Configurar voces</Text>
+        {/* Lista de personajes — más limpia */}
+        <Text style={{
+          color: 'rgba(255,255,255,0.4)',
+          fontSize: 11,
+          fontWeight: '700',
+          letterSpacing: 1.2,
+          textTransform: 'uppercase',
+          paddingHorizontal: 20,
+          marginBottom: 12,
+        }}>
+          Configurar voces
+        </Text>
 
+        <ScrollView style={{ flex: 1 }}>
           {characterVoiceConfigs.map((config, index) => (
-            <View key={config.characterName} style={styles.characterCard}>
-              <Text style={styles.characterName}>{config.characterName}</Text>
+            <View key={config.characterName} style={{
+              marginHorizontal: 16,
+              marginBottom: 8,
+              backgroundColor: 'rgba(255,255,255,0.05)',
+              borderRadius: 14,
+              padding: 16,
+              borderWidth: 1,
+              borderColor: 'rgba(255,255,255,0.08)',
+            }}>
+              {/* Nombre del personaje */}
+              <Text style={{
+                color: 'white',
+                fontSize: 13,
+                fontWeight: '700',
+                letterSpacing: 0.5,
+                textTransform: 'uppercase',
+                marginBottom: 12,
+                opacity: 0.6,
+              }}>
+                {config.characterName}
+              </Text>
 
-              {/* Provider Selector */}
-              <View style={styles.dropdownContainer}>
-                <TouchableOpacity
-                  style={styles.dropdownHeader}
-                  onPress={() => {
-                    setExpandedCharacter(expandedCharacter === config.characterName ? null : config.characterName);
-                    setShowVoiceDropdown(null);
-                  }}
-                >
-                  <Text style={styles.dropdownHeaderText}>
-                    {getProviderEmoji(config.provider)} {config.provider === 'system' ? 'Sistema (Gratis)' : config.provider === 'openai' ? 'OpenAI (Premium)' : config.provider === 'azure' ? 'Azure (Premium)' : 'ElevenLabs (Premium)'}
-                  </Text>
-                  <ChevronDown size={20} color="#AAA" />
-                </TouchableOpacity>
-
-                {expandedCharacter === config.characterName && (
+              {/* Selector proveedor */}
+              <TouchableOpacity 
+                style={{
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  paddingVertical: 10,
+                  borderBottomWidth: 1,
+                  borderBottomColor: 'rgba(255,255,255,0.06)',
+                }}
+                onPress={() => {
+                  setExpandedCharacter(expandedCharacter === config.characterName ? null : config.characterName);
+                  setShowVoiceDropdown(null);
+                }}
+              >
+                <Text style={{ color: 'rgba(255,255,255,0.7)', fontSize: 15 }}>
+                  {getProviderEmoji(config.provider)} {config.provider === 'system' ? 'Sistema (Gratis)' : config.provider === 'openai' ? 'OpenAI (Premium)' : config.provider === 'azure' ? 'Azure (Premium)' : 'ElevenLabs (Premium)'}
+                </Text>
+                <ChevronRight size={16} color="rgba(255,255,255,0.3)" />
+              </TouchableOpacity>
+              
+              {expandedCharacter === config.characterName && (
                   <ScrollView style={styles.dropdownList} nestedScrollEnabled={true}>
                     <TouchableOpacity
                       style={[styles.dropdownItem, config.provider === 'system' && styles.dropdownItemSelected]}
@@ -1210,24 +1288,27 @@ export default function CarModeScreen() {
                     </TouchableOpacity>
                   </ScrollView>
                 )}
-              </View>
 
-              {/* Voice Selector */}
-              <View style={[styles.dropdownContainer, { marginTop: rp(12) }]}>
-                <TouchableOpacity
-                  style={styles.dropdownHeader}
-                  onPress={() => {
-                    setShowVoiceDropdown(showVoiceDropdown === config.characterName ? null : config.characterName);
-                    setExpandedCharacter(null);
-                  }}
-                >
-                  <Text style={styles.dropdownHeaderText}>
-                    {getVoiceName(config.provider, config.voiceId)}
-                  </Text>
-                  <ChevronDown size={20} color="#AAA" />
-                </TouchableOpacity>
+              {/* Selector voz */}
+              <TouchableOpacity 
+                style={{
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  paddingVertical: 10,
+                }}
+                onPress={() => {
+                  setShowVoiceDropdown(showVoiceDropdown === config.characterName ? null : config.characterName);
+                  setExpandedCharacter(null);
+                }}
+              >
+                <Text style={{ color: 'rgba(255,255,255,0.7)', fontSize: 15 }}>
+                  {getVoiceName(config.provider, config.voiceId)}
+                </Text>
+                <ChevronRight size={16} color="rgba(255,255,255,0.3)" />
+              </TouchableOpacity>
 
-                {showVoiceDropdown === config.characterName && (
+              {showVoiceDropdown === config.characterName && (
                   <View style={styles.dropdownListLarge}>
                     {loadingVoices && config.provider === 'elevenlabs' ? (
                       <View style={styles.loadingContainer}>
@@ -1267,31 +1348,44 @@ export default function CarModeScreen() {
                     )}
                   </View>
                 )}
-              </View>
             </View>
           ))}
-
-          <View style={{ height: rp(100) }} />
+          <View style={{ height: 40 }} />
         </ScrollView>
 
-        {/* Start Button */}
-        <View style={styles.startButtonContainer}>
+        {/* Botón Empezar — más discreto que el verde grande actual */}
+        <View style={{ paddingHorizontal: 20, paddingBottom: 24, paddingTop: 16 }}>
           {isPreparingAudio ? (
             <View style={styles.preparingContainer}>
-              <ActivityIndicator size="large" color={colors.primary} />
+              <ActivityIndicator size="large" color="#1a8a5a" />
               <Text style={styles.preparingText}>Preparando audio... {preparingProgress}%</Text>
               <View style={styles.progressBar}>
-                <View style={[styles.progressFill, { width: `${preparingProgress}%` }]} />
+                <View style={[styles.progressFill, { width: `${preparingProgress}%`, backgroundColor: '#1a8a5a' }]} />
               </View>
             </View>
           ) : (
             <TouchableOpacity
-              style={styles.startBtn}
               onPress={handleStartCarMode}
               disabled={characterVoiceConfigs.length === 0}
+              style={{
+                backgroundColor: characterVoiceConfigs.length === 0 ? 'rgba(26, 138, 90, 0.3)' : '#1a8a5a', 
+                borderRadius: 14,
+                paddingVertical: 16,
+                flexDirection: 'row',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: 10,
+              }}
             >
-              <Play size={32} color="#000" fill="#000" />
-              <Text style={styles.startBtnText}>EMPEZAR</Text>
+              <Play size={18} color="white" fill="white" />
+              <Text style={{
+                color: 'white',
+                fontSize: 16,
+                fontWeight: '700',
+                letterSpacing: 0.3,
+              }}>
+                EMPEZAR
+              </Text>
             </TouchableOpacity>
           )}
         </View>
@@ -1303,136 +1397,383 @@ export default function CarModeScreen() {
   const currentLine = dialogueLines[currentIndex];
 
   return (
-    <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
+    <View style={{ flex: 1, backgroundColor: '#0a0a0a' }}>
       <Stack.Screen options={{ headerShown: false }} />
+      <SafeAreaView style={{ flex: 1 }}>
 
-      {/* Header */}
-      <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.back()} style={styles.closeButton}>
-          <X size={32} color={colors.error} />
-          <Text style={[styles.closeText, { color: colors.error }]}>SALIR</Text>
-        </TouchableOpacity>
-        <TouchableOpacity onPress={() => setShowMenu(true)} style={styles.headerMenuButton}>
-          <MoreVertical size={28} color={colors.text} />
-        </TouchableOpacity>
-      </View>
-
-      {/* Main Content */}
-      <View style={styles.content}>
-        <Text style={[styles.statusText, { color: colors.primary }]}>
-          {statusText}
-        </Text>
-
-        {currentLine && (
-          <ScrollView 
-            style={styles.dialogueBox}
-            contentContainerStyle={styles.dialogueBoxContent}
-            showsVerticalScrollIndicator={true}
-            indicatorStyle="white"
+        {/* Header — igual que en configuración */}
+        <View style={{
+          flexDirection: 'row',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          paddingHorizontal: 16,
+          paddingVertical: 12,
+        }}>
+          <TouchableOpacity
+            onPress={() => {
+              setIsActive(false);
+              setShowConfig(true);
+            }}
+            style={{
+              flexDirection: 'row',
+              alignItems: 'center',
+              gap: 6,
+              backgroundColor: 'rgba(180, 30, 30, 0.85)',
+              paddingHorizontal: 14,
+              paddingVertical: 8,
+              borderRadius: 20,
+            }}
           >
-            <Text style={[styles.charName, { color: currentLine.color || colors.primary }]}>
-              {currentLine.characterName}
+            <X size={14} color="white" />
+            <Text style={{ color: 'white', fontSize: 13, fontWeight: '600' }}>
+              Salir
             </Text>
-            <Text style={[styles.lineText, { color: colors.text }]}>
-              {renderTextWithStageDirections(
-                showStageDirections ? currentLine.text : currentLine.cleanText
-              )}
+          </TouchableOpacity>
+
+          {/* Estado de reproducción en el centro */}
+          <Text style={{
+            color: 'rgba(255,255,255,0.4)',
+            fontSize: 13,
+            fontWeight: '500',
+          }}>
+            {!isPaused ? 'Reproduciendo...' : 'En pausa'}
+          </Text>
+
+          {/* Botón de ajustes — abre bottom sheet */}
+          <TouchableOpacity
+            onPress={() => setShowMenu(true)}
+            style={{
+              backgroundColor: 'rgba(255,255,255,0.1)',
+              width: 36,
+              height: 36,
+              borderRadius: 18,
+              alignItems: 'center',
+              justifyContent: 'center',
+            }}
+          >
+            <MoreVertical size={18} color="rgba(255,255,255,0.7)" />
+          </TouchableOpacity>
+        </View>
+
+        {/* Zona de contenido — centrada verticalmente */}
+        <View style={{
+          flex: 1,
+          justifyContent: 'center',
+          alignItems: 'center',
+          paddingHorizontal: 32,
+        }}>
+
+          {/* Nombre del personaje — discreto, arriba del texto */}
+          <Text style={{
+            color: currentLine?.color || 'rgba(100, 180, 255, 0.8)',
+            fontSize: 16,
+            fontWeight: '600',
+            letterSpacing: 1,
+            textTransform: 'uppercase',
+            marginBottom: 24,
+            opacity: 0.8,
+          }}>
+            {currentLine?.characterName}
+            {phase === 'playing_ai' ? '...' : ''}
+          </Text>
+
+          {/* Texto del diálogo — grande y centrado como ActOnCue */}
+          <ScrollView style={{ flexGrow: 0, maxHeight: '70%' }} contentContainerStyle={{ alignItems: 'center', justifyContent: 'center' }} showsVerticalScrollIndicator={false}>
+            <Text style={{
+              color: 'white',
+              fontSize: 26,
+              fontWeight: '500',
+              textAlign: 'center',
+              lineHeight: 36,
+              letterSpacing: -0.3,
+            }}>
+              {renderTextWithStageDirections(currentLine?.text)}
             </Text>
           </ScrollView>
-        )}
-      </View>
-
-      {/* Controls */}
-      <View style={styles.controlsContainer}>
-        {/* Primera fila: Retroceder, Play/Pause, Avanzar */}
-        <View style={styles.controlsRow}>
-          <TouchableOpacity onPress={handleManualPrev} style={styles.controlBtn}>
-            <SkipBack size={40} color={colors.text} />
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            onPress={isPaused ? handleResume : handlePause}
-            style={[styles.controlBtn, styles.playBtn]}
-          >
-            {isPaused ? (
-              <Play size={50} color="#000" fill="#000" />
-            ) : (
-              <Pause size={50} color="#000" fill="#000" />
-            )}
-          </TouchableOpacity>
-
-          <TouchableOpacity onPress={handleManualNext} style={styles.controlBtn}>
-            <SkipForward size={40} color={colors.text} />
-          </TouchableOpacity>
         </View>
 
-        {/* Segunda fila: Reiniciar y Loop */}
-        <View style={styles.controlsRow}>
-          <TouchableOpacity onPress={handleRestart} style={styles.controlBtn}>
-            <RotateCcw size={36} color={colors.text} />
-          </TouchableOpacity>
+        {/* Controles — discretos, sin fondos llamativos */}
+        <View style={{
+          paddingBottom: 40,
+          alignItems: 'center',
+          gap: 20,
+        }}>
 
-          <TouchableOpacity
-            onPress={() => setLoopEnabled(!loopEnabled)}
-            style={[styles.controlBtn, loopEnabled && { backgroundColor: colors.primary }]}
-          >
-            <Repeat size={36} color={loopEnabled ? '#000' : colors.text} />
-          </TouchableOpacity>
-        </View>
-      </View>
-
-      {/* Menu Modal */}
-      {showMenu && (
-        <TouchableOpacity
-          style={styles.menuOverlay}
-          activeOpacity={1}
-          onPress={() => setShowMenu(false)}
-        >
-          <View style={styles.menuContent}>
-            {/* Generate Audio Option */}
-            <TouchableOpacity
-              style={styles.menuItem}
-              onPress={generateSceneAudio}
-              disabled={isGeneratingAudio}
-            >
-              <Download size={20} color="#10B981" />
-              <Text style={styles.menuItemText}>Descargar audio de escena</Text>
+          {/* Fila principal: anterior / play-pause / siguiente */}
+          <View style={{
+            flexDirection: 'row',
+            alignItems: 'center',
+            gap: 32,
+          }}>
+            <TouchableOpacity onPress={handleManualPrev}>
+              <SkipBack
+                size={28}
+                color="rgba(255,255,255,0.5)"
+                fill="rgba(255,255,255,0.5)"
+              />
             </TouchableOpacity>
 
-            <View style={styles.menuDivider} />
-
-            {/* Stage Directions Toggle */}
+            {/* Play/Pause — el único control destacado */}
             <TouchableOpacity
-              style={styles.menuItem}
-              onPress={() => {
-                setShowStageDirections(!showStageDirections);
-                setShowMenu(false);
+              onPress={isPaused ? handleResume : handlePause}
+              style={{
+                width: 72,
+                height: 72,
+                borderRadius: 36,
+                backgroundColor: 'white',
+                alignItems: 'center',
+                justifyContent: 'center',
               }}
             >
-              <MessageSquare size={20} color={showStageDirections ? '#FFA500' : colors.text} />
-              <Text style={[styles.menuItemText, showStageDirections && { color: '#FFA500' }]}>
-                {showStageDirections ? 'Ocultar Acotaciones' : 'Mostrar Acotaciones'}
-              </Text>
+              {!isPaused
+                ? <Pause size={28} color="black" fill="black" />
+                : <Play size={28} color="black" fill="black" style={{ marginLeft: 4 }} />
+              }
+            </TouchableOpacity>
+
+            <TouchableOpacity onPress={handleManualNext}>
+              <SkipForward
+                size={28}
+                color="rgba(255,255,255,0.5)"
+                fill="rgba(255,255,255,0.5)"
+              />
             </TouchableOpacity>
           </View>
-        </TouchableOpacity>
-      )}
 
+          {/* Fila secundaria: reiniciar / loop */}
+          <View style={{
+            flexDirection: 'row',
+            alignItems: 'center',
+            gap: 40,
+          }}>
+            <TouchableOpacity onPress={handleRestart}>
+              <RotateCcw size={22} color="rgba(255,255,255,0.35)" />
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              onPress={() => setLoopEnabled(!loopEnabled)}
+              style={{
+                width: 44,
+                height: 44,
+                borderRadius: 22,
+                backgroundColor: loopEnabled
+                  ? 'rgba(100, 140, 255, 0.9)'
+                  : 'rgba(255,255,255,0.1)',
+                alignItems: 'center',
+                justifyContent: 'center',
+              }}
+            >
+              <Repeat size={20} color="white" />
+            </TouchableOpacity>
+          </View>
+
+        </View>
+
+      </SafeAreaView>
+
+      {/* Bottom Sheet de ajustes */}
+      {showMenu && (
+        <>
+          {/* Backdrop */}
+          <Pressable
+            style={{
+              position: 'absolute',
+              inset: 0,
+              backgroundColor: 'rgba(0,0,0,0.6)',
+            }}
+            onPress={() => setShowMenu(false)}
+          />
+
+          {/* Panel deslizable desde abajo */}
+          <View style={{
+            position: 'absolute',
+            bottom: 0,
+            left: 0,
+            right: 0,
+            backgroundColor: '#1c1c1e', // gris oscuro iOS
+            borderTopLeftRadius: 20,
+            borderTopRightRadius: 20,
+            paddingTop: 8,
+            paddingBottom: 40,
+          }}>
+            {/* Handle */}
+            <View style={{
+              width: 36,
+              height: 4,
+              borderRadius: 2,
+              backgroundColor: 'rgba(255,255,255,0.2)',
+              alignSelf: 'center',
+              marginBottom: 20,
+            }} />
+
+            <Text style={{
+              color: 'white',
+              fontSize: 17,
+              fontWeight: '600',
+              paddingHorizontal: 20,
+              marginBottom: 20,
+            }}>
+              Ajustes
+            </Text>
+
+            {/* Opción: Vista */}
+            <View style={{
+              paddingHorizontal: 20,
+              marginBottom: 24,
+            }}>
+              <Text style={{
+                color: 'rgba(255,255,255,0.4)',
+                fontSize: 11,
+                fontWeight: '700',
+                letterSpacing: 1,
+                textTransform: 'uppercase',
+                marginBottom: 12,
+              }}>
+                Visualización
+              </Text>
+
+              {/* Toggle Script / Teleprompter */}
+              <View style={{
+                flexDirection: 'row',
+                backgroundColor: 'rgba(255,255,255,0.08)',
+                borderRadius: 10,
+                padding: 3,
+              }}>
+                {['Guion', 'Teleprompter'].map((option) => (
+                  <TouchableOpacity
+                    key={option}
+                    style={{
+                      flex: 1,
+                      paddingVertical: 8,
+                      borderRadius: 8,
+                      backgroundColor: viewMode === option
+                        ? 'rgba(255,255,255,0.15)'
+                        : 'transparent',
+                      alignItems: 'center',
+                    }}
+                    onPress={() => setViewMode(option)}
+                  >
+                    <Text style={{
+                      color: viewMode === option
+                        ? 'white'
+                        : 'rgba(255,255,255,0.4)',
+                      fontSize: 14,
+                      fontWeight: '600',
+                    }}>
+                      {option}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            </View>
+
+            {/* Opción: Mostrar acotaciones */}
+            <TouchableOpacity style={{
+              flexDirection: 'row',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              paddingHorizontal: 20,
+              paddingVertical: 14,
+              borderTopWidth: 1,
+              borderTopColor: 'rgba(255,255,255,0.06)',
+            }}
+            onPress={() => setShowStageDirections(!showStageDirections)}
+            >
+              <Text style={{ color: 'white', fontSize: 15 }}>
+                Mostrar acotaciones
+              </Text>
+              <Switch
+                value={showStageDirections}
+                onValueChange={setShowStageDirections}
+                trackColor={{ false: 'rgba(255,255,255,0.15)', true: '#34C759' }}
+              />
+            </TouchableOpacity>
+
+            {/* Opción: Loop */}
+            <TouchableOpacity style={{
+              flexDirection: 'row',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              paddingHorizontal: 20,
+              paddingVertical: 14,
+              borderTopWidth: 1,
+              borderTopColor: 'rgba(255,255,255,0.06)',
+            }}
+            onPress={() => setLoopEnabled(!loopEnabled)}
+            >
+              <Text style={{ color: 'white', fontSize: 15 }}>
+                Repetir en bucle
+              </Text>
+              <Switch
+                value={loopEnabled}
+                onValueChange={setLoopEnabled}
+                trackColor={{ false: 'rgba(255,255,255,0.15)', true: '#34C759' }}
+              />
+            </TouchableOpacity>
+
+            {/* Opción: Asignar voces — navega a configuración */}
+            <TouchableOpacity style={{
+              flexDirection: 'row',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              paddingHorizontal: 20,
+              paddingVertical: 14,
+              borderTopWidth: 1,
+              borderTopColor: 'rgba(255,255,255,0.06)',
+            }}
+              onPress={() => {
+                setShowMenu(false);
+                setIsActive(false);
+                setShowConfig(true);
+              }}
+            >
+              <Text style={{ color: 'white', fontSize: 15 }}>
+                Asignar voces
+              </Text>
+              <ChevronRight size={16} color="rgba(255,255,255,0.3)" />
+            </TouchableOpacity>
+
+            {/* Opción: Descargar audio */}
+            <TouchableOpacity style={{
+              flexDirection: 'row',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              paddingHorizontal: 20,
+              paddingVertical: 14,
+              borderTopWidth: 1,
+              borderTopColor: 'rgba(255,255,255,0.06)',
+            }}
+              onPress={() => {
+                setShowMenu(false);
+                generateSceneAudio();
+              }}
+            >
+              <Text style={{ color: 'white', fontSize: 15 }}>
+                Descargar audio de escena
+              </Text>
+              <Download size={16} color="rgba(255,255,255,0.3)" />
+            </TouchableOpacity>
+
+          </View>
+        </>
+      )}
+      
       {/* Audio Generation Progress Overlay */}
       {isGeneratingAudio && (
         <View style={styles.generatingOverlay}>
           <View style={styles.generatingContent}>
-            <ActivityIndicator size="large" color={colors.primary} />
+            <ActivityIndicator size="large" color="#1a8a5a" />
             <Text style={styles.generatingText}>Generando audio... {generatingProgress}%</Text>
             <View style={styles.progressBar}>
-              <View style={[styles.progressFill, { width: `${generatingProgress}%` }]} />
+              <View style={[styles.progressFill, { width: `${generatingProgress}%`, backgroundColor: '#1a8a5a' }]} />
             </View>
           </View>
         </View>
       )}
-    </SafeAreaView>
+    </View>
   );
 }
+
 
 const styles = StyleSheet.create({
   container: { flex: 1 },

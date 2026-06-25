@@ -2127,61 +2127,67 @@ export default function StudioV2Screen() {
                         )}
                     </View>
 
-                    {/* Menu Modal */}
-                    {showMenu && (
-                        <Pressable
-                            style={styles.menuOverlay}
+                    {/* Menu Modal (Bottom Sheet) */}
+                    <Modal
+                        visible={showMenu}
+                        transparent={true}
+                        animationType="fade"
+                        onRequestClose={() => setShowMenu(false)}
+                    >
+                        <TouchableOpacity
+                            style={styles.bottomSheetOverlay}
+                            activeOpacity={1}
                             onPress={() => setShowMenu(false)}
                         >
-                            <View style={[styles.menuContent, { backgroundColor: colors.surface }]}>
+                            <View style={[styles.optionsContent, { backgroundColor: colors.surface }]}>
                                 <TouchableOpacity
-                                    style={[styles.menuItem, { borderBottomColor: `${colors.border}99` }]}
+                                    style={[styles.optionItem, { borderBottomColor: `${colors.border}99` }]}
                                     onPress={handleRestart}
                                 >
                                     <RotateCcw size={20} color={colors.text} />
-                                    <Text style={[styles.menuItemText, { color: colors.text }]}>Reiniciar</Text>
+                                    <Text style={[styles.optionText, { color: colors.text }]}>Reiniciar</Text>
                                 </TouchableOpacity>
 
                                 <TouchableOpacity
-                                    style={[styles.menuItem, { borderBottomColor: `${colors.border}99` }]}
+                                    style={[styles.optionItem, { borderBottomColor: `${colors.border}99` }]}
                                     onPress={toggleHideLines}
                                 >
                                     <EyeOff size={20} color={colors.text} />
-                                    <Text style={[styles.menuItemText, { color: colors.text }]}>
+                                    <Text style={[styles.optionText, { color: colors.text }]}>
                                         {hideUserLines ? 'Mostrar' : 'Ocultar'} mis líneas
                                     </Text>
                                 </TouchableOpacity>
 
                                 <TouchableOpacity
-                                    style={[styles.menuItem, { borderBottomColor: `${colors.border}99` }]}
+                                    style={[styles.optionItem, { borderBottomColor: `${colors.border}99` }]}
                                     onPress={handleEditScript}
                                 >
                                     <Edit3 size={20} color={colors.text} />
-                                    <Text style={[styles.menuItemText, { color: colors.text }]}>Editar guion</Text>
+                                    <Text style={[styles.optionText, { color: colors.text }]}>Editar guion</Text>
                                 </TouchableOpacity>
 
                                 <TouchableOpacity
-                                    style={[styles.menuItem, { borderBottomColor: `${colors.border}99` }]}
+                                    style={[styles.optionItem, { borderBottomColor: `${colors.border}99` }]}
                                     onPress={toggleReordering}
                                 >
                                     <ArrowUpDown size={20} color={colors.text} />
-                                    <Text style={[styles.menuItemText, { color: colors.text }]}>
+                                    <Text style={[styles.optionText, { color: colors.text }]}>
                                         Editar orden tarjetas
                                     </Text>
                                 </TouchableOpacity>
 
                                 <TouchableOpacity
-                                    style={[styles.menuItem, { borderBottomColor: `${colors.border}99` }]}
+                                    style={[styles.optionItem, { borderBottomColor: `${colors.border}99` }]}
                                     onPress={() => { setLiteralMode(p => !p); setShowMenu(false); }}
                                 >
                                     <FileText size={20} color={literalMode ? colors.primary : colors.text} />
-                                    <Text style={[styles.menuItemText, { color: literalMode ? colors.primary : colors.text }]}>
+                                    <Text style={[styles.optionText, { color: literalMode ? colors.primary : colors.text }]}>
                                         {literalMode ? 'Modo Texto Literal (Activo)' : 'Modo Texto Literal'}
                                     </Text>
                                 </TouchableOpacity>
 
                                 <TouchableOpacity
-                                    style={[styles.menuItem, { borderBottomColor: `${colors.border}99` }]}
+                                    style={[styles.optionItem, { borderBottomColor: `${colors.border}99` }]}
                                     onPress={async () => {
                                         setShowMenu(false);
                                         // If activating, check if we should show the info modal
@@ -2195,13 +2201,13 @@ export default function StudioV2Screen() {
                                     }}
                                 >
                                     <MessageSquare size={20} color={showStageDirections ? colors.primary : colors.text} />
-                                    <Text style={[styles.menuItemText, { color: showStageDirections ? colors.primary : colors.text }]}>
+                                    <Text style={[styles.optionText, { color: showStageDirections ? colors.primary : colors.text }]}>
                                         {showStageDirections ? 'Acotaciones (Activo)' : 'Acotaciones'}
                                     </Text>
                                 </TouchableOpacity>
 
                                 <TouchableOpacity
-                                    style={[styles.menuItem, { borderBottomWidth: 0 }]}
+                                    style={[styles.optionItem, { borderBottomWidth: 0 }]}
                                     onPress={async () => {
                                         setShowMenu(false);
                                         // If activating, check if we should show the info modal
@@ -2215,13 +2221,13 @@ export default function StudioV2Screen() {
                                     }}
                                 >
                                     <Clapperboard size={20} color={showActions ? colors.primary : colors.text} />
-                                    <Text style={[styles.menuItemText, { color: showActions ? colors.primary : colors.text }]}>
+                                    <Text style={[styles.optionText, { color: showActions ? colors.primary : colors.text }]}>
                                         {showActions ? 'Acciones (Activo)' : 'Acciones'}
                                     </Text>
                                 </TouchableOpacity>
                             </View>
-                        </Pressable>
-                    )}
+                        </TouchableOpacity>
+                    </Modal>
 
                     {/* Headphone Alert Modal */}
                     <Modal
@@ -2884,37 +2890,27 @@ const styles = StyleSheet.create({
     menuButton: {
         padding: rp(8),
     },
-    menuOverlay: {
-        position: 'absolute',
-        top: 0,
-        left: 0,
-        right: 0,
-        bottom: 0,
-        backgroundColor: 'rgba(0, 0, 0, 0.3)',
-        zIndex: 1000,
-        justifyContent: 'flex-start',
-        alignItems: 'flex-end',
-        paddingTop: 60,
-        paddingRight: 16,
+    bottomSheetOverlay: {
+        flex: 1,
+        justifyContent: 'flex-end',
+        backgroundColor: 'rgba(0, 0, 0, 0.4)',
     },
-    menuContent: {
-        borderRadius: 12,
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 4 },
-        shadowOpacity: 0.2,
-        shadowRadius: 12,
-        elevation: 8,
-        minWidth: 220,
+    optionsContent: {
+        borderTopLeftRadius: rp(24),
+        borderTopRightRadius: rp(24),
+        padding: rp(24),
+        paddingBottom: rp(40),
+        width: '100%',
     },
-    menuItem: {
+    optionItem: {
         flexDirection: 'row',
         alignItems: 'center',
-        padding: rp(16),
-        gap: rp(12),
+        paddingVertical: rp(20),
         borderBottomWidth: 1,
+        gap: rp(16),
     },
-    menuItemText: {
-        fontSize: rf(15),
+    optionText: {
+        fontSize: rf(16),
         fontWeight: '500',
     },
     content: {

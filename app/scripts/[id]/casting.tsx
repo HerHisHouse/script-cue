@@ -17,6 +17,7 @@ import {
   TextInput,
   KeyboardAvoidingView,
   Keyboard,
+  Modal,
 } from 'react-native';
 
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -2731,14 +2732,19 @@ export default function CastingModeScreen() {
               </View>
 
               {/* Dropdown Menu */}
-              {showMenu && (
-                <>
-                  <Pressable
-                    style={styles.menuBackdrop}
-                    onPress={() => setShowMenu(false)}
-                  />
-                  <View style={styles.menuDropdown}>
-                    <ScrollView style={{ maxHeight: rp(300) }} showsVerticalScrollIndicator={false}>
+              <Modal
+                visible={showMenu}
+                transparent={true}
+                animationType="fade"
+                onRequestClose={() => setShowMenu(false)}
+              >
+                <TouchableOpacity
+                  style={styles.bottomSheetOverlay}
+                  activeOpacity={1}
+                  onPress={() => setShowMenu(false)}
+                >
+                  <View style={[styles.optionsContent, { backgroundColor: '#1A1A1A' }]}>
+                    <ScrollView style={{ maxHeight: rp(400) }} showsVerticalScrollIndicator={false}>
 
                       {castingType === 'script' ? (
                         <>
@@ -2930,8 +2936,8 @@ export default function CastingModeScreen() {
                       )}
                     </ScrollView>
                   </View>
-                </>
-              )}
+                </TouchableOpacity>
+              </Modal>
             </View>
 
           </SafeAreaView>
@@ -3134,28 +3140,17 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     letterSpacing: rp(0.5),
   },
-  menuDropdown: {
-    position: 'absolute',
-    bottom: rp(120),
-    right: rp(20),
-    backgroundColor: 'rgba(0,0,0,0.9)',
-    borderRadius: rp(12),
-    paddingVertical: rp(8),
-    minWidth: rp(220),
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: rp(4) },
-    shadowOpacity: 0.3,
-    shadowRadius: rp(8),
-    elevation: rp(5),
-    zIndex: 1001,
+  bottomSheetOverlay: {
+    flex: 1,
+    justifyContent: 'flex-end',
+    backgroundColor: 'rgba(0, 0, 0, 0.4)',
   },
-  menuBackdrop: {
-    position: 'absolute',
-    top: -9000,
-    bottom: -9000,
-    left: -9000,
-    right: -9000,
-    zIndex: 1000,
+  optionsContent: {
+    borderTopLeftRadius: rp(24),
+    borderTopRightRadius: rp(24),
+    padding: rp(24),
+    paddingBottom: rp(40),
+    width: '100%',
   },
   menuItem: {
     flexDirection: 'row',

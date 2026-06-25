@@ -27,7 +27,7 @@ export default function IndexScreen() {
   const bottomInset = insets.bottom || 0;
   const router = useRouter();
   const { user, profile, refreshProfile } = useAuth();
-  const { colors } = useTheme();
+  const { colors, isDark } = useTheme();
   const [scripts, setScripts] = useState<Script[]>([]);
   const [scriptSelectionMode, setScriptSelectionMode] = useState(false);
   const [selectedScriptIds, setSelectedScriptIds] = useState<Set<string>>(new Set());
@@ -574,162 +574,118 @@ export default function IndexScreen() {
       )}
 
       {/* Menú de encabezado: opciones estándar (búsqueda, selección, vistas y ordenación) */}
-      {showHeaderMenu && (
-        <Animated.View
-          accessibilityRole="menu"
-          style={[
-            makeHeaderMenuStyles(colors).container,
-            { top: headerHeight + 16, opacity: headerMenuOpacity },
-          ]}
+      <Modal
+        visible={showHeaderMenu}
+        transparent
+        animationType="fade"
+        onRequestClose={() => {
+          setShowSortMenu(false);
+          setShowHeaderMenu(false);
+        }}
+      >
+        <TouchableOpacity
+          style={styles.bottomSheetOverlay}
+          activeOpacity={1}
+          onPress={() => {
+            setShowSortMenu(false);
+            setShowHeaderMenu(false);
+          }}
         >
-          <Pressable
-            accessibilityRole="menuitem"
-            style={makeHeaderMenuStyles(colors).item}
-            onPress={() => {
-              setShowSearch((v) => !v);
-              setShowSortMenu(false);
-              Animated.timing(headerMenuOpacity, {
-                toValue: 0,
-                duration: 200,
-                easing: Easing.inOut(Easing.ease),
-                useNativeDriver: true,
-              }).start(({ finished }) => {
-                if (finished) setShowHeaderMenu(false);
-              });
-            }}
-          >
-            <Search size={18} color={colors.text} />
-            <Text style={[styles.menuText, { color: colors.text }]}>Búsqueda avanzada</Text>
-          </Pressable>
-
-          <View style={makeHeaderMenuStyles(colors).separator} />
-
-          <Pressable
-            accessibilityRole="menuitem"
-            style={makeHeaderMenuStyles(colors).item}
-            onPress={() => {
-              setScriptSelectionMode((v) => !v);
-              setSelectedScriptIds(new Set());
-              setShowSortMenu(false);
-              Animated.timing(headerMenuOpacity, {
-                toValue: 0,
-                duration: 200,
-                easing: Easing.inOut(Easing.ease),
-                useNativeDriver: true,
-              }).start(({ finished }) => {
-                if (finished) setShowHeaderMenu(false);
-              });
-            }}
-          >
-            <CheckSquare size={18} color={colors.text} />
-            <Text style={[styles.menuText, { color: colors.text }]}>Selección múltiple</Text>
-          </Pressable>
-
-          <View style={makeHeaderMenuStyles(colors).separator} />
-
-          {viewMode === 'list' ? (
-            <Pressable
-              accessibilityRole="menuitem"
-              style={makeHeaderMenuStyles(colors).item}
+          <View style={[styles.optionsContent, { backgroundColor: colors.surface }]}>
+            <TouchableOpacity
+              style={styles.optionItem}
               onPress={() => {
-                setViewMode('grid');
                 setShowSortMenu(false);
-                Animated.timing(headerMenuOpacity, {
-                  toValue: 0,
-                  duration: 200,
-                  easing: Easing.inOut(Easing.ease),
-                  useNativeDriver: true,
-                }).start(({ finished }) => {
-                  if (finished) setShowHeaderMenu(false);
-                });
+                setShowHeaderMenu(false);
+                setTimeout(() => setShowSearch(true), 300);
               }}
             >
-              <Grid3x3 size={18} color={colors.text} />
-              <Text style={[styles.menuText, { color: colors.text }]}>Vista de cuadrícula</Text>
-            </Pressable>
-          ) : (
-            <Pressable
-              accessibilityRole="menuitem"
-              style={makeHeaderMenuStyles(colors).item}
+              <Search size={20} color={colors.text} />
+              <Text style={[styles.optionText, { color: colors.text }]}>Búsqueda avanzada</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.optionItem}
               onPress={() => {
-                setViewMode('list');
                 setShowSortMenu(false);
-                Animated.timing(headerMenuOpacity, {
-                  toValue: 0,
-                  duration: 200,
-                  easing: Easing.inOut(Easing.ease),
-                  useNativeDriver: true,
-                }).start(({ finished }) => {
-                  if (finished) setShowHeaderMenu(false);
-                });
+                setShowHeaderMenu(false);
+                setTimeout(() => {
+                  setScriptSelectionMode(true);
+                  setSelectedScriptIds(new Set());
+                }, 300);
               }}
             >
-              <List size={18} color={colors.text} />
-              <Text style={[styles.menuText, { color: colors.text }]}>Vista de lista</Text>
-            </Pressable>
-          )}
+              <CheckSquare size={20} color={colors.text} />
+              <Text style={[styles.optionText, { color: colors.text }]}>Selección múltiple</Text>
+            </TouchableOpacity>
 
-          <View style={makeHeaderMenuStyles(colors).separator} />
+            <TouchableOpacity
+              style={styles.optionItem}
+              onPress={() => {
+                setShowSortMenu(false);
+                setShowHeaderMenu(false);
+                setTimeout(() => setViewMode(viewMode === 'grid' ? 'list' : 'grid'), 300);
+              }}
+            >
+              {viewMode === 'grid' ? <List size={20} color={colors.text} /> : <Grid3x3 size={20} color={colors.text} />}
+              <Text style={[styles.optionText, { color: colors.text }]}>
+                {viewMode === 'grid' ? 'Vista de lista' : 'Vista de cuadrícula'}
+              </Text>
+            </TouchableOpacity>
 
-          {/* Sección Ordenar por */}
-          <Pressable
-            accessibilityRole="menuitem"
-            style={[makeHeaderMenuStyles(colors).item, { justifyContent: 'space-between' }]}
-            onPress={() => setShowSortMenu((v) => !v)}
-          >
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
-              <ArrowUpAZ size={18} color={colors.text} />
-              <Text style={[styles.menuText, { color: colors.text }]}>Ordenar por…</Text>
-            </View>
-            <Text style={{ color: colors.textSecondary, fontSize: rf(13), marginLeft: 8 }}>
-              {sortOrder === 'az' ? 'A–Z' : sortOrder === 'last_opened' ? 'Última apertura' : 'Fecha'}
-            </Text>
-          </Pressable>
+            {/* Sección Ordenar por */}
+            <TouchableOpacity
+              style={[styles.optionItem, { borderTopWidth: 1, borderTopColor: isDark ? '#333' : '#eee', justifyContent: 'space-between' }]}
+              onPress={() => setShowSortMenu((v) => !v)}
+            >
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+                <ArrowUpAZ size={20} color={colors.text} />
+                <Text style={[styles.optionText, { color: colors.text }]}>Ordenar por…</Text>
+              </View>
+              <Text style={{ color: colors.textSecondary, fontSize: rf(13) }}>
+                {sortOrder === 'az' ? 'A–Z' : sortOrder === 'last_opened' ? 'Última apertura' : 'Fecha'}
+              </Text>
+            </TouchableOpacity>
 
-          {showSortMenu && (
-            <View style={[
-              styles.sortSubmenu,
-              { backgroundColor: colors.input, borderColor: colors.border },
-            ]}>
-              {/* A-Z */}
-              <Pressable
-                accessibilityRole="menuitem"
-                style={[styles.sortOption, { borderBottomWidth: 1, borderBottomColor: colors.border }]}
-                onPress={() => changeSortOrder('az')}
-              >
-                <Text style={[styles.sortOptionText, { color: colors.text }]}>A–Z</Text>
-                {sortOrder === 'az' && <Check size={16} color={colors.primary} />}
-              </Pressable>
+            {showSortMenu && (
+              <View style={[
+                styles.sortSubmenu,
+                { backgroundColor: colors.input, borderColor: colors.border },
+              ]}>
+                <TouchableOpacity
+                  style={[styles.sortOption, { borderBottomWidth: 1, borderBottomColor: colors.border }]}
+                  onPress={() => changeSortOrder('az')}
+                >
+                  <Text style={[styles.optionText, { color: colors.text }]}>A–Z</Text>
+                  {sortOrder === 'az' && <Check size={16} color={colors.primary} />}
+                </TouchableOpacity>
 
-              {/* Última apertura */}
-              <Pressable
-                accessibilityRole="menuitem"
-                style={[styles.sortOption, { borderBottomWidth: 1, borderBottomColor: colors.border }]}
-                onPress={() => changeSortOrder('last_opened')}
-              >
-                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                  <Clock size={14} color={colors.textSecondary} />
-                  <Text style={[styles.sortOptionText, { color: colors.text }]}>Última apertura</Text>
-                </View>
-                {sortOrder === 'last_opened' && <Check size={16} color={colors.primary} />}
-              </Pressable>
+                <TouchableOpacity
+                  style={[styles.sortOption, { borderBottomWidth: 1, borderBottomColor: colors.border }]}
+                  onPress={() => changeSortOrder('last_opened')}
+                >
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                    <Clock size={14} color={colors.textSecondary} />
+                    <Text style={[styles.optionText, { color: colors.text }]}>Última apertura</Text>
+                  </View>
+                  {sortOrder === 'last_opened' && <Check size={16} color={colors.primary} />}
+                </TouchableOpacity>
 
-              {/* Fecha */}
-              <Pressable
-                accessibilityRole="menuitem"
-                style={styles.sortOption}
-                onPress={() => changeSortOrder('date')}
-              >
-                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                  <Calendar size={14} color={colors.textSecondary} />
-                  <Text style={[styles.sortOptionText, { color: colors.text }]}>Fecha</Text>
-                </View>
-                {sortOrder === 'date' && <Check size={16} color={colors.primary} />}
-              </Pressable>
-            </View>
-          )}
-        </Animated.View>
-      )}
+                <TouchableOpacity
+                  style={styles.sortOption}
+                  onPress={() => changeSortOrder('date')}
+                >
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                    <Calendar size={14} color={colors.textSecondary} />
+                    <Text style={[styles.optionText, { color: colors.text }]}>Fecha</Text>
+                  </View>
+                  {sortOrder === 'date' && <Check size={16} color={colors.primary} />}
+                </TouchableOpacity>
+              </View>
+            )}
+          </View>
+        </TouchableOpacity>
+      </Modal>
 
       {showSearch && (
         <View style={[styles.searchContainer, { borderColor: colors.border, backgroundColor: colors.surface }]}>
@@ -1174,23 +1130,42 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
+
+  bottomSheetOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    justifyContent: 'flex-end',
+  },
+  optionsContent: {
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    paddingHorizontal: rp(24),
+    paddingTop: rp(24),
+    paddingBottom: rp(40),
+  },
+  optionItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: rp(16),
+    gap: rp(16),
+  },
+  optionText: {
+    fontSize: rf(17),
+    fontWeight: '500',
+  },
   sortSubmenu: {
-    marginTop: 4,
-    marginHorizontal: 4,
-    borderRadius: 8,
-    borderWidth: 1,
+    marginTop: rp(8),
+    marginBottom: rp(16),
+    borderRadius: 16,
     overflow: 'hidden',
+    borderWidth: 1,
   },
   sortOption: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: 14,
-    paddingVertical: 11,
-  },
-  sortOptionText: {
-    fontSize: rf(14),
-    fontWeight: '500',
+    paddingVertical: rp(20),
+    paddingHorizontal: rp(24),
   },
 });
 

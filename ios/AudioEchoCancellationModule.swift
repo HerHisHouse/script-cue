@@ -52,7 +52,7 @@ class AudioEchoCancellationModule: NSObject {
     }
   }
   
-  @objc func isHeadphonesConnected(_ callback: @escaping RCTResponseSenderBlock) {
+  @objc func isHeadphonesConnected(_ callback: @escaping ([Any]) -> Void) {
     let session = AVAudioSession.sharedInstance()
     let currentRoute = session.currentRoute
     

@@ -1,6 +1,6 @@
 import React from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, Animated, Easing, Pressable, Modal } from 'react-native';
-import { FileText, Clock, MoreVertical, Send, Trash2, Share2, Edit3, CheckSquare, Square } from 'lucide-react-native';
+import { FileText, Clock, MoreVertical, Send, Trash2, Share2, Edit3, Copy, CheckSquare, Square } from 'lucide-react-native';
 import { MENU_ITEM_PADDING_H, MENU_ITEM_PADDING_V } from '@/utils/ui';
 import { Script } from '@/types/database';
 import { useTheme } from '@/contexts/ThemeContext';
@@ -16,6 +16,7 @@ interface ScriptCardProps {
   onSendTo?: () => void;
   onRename?: () => void;
   onShare?: () => void;
+  onDuplicate?: () => void;
   onDelete?: () => void;
   variant?: 'list' | 'grid';
   onMenuOpenChange?: (open: boolean) => void;
@@ -23,7 +24,7 @@ interface ScriptCardProps {
   onToggleSelect?: () => void;
 }
 
-export function ScriptCard({ script, onPress, onLongPress, selected = false, showMenuButton = false, onSendTo, onRename, onShare, onDelete, variant = 'list', onMenuOpenChange, showSelectionCheckbox = false, onToggleSelect }: ScriptCardProps) {
+export function ScriptCard({ script, onPress, onLongPress, selected = false, showMenuButton = false, onSendTo, onRename, onShare, onDuplicate, onDelete, variant = 'list', onMenuOpenChange, showSelectionCheckbox = false, onToggleSelect }: ScriptCardProps) {
   const { colors, isDark } = useTheme();
   const menuStyles = makeHeaderMenuStyles(colors);
   const [showMenu, setShowMenu] = React.useState(false);
@@ -201,6 +202,17 @@ export function ScriptCard({ script, onPress, onLongPress, selected = false, sho
               >
                 <Share2 size={20} color={colors.text} />
                 <Text style={[styles.optionText, { color: colors.text }]}>Compartir</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={styles.optionItem}
+                onPress={() => {
+                  setShowMenu(false);
+                  setTimeout(() => onDuplicate?.(), 300);
+                }}
+              >
+                <Copy size={20} color={colors.text} />
+                <Text style={[styles.optionText, { color: colors.text }]}>Duplicar</Text>
               </TouchableOpacity>
 
               <TouchableOpacity

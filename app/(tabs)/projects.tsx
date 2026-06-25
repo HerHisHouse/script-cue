@@ -535,40 +535,55 @@ export default function ProjectsScreen() {
       />
 
       {/* Menu Overlay */}
-      {showMenu && (
-        <Pressable
-          style={styles.menuBackdrop}
+      <Modal
+        visible={showMenu}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setShowMenu(false)}
+      >
+        <TouchableOpacity
+          style={styles.bottomSheetOverlay}
+          activeOpacity={1}
           onPress={() => setShowMenu(false)}
         >
-          <View style={[styles.menuContainer, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+          <View style={[styles.optionsContent, { backgroundColor: colors.surface }]}>
             <TouchableOpacity
-              style={styles.menuItem}
-              onPress={() => { setShowMenu(false); setShowSearch(!showSearch); }}
+              style={styles.optionItem}
+              onPress={() => {
+                setShowMenu(false);
+                setTimeout(() => setShowSearch(!showSearch), 300);
+              }}
             >
               <Search size={20} color={colors.text} />
-              <Text style={[styles.menuText, { color: colors.text }]}>Búsqueda avanzada</Text>
+              <Text style={[styles.optionText, { color: colors.text }]}>Búsqueda avanzada</Text>
             </TouchableOpacity>
-            <View style={[styles.menuSeparator, { backgroundColor: colors.border }]} />
+
             <TouchableOpacity
-              style={styles.menuItem}
-              onPress={() => { setShowMenu(false); setSelectionMode(true); }}
+              style={styles.optionItem}
+              onPress={() => {
+                setShowMenu(false);
+                setTimeout(() => setSelectionMode(true), 300);
+              }}
             >
               <CheckSquare size={20} color={colors.text} />
-              <Text style={[styles.menuText, { color: colors.text }]}>Selección múltiple</Text>
+              <Text style={[styles.optionText, { color: colors.text }]}>Selección múltiple</Text>
             </TouchableOpacity>
-            <View style={[styles.menuSeparator, { backgroundColor: colors.border }]} />
+
             <TouchableOpacity
-              style={styles.menuItem}
-              onPress={() => { setShowMenu(false); setViewMode(prev => prev === 'grid' ? 'list' : 'grid'); }}
+              style={[styles.optionItem, { borderBottomWidth: 0 }]}
+              onPress={() => {
+                setShowMenu(false);
+                setTimeout(() => setViewMode(prev => prev === 'grid' ? 'list' : 'grid'), 300);
+              }}
             >
               {viewMode === 'grid' ? <List size={20} color={colors.text} /> : <Grid size={20} color={colors.text} />}
-              <Text style={[styles.menuText, { color: colors.text }]}>
+              <Text style={[styles.optionText, { color: colors.text }]}>
                 {viewMode === 'grid' ? 'Vista lista' : 'Vista cuadrícula'}
               </Text>
             </TouchableOpacity>
           </View>
-        </Pressable>
-      )}
+        </TouchableOpacity>
+      </Modal>
 
       {/* Search Bar */}
       {showSearch && (
@@ -679,7 +694,7 @@ export default function ProjectsScreen() {
         onRequestClose={() => setOptionsModal({ visible: false, item: null })}
       >
         <TouchableOpacity
-          style={styles.modalOverlay}
+          style={styles.bottomSheetOverlay}
           activeOpacity={1}
           onPress={() => setOptionsModal({ visible: false, item: null })}
         >
@@ -972,23 +987,26 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     alignItems: 'center',
   },
+  bottomSheetOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    justifyContent: 'flex-end',
+  },
   optionsContent: {
-    position: 'absolute',
-    bottom: 0,
-    left: 0,
-    right: 0,
-    borderTopLeftRadius: 20,
-    borderTopRightRadius: 20,
-    padding: rp(20),
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    paddingHorizontal: rp(24),
+    paddingTop: rp(24),
+    paddingBottom: rp(40),
   },
   optionItem: {
     flexDirection: 'row',
     alignItems: 'center',
-    padding: rp(16),
+    paddingVertical: rp(16),
     gap: rp(16),
   },
   optionText: {
-    fontSize: rf(16),
+    fontSize: rf(17),
     fontWeight: '500',
   },
 });
