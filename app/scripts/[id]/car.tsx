@@ -13,6 +13,7 @@ import {
   Platform,
   Switch,
   Pressable,
+  FlatList,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, useLocalSearchParams } from 'expo-router';
@@ -170,6 +171,18 @@ export default function CarModeScreen() {
   const [viewMode, setViewMode] = useState('Guion'); // Menu visibility
   const [isGeneratingAudio, setIsGeneratingAudio] = useState(false); // Audio generation in progress
   const [generatingProgress, setGeneratingProgress] = useState(0); // Progress 0-100
+  const [readActions, setReadActions] = useState(false); // Enable action lines reading
+  const [allScriptLines, setAllScriptLines] = useState<DialogueLine[]>([]); // All lines including actions
+
+  // Update dialogueLines when readActions changes
+  useEffect(() => {
+    if (allScriptLines.length === 0) return;
+    const lines = readActions 
+      ? allScriptLines 
+      : allScriptLines.filter(line => !line.isAction && line.characterName !== 'ACCIÓN');
+    setDialogueLines(lines);
+    // Don't reset index here because it would interrupt playback or reset progress
+  }, [readActions, allScriptLines]);
 
   // Update ref when state changes
   useEffect(() => {
@@ -196,6 +209,18 @@ export default function CarModeScreen() {
   const isCleaningUpRef = useRef(false);
   const [scriptTitle, setScriptTitle] = useState<string>('Modo Coche');
   const trackPlayerCleanupRef = useRef<(() => void) | null>(null);
+  const flatListRef = useRef<FlatList>(null);
+
+  // Auto-scroll for teleprompter
+  useEffect(() => {
+    if (viewMode === 'Teleprompter' && flatListRef.current && dialogueLines.length > 0 && currentIndex < dialogueLines.length) {
+      try {
+        flatListRef.current.scrollToIndex({ index: currentIndex, animated: true, viewPosition: 0.5 });
+      } catch (e) {
+        console.warn('Scroll to index failed', e);
+      }
+    }
+  }, [currentIndex, viewMode, dialogueLines.length]);
 
   // Load Data
   useEffect(() => {
@@ -205,8 +230,11 @@ export default function CarModeScreen() {
         setLoading(true);
         console.log('[Car Mode] Loading dialogue lines for script:', id);
         const allLines = await loadDialogueLines(id as string);
-        // Remove action lines from Car Mode entirely to prevent TTS errors
-        const lines = allLines.filter(line => !line.isAction && line.characterName !== 'ACCIÓN');
+        setAllScriptLines(allLines);
+        // Filter action lines depending on readActions state
+        const lines = readActions 
+          ? allLines 
+          : allLines.filter(line => !line.isAction && line.characterName !== 'ACCIÓN');
         console.log('[Car Mode] Loaded playable lines:', lines.length);
         setDialogueLines(lines);
 
@@ -217,8 +245,8 @@ export default function CarModeScreen() {
           .eq('script_id', id);
         setCharacters(charactersData || []);
 
-        // Extract unique character names from dialogue
-        const uniqueCharacters = [...new Set(lines.map(line => line.characterName))];
+        // Extract unique character names from all dialogue so ACCIÓN is always in config
+        const uniqueCharacters = [...new Set(allLines.map(line => line.characterName))];
 
         // Initialize voice configs for each character with defaults
         const configs: CharacterVoiceConfig[] = uniqueCharacters.map(charName => {
@@ -226,7 +254,7 @@ export default function CarModeScreen() {
           const char = charactersData?.find(c => c.name?.toUpperCase() === charName.toUpperCase());
           return {
             characterName: charName,
-            provider: (char?.voice_provider as VoiceProviderType) || 'openai',
+            provider: (char?.voice_provider as VoiceProviderType) || 'system',
             voiceId: char?.voice_id || null,
           };
         });
@@ -904,6 +932,7 @@ export default function CarModeScreen() {
       console.log('[Car Mode] Audio pre-caching complete!');
 
       // Start the mode
+      setIsPreparingAudio(false);
       setShowConfig(false);
       setIsActive(true);
     } catch (error) {
@@ -1198,7 +1227,11 @@ export default function CarModeScreen() {
         </Text>
 
         <ScrollView style={{ flex: 1 }}>
-          {characterVoiceConfigs.map((config, index) => (
+          {characterVoiceConfigs.map((config, index) => {
+            const isAction = config.characterName === 'ACCIÓN';
+            const title = isAction ? 'Acciones de escena' : config.characterName;
+            
+            return (
             <View key={config.characterName} style={{
               marginHorizontal: 16,
               marginBottom: 8,
@@ -1218,10 +1251,22 @@ export default function CarModeScreen() {
                 marginBottom: 12,
                 opacity: 0.6,
               }}>
-                {config.characterName}
+                {title}
               </Text>
+              {isAction && (
+                <View style={{ position: 'absolute', top: 12, right: 16 }}>
+                  <Switch
+                    value={readActions}
+                    onValueChange={setReadActions}
+                    trackColor={{ false: 'rgba(255,255,255,0.1)', true: 'rgba(100, 140, 255, 0.5)' }}
+                    thumbColor={readActions ? '#ffffff' : '#999999'}
+                  />
+                </View>
+              )}
 
               {/* Selector proveedor */}
+              {(!isAction || readActions) && (
+                <View>
               <TouchableOpacity 
                 style={{
                   flexDirection: 'row',
@@ -1348,8 +1393,11 @@ export default function CarModeScreen() {
                     )}
                   </View>
                 )}
+                </View>
+              )}
             </View>
-          ))}
+          );
+          })}
           <View style={{ height: 40 }} />
         </ScrollView>
 
@@ -1466,7 +1514,7 @@ export default function CarModeScreen() {
           {/* Nombre del personaje — discreto, arriba del texto */}
           <Text style={{
             color: currentLine?.color || 'rgba(100, 180, 255, 0.8)',
-            fontSize: 16,
+            fontSize: 20,
             fontWeight: '600',
             letterSpacing: 1,
             textTransform: 'uppercase',
@@ -1478,18 +1526,54 @@ export default function CarModeScreen() {
           </Text>
 
           {/* Texto del diálogo — grande y centrado como ActOnCue */}
-          <ScrollView style={{ flexGrow: 0, maxHeight: '70%' }} contentContainerStyle={{ alignItems: 'center', justifyContent: 'center' }} showsVerticalScrollIndicator={false}>
-            <Text style={{
-              color: 'white',
-              fontSize: 26,
-              fontWeight: '500',
-              textAlign: 'center',
-              lineHeight: 36,
-              letterSpacing: -0.3,
-            }}>
-              {renderTextWithStageDirections(currentLine?.text)}
-            </Text>
-          </ScrollView>
+          {viewMode === 'Teleprompter' ? (
+            <FlatList
+              ref={flatListRef}
+              data={dialogueLines}
+              keyExtractor={(item) => item.id}
+              showsVerticalScrollIndicator={false}
+              style={{ flexGrow: 0, maxHeight: '70%', width: '100%' }}
+              contentContainerStyle={{ paddingVertical: '50%' }}
+              onScrollToIndexFailed={(info) => {
+                const wait = new Promise(resolve => setTimeout(resolve, 100));
+                wait.then(() => {
+                  flatListRef.current?.scrollToIndex({ index: info.index, animated: true, viewPosition: 0.5 });
+                });
+              }}
+              renderItem={({ item, index }) => {
+                const isCurrent = index === currentIndex;
+                const isAction = item.isAction;
+                return (
+                  <View style={{ marginVertical: 12, opacity: isCurrent ? 1 : 0.4 }}>
+                    <Text style={{
+                      color: isAction ? 'rgba(255,255,255,0.7)' : 'white',
+                      fontSize: 26,
+                      fontWeight: isCurrent ? '600' : '400',
+                      textAlign: 'center',
+                      lineHeight: 36,
+                      fontStyle: isAction ? 'italic' : 'normal',
+                    }}>
+                      {isAction ? `[Acción: ${renderTextWithStageDirections(item.text)}]` : renderTextWithStageDirections(item.text)}
+                    </Text>
+                  </View>
+                );
+              }}
+            />
+          ) : (
+            <ScrollView style={{ flexGrow: 0, maxHeight: '70%', width: '100%' }} contentContainerStyle={{ alignItems: 'center', justifyContent: 'center' }} showsVerticalScrollIndicator={false}>
+              <Text style={{
+                color: currentLine?.isAction ? 'rgba(255,255,255,0.7)' : 'white',
+                fontSize: 26,
+                fontWeight: '500',
+                textAlign: 'center',
+                lineHeight: 36,
+                letterSpacing: -0.3,
+                fontStyle: currentLine?.isAction ? 'italic' : 'normal',
+              }}>
+                {currentLine?.isAction ? `[Acción: ${renderTextWithStageDirections(currentLine?.text)}]` : renderTextWithStageDirections(currentLine?.text)}
+              </Text>
+            </ScrollView>
+          )}
         </View>
 
         {/* Controles — discretos, sin fondos llamativos */}
@@ -1666,6 +1750,28 @@ export default function CarModeScreen() {
                 ))}
               </View>
             </View>
+
+            {/* Opción: Mostrar acciones de escena */}
+            <TouchableOpacity style={{
+              flexDirection: 'row',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              paddingHorizontal: 20,
+              paddingVertical: 14,
+              borderTopWidth: 1,
+              borderTopColor: 'rgba(255,255,255,0.06)',
+            }}
+            onPress={() => setReadActions(!readActions)}
+            >
+              <Text style={{ color: 'white', fontSize: 15 }}>
+                Mostrar acciones de escena
+              </Text>
+              <Switch
+                value={readActions}
+                onValueChange={setReadActions}
+                trackColor={{ false: 'rgba(255,255,255,0.15)', true: '#34C759' }}
+              />
+            </TouchableOpacity>
 
             {/* Opción: Mostrar acotaciones */}
             <TouchableOpacity style={{
