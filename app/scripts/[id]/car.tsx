@@ -304,10 +304,13 @@ export default function CarModeScreen() {
       if (soundRef.current) {
         soundRef.current.unloadAsync();
       }
-      // Clean up TrackPlayer event listeners
+      // Clean up TrackPlayer event listeners and reset the player
       if (trackPlayerCleanupRef.current) {
         trackPlayerCleanupRef.current();
         trackPlayerCleanupRef.current = null;
+      }
+      if (Platform.OS === 'android' && TrackPlayer) {
+        TrackPlayer.reset().catch(() => {});
       }
     };
   }, [id, user]);
@@ -602,7 +605,6 @@ export default function CarModeScreen() {
   };
 
   const handlePause = async () => {
-    sequenceRef.current++; // Invalidate pending callbacks
     setIsPaused(true);
     setStatusText('Pausado');
     setPhase('idle');
@@ -612,9 +614,11 @@ export default function CarModeScreen() {
     if (Platform.OS === 'android' && TrackPlayer) {
       // Android: TrackPlayer IS the real audio player — just pause it.
       // The audio stays loaded so the user can resume from the same position.
+      // We do NOT increment sequenceRef.current so polling/resume works later.
       TrackPlayer.pause().catch(() => {});
     } else {
       // iOS: expo-av, must destroy the sound
+      sequenceRef.current++; // Invalidate pending callbacks
       await cleanupAllAudio();
     }
   };
@@ -841,8 +845,14 @@ export default function CarModeScreen() {
   };
 
   // Helper function to render text with colored stage directions (same as Studio Mode)
-  const renderTextWithStageDirections = (text: string) => {
-    if (!showStageDirections || !text.includes('(')) {
+  const renderTextWithStageDirections = (text: string | undefined): React.ReactNode => {
+    if (!text) return '';
+
+    if (!showStageDirections) {
+      return text.replace(/\(.*?\)|\[.*?\]/g, '').trim();
+    }
+
+    if (!text.includes('(') && !text.includes('[')) {
       return text;
     }
 
@@ -851,16 +861,12 @@ export default function CarModeScreen() {
 
     const parts: React.ReactNode[] = [];
     let lastIndex = 0;
-    const regex = /\([^)]*\)/g;
+    const regex = /\(.*?\)|\[.*?\]/g;
     let match;
 
     while ((match = regex.exec(text)) !== null) {
       if (match.index > lastIndex) {
-        parts.push(
-          <Text key={`dialogue-${lastIndex}`} style={{ color: colors.text }}>
-            {text.substring(lastIndex, match.index)}
-          </Text>
-        );
+        parts.push(text.substring(lastIndex, match.index));
       }
 
       parts.push(
@@ -869,15 +875,11 @@ export default function CarModeScreen() {
         </Text>
       );
 
-      lastIndex = match.index + match[0].length;
+      lastIndex = regex.lastIndex;
     }
 
     if (lastIndex < text.length) {
-      parts.push(
-        <Text key={`dialogue-${lastIndex}`} style={{ color: colors.text }}>
-          {text.substring(lastIndex)}
-        </Text>
-      );
+      parts.push(text.substring(lastIndex));
     }
 
     return <>{parts}</>;
