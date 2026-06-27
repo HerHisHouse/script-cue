@@ -1,0 +1,5 @@
+ALTER TABLE coach_feedback 
+ADD COLUMN IF NOT EXISTS script_id UUID REFERENCES scripts(id);
+
+ALTER TABLE coach_feedback
+ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP DEFAULT NOW();

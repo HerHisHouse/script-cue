@@ -582,8 +582,8 @@ app.post('/analyze-recording', async (req, res) => {
         let scriptContext = '';
         let specificUserLines = '';
 
-        // PASO 1: Leer del body
-        let userCharacterName = characterName || '';
+        // PASO 1: Resolver el nombre del personaje
+        let userCharacterName = (characterName || '').toUpperCase().trim();
 
         // PASO 2: Si viene vacío, buscar en BD por characterId
         if (!userCharacterName && characterId) {
@@ -595,7 +595,7 @@ app.post('/analyze-recording', async (req, res) => {
                     .single();
                 
                 if (charData?.name) {
-                    userCharacterName = charData.name.toUpperCase();
+                    userCharacterName = charData.name.toUpperCase().trim();
                 }
             } catch (e) {
                 console.error('[Coach] Error buscando personaje por characterId:', e);
@@ -612,7 +612,7 @@ app.post('/analyze-recording', async (req, res) => {
                     .single();
                 
                 if (recData?.characters?.name) {
-                    userCharacterName = recData.characters.name.toUpperCase();
+                    userCharacterName = recData.characters.name.toUpperCase().trim();
                 }
             } catch (e) {
                 console.error('[Coach] Error buscando personaje por recordingId:', e);
@@ -621,11 +621,18 @@ app.post('/analyze-recording', async (req, res) => {
 
         console.log('[Coach] userCharacterName FINAL resuelto:', userCharacterName);
 
-        // VERIFICACIÓN CRÍTICA: si no tenemos el nombre, el análisis no puede ser preciso
+        // PASO 3: Si sigue sin personaje, rechazar con error claro
         if (!userCharacterName) {
-            console.warn('[Coach] ADVERTENCIA: No se pudo determinar el personaje del usuario.');
-            console.warn('[Coach] El análisis puede no ser preciso.');
+            console.error('[Coach] ERROR: No se pudo determinar el personaje. Rechazando análisis.');
+            return res.status(400).json({
+                success: false,
+                error: 'No se pudo determinar el personaje del usuario. Por favor, selecciona tu personaje antes de analizar.',
+                errorCode: 'NO_CHARACTER'
+            });
         }
+
+        // PASO 4: Solo si hay personaje, continuar con el análisis
+        console.log('[Coach] ✅ Procediendo con análisis para personaje:', userCharacterName);
 
         if (scriptId) {
             try {

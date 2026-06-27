@@ -93,6 +93,11 @@ export default function CoachModeScreen() {
   const [showDisclaimer, setShowDisclaimer] = useState(false);
   const [dontShowAgain, setDontShowAgain] = useState(false);
 
+  const [characters, setCharacters] = useState<any[]>([]);
+  const [selectedCharacterId, setSelectedCharacterId] = useState<string | null>(null);
+  const [selectedCharacterName, setSelectedCharacterName] = useState<string>('');
+  const [showCharacterSelector, setShowCharacterSelector] = useState(false);
+
   const videoRef = useRef<Video>(null);
 
   // Check if disclaimer should be shown
@@ -125,6 +130,7 @@ export default function CoachModeScreen() {
 
   useEffect(() => {
     loadRecordings();
+    loadCharacters();
 
     // Enable playback mode - FORCE SPEAKER OUTPUT
     setAudioModeForPlayback();
@@ -133,6 +139,20 @@ export default function CoachModeScreen() {
       if (sound) sound.unloadAsync();
     };
   }, [id]);
+
+  async function loadCharacters() {
+    try {
+      const { data } = await supabase
+        .from('characters')
+        .select('id, name')
+        .eq('script_id', id)
+        .order('name');
+      
+      if (data) setCharacters(data);
+    } catch (e) {
+      console.error('Error loading characters:', e);
+    }
+  }
 
   // Video component needs source prop handling. 
   // We need to fetch signed URL for video too if it's selected.
@@ -187,6 +207,22 @@ export default function CoachModeScreen() {
     setSelectedRecording(rec);
     setAnalysis(null);
     setActiveTab('feedback');
+
+    // Intentar cargar el personaje guardado en la grabación
+    if (rec.character_id) {
+      const char = characters.find(c => c.id === rec.character_id);
+      if (char) {
+        setSelectedCharacterId(rec.character_id);
+        setSelectedCharacterName(char.name.toUpperCase());
+      } else {
+        setSelectedCharacterId(rec.character_id);
+        setSelectedCharacterName(''); // fallback
+      }
+    } else {
+      // Si la grabación no tiene personaje, pedir al usuario que lo elija
+      setSelectedCharacterId(null);
+      setSelectedCharacterName('');
+    }
 
     checkExistingAnalysis(rec.id);
   }
@@ -257,24 +293,6 @@ export default function CoachModeScreen() {
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 300000); // 5 minutes
 
-      // Buscar el nombre del personaje antes de construir el requestBody
-      let userCharacterName = '';
-      if (selectedRecording.character_id) {
-        try {
-          const { data: charData } = await supabase
-            .from('characters')
-            .select('name')
-            .eq('id', selectedRecording.character_id)
-            .single();
-          
-          if (charData?.name) {
-            userCharacterName = charData.name.toUpperCase();
-          }
-        } catch (e) {
-          console.warn('[Escena] No se pudo obtener el nombre del personaje:', e);
-        }
-      }
-
       const requestBody = {
         recordingPath: selectedRecording.audio_url,
         recordingId: selectedRecording.id,
@@ -282,10 +300,11 @@ export default function CoachModeScreen() {
         scriptId: id,
         sceneId: selectedRecording.scene_id,
         recordingType: selectedRecording.type || 'audio',
-        characterId: selectedRecording.character_id,
-        characterName: userCharacterName,
+        characterId: selectedCharacterId || selectedRecording.character_id,
+        characterName: selectedCharacterName, // Siempre enviarlo
         compareWithId: compareWithId
       };
+      console.log('[Escena] Enviando personaje:', selectedCharacterName);
       console.log('[DEBUG] characterName enviado:', userCharacterName);
       console.log('[DEBUG] Request body:', JSON.stringify(requestBody, null, 2));
 
@@ -306,15 +325,28 @@ export default function CoachModeScreen() {
       console.log('[DEBUG] Response headers:', JSON.stringify([...response.headers.entries()]));
 
       if (!response.ok) {
+        let errorData;
+        try {
+          errorData = await response.json();
+        } catch(e) {
+          errorData = { error: await response.text() };
+        }
+        
+        if (errorData.errorCode === 'NO_CHARACTER') {
+          // Mostrar el selector de personaje
+          setAnalyzing(false);
+          setShowCharacterSelector(true);
+          return;
+        }
+
         const status = response.status;
-        const errorText = await response.text();
-        console.error('[DEBUG] Error response body:', errorText);
+        console.error('[DEBUG] Error response body:', errorData);
 
         if (status === 404) {
           throw new Error('El endpoint de análisis no existe en el servidor. Por favor, haz push de los cambios de server/index.js a Render.');
         }
 
-        throw new Error(`Error ${status}: ${errorText}`);
+        throw new Error(`Error ${status}: ${errorData.error}`);
       }
 
       const responseText = await response.text();
@@ -812,9 +844,104 @@ export default function CoachModeScreen() {
                 La IA analizará la grabación para darte propuestas de actuación.
               </Text>
 
+              {/* Modal selector de personaje */}
+              {showCharacterSelector && (
+                <View style={styles.modalOverlay}>
+                  <View style={[styles.modalContent, { backgroundColor: colors.surface }]}>
+                    <Text style={[styles.modalTitle, { color: colors.text }]}>
+                      ¿Qué personaje interpretas?
+                    </Text>
+                    <Text style={[styles.modalText, { color: colors.textSecondary }]}>
+                      Necesitamos saber tu personaje para analizar 
+                      solo tus intervenciones.
+                    </Text>
+                    
+                    <View style={{ gap: 8, marginTop: 16, width: '100%' }}>
+                      {characters.map(char => (
+                        <TouchableOpacity
+                          key={char.id}
+                          style={[
+                            styles.characterOption,
+                            { 
+                              backgroundColor: colors.input,
+                              borderColor: selectedCharacterId === char.id 
+                                ? colors.primary 
+                                : colors.border,
+                              borderWidth: selectedCharacterId === char.id ? 2 : 1,
+                            }
+                          ]}
+                          onPress={() => {
+                            setSelectedCharacterId(char.id);
+                            setSelectedCharacterName(char.name.toUpperCase());
+                          }}
+                        >
+                          <Text style={[
+                            styles.characterOptionText, 
+                            { 
+                              color: selectedCharacterId === char.id 
+                                ? colors.primary 
+                                : colors.text,
+                              fontWeight: selectedCharacterId === char.id ? '700' : '400'
+                            }
+                          ]}>
+                            {char.name}
+                          </Text>
+                        </TouchableOpacity>
+                      ))}
+                    </View>
+
+                    <TouchableOpacity
+                      style={[
+                        styles.modalButton, 
+                        { 
+                          backgroundColor: selectedCharacterId 
+                            ? colors.primary 
+                            : colors.border,
+                          marginTop: 20
+                        }
+                      ]}
+                      disabled={!selectedCharacterId}
+                      onPress={async () => {
+                        setShowCharacterSelector(false);
+                        
+                        // Guardar el personaje en la grabación para futuras veces
+                        if (selectedCharacterId && selectedRecording) {
+                          await supabase
+                            .from('recordings')
+                            .update({ character_id: selectedCharacterId })
+                            .eq('id', selectedRecording.id);
+                        }
+                        
+                        // Lanzar el análisis
+                        startAnalysis();
+                      }}
+                    >
+                      <Text style={styles.modalButtonText}>Analizar</Text>
+                    </TouchableOpacity>
+
+                    <TouchableOpacity
+                      onPress={() => setShowCharacterSelector(false)}
+                      style={{ marginTop: 12 }}
+                    >
+                      <Text style={[styles.comparisonLabel, { color: colors.textSecondary }]}>
+                        Cancelar
+                      </Text>
+                    </TouchableOpacity>
+                  </View>
+                </View>
+              )}
+
               <TouchableOpacity
                 style={[styles.analyzeButton, { backgroundColor: colors.primary }]}
-                onPress={() => startAnalysis()}
+                onPress={() => {
+                  if (!selectedCharacterName) {
+                    // Mostrar selector de personaje
+                    setShowCharacterSelector(true);
+                  } else {
+                    // Ya tiene personaje, analizar directamente
+                    startAnalysis();
+                  }
+                }}
                 disabled={analyzing}
               >
                 {analyzing ? (
@@ -822,7 +949,11 @@ export default function CoachModeScreen() {
                 ) : (
                   <>
                     <Sparkles size={20} color="#fff" />
-                    <Text style={styles.analyzeButtonText}>Analizar</Text>
+                    <Text style={styles.analyzeButtonText}>
+                      {selectedCharacterName 
+                        ? `Analizar como ${selectedCharacterName}`
+                        : 'Analizar'}
+                    </Text>
                   </>
                 )}
               </TouchableOpacity>
@@ -1184,6 +1315,16 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontSize: rf(16),
     fontWeight: '700',
+  },
+  characterOption: {
+    padding: rp(14),
+    borderRadius: rp(10),
+    borderWidth: 1,
+    width: '100%',
+  },
+  characterOptionText: {
+    fontSize: rf(15),
+    textAlign: 'center',
   },
   comparisonOption: {
     flexDirection: 'row',
