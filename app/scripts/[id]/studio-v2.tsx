@@ -126,6 +126,7 @@ export default function StudioV2Screen() {
     const recordingRef = useRef<Audio.Recording | null>(null);
     const preInitRecordingRef = useRef<Audio.Recording | null>(null);
     const preInitReadyRef = useRef(false);
+    const preInitInProgressRef = useRef(false);
     const silenceTimerRef = useRef<NodeJS.Timeout | null>(null);
     const processingRef = useRef(false);
     // Sequence ID to cancel stale audio operations
@@ -804,10 +805,11 @@ export default function StudioV2Screen() {
 
     async function preInitMicrophone() {
         // No hacer nada si ya hay una pre-init pendiente
-        if (preInitRecordingRef.current || preInitReadyRef.current) return;
+        if (preInitRecordingRef.current || preInitReadyRef.current || preInitInProgressRef.current) return;
         // No hacer nada si ya es el turno del usuario
         if (processingRef.current || isListening) return;
 
+        preInitInProgressRef.current = true;
         try {
             console.log('[Studio] Pre-init micrófono...');
 
@@ -832,6 +834,8 @@ export default function StudioV2Screen() {
             console.warn('[Studio] Pre-init falló, se inicializará en el momento:', e);
             preInitRecordingRef.current = null;
             preInitReadyRef.current = false;
+        } finally {
+            preInitInProgressRef.current = false;
         }
     }
 
