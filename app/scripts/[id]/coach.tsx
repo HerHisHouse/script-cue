@@ -305,7 +305,6 @@ export default function CoachModeScreen() {
         compareWithId: compareWithId
       };
       console.log('[Escena] Enviando personaje:', selectedCharacterName);
-      console.log('[DEBUG] characterName enviado:', userCharacterName);
       console.log('[DEBUG] Request body:', JSON.stringify(requestBody, null, 2));
 
       const response = await fetch(`${renderUrl}/analyze-recording`, {
@@ -845,7 +844,7 @@ export default function CoachModeScreen() {
               </Text>
 
               {/* Modal selector de personaje */}
-              {showCharacterSelector && (
+              {showCharacterSelector ? (
                 <View style={styles.modalOverlay}>
                   <View style={[styles.modalContent, { backgroundColor: colors.surface }]}>
                     <Text style={[styles.modalTitle, { color: colors.text }]}>
@@ -929,34 +928,34 @@ export default function CoachModeScreen() {
                     </TouchableOpacity>
                   </View>
                 </View>
+              ) : (
+                <TouchableOpacity
+                  style={[styles.analyzeButton, { backgroundColor: colors.primary }]}
+                  onPress={() => {
+                    if (!selectedCharacterName) {
+                      // Mostrar selector de personaje
+                      setShowCharacterSelector(true);
+                    } else {
+                      // Ya tiene personaje, analizar directamente
+                      startAnalysis();
+                    }
+                  }}
+                  disabled={analyzing}
+                >
+                  {analyzing ? (
+                    <ActivityIndicator color="#fff" />
+                  ) : (
+                    <>
+                      <Sparkles size={20} color="#fff" />
+                      <Text style={styles.analyzeButtonText}>
+                        {selectedCharacterName 
+                          ? `Analizar como ${selectedCharacterName}`
+                          : 'Analizar'}
+                      </Text>
+                    </>
+                  )}
+                </TouchableOpacity>
               )}
-
-              <TouchableOpacity
-                style={[styles.analyzeButton, { backgroundColor: colors.primary }]}
-                onPress={() => {
-                  if (!selectedCharacterName) {
-                    // Mostrar selector de personaje
-                    setShowCharacterSelector(true);
-                  } else {
-                    // Ya tiene personaje, analizar directamente
-                    startAnalysis();
-                  }
-                }}
-                disabled={analyzing}
-              >
-                {analyzing ? (
-                  <ActivityIndicator color="#fff" />
-                ) : (
-                  <>
-                    <Sparkles size={20} color="#fff" />
-                    <Text style={styles.analyzeButtonText}>
-                      {selectedCharacterName 
-                        ? `Analizar como ${selectedCharacterName}`
-                        : 'Analizar'}
-                    </Text>
-                  </>
-                )}
-              </TouchableOpacity>
             </View>
           </View>
         ) : (
