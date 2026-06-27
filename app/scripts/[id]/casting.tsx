@@ -29,12 +29,15 @@ import { Audio, InterruptionModeIOS, InterruptionModeAndroid } from 'expo-av';
 import * as FileSystem from 'expo-file-system/legacy'; // Fix: Use legacy API
 import { transcribeAudio } from '@/services/transcription'; // Import transcription service
 import { calculateSimilarity } from '@/utils/stringUtils'; // Helper for similarity
-import { ArrowLeft, Mic, RotateCcw, Play, Pause, Square, Video, SwitchCamera, Settings2, SkipBack, SkipForward, MoreVertical, EyeOff, Eye, Minus, Plus, Volume2, GripHorizontal, X, Timer, Clapperboard, Trash2, ChevronRight, MessageSquare, FileText, Type, Snail, Rabbit, FlipHorizontal, Bold, Italic, Underline, AlignLeft, AlignCenter, AlignRight, Keyboard as KeyboardIcon, Info } from 'lucide-react-native';
+import { ArrowLeft, Mic, RotateCcw, Play, Pause, Square, Video, SwitchCamera, Settings2, SkipBack, SkipForward, MoreVertical, EyeOff, Eye, Minus, Plus, Volume2, GripHorizontal, X, Timer, Clapperboard, Trash2, ChevronRight, MessageSquare, FileText, Type, Snail, Rabbit, FlipHorizontal, Bold, Italic, Underline, AlignLeft, AlignCenter, AlignRight, Keyboard as KeyboardIcon, Info, MonitorPlay } from 'lucide-react-native';
+import { FontAwesome5 } from '@expo/vector-icons';
+import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/utils/supabase';
+import { BottomSheetMenu } from '@/components/BottomSheetMenu';
+import { BottomSheetToggle } from '@/components/BottomSheetToggle';
 import client from '@/utils/openaiClient';
 import { generateElevenLabsAudio } from '@/utils/elevenLabsClient';
 import { useTheme } from '@/contexts/ThemeContext';
-import { useAuth } from '@/contexts/AuthContext';
 import { getSettings } from '@/utils/appSettings';
 import * as Speech from 'expo-speech';
 import { Script, Character } from '@/types/database';
@@ -164,11 +167,11 @@ export default function CastingModeScreen() {
   const [showMenu, setShowMenu] = useState(false);
   const [hideUserLines, setHideUserLines] = useState(false);
   const [hideTeleprompter, setHideTeleprompter] = useState(false);
-  const [hideActions, setHideActions] = useState(false); // Hide action cards in teleprompter
+  const [showActions, setShowActions] = useState(true); // Show action cards in teleprompter
   const [actionTimeLeft, setActionTimeLeft] = useState<number | null>(null);
   const [showStageDirections, setShowStageDirections] = useState(false); // Toggle for stage directions visibility
   const [startDelay, setStartDelay] = useState(5); // Delay in seconds before first line (0, 5, 10, 15... up to 60)
-  const [countdown, setCountdown] = useState<number | null>(null); // Countdown display
+  const [countdown, setCountdown] = useState<number | string | null>(null); // Countdown display
 
   // --- New Casting Mode Flow State ---
   type CastingMode = 'selection' | 'script_config' | 'free_input' | 'recording';
@@ -179,255 +182,52 @@ export default function CastingModeScreen() {
   const onSpeechEndRef = useRef<(() => void) | null>(null);
   const onSpeechErrorRef = useRef<((e: any) => void) | null>(null);
 
-  // --- Rich Text para Teleprompter Libre ---
-  // Cada segmento tiene su propio formato independiente
-  type TextSegment = {
-    id: string;
-    text: string;
-    bold: boolean;
-    italic: boolean;
-    underline: boolean;
-    align: 'left' | 'center' | 'right';
-    color: string;
-  };
-
-  const makeSegment = (text: string, overrides?: Partial<TextSegment>): TextSegment => ({
-    id: Math.random().toString(36).slice(2),
-    text,
-    bold: false,
-    italic: false,
-    underline: false,
-    align: 'center',
-    color: 'white',
-    ...overrides,
-  });
-
-  // richSegments: fuente de verdad del rich text
-  const [richSegments, setRichSegments] = useState<TextSegment[]>([makeSegment('')]);
-  // freeText: texto plano para el TextInput (se sincroniza con richSegments)
+  // --- Global Text Formatting para Teleprompter Libre ---
   const [freeText, setFreeText] = useState('');
-  // Selección actual en el TextInput { start, end }
-  const [textSelection, setTextSelection] = useState<{ start: number; end: number }>({ start: 0, end: 0 });
-  // REF de selección: persiste aunque el TextInput pierda foco (solución al problema iOS/Android
-  // donde onSelectionChange se dispara con {0,0} ANTES de que onPress reciba el evento)
-  const lastSelectionRef = useRef<{ start: number; end: number }>({ start: 0, end: 0 });
-  // Formato activo del cursor/selección (para mostrar qué botones están activos)
-  const [activeFormat, setActiveFormat] = useState<Omit<TextSegment, 'id' | 'text'>>({
-    bold: false, italic: false, underline: false, align: 'center', color: 'white'
-  });
+  const [globalFormatBold, setGlobalFormatBold] = useState(false);
+  const [globalFormatItalic, setGlobalFormatItalic] = useState(false);
+  const [globalFormatUnderline, setGlobalFormatUnderline] = useState(false);
+  const [globalFormatAlign, setGlobalFormatAlign] = useState<'left'|'center'|'right'>('center');
+  const [globalFormatColor, setGlobalFormatColor] = useState('white');
+  const [globalSpacing, setGlobalSpacing] = useState(0);
+  const [globalBackground, setGlobalBackground] = useState('transparent');
+  const [isTextEditExpanded, setIsTextEditExpanded] = useState(false);
+  const [showColorPicker, setShowColorPicker] = useState(false);
+  const [showBgColorPicker, setShowBgColorPicker] = useState(false);
 
-  const [freeScrollSpeed, setFreeScrollSpeed] = useState(5); // 1-10
+  const [freeScrollSpeed, setFreeScrollSpeed] = useState(1); // 1-10
   const [freeFontSize, setFreeFontSize] = useState(rf(36));
   const [isMirrored, setIsMirrored] = useState(false);
   const [isZoomMenuOpen, setIsZoomMenuOpen] = useState(false);
-  const [showColorPicker, setShowColorPicker] = useState(false);
-  const isTextInputFocusedRef = useRef(false);
   const freeScrollViewRef = useRef<ScrollView>(null);
   const scrollOffsetRef = useRef(0);
   const freeTextInputRef = useRef<any>(null);
 
-  // Extrae texto plano de los segmentos
-  const getPlainText = (segs: TextSegment[]) => segs.map(s => s.text).join('');
-
-  // Dado el texto plano y la posición, devuelve qué segmento y offset local corresponde
-  const getSegmentAtPosition = (segs: TextSegment[], pos: number): { segIdx: number; localOffset: number } => {
-    let acc = 0;
-    for (let i = 0; i < segs.length; i++) {
-      if (pos <= acc + segs[i].text.length) {
-        return { segIdx: i, localOffset: pos - acc };
-      }
-      acc += segs[i].text.length;
-    }
-    return { segIdx: segs.length - 1, localOffset: segs[segs.length - 1]?.text.length ?? 0 };
-  };
-
-  // Aplica formato a los caracteres seleccionados [selStart, selEnd)
-  // IMPORTANTE: usa lastSelectionRef (no el estado textSelection) porque en iOS/Android
-  // el TextInput pierde foco al pulsar un botón, disparando onSelectionChange con {0,0}
-  // ANTES de que onPress reciba el evento. El ref guarda la última selección real.
-  const applyFormatToSelection = useCallback(
-    (key: keyof Omit<TextSegment, 'id' | 'text'>, value: any) => {
-      const { start, end } = lastSelectionRef.current; // <-- ref, no estado
-      if (start === end) {
-        // Sin selección: cambiar el formato activo (afectará al próximo texto escrito)
-        setActiveFormat(f => ({ ...f, [key]: value }));
-        return;
-      }
-
-      setRichSegments(segs => {
-        // Construimos la nueva lista dividiendo los segmentos afectados
-        const result: TextSegment[] = [];
-        let acc = 0;
-
-        for (const seg of segs) {
-          const segStart = acc;
-          const segEnd = acc + seg.text.length;
-          acc = segEnd;
-
-          // Segmento completamente fuera de la selección
-          if (segEnd <= start || segStart >= end) {
-            result.push(seg);
-            continue;
-          }
-
-          // Parte anterior a la selección
-          if (segStart < start) {
-            result.push({ ...seg, id: Math.random().toString(36).slice(2), text: seg.text.slice(0, start - segStart) });
-          }
-
-          // Parte dentro de la selección
-          const selSliceStart = Math.max(0, start - segStart);
-          const selSliceEnd = Math.min(seg.text.length, end - segStart);
-          const newVal = key === 'bold' || key === 'italic' || key === 'underline'
-            ? value  // toggle directo
-            : value; // color o align directo
-          result.push({
-            ...seg,
-            id: Math.random().toString(36).slice(2),
-            text: seg.text.slice(selSliceStart, selSliceEnd),
-            [key]: newVal,
-          });
-
-          // Parte posterior a la selección
-          if (segEnd > end) {
-            result.push({ ...seg, id: Math.random().toString(36).slice(2), text: seg.text.slice(end - segStart) });
-          }
-        }
-
-        // Eliminar segmentos vacíos
-        return result.filter(s => s.text.length > 0) as TextSegment[];
-      });
-
-      // Actualizar el formato activo para reflejo visual en la barra
-      setActiveFormat(f => ({ ...f, [key]: value }));
-
-      // IMPORTANTE: Forzar el foco de vuelta y aplicar la selección para que sea persistente visualmente
-      // Usamos un pequeño delay para asegurar que el teclado/foco no pelee con el renderizado
-      setTimeout(() => {
-        if (freeTextInputRef.current) {
-          freeTextInputRef.current.focus();
-          // Mantenemos la selección o movemos el cursor al final
-          const newSelection = { start: start, end: end };
-          freeTextInputRef.current.setNativeProps({ selection: newSelection });
-          lastSelectionRef.current = newSelection;
-          setTextSelection(newSelection);
-        }
-      }, 50);
-    },
-    [] // ya no depende de textSelection, usa el ref
-  );
-
-  // Detecta qué formato tiene el segmento bajo el cursor para mostrar botones activos
-  const updateActiveFormatFromCursor = useCallback((segs: TextSegment[], pos: number) => {
-    if (segs.length === 0) return;
-    const { segIdx } = getSegmentAtPosition(segs, pos);
-    const seg = segs[segIdx];
-    if (seg) {
-      setActiveFormat({ bold: seg.bold, italic: seg.italic, underline: seg.underline, align: seg.align, color: seg.color });
-    }
-  }, []);
-
-  // Cuando el texto plano cambia en el TextInput, reconstruimos los segmentos
   const handleFreeTextChange = useCallback((newPlain: string) => {
     setFreeText(newPlain);
-    setRichSegments(prev => {
-      const oldPlain = getPlainText(prev);
-      if (newPlain === oldPlain) return prev;
-
-      // Calcular dónde cambió el texto (diff simple: prefijo común y sufijo común)
-      let prefixLen = 0;
-      while (prefixLen < oldPlain.length && prefixLen < newPlain.length && oldPlain[prefixLen] === newPlain[prefixLen]) prefixLen++;
-      let oldSufLen = 0;
-      while (
-        oldSufLen < oldPlain.length - prefixLen &&
-        oldSufLen < newPlain.length - prefixLen &&
-        oldPlain[oldPlain.length - 1 - oldSufLen] === newPlain[newPlain.length - 1 - oldSufLen]
-      ) oldSufLen++;
-
-      const deletedLen = oldPlain.length - prefixLen - oldSufLen;
-      const insertedText = newPlain.slice(prefixLen, newPlain.length - oldSufLen);
-
-      // Aplicar el cambio a los segmentos
-      const result: TextSegment[] = [];
-      let acc = 0;
-      let insertDone = false;
-
-      for (const seg of prev) {
-        const segStart = acc;
-        const segEnd = acc + seg.text.length;
-        acc = segEnd;
-
-        const delStart = prefixLen;
-        const delEnd = prefixLen + deletedLen;
-
-        if (segEnd <= delStart || segStart >= delEnd) {
-          // Completamente fuera del rango borrado
-          if (!insertDone && segStart >= delEnd) {
-            // Insertar en el primer segmento DESPUÉS del borrado
-            if (insertedText) {
-              result.push({ ...activeFormat, id: Math.random().toString(36).slice(2), text: insertedText });
-            }
-            insertDone = true;
-          }
-          result.push(seg);
-        } else {
-          // Parcialmente o totalmente en el rango borrado
-          const keepBefore = seg.text.slice(0, Math.max(0, delStart - segStart));
-          const keepAfter = seg.text.slice(Math.min(seg.text.length, delEnd - segStart));
-
-          if (keepBefore) result.push({ ...seg, id: Math.random().toString(36).slice(2), text: keepBefore });
-
-          if (!insertDone) {
-            if (insertedText) {
-              result.push({ ...activeFormat, id: Math.random().toString(36).slice(2), text: insertedText });
-            }
-            insertDone = true;
-          }
-
-          if (keepAfter) result.push({ ...seg, id: Math.random().toString(36).slice(2), text: keepAfter });
-        }
-      }
-
-      if (!insertDone && insertedText) {
-        result.push({ ...activeFormat, id: Math.random().toString(36).slice(2), text: insertedText });
-      }
-
-      const filtered = result.filter(s => s.text.length > 0);
-      return filtered.length > 0 ? filtered : [makeSegment('')];
-    });
-  }, [activeFormat]);
-
-
+  }, []);
 
   useEffect(() => {
     const loadFreeText = async () => {
       try {
         const AsyncStorage = (await import('@react-native-async-storage/async-storage')).default;
-        // Cargar richSegments guardados
-        const savedSegments = await AsyncStorage.getItem('freeTeleprompterSegments');
-        if (savedSegments) {
-          const parsed = JSON.parse(savedSegments) as TextSegment[];
-          setRichSegments(parsed);
-          setFreeText(parsed.map(s => s.text).join(''));
-
-          // Sincronizar el formato activo con el primer segmento para corregir el bug de alineación
-          if (parsed.length > 0) {
-            const firstSeg = parsed[0];
-            setActiveFormat({
-              bold: firstSeg.bold,
-              italic: firstSeg.italic,
-              underline: firstSeg.underline,
-              align: firstSeg.align,
-              color: firstSeg.color
-            });
-          }
-        } else {
-          // Compatibilidad hacia atrás: cargar texto plano antiguo
-          const saved = await AsyncStorage.getItem('freeTeleprompterText');
-          if (saved) {
-            setFreeText(saved);
-            setRichSegments([makeSegment(saved)]);
-          }
+        
+        // Cargar texto y configuraciones globales
+        const saved = await AsyncStorage.getItem('freeTeleprompterText');
+        if (saved) {
+          setFreeText(saved);
+        }
+        
+        const formatSettings = await AsyncStorage.getItem('freeTeleprompterFormat');
+        if (formatSettings) {
+          const parsed = JSON.parse(formatSettings);
+          if (parsed.bold !== undefined) setGlobalFormatBold(parsed.bold);
+          if (parsed.italic !== undefined) setGlobalFormatItalic(parsed.italic);
+          if (parsed.underline !== undefined) setGlobalFormatUnderline(parsed.underline);
+          if (parsed.align !== undefined) setGlobalFormatAlign(parsed.align);
+          if (parsed.color !== undefined) setGlobalFormatColor(parsed.color);
+          if (parsed.spacing !== undefined) setGlobalSpacing(parsed.spacing);
+          if (parsed.background !== undefined) setGlobalBackground(parsed.background);
         }
       } catch (e) { console.error('Error loading free text:', e); }
     };
@@ -1083,7 +883,7 @@ export default function CastingModeScreen() {
 
   // Helper function to render text with colored stage directions
   const renderTextWithStageDirections = (text: string) => {
-    if (!showStageDirections || !text.includes('(')) {
+    if (!showStageDirections || (!text.includes('(') && !text.includes('['))) {
       return text;
     }
 
@@ -1092,7 +892,7 @@ export default function CastingModeScreen() {
 
     const parts: React.ReactNode[] = [];
     let lastIndex = 0;
-    const regex = /\([^)]*\)/g;
+    const regex = /\([^)]*\)|\[[^\]]*\]/g;
     let match;
 
     while ((match = regex.exec(text)) !== null) {
@@ -1126,33 +926,6 @@ export default function CastingModeScreen() {
 
   // Start script recording
   async function startScriptCasting() {
-    // Mostrar aviso de auriculares (solo si el usuario no ha elegido 'no volver a mostrar')
-    const AsyncStorage = (await import('@react-native-async-storage/async-storage')).default;
-    const hideWarning = await AsyncStorage.getItem('casting_hide_headphone_warning');
-
-    if (hideWarning !== 'true') {
-      await new Promise<void>((resolve) => {
-        Alert.alert(
-          '🎧 Consejo de grabación',
-          'Para obtener la mejor calidad de audio en tu selftape, ' +
-          'te recomendamos usar auriculares con micrófono.\n\n' +
-          'Sin auriculares también funciona correctamente.',
-          [
-            {
-              text: 'No volver a mostrar',
-              onPress: async () => {
-                await AsyncStorage.setItem('casting_hide_headphone_warning', 'true');
-                resolve();
-              }
-            },
-            {
-              text: 'Entendido',
-              onPress: () => resolve()
-            }
-          ]
-        );
-      });
-    }
 
     setCastingMode('recording');
     setCastingType('script');
@@ -1164,11 +937,19 @@ export default function CastingModeScreen() {
     setCastingMode('recording');
     setCastingType('free');
 
-    // Guardar borrador (richSegments y texto plano para compatibilidad)
+    // Guardar borrador (texto y configuración de formato)
     try {
       const AsyncStorage = (await import('@react-native-async-storage/async-storage')).default;
       await AsyncStorage.setItem('freeTeleprompterText', freeText);
-      await AsyncStorage.setItem('freeTeleprompterSegments', JSON.stringify(richSegments));
+      await AsyncStorage.setItem('freeTeleprompterFormat', JSON.stringify({
+        bold: globalFormatBold,
+        italic: globalFormatItalic,
+        underline: globalFormatUnderline,
+        align: globalFormatAlign,
+        color: globalFormatColor,
+        spacing: globalSpacing,
+        background: globalBackground,
+      }));
     } catch (e) {
       console.error('Error saving free text:', e);
     }
@@ -1484,7 +1265,7 @@ export default function CastingModeScreen() {
       const hideWarning =
         await AsyncStorage.getItem('casting_hide_headphone_warning');
 
-      if (hideWarning !== 'true') {
+      if (hideWarning !== 'true' && castingType !== 'free') {
         await new Promise<void>((resolve) => {
           if (hasHeadphones) {
             // Con auriculares: mensaje positivo, continuar directamente
@@ -1568,6 +1349,12 @@ export default function CastingModeScreen() {
               return;
             }
           }
+          setCountdown('¡Acción!');
+          await new Promise(resolve => setTimeout(resolve, 800));
+          if (countdownCancelledRef.current) {
+            setCountdown(null);
+            return;
+          }
           setCountdown(null);
         }
 
@@ -1632,15 +1419,18 @@ export default function CastingModeScreen() {
       const fileExt = uri.split('.').pop() || 'mp4';
       const fileName = `video_${Date.now()}.${fileExt}`;
       const storagePath = `${user?.id}/${fileName}`;
-      const uploadUrl = `${process.env.EXPO_PUBLIC_SUPABASE_URL}/storage/v1/object/casting-audio/${storagePath}`;
+      const uploadUrl = `${process.env.EXPO_PUBLIC_SUPABASE_URL}/storage/v1/object/recordings/${storagePath}`;
 
       setProcessingProgress(60);
+
+      const { data: sessionData } = await supabase.auth.getSession();
+      const token = sessionData.session?.access_token || process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY;
 
       const uploadResult = await FileSystem.uploadAsync(uploadUrl, uri, {
         httpMethod: 'POST',
         uploadType: FileSystem.FileSystemUploadType.BINARY_CONTENT,
         headers: {
-          'Authorization': `Bearer ${process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY}`,
+          'Authorization': `Bearer ${token}`,
           'apikey': process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY || '',
           'Content-Type': `video/${fileExt === 'mp4' ? 'mp4' : 'quicktime'}`,
         },
@@ -1830,13 +1620,16 @@ export default function CastingModeScreen() {
         const fileExt = downloadResult.uri.split('.').pop() || 'mp4';
         const fileName = `video_${Date.now()}.${fileExt}`;
         const storagePath = `${user?.id}/${fileName}`;
-        const uploadUrl = `${process.env.EXPO_PUBLIC_SUPABASE_URL}/storage/v1/object/casting-audio/${storagePath}`;
+        const uploadUrl = `${process.env.EXPO_PUBLIC_SUPABASE_URL}/storage/v1/object/recordings/${storagePath}`;
+
+        const { data: sessionData } = await supabase.auth.getSession();
+        const token = sessionData.session?.access_token || process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY;
 
         const uploadResult = await FileSystem.uploadAsync(uploadUrl, downloadResult.uri, {
           httpMethod: 'POST',
           uploadType: FileSystem.FileSystemUploadType.BINARY_CONTENT,
           headers: {
-            'Authorization': `Bearer ${process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY}`,
+            'Authorization': `Bearer ${token}`,
             'apikey': process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY || '',
             'Content-Type': `video/${fileExt === 'mp4' ? 'mp4' : 'quicktime'}`,
           },
@@ -1944,18 +1737,18 @@ export default function CastingModeScreen() {
               style={[styles.btn, { backgroundColor: colors.card, padding: rp(32), borderRadius: rp(16), alignItems: 'center', width: '100%' }]}
               onPress={() => setCastingMode('script_config')}
             >
-              <FileText size={rp(48)} color={colors.primary} style={{ marginBottom: 16 }} />
-              <Text style={{ color: colors.text, fontSize: rf(20), fontWeight: '700' }}>Usar Guion</Text>
-              <Text style={{ color: colors.textSecondary, fontSize: rf(14), textAlign: 'center', marginTop: 8 }}>Ensaya con las líneas de los personajes y autocompletado de voz IA.</Text>
+              <Clapperboard size={rp(48)} color={colors.primary} style={{ marginBottom: 16 }} />
+              <Text style={{ color: colors.text, fontSize: rf(20), fontWeight: '700' }}>SelfTape</Text>
+              <Text style={{ color: colors.textSecondary, fontSize: rf(14), textAlign: 'center', marginTop: 8 }}>Graba tu self tape con la réplica por IA</Text>
             </TouchableOpacity>
 
             <TouchableOpacity
               style={[styles.btn, { backgroundColor: colors.card, padding: rp(32), borderRadius: rp(16), alignItems: 'center', width: '100%' }]}
               onPress={() => setCastingMode('free_input')}
             >
-              <Type size={rp(48)} color="#10B981" style={{ marginBottom: 16 }} />
-              <Text style={{ color: colors.text, fontSize: rf(20), fontWeight: '700' }}>Teleprompter Libre</Text>
-              <Text style={{ color: colors.textSecondary, fontSize: rf(14), textAlign: 'center', marginTop: 8 }}>Escribe o pega cualquier texto para usar el teleprompter automático continuo.</Text>
+              <MonitorPlay size={rp(48)} color="#10B981" style={{ marginBottom: 16 }} />
+              <Text style={{ color: colors.text, fontSize: rf(20), fontWeight: '700' }}>Teleprompter</Text>
+              <Text style={{ color: colors.textSecondary, fontSize: rf(14), textAlign: 'center', marginTop: 8 }}>Crea un teleprompter profesional a partir de cualquier texto.</Text>
             </TouchableOpacity>
           </View>
         </SafeAreaView>
@@ -1984,143 +1777,38 @@ export default function CastingModeScreen() {
             {/* Leyenda de ayuda */}
             <View style={{ paddingHorizontal: rp(16), paddingTop: rp(8), paddingBottom: rp(4) }}>
               <Text style={{ color: colors.textSecondary, fontSize: rf(12), textAlign: 'center' }}>
-                Selecciona texto y usa la barra para aplicar formato solo a esa parte
+                Escribe o pega en el visor el texto plano que quieras, una vez dentro podrás editarlo a tu gusto
               </Text>
             </View>
 
-            {/* Toolbar de formato */}
-            <View style={{ flexDirection: 'row', paddingHorizontal: rp(16), paddingVertical: rp(8), borderBottomWidth: 1, borderBottomColor: 'rgba(255,255,255,0.1)' }}>
-              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: rp(8), alignItems: 'center' }}>
-                {/* Negrita */}
-                <TouchableOpacity
-                  onPress={() => applyFormatToSelection('bold', !activeFormat.bold)}
-                  style={[{ padding: rp(8), borderRadius: rp(8) }, activeFormat.bold && { backgroundColor: '#10B981' }]}
-                >
-                  <Bold size={rp(18)} color={activeFormat.bold ? 'white' : colors.text} />
-                </TouchableOpacity>
-
-                {/* Cursiva */}
-                <TouchableOpacity
-                  onPress={() => applyFormatToSelection('italic', !activeFormat.italic)}
-                  style={[{ padding: rp(8), borderRadius: rp(8) }, activeFormat.italic && { backgroundColor: '#10B981' }]}
-                >
-                  <Italic size={rp(18)} color={activeFormat.italic ? 'white' : colors.text} />
-                </TouchableOpacity>
-
-                {/* Subrayado */}
-                <TouchableOpacity
-                  onPress={() => applyFormatToSelection('underline', !activeFormat.underline)}
-                  style={[{ padding: rp(8), borderRadius: rp(8) }, activeFormat.underline && { backgroundColor: '#10B981' }]}
-                >
-                  <Underline size={rp(18)} color={activeFormat.underline ? 'white' : colors.text} />
-                </TouchableOpacity>
-
-                <View style={{ width: 1, height: 24, backgroundColor: 'rgba(255,255,255,0.2)', marginHorizontal: 4 }} />
-
-                {/* Alineación izquierda */}
-                <TouchableOpacity
-                  onPress={() => applyFormatToSelection('align', 'left')}
-                  style={[{ padding: rp(8), borderRadius: rp(8) }, activeFormat.align === 'left' && { backgroundColor: '#10B981' }]}
-                >
-                  <AlignLeft size={rp(18)} color={activeFormat.align === 'left' ? 'white' : colors.text} />
-                </TouchableOpacity>
-
-                {/* Alineación centro */}
-                <TouchableOpacity
-                  onPress={() => applyFormatToSelection('align', 'center')}
-                  style={[{ padding: rp(8), borderRadius: rp(8) }, activeFormat.align === 'center' && { backgroundColor: '#10B981' }]}
-                >
-                  <AlignCenter size={rp(18)} color={activeFormat.align === 'center' ? 'white' : colors.text} />
-                </TouchableOpacity>
-
-                {/* Alineación derecha */}
-                <TouchableOpacity
-                  onPress={() => applyFormatToSelection('align', 'right')}
-                  style={[{ padding: rp(8), borderRadius: rp(8) }, activeFormat.align === 'right' && { backgroundColor: '#10B981' }]}
-                >
-                  <AlignRight size={rp(18)} color={activeFormat.align === 'right' ? 'white' : colors.text} />
-                </TouchableOpacity>
-
-                <View style={{ width: 1, height: 24, backgroundColor: 'rgba(255,255,255,0.2)', marginHorizontal: 4 }} />
-
-                {/* Color: botón que muestra el color activo */}
-                <TouchableOpacity
-                  onPress={() => setShowColorPicker(!showColorPicker)}
-                  style={{
-                    width: rp(30), height: rp(30), borderRadius: rp(15),
-                    backgroundColor: activeFormat.color,
-                    borderWidth: 2, borderColor: 'white', marginHorizontal: 4
-                  }}
-                />
-              </ScrollView>
-
-              <TouchableOpacity onPress={() => Keyboard.dismiss()} style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: 'rgba(255,255,255,0.1)', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 8, marginLeft: 12 }}>
+            <View style={{ alignItems: 'flex-end', paddingHorizontal: rp(16), paddingVertical: rp(8) }}>
+              <TouchableOpacity onPress={() => Keyboard.dismiss()} style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: 'rgba(255,255,255,0.1)', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 8 }}>
                 <KeyboardIcon size={rp(16)} color={colors.text} style={{ marginRight: 4 }} />
-                <Text style={{ color: colors.text, fontSize: rf(12) }}>Ocultar</Text>
+                <Text style={{ color: colors.text, fontSize: rf(12) }}>Ocultar teclado</Text>
               </TouchableOpacity>
             </View>
 
-            {/* Paleta de colores */}
-            {showColorPicker && (
-              <View style={{ flexDirection: 'row', backgroundColor: 'rgba(255,255,255,0.05)', paddingVertical: rp(10), justifyContent: 'center', gap: rp(12), borderBottomWidth: 1, borderBottomColor: 'rgba(255,255,255,0.1)' }}>
-                {['white', '#FBBF24', '#10B981', '#0EA5E9', '#EF4444', '#A78BFA', '#F97316', '#000000'].map(c => (
-                  <TouchableOpacity
-                    key={c}
-                    onPress={() => { applyFormatToSelection('color', c); setShowColorPicker(false); }}
-                    style={{
-                      width: rp(32), height: rp(32), borderRadius: rp(16),
-                      backgroundColor: c,
-                      borderWidth: activeFormat.color === c ? 3 : 1,
-                      borderColor: activeFormat.color === c ? 'white' : 'rgba(255,255,255,0.4)'
-                    }}
-                  />
-                ))}
-              </View>
-            )}
-
-            {/* Previsualización del rich text mientras se escribe */}
+            {/* Cuadro de texto plano */}
             <View style={{ flex: 1, padding: rp(16) }}>
               <TextInput
                 ref={freeTextInputRef}
                 style={{
                   flex: 1,
                   backgroundColor: 'rgba(255,255,255,0.05)',
-                  color: activeFormat.color === 'white' ? colors.text : activeFormat.color,
+                  color: colors.text,
                   fontSize: rf(20),
                   padding: rp(20),
                   borderRadius: rp(12),
                   textAlignVertical: 'top',
-                  textAlign: activeFormat.align,
-                  fontWeight: activeFormat.bold ? 'bold' : 'normal',
-                  fontStyle: activeFormat.italic ? 'italic' : 'normal',
-                  textDecorationLine: activeFormat.underline ? 'underline' : 'none',
+                  borderWidth: 2,
+                  borderColor: colors.border,
+                  borderStyle: 'dashed'
                 }}
                 multiline
                 placeholder="Escribe o pega aquí tu texto libre..."
                 placeholderTextColor={colors.textSecondary}
                 value={freeText}
                 onChangeText={handleFreeTextChange}
-                onSelectionChange={(e) => {
-                  const sel = e.nativeEvent.selection;
-                  setTextSelection(sel);
-
-                  // Sólo persistimos en el ref si el TextInput tiene el foco REAL
-                  // o si el rango seleccionado tiene longitud > 0.
-                  // Esto evita que el {0,0} automático del blur destruya nuestra selección.
-                  if (isTextInputFocusedRef.current || sel.start !== sel.end) {
-                    lastSelectionRef.current = sel;
-                  }
-
-                  updateActiveFormatFromCursor(richSegments, sel.start);
-                }}
-                onFocus={() => {
-                  isTextInputFocusedRef.current = true;
-                  setShowColorPicker(false);
-                }}
-                onBlur={() => {
-                  isTextInputFocusedRef.current = false;
-                }}
-                onPressIn={() => setShowColorPicker(false)}
               />
             </View>
           </KeyboardAvoidingView>
@@ -2368,7 +2056,7 @@ export default function CastingModeScreen() {
       {castingMode === 'recording' && (
         <>
           {/* Dynamic Camera Component Loader */}
-          {CameraComponent.current && (
+          {CameraComponent.current && (castingType !== 'free' || globalBackground === 'transparent') && (
             <CameraComponent.current
               ref={cameraRef}
               isActive={castingMode === 'recording' && !isProcessing}
@@ -2376,13 +2064,23 @@ export default function CastingModeScreen() {
               zoom={zoom}
             />
           )}
+          {castingType === 'free' && globalBackground !== 'transparent' && (
+            <View style={[StyleSheet.absoluteFill, { backgroundColor: globalBackground }]} />
+          )}
 
           {/* UI Overlay - Absolute positioned */}
           <SafeAreaView style={StyleSheet.absoluteFill}>
             {/* Header Controls */}
             <View style={[styles.header, { zIndex: 50 }]}>
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
-                <TouchableOpacity onPress={() => router.replace(`/scripts/${id}`)} style={styles.iconBtn}>
+                <TouchableOpacity onPress={() => {
+                  if (isRecording) {
+                    cancelRecording();
+                  } else {
+                    setCastingMode('selection');
+                    if (isPlaying) setIsPlaying(false);
+                  }
+                }} style={styles.iconBtn}>
                   <ArrowLeft color="white" size={rp(24)} />
                 </TouchableOpacity>
                 {castingType === 'free' && (
@@ -2456,10 +2154,25 @@ export default function CastingModeScreen() {
             {/* Countdown Overlay */}
             {countdown !== null && (
               <View style={styles.countdownOverlay}>
-                <View style={styles.countdownCircle}>
-                  <Text style={styles.countdownText}>{countdown}</Text>
-                </View>
-                <Text style={styles.countdownLabel}>Prepárate para grabar...</Text>
+                {countdown === '¡Acción!' ? (
+                  <Text style={{
+                    color: 'white',
+                    fontSize: rf(64),
+                    fontWeight: '900',
+                    textShadowColor: '#10B981',
+                    textShadowOffset: { width: 0, height: 0 },
+                    textShadowRadius: 15,
+                  }}>
+                    {countdown}
+                  </Text>
+                ) : (
+                  <>
+                    <View style={styles.countdownCircle}>
+                      <Text style={styles.countdownText}>{countdown}</Text>
+                    </View>
+                    <Text style={styles.countdownLabel}>Prepárate para grabar...</Text>
+                  </>
+                )}
               </View>
             )}
 
@@ -2517,7 +2230,7 @@ export default function CastingModeScreen() {
 
                       // Render Action Card
                       if (isAction) {
-                        if (hideActions) return null;
+                        if (!showActions) return null;
 
                         const actionId = item.id;
                         const text = isManualAction ? (item as ActionCard).text : (item as DialogueLine).text;
@@ -2542,13 +2255,13 @@ export default function CastingModeScreen() {
                           >
                             <View style={styles.teleprompterActionHeader}>
                               <Clapperboard color={colors.primary} size={rp(16)} />
-                              <Text style={[styles.teleprompterActionLabel, { color: colors.primary }]}>ACCIÓN</Text>
+                              <Text style={[styles.teleprompterActionLabel, { color: '#FFFFFF' }]}>ACCIÓN</Text>
                               <View style={styles.teleprompterActionDuration}>
                                 <Timer size={rp(12)} color={colors.primary} />
                                 <Text style={[styles.teleprompterActionDurationText, { color: colors.text }]}>{displayDuration}s</Text>
                               </View>
                             </View>
-                            <Text style={[styles.teleprompterActionText, { color: colors.text }, isActive && { fontWeight: '700' }]}>
+                            <Text style={[styles.teleprompterActionText, { color: '#FFFFFF' }, isActive && { fontWeight: '700' }]}>
                               ({text})
                             </Text>
                           </View>
@@ -2618,52 +2331,29 @@ export default function CastingModeScreen() {
                     }}
                     scrollEventThrottle={16}
                   >
-                    {richSegments.length === 0 || (richSegments.length === 1 && !richSegments[0].text) ? (
+                    {!freeText.trim() ? (
                       <Text style={{ color: 'rgba(255,255,255,0.4)', fontSize: freeFontSize, textAlign: 'center', transform: [{ scaleX: isMirrored ? -1 : 1 }] }}>
                         No hay texto para mostrar. Vuelve atrás y escribe algo.
                       </Text>
                     ) : (
-                      // Agrupar segmentos por párrafo (separados por saltos de línea)
-                      // Cada segmento que contiene \n se divide y cada línea puede tener su propia alineación
-                      (() => {
-                        // Dividir los segmentos por líneas preservando el formato de cada trozo
-                        type RenderSpan = Omit<TextSegment, 'id'>;
-                        const lines: RenderSpan[][] = [[]];
-
-                        for (const seg of richSegments) {
-                          const parts = seg.text.split('\n');
-                          for (let pi = 0; pi < parts.length; pi++) {
-                            if (pi > 0) lines.push([]);
-                            if (parts[pi].length > 0) {
-                              lines[lines.length - 1].push({ ...seg, text: parts[pi] });
-                            }
-                          }
-                        }
-
-                        return lines.map((lineSpans, lineIdx) => {
-                          // La alineación de la línea la decide el primer span (o centro por defecto)
-                          const lineAlign = lineSpans[0]?.align ?? 'center';
-                          return (
-                            <View key={lineIdx} style={{ width: '100%', alignItems: lineAlign === 'left' ? 'flex-start' : lineAlign === 'right' ? 'flex-end' : 'center', marginBottom: freeFontSize * 0.3, transform: [{ scaleX: isMirrored ? -1 : 1 }] }}>
-                              <Text style={{ fontSize: freeFontSize, lineHeight: freeFontSize * 1.4, textAlign: lineAlign }}>
-                                {lineSpans.length === 0 ? ' ' : lineSpans.map((span, si) => (
-                                  <Text
-                                    key={si}
-                                    style={{
-                                      color: span.color,
-                                      fontWeight: span.bold ? 'bold' : 'normal',
-                                      fontStyle: span.italic ? 'italic' : 'normal',
-                                      textDecorationLine: span.underline ? 'underline' : 'none',
-                                    }}
-                                  >
-                                    {span.text}
-                                  </Text>
-                                ))}
-                              </Text>
-                            </View>
-                          );
-                        });
-                      })()
+                      <View style={{ 
+                        width: '100%', 
+                        alignItems: globalFormatAlign === 'left' ? 'flex-start' : globalFormatAlign === 'right' ? 'flex-end' : 'center', 
+                        transform: [{ scaleX: isMirrored ? -1 : 1 }] 
+                      }}>
+                        <Text style={{
+                          fontSize: freeFontSize,
+                          lineHeight: freeFontSize * (1.4 + (globalSpacing * 0.1)),
+                          letterSpacing: globalSpacing * 0.5,
+                          textAlign: globalFormatAlign,
+                          color: globalFormatColor,
+                          fontWeight: globalFormatBold ? 'bold' : 'normal',
+                          fontStyle: globalFormatItalic ? 'italic' : 'normal',
+                          textDecorationLine: globalFormatUnderline ? 'underline' : 'none',
+                        }}>
+                          {freeText}
+                        </Text>
+                      </View>
                     )}
                   </ScrollView>
                 )}
@@ -2707,16 +2397,22 @@ export default function CastingModeScreen() {
                 )}
 
                 {/* Record / Stop */}
-                <TouchableOpacity
-                  onPress={toggleRecording}
-                  style={[
-                    styles.recordBtn,
-                    isRecording && styles.recordingBtnActive,
-                    castingType === 'free' && { width: rp(60), height: rp(60), borderRadius: rp(30), borderWidth: 2, padding: 4 }
-                  ]}
-                >
-                  {isRecording ? <Square fill="#EF4444" color="white" size={rp(24)} /> : <View style={[styles.recordInner, castingType === 'free' && { width: '100%', height: '100%', borderRadius: rp(30) }]} />}
-                </TouchableOpacity>
+                {(castingType !== 'free' || globalBackground === 'transparent') && (
+                  <TouchableOpacity
+                    onPress={toggleRecording}
+                    style={[
+                      styles.recordBtn,
+                      isRecording && styles.recordingBtnActive,
+                      castingType === 'free' && { backgroundColor: 'transparent', borderColor: 'rgba(255,255,255,0.5)', borderWidth: 2 }
+                    ]}
+                  >
+                    <View style={[
+                      styles.recordInner,
+                      isRecording && { borderRadius: rp(8), width: rp(28), height: rp(28) },
+                      castingType === 'free' && isRecording && { backgroundColor: 'rgba(239, 68, 68, 0.8)' }
+                    ]} />
+                  </TouchableOpacity>
+                )}
 
                 {/* Next (Manual Advance) */}
                 {castingType !== 'free' && (
@@ -2731,213 +2427,260 @@ export default function CastingModeScreen() {
                 </TouchableOpacity>
               </View>
 
-              {/* Dropdown Menu */}
-              <Modal
+              <BottomSheetMenu
                 visible={showMenu}
-                transparent={true}
-                animationType="fade"
-                onRequestClose={() => setShowMenu(false)}
+                onClose={() => setShowMenu(false)}
+                title="Configuración"
+                backgroundColor="#1A1A1A"
+                titleColor="white"
               >
-                <TouchableOpacity
-                  style={styles.bottomSheetOverlay}
-                  activeOpacity={1}
-                  onPress={() => setShowMenu(false)}
-                >
-                  <View style={[styles.optionsContent, { backgroundColor: '#1A1A1A' }]}>
-                    <ScrollView style={{ maxHeight: rp(400) }} showsVerticalScrollIndicator={false}>
-
-                      {castingType === 'script' ? (
-                        <>
-                          {/* Delay de inicio */}
-                          <View style={styles.menuItem}>
-                            <Timer size={rp(20)} color="white" />
-                            <Text style={styles.menuText}>Espera inicial</Text>
-                          </View>
-                          <View style={styles.volumeControlMenu}>
-                            <TouchableOpacity
-                              onPress={() => setStartDelay(Math.max(0, startDelay - 5))}
-                              style={styles.volumeBtnMenu}
-                            >
-                              <Minus size={rp(18)} color="white" />
-                            </TouchableOpacity>
-                            <View style={styles.volumeDisplayMenu}>
-                              <Text style={styles.volumeTextMenu}>{startDelay === 0 ? 'Off' : `${startDelay}s`}</Text>
-                            </View>
-                            <TouchableOpacity
-                              onPress={() => setStartDelay(Math.min(60, startDelay + 5))}
-                              style={styles.volumeBtnMenu}
-                            >
-                              <Plus size={rp(18)} color="white" />
-                            </TouchableOpacity>
-                          </View>
-                          <View style={styles.menuSeparator} />
-
-                          {/* Control de volumen IA */}
-                          <View style={styles.menuItem}>
-                            <Volume2 size={rp(20)} color="white" />
-                            <Text style={styles.menuText}>Volumen voz IA</Text>
-                          </View>
-                          <View style={styles.volumeControlMenu}>
-                            <TouchableOpacity
-                              onPress={() => setTtsVolume(Math.max(0.1, ttsVolume - 0.1))}
-                              style={styles.volumeBtnMenu}
-                            >
-                              <Minus size={rp(18)} color="white" />
-                            </TouchableOpacity>
-                            <View style={styles.volumeDisplayMenu}>
-                              <Text style={styles.volumeTextMenu}>{Math.round(ttsVolume * 100)}%</Text>
-                            </View>
-                            <TouchableOpacity
-                              onPress={() => setTtsVolume(Math.min(1.0, ttsVolume + 0.1))}
-                              style={styles.volumeBtnMenu}
-                            >
-                              <Plus size={rp(18)} color="white" />
-                            </TouchableOpacity>
-                          </View>
-                          <View style={styles.menuSeparator} />
-
-                          <TouchableOpacity
-                            onPress={() => { setHideUserLines(!hideUserLines); setShowMenu(false); }}
-                            style={styles.menuItem}
-                          >
-                            {hideUserLines ? (
-                              <Eye size={rp(20)} color="white" />
-                            ) : (
-                              <EyeOff size={rp(20)} color="white" />
-                            )}
-                            <Text style={styles.menuText}>
-                              {hideUserLines ? 'Mostrar mis líneas' : 'Ocultar mis líneas'}
-                            </Text>
+                <ScrollView style={{ maxHeight: rp(400) }} showsVerticalScrollIndicator={false}>
+                  {castingType === 'script' ? (
+                    <>
+                      {/* Delay de inicio */}
+                      <View style={[styles.menuItem, { paddingHorizontal: 20, justifyContent: 'space-between' }]}>
+                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: rp(12) }}>
+                          <Timer size={rp(20)} color="white" />
+                          <Text style={styles.menuText}>Espera inicial</Text>
+                        </View>
+                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+                          <TouchableOpacity onPress={() => setStartDelay(Math.max(0, startDelay - 5))} style={styles.volumeBtnMenu}>
+                            <Minus size={rp(18)} color="white" />
                           </TouchableOpacity>
-                          <View style={styles.menuSeparator} />
-
-                          <TouchableOpacity
-                            onPress={() => { setHideTeleprompter(!hideTeleprompter); setShowMenu(false); }}
-                            style={styles.menuItem}
-                          >
-                            <EyeOff size={rp(20)} color="white" />
-                            <Text style={styles.menuText}>
-                              {hideTeleprompter ? 'Mostrar Teleprompter' : 'Ocultar Teleprompter'}
-                            </Text>
-                          </TouchableOpacity>
-                          <View style={styles.menuSeparator} />
-
-                          <TouchableOpacity
-                            onPress={() => { setHideActions(!hideActions); setShowMenu(false); }}
-                            style={styles.menuItem}
-                          >
-                            {hideActions ? (
-                              <Eye size={rp(20)} color="#F59E0B" />
-                            ) : (
-                              <EyeOff size={rp(20)} color="#F59E0B" />
-                            )}
-                            <Text style={styles.menuText}>
-                              {hideActions ? 'Mostrar acciones' : 'Ocultar acciones'}
-                            </Text>
-                          </TouchableOpacity>
-                          <View style={styles.menuSeparator} />
-
-                          <TouchableOpacity
-                            onPress={() => { setShowStageDirections(!showStageDirections); setShowMenu(false); }}
-                            style={styles.menuItem}
-                          >
-                            <MessageSquare size={rp(20)} color={showStageDirections ? '#FFA500' : 'white'} />
-                            <Text style={[styles.menuText, showStageDirections && { color: '#FFA500' }]}>
-                              {showStageDirections ? 'Ocultar Acotaciones' : 'Mostrar Acotaciones'}
-                            </Text>
-                          </TouchableOpacity>
-                        </>
-                      ) : (
-                        <>
-                          {/* Delay de inicio */}
-                          <View style={styles.menuItem}>
-                            <Timer size={rp(20)} color="white" />
-                            <Text style={styles.menuText}>Espera inicial</Text>
+                          <View style={{ width: 40, alignItems: 'center' }}>
+                            <Text style={styles.volumeTextMenu}>{startDelay === 0 ? 'Off' : `${startDelay}s`}</Text>
                           </View>
-                          <View style={styles.volumeControlMenu}>
-                            <TouchableOpacity
-                              onPress={() => setStartDelay(Math.max(0, startDelay - 5))}
-                              style={styles.volumeBtnMenu}
-                            >
-                              <Minus size={rp(18)} color="white" />
-                            </TouchableOpacity>
-                            <View style={styles.volumeDisplayMenu}>
-                              <Text style={styles.volumeTextMenu}>{startDelay === 0 ? 'Off' : `${startDelay}s`}</Text>
-                            </View>
-                            <TouchableOpacity
-                              onPress={() => setStartDelay(Math.min(60, startDelay + 5))}
-                              style={styles.volumeBtnMenu}
-                            >
-                              <Plus size={rp(18)} color="white" />
-                            </TouchableOpacity>
-                          </View>
-                          <View style={styles.menuSeparator} />
-
-                          <TouchableOpacity
-                            onPress={() => { setIsMirrored(!isMirrored); setShowMenu(false); }}
-                            style={styles.menuItem}
-                          >
-                            <FlipHorizontal size={rp(20)} color={isMirrored ? '#10B981' : 'white'} />
-                            <Text style={[styles.menuText, isMirrored && { color: '#10B981' }]}>
-                              {isMirrored ? 'Espejo Activado' : 'Modo Espejo'}
-                            </Text>
+                          <TouchableOpacity onPress={() => setStartDelay(Math.min(60, startDelay + 5))} style={styles.volumeBtnMenu}>
+                            <Plus size={rp(18)} color="white" />
                           </TouchableOpacity>
-                          <View style={styles.menuSeparator} />
+                        </View>
+                      </View>
+                      <View style={{ height: 1, backgroundColor: '#333', marginVertical: 8 }} />
 
+                      {/* Control de volumen IA */}
+                      <View style={[styles.menuItem, { paddingHorizontal: 20, justifyContent: 'space-between' }]}>
+                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: rp(12) }}>
+                          <Volume2 size={rp(20)} color="white" />
+                          <Text style={styles.menuText}>Volumen voz IA</Text>
+                        </View>
+                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+                          <TouchableOpacity onPress={() => setTtsVolume(Math.max(0.1, ttsVolume - 0.1))} style={styles.volumeBtnMenu}>
+                            <Minus size={rp(18)} color="white" />
+                          </TouchableOpacity>
+                          <View style={{ width: 40, alignItems: 'center' }}>
+                            <Text style={styles.volumeTextMenu}>{Math.round(ttsVolume * 100)}%</Text>
+                          </View>
+                          <TouchableOpacity onPress={() => setTtsVolume(Math.min(1.0, ttsVolume + 0.1))} style={styles.volumeBtnMenu}>
+                            <Plus size={rp(18)} color="white" />
+                          </TouchableOpacity>
+                        </View>
+                      </View>
+                      <View style={{ height: 1, backgroundColor: '#333', marginVertical: 8 }} />
+
+                      <BottomSheetToggle
+                        label="Ocultar mis líneas"
+                        Icon={EyeOff}
+                        value={hideUserLines}
+                        onValueChange={setHideUserLines}
+                        textColor="white"
+                        iconColor="white"
+                      />
+
+                      <BottomSheetToggle
+                        label="Ocultar Teleprompter"
+                        Icon={Type}
+                        value={hideTeleprompter}
+                        onValueChange={setHideTeleprompter}
+                        textColor="white"
+                        iconColor="white"
+                      />
+
+                      <BottomSheetToggle
+                        label="Mostrar acciones"
+                        Icon={Clapperboard}
+                        value={showActions}
+                        onValueChange={setShowActions}
+                        textColor="white"
+                        iconColor="white"
+                      />
+
+                      <BottomSheetToggle
+                        label="Mostrar acotaciones"
+                        Icon={MessageSquare}
+                        value={showStageDirections}
+                        onValueChange={setShowStageDirections}
+                        textColor="white"
+                        iconColor="white"
+                      />
+                    </>
+                  ) : (
+                    <>
+                      {/* 1. Edición de texto (Collapsible) */}
+                      <TouchableOpacity 
+                        onPress={() => setIsTextEditExpanded(!isTextEditExpanded)}
+                        style={[styles.menuItem, { paddingHorizontal: 20, justifyContent: 'space-between' }]}
+                      >
+                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: rp(12) }}>
+                          <Type size={rp(20)} color="white" />
+                          <Text style={[styles.menuText, { fontSize: rf(16) }]}>Edición de texto</Text>
+                        </View>
+                        <ChevronRight size={rp(20)} color="white" style={{ transform: [{ rotate: isTextEditExpanded ? '90deg' : '0deg' }] }} />
+                      </TouchableOpacity>
+                      
+                      {isTextEditExpanded && (
+                        <View style={{ backgroundColor: 'rgba(255,255,255,0.05)', paddingVertical: rp(12) }}>
                           {/* Tamaño de texto */}
-                          <View style={styles.menuItem}>
-                            <Type size={rp(20)} color="white" />
-                            <Text style={styles.menuText}>Tamaño de texto</Text>
-                          </View>
-                          <View style={styles.volumeControlMenu}>
-                            <TouchableOpacity
-                              onPress={() => setFreeFontSize(Math.max(rf(16), freeFontSize - rf(4)))}
-                              style={styles.volumeBtnMenu}
-                            >
-                              <Minus size={rp(18)} color="white" />
-                            </TouchableOpacity>
-                            <View style={styles.volumeDisplayMenu}>
-                              <Text style={styles.volumeTextMenu}>{Math.round(freeFontSize)}</Text>
+                          <View style={[styles.menuItem, { paddingHorizontal: 20, justifyContent: 'space-between' }]}>
+                            <Text style={[styles.menuText, { fontSize: rf(16) }]}>Tamaño</Text>
+                            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+                              <TouchableOpacity onPress={() => setFreeFontSize(Math.max(rf(16), freeFontSize - rf(4)))} style={styles.volumeBtnMenu}>
+                                <Minus size={rp(18)} color="white" />
+                              </TouchableOpacity>
+                              <View style={{ width: 40, alignItems: 'center' }}>
+                                <Text style={styles.volumeTextMenu}>{Math.round(freeFontSize)}</Text>
+                              </View>
+                              <TouchableOpacity onPress={() => setFreeFontSize(Math.min(rf(72), freeFontSize + rf(4)))} style={styles.volumeBtnMenu}>
+                                <Plus size={rp(18)} color="white" />
+                              </TouchableOpacity>
                             </View>
-                            <TouchableOpacity
-                              onPress={() => setFreeFontSize(Math.min(rf(72), freeFontSize + rf(4)))}
-                              style={styles.volumeBtnMenu}
-                            >
-                              <Plus size={rp(18)} color="white" />
-                            </TouchableOpacity>
                           </View>
 
-                          <View style={styles.menuSeparator} />
-
-                          {/* Velocidad */}
-                          <View style={styles.menuItem}>
-                            <Snail size={rp(20)} color="white" />
-                            <Text style={styles.menuText}>Velocidad</Text>
-                            <Rabbit size={rp(20)} color="white" style={{ marginLeft: 'auto' }} />
-                          </View>
-                          <View style={styles.volumeControlMenu}>
-                            <TouchableOpacity
-                              onPress={() => setFreeScrollSpeed(Math.max(1, freeScrollSpeed - 1))}
-                              style={styles.volumeBtnMenu}
-                            >
-                              <Minus size={rp(18)} color="white" />
-                            </TouchableOpacity>
-                            <View style={styles.volumeDisplayMenu}>
-                              <Text style={styles.volumeTextMenu}>{freeScrollSpeed}</Text>
+                          {/* Espaciado */}
+                          <View style={[styles.menuItem, { paddingHorizontal: 20, justifyContent: 'space-between' }]}>
+                            <Text style={[styles.menuText, { fontSize: rf(16) }]}>Espaciado</Text>
+                            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+                              <TouchableOpacity onPress={() => setGlobalSpacing(Math.max(-5, globalSpacing - 1))} style={styles.volumeBtnMenu}>
+                                <Minus size={rp(18)} color="white" />
+                              </TouchableOpacity>
+                              <View style={{ width: 40, alignItems: 'center' }}>
+                                <Text style={styles.volumeTextMenu}>{globalSpacing}</Text>
+                              </View>
+                              <TouchableOpacity onPress={() => setGlobalSpacing(Math.min(20, globalSpacing + 1))} style={styles.volumeBtnMenu}>
+                                <Plus size={rp(18)} color="white" />
+                              </TouchableOpacity>
                             </View>
-                            <TouchableOpacity
-                              onPress={() => setFreeScrollSpeed(Math.min(10, freeScrollSpeed + 1))}
-                              style={styles.volumeBtnMenu}
-                            >
-                              <Plus size={rp(18)} color="white" />
-                            </TouchableOpacity>
                           </View>
-                        </>
+
+                          {/* Formato */}
+                          <View style={[styles.menuItem, { paddingHorizontal: 20, justifyContent: 'space-between' }]}>
+                            <Text style={[styles.menuText, { fontSize: rf(16) }]}>Formato</Text>
+                            <View style={{ flexDirection: 'row', gap: 8 }}>
+                              <TouchableOpacity onPress={() => setGlobalFormatBold(!globalFormatBold)} style={[{ padding: rp(8), borderRadius: rp(8), backgroundColor: globalFormatBold ? '#10B981' : 'rgba(255,255,255,0.1)' }]}>
+                                <Bold size={rp(18)} color="white" />
+                              </TouchableOpacity>
+                              <TouchableOpacity onPress={() => setGlobalFormatItalic(!globalFormatItalic)} style={[{ padding: rp(8), borderRadius: rp(8), backgroundColor: globalFormatItalic ? '#10B981' : 'rgba(255,255,255,0.1)' }]}>
+                                <Italic size={rp(18)} color="white" />
+                              </TouchableOpacity>
+                              <TouchableOpacity onPress={() => setGlobalFormatUnderline(!globalFormatUnderline)} style={[{ padding: rp(8), borderRadius: rp(8), backgroundColor: globalFormatUnderline ? '#10B981' : 'rgba(255,255,255,0.1)' }]}>
+                                <Underline size={rp(18)} color="white" />
+                              </TouchableOpacity>
+                            </View>
+                          </View>
+
+                          {/* Alineación */}
+                          <View style={[styles.menuItem, { paddingHorizontal: 20, justifyContent: 'space-between' }]}>
+                            <Text style={[styles.menuText, { fontSize: rf(16) }]}>Alineación</Text>
+                            <View style={{ flexDirection: 'row', gap: 8 }}>
+                              <TouchableOpacity onPress={() => setGlobalFormatAlign('left')} style={[{ padding: rp(8), borderRadius: rp(8), backgroundColor: globalFormatAlign === 'left' ? '#10B981' : 'rgba(255,255,255,0.1)' }]}>
+                                <AlignLeft size={rp(18)} color="white" />
+                              </TouchableOpacity>
+                              <TouchableOpacity onPress={() => setGlobalFormatAlign('center')} style={[{ padding: rp(8), borderRadius: rp(8), backgroundColor: globalFormatAlign === 'center' ? '#10B981' : 'rgba(255,255,255,0.1)' }]}>
+                                <AlignCenter size={rp(18)} color="white" />
+                              </TouchableOpacity>
+                              <TouchableOpacity onPress={() => setGlobalFormatAlign('right')} style={[{ padding: rp(8), borderRadius: rp(8), backgroundColor: globalFormatAlign === 'right' ? '#10B981' : 'rgba(255,255,255,0.1)' }]}>
+                                <AlignRight size={rp(18)} color="white" />
+                              </TouchableOpacity>
+                            </View>
+                          </View>
+
+                          {/* Color texto */}
+                          <TouchableOpacity onPress={() => setShowColorPicker(!showColorPicker)} style={[styles.menuItem, { paddingHorizontal: 20, justifyContent: 'space-between' }]}>
+                            <Text style={[styles.menuText, { fontSize: rf(16) }]}>Color de texto</Text>
+                            <View style={{ width: 24, height: 24, borderRadius: 12, backgroundColor: globalFormatColor, borderWidth: 1, borderColor: 'white' }} />
+                          </TouchableOpacity>
+                          {showColorPicker && (
+                            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: 20, gap: 12, paddingBottom: 12 }}>
+                              {['white', '#FBBF24', '#10B981', '#0EA5E9', '#EF4444', '#A78BFA', '#F97316', '#000000'].map(c => (
+                                <TouchableOpacity key={c} onPress={() => { setGlobalFormatColor(c); setShowColorPicker(false); }} style={{ width: 32, height: 32, borderRadius: 16, backgroundColor: c, borderWidth: globalFormatColor === c ? 3 : 1, borderColor: globalFormatColor === c ? 'white' : 'rgba(255,255,255,0.3)' }} />
+                              ))}
+                            </ScrollView>
+                          )}
+
+                          {/* Color Fondo */}
+                          <TouchableOpacity onPress={() => setShowBgColorPicker(!showBgColorPicker)} style={[styles.menuItem, { paddingHorizontal: 20, justifyContent: 'space-between' }]}>
+                            <Text style={[styles.menuText, { fontSize: rf(16) }]}>Fondo de pantalla</Text>
+                            <View style={{ width: 24, height: 24, borderRadius: 12, backgroundColor: globalBackground === 'transparent' ? '#333' : globalBackground, borderWidth: 1, borderColor: 'white', alignItems: 'center', justifyContent: 'center' }}>
+                              {globalBackground === 'transparent' && <Video size={14} color="white" />}
+                            </View>
+                          </TouchableOpacity>
+                          {showBgColorPicker && (
+                            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: 20, gap: 12, paddingBottom: 12 }}>
+                              <TouchableOpacity onPress={() => { setGlobalBackground('transparent'); setShowBgColorPicker(false); }} style={{ width: 32, height: 32, borderRadius: 16, backgroundColor: '#333', borderWidth: globalBackground === 'transparent' ? 3 : 1, borderColor: globalBackground === 'transparent' ? 'white' : 'rgba(255,255,255,0.3)', alignItems: 'center', justifyContent: 'center' }}>
+                                <Video size={16} color="white" />
+                              </TouchableOpacity>
+                              {['#000000', '#111111', '#10B981', '#3B82F6', '#EF4444', '#8B5CF6', '#F59E0B'].map(c => (
+                                <TouchableOpacity key={c} onPress={() => { setGlobalBackground(c); setShowBgColorPicker(false); }} style={{ width: 32, height: 32, borderRadius: 16, backgroundColor: c, borderWidth: globalBackground === c ? 3 : 1, borderColor: globalBackground === c ? 'white' : 'rgba(255,255,255,0.3)' }} />
+                              ))}
+                            </ScrollView>
+                          )}
+                        </View>
                       )}
-                    </ScrollView>
-                  </View>
-                </TouchableOpacity>
-              </Modal>
+                      <View style={{ height: 1, backgroundColor: '#333', marginVertical: 8 }} />
+
+                      {/* 2. Modo Espejo */}
+                      <BottomSheetToggle
+                        label="Modo Espejo"
+                        Icon={FlipHorizontal}
+                        value={isMirrored}
+                        onValueChange={setIsMirrored}
+                        iconColor="white"
+                        textColor="white"
+                      />
+                      <View style={{ height: 1, backgroundColor: '#333', marginVertical: 8 }} />
+
+                      {/* 3. Espera inicial */}
+                      <View style={[styles.menuItem, { paddingHorizontal: 20, justifyContent: 'space-between' }]}>
+                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: rp(12) }}>
+                          <Timer size={rp(20)} color="white" />
+                          <Text style={styles.menuText}>Espera inicial</Text>
+                        </View>
+                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+                          <TouchableOpacity onPress={() => setStartDelay(Math.max(0, startDelay - 5))} style={styles.volumeBtnMenu}>
+                            <Minus size={rp(18)} color="white" />
+                          </TouchableOpacity>
+                          <View style={{ width: 40, alignItems: 'center' }}>
+                            <Text style={styles.volumeTextMenu}>{startDelay === 0 ? 'Off' : `${startDelay}s`}</Text>
+                          </View>
+                          <TouchableOpacity onPress={() => setStartDelay(Math.min(60, startDelay + 5))} style={styles.volumeBtnMenu}>
+                            <Plus size={rp(18)} color="white" />
+                          </TouchableOpacity>
+                        </View>
+                      </View>
+                      <View style={{ height: 1, backgroundColor: '#333', marginVertical: 8 }} />
+
+                      {/* 4. Velocidad */}
+                      <View style={{ marginVertical: 8 }}>
+                        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12, paddingHorizontal: 20 }}>
+                          <Snail size={rp(20)} color="white" />
+                          <Text style={[styles.menuText, { flex: 1, textAlign: 'center' }]}>Velocidad</Text>
+                          <Rabbit size={rp(20)} color="white" />
+                        </View>
+                        <View style={styles.volumeControlMenu}>
+                          <TouchableOpacity onPress={() => setFreeScrollSpeed(Math.max(1, freeScrollSpeed - 1))} style={styles.volumeBtnMenu}>
+                            <Minus size={rp(18)} color="white" />
+                          </TouchableOpacity>
+                          <View style={styles.volumeDisplayMenu}>
+                            <Text style={styles.volumeTextMenu}>{freeScrollSpeed}</Text>
+                          </View>
+                          <TouchableOpacity onPress={() => setFreeScrollSpeed(Math.min(20, freeScrollSpeed + 1))} style={styles.volumeBtnMenu}>
+                            <Plus size={rp(18)} color="white" />
+                          </TouchableOpacity>
+                        </View>
+                      </View>
+                    </>
+                  )}
+                </ScrollView>
+              </BottomSheetMenu>
             </View>
 
           </SafeAreaView>
@@ -2947,9 +2690,13 @@ export default function CastingModeScreen() {
             <View style={styles.processingOverlay}>
               <View style={styles.processingModal}>
                 <ActivityIndicator size="large" color="#3B82F6" />
-                <Text style={styles.processingTitle}>Procesando tu casting...</Text>
+                <Text style={styles.processingTitle}>
+                  {castingType === 'free' ? 'Guardando video...' : 'Procesando tu casting...'}
+                </Text>
                 <Text style={styles.processingText}>
-                  Estamos mezclando tu actuación con el audio de IA de alta calidad.
+                  {castingType === 'free' 
+                    ? 'Estamos guardando tu grabación en la nube.' 
+                    : 'Estamos mezclando tu actuación con el audio de IA de alta calidad.'}
                 </Text>
                 <Text style={styles.processingSubtext}>
                   Dependiendo de tu conexión esto puede tardar varios minutos
