@@ -1146,6 +1146,18 @@ const styles = StyleSheet.create({
     lineHeight: 22,
     textAlign: 'left',
   },
+  comparisonLabelVertical: {
+    fontSize: rf(13),
+    fontWeight: '800',
+    letterSpacing: 1.2,
+    marginBottom: 8,
+    textTransform: 'uppercase'
+  },
+  comparisonValueVertical: {
+    fontSize: rf(15),
+    lineHeight: 22,
+    textAlign: 'left',
+  },
 
   scoreCard: {
     padding: rp(20),
