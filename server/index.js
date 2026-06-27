@@ -578,10 +578,14 @@ app.post('/analyze-recording', async (req, res) => {
         console.log('[Coach] Base64 length:', base64Audio.length);
         console.log('[Coach] Model: gpt-4o-audio-preview');
 
-        // 4. Fetch script context for better analysis
+        // 4. Resolve Character Name and Fetch script context for better analysis
         let scriptContext = '';
-        let userCharacterName = characterName;
+        let specificUserLines = '';
 
+        // PASO 1: Leer del body
+        let userCharacterName = characterName || '';
+
+        // PASO 2: Si viene vacío, buscar en BD por characterId
         if (!userCharacterName && characterId) {
             try {
                 const { data: charData } = await supabase
@@ -590,23 +594,38 @@ app.post('/analyze-recording', async (req, res) => {
                     .eq('id', characterId)
                     .single();
                 
-                userCharacterName = charData?.name?.toUpperCase() || '';
-                console.log('[Coach] Personaje encontrado en BD:', userCharacterName);
+                if (charData?.name) {
+                    userCharacterName = charData.name.toUpperCase();
+                }
             } catch (e) {
-                console.error('[Coach] Error buscando personaje:', e);
-                userCharacterName = '';
+                console.error('[Coach] Error buscando personaje por characterId:', e);
             }
         }
 
-        console.log('[Coach] userCharacterName final:', userCharacterName);
+        // PASO 3: Si sigue vacío, buscar en las grabaciones
+        if (!userCharacterName && recordingId) {
+            try {
+                const { data: recData } = await supabase
+                    .from('recordings')
+                    .select('character_id, characters(name)')
+                    .eq('id', recordingId)
+                    .single();
+                
+                if (recData?.characters?.name) {
+                    userCharacterName = recData.characters.name.toUpperCase();
+                }
+            } catch (e) {
+                console.error('[Coach] Error buscando personaje por recordingId:', e);
+            }
+        }
+
+        console.log('[Coach] userCharacterName FINAL resuelto:', userCharacterName);
 
         // VERIFICACIÓN CRÍTICA: si no tenemos el nombre, el análisis no puede ser preciso
         if (!userCharacterName) {
             console.warn('[Coach] ADVERTENCIA: No se pudo determinar el personaje del usuario.');
             console.warn('[Coach] El análisis puede no ser preciso.');
         }
-
-        let specificUserLines = '';
 
         if (scriptId) {
             try {
@@ -625,13 +644,6 @@ app.post('/analyze-recording', async (req, res) => {
                     .select('id, name, is_user_character')
                     .eq('script_id', scriptId);
 
-                // Find user's character
-                const userCharacter = characters?.find(c => c.is_user_character);
-                if (userCharacter?.name) {
-                    userCharacterName = userCharacter.name;
-                    console.log('[Coach] User character:', userCharacterName);
-                }
-
                 // Get dialogue lines
                 const { data: dialogues } = await supabase
                     .from('dialogues')
@@ -649,15 +661,17 @@ app.post('/analyze-recording', async (req, res) => {
                         })
                         .join('\n');
 
-                    // ISOLATION STRATEGY: List only user lines to prevent confusion
+                    // Filtrar las líneas del personaje del usuario
                     const userLinesOnly = dialogues
-                        .filter(d => characterMap.get(d.character_id) === userCharacterName)
+                        .filter(d => {
+                            const charName = characterMap.get(d.character_id);
+                            return charName && charName.toUpperCase() === userCharacterName;
+                        })
                         .map((d, i) => `${i + 1}. "${d.line_text}"`);
                     
                     specificUserLines = userLinesOnly.join('\n');
                     
-                    console.log('[Coach] Líneas del usuario encontradas:', userLinesOnly.length || 0);
-                    console.log('[Coach] Primera línea del usuario:', userLinesOnly[0] || 'NINGUNA');
+                    console.log('[Coach] Líneas de', userCharacterName, ':', specificUserLines.substring(0, 100));
 
                     if (!userLinesOnly || userLinesOnly.length === 0) {
                         console.error('[Coach] ERROR: No se encontraron líneas para el personaje', userCharacterName);
@@ -880,21 +894,54 @@ Idioma: Español. Tono: constructivo, inspirador y exploratorio.`;
         console.log('[Coach] Analysis complete.');
 
         // 4. Save to Supabase
-        const { data: insertData, error: insertError } = await supabase
-            .from('coach_feedback')
-            .insert({
-                recording_id: null, // We might need to find the recording ID or just use what data we have. 
-                // Wait, recordingPath is just a path. We need recording_id for the relation.
-                // The client should send recordingId. 
-                // But for now, let's assume client sends recordingId if available.
-                // If not, we store it loosely or requiring recordingId.
-                // I'll add recordingId to request body.
-                recording_id: req.body.recordingId,
-                user_id: userId,
-                feedback: analysisData
-            })
-            .select()
-            .single();
+        let insertData = null;
+        let insertError = null;
+
+        if (req.body.recordingId) {
+            // Buscar si ya existe un análisis para esta grabación
+            const { data: existing } = await supabase
+              .from('coach_feedback')
+              .select('id')
+              .eq('recording_id', req.body.recordingId)
+              .single();
+
+            if (existing) {
+              // Actualizar el existente con el nuevo análisis
+              // (que puede incluir la comparación)
+              const { data: updatedData, error: updateError } = await supabase
+                .from('coach_feedback')
+                .update({ 
+                  feedback: analysisData,
+                  updated_at: new Date().toISOString()
+                })
+                .eq('id', existing.id)
+                .select()
+                .single();
+              
+              insertData = updatedData;
+              insertError = updateError;
+              console.log('[Coach] Análisis actualizado en BD:', existing.id);
+            } else {
+              // Insertar nuevo
+              const { data: newData, error: newError } = await supabase
+                .from('coach_feedback')
+                .insert({
+                  recording_id: req.body.recordingId,
+                  user_id: userId,
+                  script_id: scriptId,
+                  feedback: analysisData,
+                  created_at: new Date().toISOString()
+                })
+                .select()
+                .single();
+              
+              insertData = newData;
+              insertError = newError;
+              console.log('[Coach] Nuevo análisis guardado en BD');
+            }
+        } else {
+            console.error('[Coach] No recordingId provided, cannot save analysis properly.');
+        }
 
         if (insertError) {
             console.error('[Coach] Failed to save to DB:', insertError);

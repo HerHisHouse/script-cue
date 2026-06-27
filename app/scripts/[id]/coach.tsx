@@ -193,17 +193,46 @@ export default function CoachModeScreen() {
 
   async function checkExistingAnalysis(recordingId: string) {
     try {
+      console.log('[Escena] Buscando análisis guardado para:', recordingId);
+      
       const { data, error } = await supabase
         .from('coach_feedback')
         .select('*')
         .eq('recording_id', recordingId)
+        .order('created_at', { ascending: false }) // el más reciente primero
+        .limit(1)
         .single();
 
+      if (error) {
+        console.log('[Escena] No hay análisis guardado:', error.message);
+        return; // No hay análisis, mostrar botón de analizar
+      }
+
       if (data) {
-        setAnalysis(data.feedback);
+        console.log('[Escena] Análisis encontrado:', Object.keys(data));
+        console.log('[Escena] Campos del feedback:', 
+          data.feedback ? Object.keys(data.feedback) : 'feedback vacío');
+        
+        // El análisis puede estar en data.feedback directamente
+        // o puede ser que data sea el feedback en sí
+        // Verificar ambas posibilidades:
+        
+        if (data.feedback && 
+            (data.feedback.presencia || data.feedback.propuestas)) {
+          // Formato nuevo: feedback está dentro del campo feedback
+          setAnalysis(data.feedback);
+          console.log('[Escena] ✅ Análisis nuevo cargado desde campo feedback');
+        } else if (data.presencia || data.propuestas) {
+          // Formato donde el JSON está en la raíz del registro
+          setAnalysis(data);
+          console.log('[Escena] ✅ Análisis cargado desde raíz del registro');
+        } else {
+          console.warn('[Escena] ⚠️ Análisis encontrado pero formato no reconocido');
+          console.warn('[Escena] Estructura:', JSON.stringify(data).substring(0, 200));
+        }
       }
     } catch (e) {
-      // No existing analysis, that's fine
+      console.error('[Escena] Error en checkExistingAnalysis:', e);
     }
   }
 
