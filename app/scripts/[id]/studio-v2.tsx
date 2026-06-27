@@ -53,8 +53,12 @@ import {
 } from 'lucide-react-native';
 import { Audio, InterruptionModeIOS, InterruptionModeAndroid } from 'expo-av';
 import * as Speech from 'expo-speech';
-import { transcribeAudio } from '@/services/transcription';
+import { Ionicons } from '@expo/vector-icons';
 import * as FileSystem from 'expo-file-system/legacy';
+import { transcribeAudio } from '@/services/transcription';
+import { BottomSheetMenu } from '@/components/BottomSheetMenu';
+import { BottomSheetOption } from '@/components/BottomSheetOption';
+import { BottomSheetToggle } from '@/components/BottomSheetToggle';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { rf, rp } from '@/utils/responsive';
 import Constants from 'expo-constants';
@@ -120,6 +124,8 @@ export default function StudioV2Screen() {
 
     // Refs
     const recordingRef = useRef<Audio.Recording | null>(null);
+    const preInitRecordingRef = useRef<Audio.Recording | null>(null);
+    const preInitReadyRef = useRef(false);
     const silenceTimerRef = useRef<NodeJS.Timeout | null>(null);
     const processingRef = useRef(false);
     // Sequence ID to cancel stale audio operations
@@ -519,6 +525,11 @@ export default function StudioV2Screen() {
     // Cleanup on unmount
     useEffect(() => {
         return () => {
+            if (preInitRecordingRef.current) {
+                preInitRecordingRef.current.stopAndUnloadAsync().catch(() => {});
+                preInitRecordingRef.current = null;
+            }
+            preInitReadyRef.current = false;
             stopRecording();
             // stopSessionRecording(); // This is now handled by the new logic
             cleanupSound();
@@ -621,6 +632,12 @@ export default function StudioV2Screen() {
                     console.log(`[Studio] Using system TTS for ${characterName}, voiceId: ${systemVoiceId}`);
                     const voices = await Speech.getAvailableVoicesAsync();
                     const selectedVoice = voices.find(v => v.identifier === systemVoiceId);
+                    
+                    const wordCount = line.cleanText.split(' ').length;
+                    const estimatedMs = wordCount * 450; // ~130 palabras/min
+                    const preInitAt = Math.max(0, estimatedMs - 600);
+                    setTimeout(() => preInitMicrophone(), preInitAt);
+
                     Speech.speak(line.cleanText, {
                         language: selectedVoice?.language || 'es-ES',
                         voice: selectedVoice?.identifier,
@@ -649,6 +666,12 @@ export default function StudioV2Screen() {
                 if (!audioUri) {
                     // Azure (or any provider) failed — fall back to system TTS silently
                     console.warn(`[Studio] No audio URI for ${line.characterName} (${provider}), falling back to system TTS`);
+                    
+                    const wordCount = line.cleanText.split(' ').length;
+                    const estimatedMs = wordCount * 450;
+                    const preInitAt = Math.max(0, estimatedMs - 600);
+                    setTimeout(() => preInitMicrophone(), preInitAt);
+
                     Speech.speak(line.cleanText, {
                         language: 'es-ES',
                         onDone: () => {
@@ -711,7 +734,20 @@ export default function StudioV2Screen() {
                 soundRef.current = sound;
 
                 sound.setOnPlaybackStatusUpdate((status) => {
-                    if (status.isLoaded && status.didJustFinish) {
+                    if (!status.isLoaded) return;
+
+                    // Pre-inicializar el micro cuando queden ~600ms
+                    if (
+                        status.durationMillis &&
+                        status.positionMillis &&
+                        !preInitReadyRef.current &&
+                        !preInitRecordingRef.current &&
+                        (status.durationMillis - status.positionMillis) < 600
+                    ) {
+                        preInitMicrophone(); // fire and forget
+                    }
+
+                    if (status.didJustFinish) {
                         // Only proceed if this sequence is still valid
                         if (mySequence === audioSequenceRef.current) {
                             setIsSpeaking(false);
@@ -723,6 +759,12 @@ export default function StudioV2Screen() {
                 });
             } catch (error) {
                 console.error('Error speaking line:', error);
+                
+                const wordCount = line.cleanText.split(' ').length;
+                const estimatedMs = wordCount * 450;
+                const preInitAt = Math.max(0, estimatedMs - 600);
+                setTimeout(() => preInitMicrophone(), preInitAt);
+
                 // Fallback to system TTS - use cleanText to avoid reading stage directions
                 Speech.speak(line.cleanText, {
                     language: 'es-ES',
@@ -760,51 +802,91 @@ export default function StudioV2Screen() {
         setIsListening(false);
     }
 
-    async function startListening() {
+    async function preInitMicrophone() {
+        // No hacer nada si ya hay una pre-init pendiente
+        if (preInitRecordingRef.current || preInitReadyRef.current) return;
+        // No hacer nada si ya es el turno del usuario
         if (processingRef.current || isListening) return;
 
         try {
-            // Stop any existing recording first (VAD)
-            await stopRecording();
-
-            setIsListening(true);
+            console.log('[Studio] Pre-init micrófono...');
 
             await Audio.requestPermissionsAsync();
-            // Enable recording mode
             await enableRecordingMode();
 
-            // iOS needs time to apply audio mode
+            // En iOS esperar el tiempo necesario para el modo de audio
             if (Platform.OS === 'ios') {
                 await new Promise((resolve) => setTimeout(resolve, 200));
             }
 
             const { recording } = await Audio.Recording.createAsync(
                 Audio.RecordingOptionsPresets.HIGH_QUALITY
+                // Sin callback todavía — lo añadimos en startListening
             );
+
+            preInitRecordingRef.current = recording;
+            preInitReadyRef.current = true;
+            console.log('[Studio] ✅ Micrófono pre-inicializado');
+
+        } catch (e) {
+            console.warn('[Studio] Pre-init falló, se inicializará en el momento:', e);
+            preInitRecordingRef.current = null;
+            preInitReadyRef.current = false;
+        }
+    }
+
+    async function startListening() {
+        if (processingRef.current || isListening) return;
+
+        try {
+            await stopRecording();
+            setIsListening(true);
+
+            let recording: Audio.Recording;
+
+            if (preInitRecordingRef.current && preInitReadyRef.current) {
+                // ✅ Usar el micrófono ya inicializado — sin espera
+                console.log('[Studio] Usando micrófono pre-inicializado ✅');
+                recording = preInitRecordingRef.current;
+                preInitRecordingRef.current = null;
+                preInitReadyRef.current = false;
+
+            } else {
+                // Fallback: inicializar ahora (comportamiento anterior)
+                console.log('[Studio] Pre-init no disponible, inicializando ahora...');
+                await Audio.requestPermissionsAsync();
+                await enableRecordingMode();
+                if (Platform.OS === 'ios') {
+                    await new Promise((resolve) => setTimeout(resolve, 200));
+                }
+                const result = await Audio.Recording.createAsync(
+                    Audio.RecordingOptionsPresets.HIGH_QUALITY
+                );
+                recording = result.recording;
+            }
 
             recordingRef.current = recording;
 
-            // Monitor silence
+            // Añadir el callback de metering (igual que antes)
             recording.setOnRecordingStatusUpdate((status) => {
                 if (status.isRecording && status.metering !== undefined) {
                     const level = status.metering;
-
-                    if (level > -35) { // Voice detected
+                    if (level > -35) {
                         if (silenceTimerRef.current) clearTimeout(silenceTimerRef.current);
                         silenceTimerRef.current = setTimeout(() => {
                             finishLine(true);
-                        }, 2000) as any; // 2s silence threshold
+                        }, 2000) as any;
                     }
                 }
             });
 
-            // Max duration timeout (10s)
+            // Timeout de seguridad de 10s (igual que antes)
             silenceTimerRef.current = setTimeout(() => {
                 finishLine(true);
             }, 10000) as any;
 
         } catch (error) {
-            console.error('Error starting listening:', error);
+            console.error('[Studio] Error en startListening:', error);
             setIsListening(false);
         }
     }
@@ -2128,106 +2210,84 @@ export default function StudioV2Screen() {
                     </View>
 
                     {/* Menu Modal (Bottom Sheet) */}
-                    <Modal
+                    <BottomSheetMenu
                         visible={showMenu}
-                        transparent={true}
-                        animationType="fade"
-                        onRequestClose={() => setShowMenu(false)}
+                        onClose={() => setShowMenu(false)}
+                        title="Opciones"
                     >
-                        <TouchableOpacity
-                            style={styles.bottomSheetOverlay}
-                            activeOpacity={1}
-                            onPress={() => setShowMenu(false)}
-                        >
-                            <View style={[styles.optionsContent, { backgroundColor: colors.surface }]}>
-                                <TouchableOpacity
-                                    style={[styles.optionItem, { borderBottomColor: `${colors.border}99` }]}
-                                    onPress={handleRestart}
-                                >
-                                    <RotateCcw size={20} color={colors.text} />
-                                    <Text style={[styles.optionText, { color: colors.text }]}>Reiniciar</Text>
-                                </TouchableOpacity>
+                        <BottomSheetOption
+                            label="Reiniciar"
+                            Icon={RotateCcw}
+                            onPress={() => {
+                                setShowMenu(false);
+                                handleRestart();
+                            }}
+                        />
 
-                                <TouchableOpacity
-                                    style={[styles.optionItem, { borderBottomColor: `${colors.border}99` }]}
-                                    onPress={toggleHideLines}
-                                >
-                                    <EyeOff size={20} color={colors.text} />
-                                    <Text style={[styles.optionText, { color: colors.text }]}>
-                                        {hideUserLines ? 'Mostrar' : 'Ocultar'} mis líneas
-                                    </Text>
-                                </TouchableOpacity>
+                        <BottomSheetOption
+                            label="Editar guion"
+                            Icon={Edit3}
+                            onPress={() => {
+                                setShowMenu(false);
+                                handleEditScript();
+                            }}
+                        />
 
-                                <TouchableOpacity
-                                    style={[styles.optionItem, { borderBottomColor: `${colors.border}99` }]}
-                                    onPress={handleEditScript}
-                                >
-                                    <Edit3 size={20} color={colors.text} />
-                                    <Text style={[styles.optionText, { color: colors.text }]}>Editar guion</Text>
-                                </TouchableOpacity>
+                        <BottomSheetOption
+                            label="Editar orden tarjetas"
+                            Icon={ArrowUpDown}
+                            onPress={() => {
+                                setShowMenu(false);
+                                toggleReordering();
+                            }}
+                        />
 
-                                <TouchableOpacity
-                                    style={[styles.optionItem, { borderBottomColor: `${colors.border}99` }]}
-                                    onPress={toggleReordering}
-                                >
-                                    <ArrowUpDown size={20} color={colors.text} />
-                                    <Text style={[styles.optionText, { color: colors.text }]}>
-                                        Editar orden tarjetas
-                                    </Text>
-                                </TouchableOpacity>
+                        <View style={{ height: 1, backgroundColor: colors.border, opacity: 0.5, marginVertical: 8 }} />
 
-                                <TouchableOpacity
-                                    style={[styles.optionItem, { borderBottomColor: `${colors.border}99` }]}
-                                    onPress={() => { setLiteralMode(p => !p); setShowMenu(false); }}
-                                >
-                                    <FileText size={20} color={literalMode ? colors.primary : colors.text} />
-                                    <Text style={[styles.optionText, { color: literalMode ? colors.primary : colors.text }]}>
-                                        {literalMode ? 'Modo Texto Literal (Activo)' : 'Modo Texto Literal'}
-                                    </Text>
-                                </TouchableOpacity>
+                        <BottomSheetToggle
+                            label="Ocultar mis líneas"
+                            Icon={EyeOff}
+                            value={hideUserLines}
+                            onValueChange={() => toggleHideLines()}
+                        />
 
-                                <TouchableOpacity
-                                    style={[styles.optionItem, { borderBottomColor: `${colors.border}99` }]}
-                                    onPress={async () => {
-                                        setShowMenu(false);
-                                        // If activating, check if we should show the info modal
-                                        if (!showStageDirections) {
-                                            const hidden = await AsyncStorage.getItem('hideStageDirectionsInfo');
-                                            if (hidden !== 'true') {
-                                                setShowStageDirectionsInfo(true);
-                                            }
-                                        }
-                                        setShowStageDirections(p => !p);
-                                    }}
-                                >
-                                    <MessageSquare size={20} color={showStageDirections ? colors.primary : colors.text} />
-                                    <Text style={[styles.optionText, { color: showStageDirections ? colors.primary : colors.text }]}>
-                                        {showStageDirections ? 'Acotaciones (Activo)' : 'Acotaciones'}
-                                    </Text>
-                                </TouchableOpacity>
+                        <BottomSheetToggle
+                            label="Modo Texto Literal"
+                            Icon={FileText}
+                            value={literalMode}
+                            onValueChange={(val) => setLiteralMode(val)}
+                        />
 
-                                <TouchableOpacity
-                                    style={[styles.optionItem, { borderBottomWidth: 0 }]}
-                                    onPress={async () => {
-                                        setShowMenu(false);
-                                        // If activating, check if we should show the info modal
-                                        if (!showActions) {
-                                            const hidden = await AsyncStorage.getItem('hideActionsInfoV2');
-                                            if (hidden !== 'true') {
-                                                setShowActionsInfo(true);
-                                            }
-                                        }
-                                        setShowActions(p => !p);
-                                    }}
-                                >
-                                    <Clapperboard size={20} color={showActions ? colors.primary : colors.text} />
-                                    <Text style={[styles.optionText, { color: showActions ? colors.primary : colors.text }]}>
-                                        {showActions ? 'Acciones (Activo)' : 'Acciones'}
-                                    </Text>
-                                </TouchableOpacity>
-                            </View>
-                        </TouchableOpacity>
-                    </Modal>
+                        <BottomSheetToggle
+                            label="Acotaciones"
+                            Icon={MessageSquare}
+                            value={showStageDirections}
+                            onValueChange={async (val) => {
+                                if (val && !showStageDirections) {
+                                    const hidden = await AsyncStorage.getItem('hideStageDirectionsInfo');
+                                    if (hidden !== 'true') {
+                                        setShowStageDirectionsInfo(true);
+                                    }
+                                }
+                                setShowStageDirections(val);
+                            }}
+                        />
+
+                        <BottomSheetToggle
+                            label="Acciones"
+                            Icon={Clapperboard}
+                            value={showActions}
+                            onValueChange={async (val) => {
+                                if (val && !showActions) {
+                                    const hidden = await AsyncStorage.getItem('hideActionsInfoV2');
+                                    if (hidden !== 'true') {
+                                        setShowActionsInfo(true);
+                                    }
+                                }
+                                setShowActions(val);
+                            }}
+                        />
+                    </BottomSheetMenu>
 
                     {/* Headphone Alert Modal */}
                     <Modal
