@@ -228,6 +228,24 @@ export default function CoachModeScreen() {
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 300000); // 5 minutes
 
+      // Buscar el nombre del personaje antes de construir el requestBody
+      let userCharacterName = '';
+      if (selectedRecording.character_id) {
+        try {
+          const { data: charData } = await supabase
+            .from('characters')
+            .select('name')
+            .eq('id', selectedRecording.character_id)
+            .single();
+          
+          if (charData?.name) {
+            userCharacterName = charData.name.toUpperCase();
+          }
+        } catch (e) {
+          console.warn('[Escena] No se pudo obtener el nombre del personaje:', e);
+        }
+      }
+
       const requestBody = {
         recordingPath: selectedRecording.audio_url,
         recordingId: selectedRecording.id,
@@ -236,8 +254,10 @@ export default function CoachModeScreen() {
         sceneId: selectedRecording.scene_id,
         recordingType: selectedRecording.type || 'audio',
         characterId: selectedRecording.character_id,
+        characterName: userCharacterName,
         compareWithId: compareWithId
       };
+      console.log('[DEBUG] characterName enviado:', userCharacterName);
       console.log('[DEBUG] Request body:', JSON.stringify(requestBody, null, 2));
 
       const response = await fetch(`${renderUrl}/analyze-recording`, {
@@ -411,6 +431,27 @@ export default function CoachModeScreen() {
   const renderAnalysisContent = () => {
     if (!analysis) return null;
 
+    if (analysis.feedback?.error) {
+      return (
+        <View style={[styles.tabContent, { padding: 20, alignItems: 'center', marginTop: 40 }]}>
+          <AlertCircle size={48} color="#ef4444" style={{ marginBottom: 16 }} />
+          <Text style={{ color: colors.text, textAlign: 'center', fontSize: rf(16), lineHeight: 24, marginBottom: 16 }}>
+            Ocurrió un error en el servidor de IA al procesar esta grabación.
+          </Text>
+          <Text style={{ color: colors.textSecondary, textAlign: 'center', fontSize: rf(14), lineHeight: 20 }}>
+            {analysis.feedback.error}
+          </Text>
+          <TouchableOpacity
+            style={[styles.analyzeButton, { backgroundColor: colors.primary, marginTop: 24 }]}
+            onPress={() => startAnalysis(comparingWith || undefined)}
+            disabled={analyzing}
+          >
+            {analyzing ? <ActivityIndicator color="#fff" /> : <Text style={styles.analyzeButtonText}>Reintentar Análisis</Text>}
+          </TouchableOpacity>
+        </View>
+      );
+    }
+
     const isOldFormat = !analysis.feedback?.presencia && !analysis.propuestas;
     if (isOldFormat) {
       return (
@@ -478,7 +519,20 @@ export default function CoachModeScreen() {
         );
       case 'comparacion':
         const comp = analysis.comparacion;
-        const hasHistory = comp && comp.exploracion !== null && comp.exploracion !== undefined;
+        
+        // Detección robusta: hay historial solo si exploracion es
+        // un string no vacío y no es la cadena "null"
+        const hasHistory = comp && 
+          comp.exploracion !== null && 
+          comp.exploracion !== undefined && 
+          comp.exploracion !== 'null' &&
+          comp.exploracion !== '' &&
+          typeof comp.exploracion === 'string' &&
+          comp.exploracion.trim().length > 0;
+
+        // Descubrimientos siempre se muestra aunque sea primer análisis
+        const descubrimientos = comp?.descubrimientos && 
+          comp.descubrimientos !== 'null' ? comp.descubrimientos : null;
 
         return (
           <View style={styles.tabContent}>
@@ -489,17 +543,31 @@ export default function CoachModeScreen() {
               
               {hasHistory ? (
                 <View style={styles.comparisonGrid}>
-                  {Object.entries(comp).map(([key, value]: [string, any], index: number) => (
-                    <View key={key} style={styles.comparisonItemRow}>
-                      {index > 0 && <View style={[styles.horizontalDivider, { backgroundColor: colors.border }]} />}
-                      <Text style={[styles.comparisonLabel, { color: colors.textSecondary }]}>
-                        {key.toUpperCase()}
-                      </Text>
-                      <Text style={[styles.comparisonText, { color: colors.text }]}>
-                        {value}
-                      </Text>
+                  {Object.entries(comp).map(([key, value]: [string, any], index: number) => {
+                    if (key === 'descubrimientos' || value === null || value === 'null' || value === '') return null;
+                    return (
+                      <View key={key} style={styles.comparisonItemRow}>
+                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+                          {getFeedbackIcon(key, colors.primary)}
+                          <Text style={[styles.comparisonLabelVertical, { color: colors.primary }]}>
+                            {feedbackLabels[key] || key.toUpperCase()}
+                          </Text>
+                        </View>
+                        <Text style={[styles.comparisonValueVertical, { color: colors.text }]}>{value}</Text>
+                      </View>
+                    );
+                  })}
+                  {descubrimientos && (
+                    <View style={styles.comparisonItemRow}>
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+                        {getFeedbackIcon('descubrimientos', colors.primary)}
+                        <Text style={[styles.comparisonLabelVertical, { color: colors.primary }]}>
+                          DESCUBRIMIENTOS
+                        </Text>
+                      </View>
+                      <Text style={[styles.comparisonValueVertical, { color: colors.text }]}>{descubrimientos}</Text>
                     </View>
-                  ))}
+                  )}
                 </View>
               ) : (
                 <View style={styles.emptyComparison}>
@@ -579,7 +647,7 @@ export default function CoachModeScreen() {
 
         <View style={styles.content}>
           <Text style={[styles.subtitle, { color: colors.textSecondary }]}>
-            Selecciona una grabación para recibir feedback.
+            Selecciona una grabación para recibir propuestas.
           </Text>
 
           <FlatList
@@ -712,7 +780,7 @@ export default function CoachModeScreen() {
               <Brain size={48} color={colors.primary} style={{ marginBottom: 16 }} />
               <Text style={[styles.introTitle, { color: colors.text }]}>Análisis de Interpretación</Text>
               <Text style={[styles.introText, { color: colors.textSecondary }]}>
-                La IA analizará la grabación para darte feedback y propuestas de actuación.
+                La IA analizará la grabación para darte propuestas de actuación.
               </Text>
 
               <TouchableOpacity

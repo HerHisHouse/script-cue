@@ -497,7 +497,17 @@ app.post('/analyze-recording', async (req, res) => {
     console.log('[Coach] Request received at:', new Date().toISOString());
     console.log('[Coach] Body keys:', Object.keys(req.body));
 
-    const { recordingPath, userId, scriptId, sceneId, recordingType, recordingId, characterId, compareWithId } = req.body;
+    const {
+        recordingPath,
+        recordingId,
+        userId,
+        scriptId,
+        sceneId,
+        recordingType,
+        characterId,
+        characterName,
+        compareWithId
+    } = req.body;
 
     if (!recordingPath || !userId) {
         console.log('[Coach] ERROR: Missing required fields');
@@ -570,7 +580,33 @@ app.post('/analyze-recording', async (req, res) => {
 
         // 4. Fetch script context for better analysis
         let scriptContext = '';
-        let userCharacterName = 'el usuario';
+        let userCharacterName = characterName;
+
+        if (!userCharacterName && characterId) {
+            try {
+                const { data: charData } = await supabase
+                    .from('characters')
+                    .select('name')
+                    .eq('id', characterId)
+                    .single();
+                
+                userCharacterName = charData?.name?.toUpperCase() || '';
+                console.log('[Coach] Personaje encontrado en BD:', userCharacterName);
+            } catch (e) {
+                console.error('[Coach] Error buscando personaje:', e);
+                userCharacterName = '';
+            }
+        }
+
+        console.log('[Coach] userCharacterName final:', userCharacterName);
+
+        // VERIFICACIÓN CRÍTICA: si no tenemos el nombre, el análisis no puede ser preciso
+        if (!userCharacterName) {
+            console.warn('[Coach] ADVERTENCIA: No se pudo determinar el personaje del usuario.');
+            console.warn('[Coach] El análisis puede no ser preciso.');
+        }
+
+        let specificUserLines = '';
 
         if (scriptId) {
             try {
@@ -616,10 +652,18 @@ app.post('/analyze-recording', async (req, res) => {
                     // ISOLATION STRATEGY: List only user lines to prevent confusion
                     const userLinesOnly = dialogues
                         .filter(d => characterMap.get(d.character_id) === userCharacterName)
-                        .map((d, i) => `${i + 1}. "${d.line_text}"`)
-                        .join('\n');
+                        .map((d, i) => `${i + 1}. "${d.line_text}"`);
+                    
+                    specificUserLines = userLinesOnly.join('\n');
+                    
+                    console.log('[Coach] Líneas del usuario encontradas:', userLinesOnly.length || 0);
+                    console.log('[Coach] Primera línea del usuario:', userLinesOnly[0] || 'NINGUNA');
 
-                    scriptContext = `\n\nCONTEXTO COMPLETO DEL GUION:\n${scriptLines}\n\nLÍNEAS ESPECÍFICAS DE ${userCharacterName} (A ANALIZAR EXCLUSIVAMENTE):\n${userLinesOnly}\n\nEl usuario interpreta al personaje: ${userCharacterName}`;
+                    if (!userLinesOnly || userLinesOnly.length === 0) {
+                        console.error('[Coach] ERROR: No se encontraron líneas para el personaje', userCharacterName);
+                    }
+
+                    scriptContext = `\n\nCONTEXTO COMPLETO DEL GUION:\n${scriptLines}\n\nLÍNEAS ESPECÍFICAS DE ${userCharacterName} (A ANALIZAR EXCLUSIVAMENTE):\n${specificUserLines}\n\nEl usuario interpreta al personaje: ${userCharacterName}`;
                     console.log('[Coach] Script context with isolation added.');
                 }
             } catch (e) {
@@ -641,16 +685,8 @@ app.post('/analyze-recording', async (req, res) => {
                         .eq('recording_id', compareWithId);
                     prevFeedbacks = data;
                 } else {
-                    console.log(`[Coach] Buscando análisis previo automático para Escena: ${sceneId}`);
-                    const { data } = await supabase
-                        .from('coach_feedback')
-                        .select('feedback, created_at, recordings!inner(script_id, scene_id)')
-                        .eq('user_id', userId)
-                        .eq('recordings.script_id', scriptId)
-                        .eq('recordings.scene_id', sceneId)
-                        .order('created_at', { ascending: false })
-                        .limit(1);
-                    prevFeedbacks = data;
+                    console.log(`[Coach] No manual comparison requested. Skipping auto-comparison.`);
+                    prevFeedbacks = null;
                 }
 
                 if (prevFeedbacks && prevFeedbacks.length > 0) {
@@ -668,13 +704,50 @@ INSTRUCCIÓN DE COMPARACIÓN:
 Compara esta nueva toma con la anterior. En el objeto 'comparacion' del JSON indica las diferencias de exploración, riesgo, variedad y descubrimientos.`;
                     console.log('[Coach] Análisis previo encontrado e inyectado.');
                 } else {
-                    previousTakeInfo = `\nEsta es la primera toma analizada de esta escena O no se ha seleccionado una toma previa válida. INDICA QUE ES EL PRIMER ANÁLISIS. DEJA TODOS LOS CAMPOS DEL OBJETO 'comparacion' COMO null.`;
+                    previousTakeInfo = `SIN TOMA ANTERIOR: 
+El usuario no ha proporcionado una toma anterior.
+En el objeto "comparacion" del JSON, todos los campos 
+(exploracion, riesgo, variedad, descubrimientos) deben ser 
+exactamente: null (valor JSON null, NO la cadena "null", 
+NO texto vacío, NO ningún otro texto).
+
+EJEMPLO CORRECTO cuando no hay toma anterior:
+"comparacion": {
+  "exploracion": null,
+  "riesgo": null,
+  "variedad": null,
+  "descubrimientos": "Graba una segunda toma de esta escena para ver aquí la comparativa."
+}
+
+NUNCA rellenes exploracion, riesgo o variedad si no hay toma anterior.`;
                     console.log('[Coach] No previous feedback found for this context.');
                 }
             } catch (e) {
                 console.error('[Coach] Error buscando historial:', e);
             }
         }
+
+        const characterInstruction = userCharacterName
+            ? `
+PERSONAJE A ANALIZAR: "${userCharacterName}"
+
+LÍNEAS ESPECÍFICAS QUE DEBES ANALIZAR (solo estas):
+${specificUserLines}
+
+REGLA ABSOLUTA: 
+- Analiza ÚNICAMENTE las intervenciones de "${userCharacterName}"
+- Las voces de otros personajes son la IA y NO deben analizarse
+- Si detectas frases de otros personajes, IGNÓRALAS completamente
+- Tu feedback debe referirse siempre a lo que hace "${userCharacterName}"
+- En presencia, objetivo, relación y ritmo: habla siempre de "${userCharacterName}"
+
+EJEMPLO CORRECTO: "En su intervención, ${userCharacterName} muestra..."
+EJEMPLO INCORRECTO: "El personaje demuestra..." (sin especificar quién)
+`
+            : `
+ADVERTENCIA: No se ha podido identificar el personaje del usuario.
+Analiza la voz que parece ser humana (no sintética) en la grabación.
+`;
 
         // 6. Construct the prompt with the new professional method-coach persona
         const systemPrompt = `Eres un compañero de exploración escénica con experiencia en laboratorio teatral y dirección de ensayos. Tu papel no es evaluar ni corregir: es abrir caminos, proponer alternativas y estimular la investigación del actor sobre su personaje.
@@ -686,9 +759,9 @@ Tu lenguaje es activo, directo y propositivo. Usas palabras como: prueba, explor
 REGLA CRÍTICA (su incumplimiento invalida el análisis):
 El audio contiene voces de IA intercaladas con la voz del actor.
 Las voces de IA son sintéticas y NO deben ser analizadas bajo ningún concepto.
-Analiza EXCLUSIVAMENTE las intervenciones del personaje "${userCharacterName}" 
-que coincidan con la lista de "LÍNEAS ESPECÍFICAS" proporcionada abajo.
-Cualquier observación o propuesta basada en líneas que NO pertenezcan a "${userCharacterName}" (es decir, líneas dichas por la IA u otro personaje) es un error gravísimo. Las propuestas deben centrarse ÚNICAMENTE en el texto y actuación de "${userCharacterName}".
+Cualquier observación o propuesta basada en líneas que NO pertenezcan al usuario (es decir, líneas dichas por la IA u otro personaje) es un error gravísimo.
+
+${characterInstruction}
 
 ${scriptContext}
 
@@ -703,7 +776,6 @@ Devuelve SOLO JSON válido con esta estructura exacta, sin markdown ni bloques d
     "ritmo": "Cómo fluye el texto y las pausas dramáticas."
   },
   "propuestas": [
-    // IMPORTANTE: DEBES generar un mínimo de 5 propuestas y un máximo de 8. Si el guion es muy corto, busca diferentes ángulos (físico, emocional, ritmo) para llegar a 5.
     {
       "titulo": "Título de la propuesta",
       "descripcion": "Instrucciones prácticas para probar en la siguiente toma."
@@ -716,6 +788,8 @@ Devuelve SOLO JSON válido con esta estructura exacta, sin markdown ni bloques d
     "descubrimientos": "Nuevos hallazgos en la toma."
   }
 }
+
+IMPORTANTE: DEBES generar un mínimo de 5 propuestas y un máximo de 8. Si el guion es muy corto, busca diferentes ángulos (físico, emocional, ritmo) para llegar a 5.
 
 Idioma: Español. Tono: constructivo, inspirador y exploratorio.`;
 
