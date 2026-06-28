@@ -35,7 +35,6 @@ interface VoiceSelectorProps {
     disabled?: boolean;
     systemLanguage?: string; // Para filtrar voces del sistema por idioma
 }
-}
 
 // Mapeo de use_case de ElevenLabs a nombres en español
 const CATEGORY_LABELS: Record<string, string> = {
@@ -142,7 +141,7 @@ export function VoiceSelector({
     const [loadingVoices, setLoadingVoices] = useState(false);
     const [playingVoiceId, setPlayingVoiceId] = useState<string | null>(null);
     const [loadingPreview, setLoadingPreview] = useState(false);
-    const [genderFilter, setGenderFilter] = useState<'all' | 'male' | 'female'>('all');
+    const [genderFilter, setGenderFilter] = useState<'all' | 'male' | 'female' | 'neutral'>('all');
 
     // Cargar voces según el provider
     useEffect(() => {
@@ -349,11 +348,12 @@ export function VoiceSelector({
 
                         {/* Filtro de Género (Solo para ElevenLabs) */}
                         {provider === 'elevenlabs' && (
-                            <View style={styles.genderFilter}>
+                            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ flexGrow: 0 }} contentContainerStyle={styles.genderFilter}>
                               {[
                                 { value: 'all',    label: 'Todas' },
-                                { value: 'female', label: '♀ Mujer' },
-                                { value: 'male',   label: '♂ Hombre' },
+                                { value: 'female', label: '♀ Femeninas' },
+                                { value: 'male',   label: '♂ Masculinas' },
+                                { value: 'neutral', label: '⚪ Neutras' },
                               ].map(option => (
                                 <TouchableOpacity
                                   key={option.value}
@@ -376,7 +376,7 @@ export function VoiceSelector({
                                   </Text>
                                 </TouchableOpacity>
                               ))}
-                            </View>
+                            </ScrollView>
                         )}
 
                         {/* Lista de voces */}
