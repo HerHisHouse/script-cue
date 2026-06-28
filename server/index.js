@@ -507,9 +507,93 @@ app.post('/process-casting', upload.any(), async (req, res) => {
         }
 
         res.status(500).json({
-            error: 'Video processing failed',
+            error: 'Processing failed',
             message: error.message
         });
+    }
+});
+
+// =============================================================================
+// COMPRESS VIDEO (TELEPROMPTER) ENDPOINT
+// =============================================================================
+app.post('/compress-video', upload.any(), async (req, res) => {
+    console.log('[Compress] Received request');
+    let processTempDir = null;
+
+    try {
+        const { userId } = req.body;
+        const files = req.files;
+
+        if (!files || files.length === 0 || !userId) {
+            return res.status(400).json({ error: 'Missing required fields or files' });
+        }
+
+        processTempDir = path.join(__dirname, 'temp', `compress_${Date.now()}`);
+        await fs.promises.mkdir(processTempDir, { recursive: true });
+
+        const videoUpload = files.find(f => f.fieldname === 'video');
+        if (!videoUpload) throw new Error('No video file uploaded');
+
+        const videoFile = path.join(processTempDir, 'input.mp4');
+        const outputFile = path.join(processTempDir, 'output.mp4');
+        await fs.promises.rename(videoUpload.path, videoFile);
+
+        const videoStats = fs.statSync(videoFile);
+        const videoSizeMB = videoStats.size / (1024 * 1024);
+        const SIZE_LIMIT_MB = 45;
+
+        console.log(`[Compress] Tamaño del vídeo: ${videoSizeMB.toFixed(1)}MB`);
+        const needsCompression = videoSizeMB > SIZE_LIMIT_MB;
+        console.log(`[Compress] ${needsCompression ? 'Comprimiendo...' : 'Sin compresión necesaria'}`);
+
+        await new Promise((resolve, reject) => {
+            ffmpeg()
+                .input(videoFile)
+                .outputOptions(needsCompression ? [
+                    '-c:v libx264',
+                    '-crf 23',
+                    '-preset fast',
+                    '-c:a aac',
+                    '-b:a 128k',
+                    '-movflags +faststart'
+                ] : [
+                    '-c:v copy',
+                    '-c:a copy',
+                    '-movflags +faststart'
+                ])
+                .output(outputFile)
+                .on('start', (cmd) => console.log('[FFmpeg] Compress command:', cmd))
+                .on('progress', (progress) => console.log(`[FFmpeg] Compressing: ${progress.percent?.toFixed(1)}%`))
+                .on('end', () => resolve())
+                .on('error', reject)
+                .run();
+        });
+
+        const publicDir = path.join(__dirname, 'public');
+        if (!fs.existsSync(publicDir)) fs.mkdirSync(publicDir, { recursive: true });
+
+        const fileName = `compress_${userId}_${Date.now()}.mp4`;
+        const publicPath = path.join(publicDir, fileName);
+        await fs.promises.rename(outputFile, publicPath);
+
+        await fs.promises.rm(processTempDir, { recursive: true, force: true });
+
+        const downloadUrl = `${req.protocol}://${req.get('host')}/download/${fileName}`;
+        console.log('[Compress] Success! Download URL:', downloadUrl);
+
+        res.json({
+            success: true,
+            downloadUrl: downloadUrl,
+            fileName: fileName,
+            message: 'Video compressed successfully'
+        });
+
+    } catch (error) {
+        console.error('[Compress] Error:', error);
+        if (processTempDir) {
+            try { await fs.promises.rm(processTempDir, { recursive: true, force: true }); } catch (e) {}
+        }
+        res.status(500).json({ error: 'Compression failed', message: error.message });
     }
 });
 
