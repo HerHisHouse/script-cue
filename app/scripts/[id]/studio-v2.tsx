@@ -1297,6 +1297,46 @@ export default function StudioV2Screen() {
 
         setIsProcessing(true);
         try {
+            // ── LOCAL-ONLY MODE ─────────────────────────────────────────────────────
+            // If the user has "Guardar solo en mi dispositivo" enabled, skip all
+            // Supabase uploads and save the audio directly to documentDirectory.
+            const settings = await getSettings();
+            if (settings.useLocalOnly) {
+                console.log('[Merge] Local-only mode active — skipping Supabase upload');
+                setProcessingStep('Guardando en dispositivo...');
+
+                // Find the best user segment to save (last recorded)
+                const userSegs = segmentsRef.current.filter(s => s.type === 'user' && s.uri);
+                const segToSave = userSegs[userSegs.length - 1] || segmentsRef.current.find(s => s.uri);
+
+                if (!segToSave?.uri) {
+                    throw new Error('No hay audio grabado para guardar');
+                }
+
+                // Copy to documentDirectory so it persists after app restart
+                const localFileName = `studio_${Date.now()}.m4a`;
+                const localPath = `${FileSystem.documentDirectory}${localFileName}`;
+                await FileSystem.copyAsync({ from: segToSave.uri, to: localPath });
+
+                await supabase.from('recordings').insert({
+                    user_id: user.id,
+                    script_id: id as string,
+                    scene_id: dialogueLines[currentIndex]?.sceneId ?? dialogueLines[0]?.sceneId,
+                    audio_url: localPath,   // local file:// URI → shows 📱 Local
+                    duration_seconds: recordingTime,
+                    title: scriptTitle || `Sesión ${new Date().toLocaleString('es-ES')}`,
+                    notes: null,
+                });
+
+                Alert.alert('Sesión guardada', 'Tu grabación está guardada en este dispositivo (📱 Local).');
+                setIsProcessing(false);
+                setRecordingTime(0);
+                segmentsRef.current = [];
+                uploadingSegmentsRef.current = 0;
+                return;
+            }
+            // ────────────────────────────────────────────────────────────────────────
+
             // Wait for any pending uploads
             const totalPending = uploadingSegmentsRef.current;
             if (totalPending > 0) {

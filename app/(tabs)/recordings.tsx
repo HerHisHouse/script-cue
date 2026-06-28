@@ -145,6 +145,10 @@ export default function RecordingsScreen() {
   const [deleting, setDeleting] = useState(false);
   const [recordings, setRecordings] = useState<Recording[]>([]);
   const [loading, setLoading] = useState(true);
+  const [isLocalOnly, setIsLocalOnly] = useState(false);
+  // URL resolved (signed Supabase URL or local file URI) for the current video being played
+  const [videoPlayableUrl, setVideoPlayableUrl] = useState<string | null>(null);
+  const [videoUrlLoading, setVideoUrlLoading] = useState(false);
   const [playingId, setPlayingId] = useState<string | null>(null);
   const [sound, setSound] = useState<Audio.Sound | null>(null);
   const [playerVisible, setPlayerVisible] = useState(false);
@@ -479,21 +483,10 @@ export default function RecordingsScreen() {
       const newItems = (data || []) as Recording[];
 
       const settings = await getSettings();
+      setIsLocalOnly(settings?.useLocalOnly || false);
       let finalNewItems = newItems;
 
-      if (settings.useLocalOnly) {
-        console.log('[Offline] Filtering for local files only...');
-        const localCheckResults = await Promise.all(
-          newItems.map(async (rec) => {
-            const storagePath = (rec.audio_url || (rec as any).storage_path || '').trim();
-            const filename = storagePath.split('/').pop() ?? '';
-            const localUri = (FileSystem.documentDirectory ?? '') + filename;
-            const info = await FileSystem.getInfoAsync(localUri);
-            return info.exists ? rec : null;
-          })
-        );
-        finalNewItems = localCheckResults.filter((r): r is Recording => r !== null);
-      }
+      // El filtro de useLocalOnly se ha eliminado para mostrar siempre todos los archivos.
 
       if (refresh) {
         setRecordings(finalNewItems);
@@ -652,6 +645,12 @@ export default function RecordingsScreen() {
       // Check if already exists
       const info = await FileSystem.getInfoAsync(localUri);
       if (info.exists) {
+        // Already downloaded — update indicator if still showing cloud path
+        if (!recording.audio_url?.startsWith('file://')) {
+          setRecordings(prev =>
+            prev.map(r => r.id === recording.id ? { ...r, audio_url: localUri } : r)
+          );
+        }
         Alert.alert('Info', 'Este archivo ya está disponible offline.');
         return;
       }
@@ -673,13 +672,25 @@ export default function RecordingsScreen() {
         throw new Error(`Error en descarga: ${downloadRes.status}`);
       }
 
-      Alert.alert('Éxito', `"${recording.title || 'Grabación'}" descargada correctamente para uso offline.`);
+      // Update audio_url in DB to local path so it persists as local
+      await supabase
+        .from('recordings')
+        .update({ audio_url: localUri })
+        .eq('id', recording.id);
+
+      // Update local state so indicator changes immediately to 📱 Local
+      setRecordings(prev =>
+        prev.map(r => r.id === recording.id ? { ...r, audio_url: localUri } : r)
+      );
+
+      Alert.alert('Descargado', `"${recording.title || 'Grabación'}" está ahora disponible en tu dispositivo (📱 Local).`);
     } catch (error: any) {
       console.error('[Offline] Error downloading:', error);
       Alert.alert('Error', 'No se pudo descargar el archivo para offline: ' + error.message);
     } finally {
       setDownloadingId(null);
     }
+
   }
   async function updateLastOpened(recordingId: string) {
     if (!user) return;
@@ -753,7 +764,27 @@ export default function RecordingsScreen() {
 
       setPlayingId(recording.id);
       setCurrentIndex(index);
-      setIsPlaying(true);
+      setIsPlaying(false); // Will be set true once URL resolves
+      setVideoPlayableUrl(null); // Clear previous URL
+      setVideoUrlLoading(true);
+      setDurationMillis(0);
+      setPositionMillis(0);
+
+      // Resolve the playable URL (signed Supabase URL or local file)
+      try {
+        const playableUrl = await getPlayableUrlForRecording(recording);
+        if (playableUrl) {
+          setVideoPlayableUrl(playableUrl);
+          setIsPlaying(true);
+        } else {
+          Alert.alert('Error', 'No se pudo cargar el vídeo. Verifica tu conexión.');
+        }
+      } catch (e) {
+        console.error('[Video] Error resolving URL:', e);
+        Alert.alert('Error', 'No se pudo cargar el vídeo.');
+      } finally {
+        setVideoUrlLoading(false);
+      }
       return;
     }
 
@@ -2102,6 +2133,32 @@ export default function RecordingsScreen() {
                   year: 'numeric',
                 })}
               </Text>
+              {/* Indicador de ubicación del archivo */}
+              {(() => {
+                // Un archivo es local si su URL empieza por file:// o es una ruta absoluta del dispositivo
+                // Un archivo es de nube si es un path relativo de Supabase (ej: userId/filename.mp4)
+                const url = item.audio_url || '';
+                const isLocalFile = url.startsWith('file://') || url.startsWith('/');
+                return (
+                  <View style={styles.storageIndicator}>
+                    {isLocalFile ? (
+                      <View style={styles.storageTag}>
+                        <Text style={styles.storageTagIcon}>📱</Text>
+                        <Text style={[styles.storageTagText, { color: colors.textSecondary }]}>
+                          Local
+                        </Text>
+                      </View>
+                    ) : (
+                      <View style={styles.storageTag}>
+                        <Text style={styles.storageTagIcon}>☁️</Text>
+                        <Text style={[styles.storageTagText, { color: colors.textSecondary }]}>
+                          Nube
+                        </Text>
+                      </View>
+                    )}
+                  </View>
+                );
+              })()}
             </View>
             {selectionMode ? (
               <View style={[styles.actions, { padding: rp(4), paddingRight: rp(8) }]}>
@@ -2543,15 +2600,45 @@ export default function RecordingsScreen() {
                 keyboardShouldPersistTaps="always"
                 refreshing={refreshing}
                 onRefresh={handleRefresh}
-                ListHeaderComponent={showSearch ? (
-                  <SearchBar
-                    searchText={searchText}
-                    setSearchText={setSearchText}
-                    searching={searching}
-                    colors={colors}
-                    onClose={() => { setShowSearch(false); setSearchText(''); }}
-                  />
-                ) : null}
+                ListHeaderComponent={
+                  <>
+                    {showSearch && (
+                      <SearchBar
+                        searchText={searchText}
+                        setSearchText={setSearchText}
+                        searching={searching}
+                        colors={colors}
+                        onClose={() => { setShowSearch(false); setSearchText(''); }}
+                      />
+                    )}
+                    {isLocalOnly && (
+                      <View style={[styles.localModeBanner, { 
+                        backgroundColor: colors.warning + '15',
+                        borderColor: colors.warning + '40',
+                      }]}>
+                        <View style={styles.localModeBannerContent}>
+                          <Text style={styles.localModeBannerIcon}>📱</Text>
+                          <View style={{ flex: 1 }}>
+                            <Text style={[styles.localModeBannerTitle, { color: colors.warning }]}>
+                              Modo local activo
+                            </Text>
+                            <Text style={[styles.localModeBannerText, { color: colors.textSecondary }]}>
+                              Tus grabaciones no se están subiendo a la nube.
+                            </Text>
+                          </View>
+                          <TouchableOpacity
+                            onPress={() => router.push('/settings')}
+                            style={styles.localModeBannerAction}
+                          >
+                            <Text style={[styles.localModeBannerActionText, { color: colors.warning }]}>
+                              Cambiar
+                            </Text>
+                          </TouchableOpacity>
+                        </View>
+                      </View>
+                    )}
+                  </>
+                }
                 ListFooterComponent={loadingMore ? (
                   <View style={{ paddingVertical: rp(20) }}>
                     <ActivityIndicator size="small" color={colors.primary} />
@@ -2586,50 +2673,55 @@ export default function RecordingsScreen() {
                   {/* Video Player (if video type) - Background layer */}
                   {queue[currentIndex]?.type === 'video' && (
                     <View style={styles.visualizerContainer} pointerEvents="none">
-                      <Video
-                        ref={videoRef}
-                        source={{ uri: queue[currentIndex]?.audio_url || '' }}
-                        style={{ width: '100%', height: '100%' }}
-                        resizeMode={ResizeMode.CONTAIN}
-                        shouldPlay={isPlaying}
-                        onPlaybackStatusUpdate={status => {
-                          if (status.isLoaded) {
-                            // Throttle: solo actualizar posición cada 100ms para evitar re-renders constantes
-                            const now = Date.now();
-                            const lastUpdate = lastVideoUpdateRef.current;
+                      {videoUrlLoading && (
+                        <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
+                          <ActivityIndicator size="large" color="#fff" />
+                          <Text style={{ color: '#fff', marginTop: 12, fontSize: 14 }}>Cargando vídeo...</Text>
+                        </View>
+                      )}
+                      {!videoUrlLoading && videoPlayableUrl && (
+                        <Video
+                          ref={videoRef}
+                          source={{ uri: videoPlayableUrl }}
+                          style={{ width: '100%', height: '100%' }}
+                          resizeMode={ResizeMode.CONTAIN}
+                          shouldPlay={isPlaying}
+                          onPlaybackStatusUpdate={status => {
+                            if (status.isLoaded) {
+                              // Throttle: solo actualizar posición cada 100ms para evitar re-renders constantes
+                              const now = Date.now();
+                              const lastUpdate = lastVideoUpdateRef.current;
 
-                            if (now - lastUpdate > 100) {
-                              lastVideoUpdateRef.current = now;
-                              setPositionMillis(status.positionMillis);
-                            }
+                              if (now - lastUpdate > 100) {
+                                lastVideoUpdateRef.current = now;
+                                setPositionMillis(status.positionMillis);
+                              }
 
-                            // Duración solo se actualiza una vez
-                            if (status.durationMillis && !durationMillis) {
-                              setDurationMillis(status.durationMillis);
-                            }
+                              // Actualizar duración cuando esté disponible
+                              if (status.durationMillis && status.durationMillis > 0) {
+                                setDurationMillis(status.durationMillis);
+                              }
 
-                            // NO actualizar isPlaying aquí - causa loop infinito
-                            // shouldPlay={isPlaying} ya controla el estado
-
-                            if (status.didJustFinish) {
-                              const currentLoop = loopModeRef.current;
-                              if (currentLoop === 'one') {
-                                videoRef.current?.replayAsync();
-                              } else if (currentLoop === 'all') {
-                                const nextIndex = (currentIndex + 1) % queue.length;
-                                loadAndPlay(nextIndex, queue);
-                              } else {
-                                const nextIndex = currentIndex + 1;
-                                if (nextIndex < queue.length) {
+                              if (status.didJustFinish) {
+                                const currentLoop = loopModeRef.current;
+                                if (currentLoop === 'one') {
+                                  videoRef.current?.replayAsync();
+                                } else if (currentLoop === 'all') {
+                                  const nextIndex = (currentIndex + 1) % queue.length;
                                   loadAndPlay(nextIndex, queue);
                                 } else {
-                                  setIsPlaying(false);
+                                  const nextIndex = currentIndex + 1;
+                                  if (nextIndex < queue.length) {
+                                    loadAndPlay(nextIndex, queue);
+                                  } else {
+                                    setIsPlaying(false);
+                                  }
                                 }
                               }
                             }
-                          }
-                        }}
-                      />
+                          }}
+                        />
+                      )}
                     </View>
                   )}
 
@@ -3671,5 +3763,53 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     paddingVertical: rp(20),
     paddingHorizontal: rp(24),
+  },
+  localModeBanner: {
+    marginHorizontal: rp(16),
+    marginTop: rp(8),
+    marginBottom: rp(4),
+    borderRadius: rp(10),
+    borderWidth: 1,
+    padding: rp(12),
+  },
+  localModeBannerContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: rp(10),
+  },
+  localModeBannerIcon: {
+    fontSize: rf(20),
+  },
+  localModeBannerTitle: {
+    fontSize: rf(13),
+    fontWeight: '700',
+    marginBottom: rp(2),
+  },
+  localModeBannerText: {
+    fontSize: rf(12),
+    lineHeight: rf(16),
+  },
+  localModeBannerAction: {
+    paddingHorizontal: rp(8),
+    paddingVertical: rp(4),
+  },
+  localModeBannerActionText: {
+    fontSize: rf(13),
+    fontWeight: '600',
+  },
+  storageIndicator: {
+    marginTop: rp(4),
+  },
+  storageTag: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: rp(3),
+  },
+  storageTagIcon: {
+    fontSize: rf(10),
+  },
+  storageTagText: {
+    fontSize: rf(10),
+    opacity: 0.6,
   },
 });

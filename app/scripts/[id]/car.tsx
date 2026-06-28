@@ -41,6 +41,7 @@ import {
 import { Stack } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { REMOTE_CMD_KEY } from '@/services/playbackService';
+import { getSettings } from '@/utils/appSettings';
 import { BottomSheetMenu } from '@/components/BottomSheetMenu';
 import { BottomSheetToggle } from '@/components/BottomSheetToggle';
 import { BottomSheetOption } from '@/components/BottomSheetOption';
@@ -176,6 +177,7 @@ export default function CarModeScreen() {
   const [generatingProgress, setGeneratingProgress] = useState(0); // Progress 0-100
   const [readActions, setReadActions] = useState(false); // Enable action lines reading
   const [allScriptLines, setAllScriptLines] = useState<DialogueLine[]>([]); // All lines including actions
+  const [showActionsInfo, setShowActionsInfo] = useState(false); // Info tooltip for actions toggle
 
   // Update dialogueLines when readActions changes
   useEffect(() => {
@@ -1103,7 +1105,59 @@ export default function CarModeScreen() {
 
       const scriptTitle = scriptData?.title || 'Escena';
 
-      // Save to recordings table
+      // ── LOCAL-ONLY MODE ────────────────────────────────────────────────────
+      const carSettings = await getSettings();
+      if (carSettings.useLocalOnly) {
+        console.log('[GenerateScene] Local-only mode — downloading merged audio from Supabase');
+        setGeneratingProgress(95);
+
+        // Download the merged audio to local storage
+        const { data: signedUrlData, error: signedUrlError } = await supabase.storage
+          .from('recordings')
+          .createSignedUrl(mergeResult.path, 60); // 1 minute expiry
+
+        if (signedUrlError || !signedUrlData?.signedUrl) {
+          throw new Error('No se pudo obtener URL para descargar el audio final.');
+        }
+
+        const ext = mergeResult.path.endsWith('.mp3') ? 'mp3' : 'm4a';
+        const localFileName = `scene_audio_merged_${Date.now()}.${ext}`;
+        const localPath = `${FileSystem.documentDirectory}${localFileName}`;
+
+        const downloadResult = await FileSystem.downloadAsync(signedUrlData.signedUrl, localPath);
+
+        if (downloadResult.status !== 200) {
+          throw new Error('No se pudo descargar el audio final.');
+        }
+
+        // Delete the merged file from Supabase as we only want it locally
+        try {
+           await supabase.storage.from('recordings').remove([mergeResult.path]);
+        } catch(e) {
+           console.warn('[GenerateScene] Failed to delete temporary merged audio from cloud:', e);
+        }
+
+        // Save local path to DB
+        const recordingData = {
+          user_id: currentUser.id,
+          title: `${scriptTitle} - Audio Escena`,
+          duration_seconds: audioSegments.length * 3, // Rough estimate
+          script_id: id,
+          audio_url: localPath,   // local file:// URI → shows 📱 Local
+          type: 'audio',
+          project_id: null,
+        };
+
+        const { error: insertError } = await supabase.from('recordings').insert(recordingData);
+        if (insertError) throw insertError;
+
+        setGeneratingProgress(100);
+        Alert.alert('¡Audio guardado!', 'El audio de la escena está guardado en este dispositivo (📱 Local).', [{ text: 'OK' }]);
+        return;
+      }
+      // ──────────────────────────────────────────────────────────────────────
+
+      // Save cloud path to recordings table
       const recordingData = {
         user_id: currentUser.id,
         title: `${scriptTitle} - Audio Escena`,
@@ -1138,6 +1192,7 @@ export default function CarModeScreen() {
       setGeneratingProgress(0);
     }
   };
+
 
   // =============================================
   // RENDER
@@ -1715,16 +1770,47 @@ export default function CarModeScreen() {
           </View>
         </View>
 
-        <BottomSheetToggle
-          label="Mostrar acciones de escena"
-          description="Si quieres que la IA también lea las acciones especificadas en el guion, activa el botón y configura la voz que desees."
-          value={readActions}
-          onValueChange={setReadActions}
-          textColor="white"
-          borderColor="rgba(255,255,255,0.06)"
-          Icon={Info}
-          iconColor="white"
-        />
+        {/* Toggle: Mostrar acciones de escena — con icono (i) pulsable */}
+        <TouchableOpacity
+          style={{
+            flexDirection: 'row',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            paddingHorizontal: 20,
+            paddingVertical: 14,
+            borderBottomWidth: 1,
+            borderBottomColor: 'rgba(255,255,255,0.06)',
+          }}
+          activeOpacity={0.7}
+          onPress={() => setReadActions(!readActions)}
+        >
+          <View style={{ flexDirection: 'row', alignItems: 'center', flex: 1, paddingRight: 10 }}>
+            <Text style={{ fontSize: 16, fontWeight: '500', color: 'white', flex: 1 }}>
+              Mostrar acciones de escena
+            </Text>
+            {/* Botón (i) — solo muestra el texto informativo al pulsar */}
+            <TouchableOpacity
+              hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+              onPress={(e) => {
+                e.stopPropagation();
+                Alert.alert(
+                  'Acciones de escena',
+                  'Si quieres que la IA también lea las acciones especificadas en el guion, activa este botón y configura la voz que desees.',
+                  [{ text: 'Entendido' }]
+                );
+              }}
+              style={{ marginRight: 8 }}
+            >
+              <Info size={18} color="rgba(255,255,255,0.5)" />
+            </TouchableOpacity>
+          </View>
+          <Switch
+            value={readActions}
+            onValueChange={setReadActions}
+            trackColor={{ false: 'rgba(255,255,255,0.1)', true: '#34C759' }}
+            thumbColor={'#ffffff'}
+          />
+        </TouchableOpacity>
 
         <BottomSheetToggle
           label="Mostrar acotaciones"

@@ -240,8 +240,8 @@ export default function SettingsScreen() {
       Alert.alert(
         'Preferencia actualizada',
         next
-          ? 'Usar almacenamiento local: activado. Las nuevas grabaciones se guardarán sólo en local.'
-          : 'Usar almacenamiento local: desactivado. Las nuevas grabaciones se sincronizarán con la Nube.'
+          ? 'Guardar solo en mi dispositivo: activado. Las nuevas grabaciones no se subirán a la nube.'
+          : 'Guardar solo en mi dispositivo: desactivado. Las nuevas grabaciones se sincronizarán con la nube.'
       );
     } catch (e: any) {
       Alert.alert('Error', e?.message || 'No se pudo actualizar la preferencia');
@@ -418,8 +418,8 @@ export default function SettingsScreen() {
             <View style={[styles.storageCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
               <View style={styles.storageRow}>
                 <View style={{ flex: 1 }}>
-                  <Text style={[styles.storageTitle, { color: colors.text }]}>Usar almacenamiento local</Text>
-                  <Text style={[styles.storageDesc, { color: colors.textSecondary }]}>Guarda grabaciones en el dispositivo para reproducción offline. No se suben a la Nube mientras esté activo.</Text>
+                  <Text style={[styles.storageTitle, { color: colors.text }]}>Guardar solo en mi dispositivo</Text>
+                  <Text style={[styles.storageDesc, { color: colors.textSecondary }]}>Las nuevas grabaciones no se subirán a la nube. Solo podrás verlas en este dispositivo.</Text>
                 </View>
                 <Switch
                   value={localOnly}

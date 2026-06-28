@@ -78,8 +78,9 @@ export async function PlaybackService() {
     console.log('[PlaybackService] Queue Ended:', event);
   });
 
-  TrackPlayer.addEventListener(Event.PlaybackState, (event: any) => {
-    console.log('[PlaybackService] Playback State:', event.state);
+  TrackPlayer.addEventListener(Event.PlaybackState, (_event: any) => {
+    // PlaybackState changes are not logged to avoid spam from silence.wav
+    // iOS lock screen uses silence.wav on repeat, which causes continuous state transitions
   });
 
   TrackPlayer.addEventListener(Event.PlaybackError, (event: any) => {

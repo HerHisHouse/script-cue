@@ -179,6 +179,14 @@ export default function CastingModeScreen() {
   const [castingType, setCastingType] = useState<'script' | 'free' | null>(null);
   type VideoQuality = 'high' | 'medium' | 'low';
   const [videoQuality, setVideoQuality] = useState<VideoQuality>('medium');
+  const [showQualityModal, setShowQualityModal] = useState(false);
+  const [qualityApplied, setQualityApplied] = useState(false);
+
+  useEffect(() => {
+    if ((castingMode === 'script_config' || castingMode === 'free_input') && !qualityApplied) {
+      setShowQualityModal(true);
+    }
+  }, [castingMode, qualityApplied]);
   // Voice recognition speech event handlers (assigned inside startListening)
   const onSpeechStartRef = useRef<(() => void) | null>(null);
   const onSpeechEndRef = useRef<(() => void) | null>(null);
@@ -1415,20 +1423,102 @@ export default function CastingModeScreen() {
 
     try {
       setIsProcessing(true);
-      setProcessingProgress(20);
+      setProcessingProgress(10);
 
-      // Subir a Supabase Storage
-      const fileExt = uri.split('.').pop() || 'mp4';
+      // 1. Enviar a Render para compresión condicional
+      console.log('[Teleprompter] Sending video to Render for compression...');
+      const formData = new FormData();
+      formData.append('userId', user?.id || '');
+      formData.append('video', {
+        uri: uri,
+        name: 'video.mp4',
+        type: 'video/mp4',
+      } as any);
+
+      const renderUrl = process.env.EXPO_PUBLIC_RENDER_SERVER_URL || 'https://script-cue-merge-server.onrender.com';
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 180000);
+
+      let response;
+      try {
+        response = await fetch(`${renderUrl}/compress-video`, {
+          method: 'POST',
+          body: formData,
+          signal: controller.signal,
+        });
+        clearTimeout(timeoutId);
+      } catch (fetchError: any) {
+        clearTimeout(timeoutId);
+        if (fetchError.name === 'AbortError') {
+          throw new Error('El procesamiento tardó más de 3 minutos. Intenta con un video más corto.');
+        }
+        throw fetchError;
+      }
+
+      if (!response.ok) {
+        throw new Error(`Error del servidor: ${response.status}`);
+      }
+
+      const result = await response.json();
+      if (!result.downloadUrl) {
+        throw new Error('Server did not return a download URL');
+      }
+
+      setProcessingProgress(50);
+      console.log('[Teleprompter] Downloading compressed video...');
+
+      const localPath = `${FileSystem.documentDirectory}teleprompter_${Date.now()}.mp4`;
+      const downloadResumable = FileSystem.createDownloadResumable(
+        result.downloadUrl,
+        localPath,
+        {},
+        (downloadProgress) => {
+          const progress = downloadProgress.totalBytesWritten / downloadProgress.totalBytesExpectedToWrite;
+          setProcessingProgress(50 + (progress * 30)); // 50-80%
+        }
+      );
+
+      const downloadResult = await downloadResumable.downloadAsync();
+      if (!downloadResult || !downloadResult.uri) {
+        throw new Error('Download failed - no URI returned');
+      }
+
+      setProcessingProgress(80);
+
+      // ── LOCAL-ONLY MODE ────────────────────────────────────────────────────
+      const teleSettings = await getSettings();
+      if (teleSettings.useLocalOnly) {
+        console.log('[Teleprompter] Local-only mode — skipping Supabase upload');
+        await supabase.from('recordings').insert({
+          user_id: user?.id,
+          script_id: id,
+          project_id: null,
+          title: `Teleprompter - Libre`,
+          audio_url: downloadResult.uri,  // local file:// URI → shows 📱 Local
+          type: 'video',
+          duration_seconds: recordingTimeRef.current,
+          file_size_bytes: 0,
+        });
+        setProcessingProgress(100);
+        setIsProcessing(false);
+        Alert.alert('¡Video guardado!', 'Tu grabación está guardada en este dispositivo (📱 Local).', [
+          { text: 'OK', onPress: () => router.replace(`/scripts/${id}`) }
+        ]);
+        return;
+      }
+      // ──────────────────────────────────────────────────────────────────────
+
+      // 2. Subir a Supabase Storage
+      console.log('[Teleprompter] Uploading to Supabase Storage...');
+      const fileExt = downloadResult.uri.split('.').pop() || 'mp4';
       const fileName = `video_${Date.now()}.${fileExt}`;
       const storagePath = `${user?.id}/${fileName}`;
       const uploadUrl = `${process.env.EXPO_PUBLIC_SUPABASE_URL}/storage/v1/object/recordings/${storagePath}`;
 
-      setProcessingProgress(60);
-
       const { data: sessionData } = await supabase.auth.getSession();
       const token = sessionData.session?.access_token || process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY;
 
-      const uploadResult = await FileSystem.uploadAsync(uploadUrl, uri, {
+      const uploadResult = await FileSystem.uploadAsync(uploadUrl, downloadResult.uri, {
         httpMethod: 'POST',
         uploadType: FileSystem.FileSystemUploadType.BINARY_CONTENT,
         headers: {
@@ -1439,10 +1529,35 @@ export default function CastingModeScreen() {
       });
 
       if (uploadResult.status !== 200 && uploadResult.status !== 201) {
+        if (uploadResult.body?.includes('413') || uploadResult.body?.includes('exceeded')) {
+          // Fallback: guardar localmente
+          console.log('[Teleprompter] Video too large for Supabase. Saving locally.');
+          await supabase.from('recordings').insert({
+            user_id: user?.id,
+            script_id: id,
+            project_id: null,
+            title: `Teleprompter - Libre`,
+            audio_url: downloadResult.uri,
+            type: 'video',
+            duration_seconds: recordingTimeRef.current,
+            file_size_bytes: 0,
+          });
+
+          setProcessingProgress(100);
+          setIsProcessing(false);
+          Alert.alert(
+            'Vídeo guardado localmente',
+            'El vídeo es demasiado grande para subir a la nube. ' +
+            'Lo encontrarás en la pantalla de Grabaciones. ' +
+            'Puedes compartirlo directamente desde ahí.',
+            [{ text: 'Entendido', onPress: () => router.replace(`/scripts/${id}`) }]
+          );
+          return;
+        }
         throw new Error(`Error subiendo video: ${uploadResult.body}`);
       }
 
-      setProcessingProgress(80);
+      setProcessingProgress(95);
 
       const { error: dbError } = await supabase.from('recordings').insert({
         user_id: user?.id,
@@ -1459,9 +1574,10 @@ export default function CastingModeScreen() {
 
       setProcessingProgress(100);
       setIsProcessing(false);
-      Alert.alert('¡Video guardado!', 'Tu grabación se ha guardado correctamente.', [
+      Alert.alert('¡Video guardado!', 'Tu grabación está disponible en la pantalla de Grabaciones.', [
         { text: 'OK', onPress: () => router.replace(`/scripts/${id}`) }
       ]);
+
     } catch (e: any) {
       console.error(e);
       setIsProcessing(false);
@@ -1617,6 +1733,34 @@ export default function CastingModeScreen() {
         console.log('[Casting] Video downloaded to:', downloadResult.uri);
         setProcessingProgress(90);
 
+        // ── LOCAL-ONLY MODE ────────────────────────────────────────────────────
+        const castingSettings = await getSettings();
+        if (castingSettings.useLocalOnly) {
+          console.log('[Casting] Local-only mode — skipping Supabase upload');
+
+          await supabase.from('recordings').insert({
+            user_id: user?.id,
+            script_id: id,
+            scene_id: dialogueLines[currentIndex]?.sceneId ?? dialogueLines[0]?.sceneId,
+            project_id: null,
+            title: `Casting - ${script?.title || 'Guión'}`,
+            audio_url: downloadResult.uri,  // local file:// URI → shows 📱 Local
+            type: 'video',
+            duration_seconds: recordingTimeRef.current,
+            file_size_bytes: 0,
+          });
+
+          setProcessingProgress(100);
+          setIsProcessing(false);
+          Alert.alert(
+            '¡Video guardado!',
+            'Tu casting está guardado en este dispositivo (📱 Local).',
+            [{ text: 'OK', onPress: () => router.replace(`/scripts/${id}`) }]
+          );
+          return;
+        }
+        // ──────────────────────────────────────────────────────────────────────
+
         // Upload to Supabase Storage
         console.log('[Casting] Uploading processed video to Supabase Storage...');
         const fileExt = downloadResult.uri.split('.').pop() || 'mp4';
@@ -1717,6 +1861,7 @@ export default function CastingModeScreen() {
         console.error('[Casting] Download/Save Error:', downloadError);
         throw new Error(`Error al descargar o guardar el video: ${downloadError.message}`);
       }
+
 
     } catch (e: any) {
       console.error('[Casting] Error:', e);
@@ -2066,64 +2211,6 @@ export default function CastingModeScreen() {
               );
             })}
           </ScrollView>
-
-          {/* Quality Selector */}
-          <View style={styles.qualitySection}>
-            <Text style={styles.qualitySectionTitle}>
-              📹 Calidad del vídeo
-            </Text>
-            <Text style={styles.qualitySectionSubtitle}>
-              Mayor calidad = archivo más grande
-            </Text>
-
-            <View style={styles.qualityOptions}>
-              {[
-                { 
-                  value: 'high', 
-                  label: 'Alta', 
-                  desc: '1080p — Mayor detalle', 
-                  size: '~80MB/min' 
-                },
-                { 
-                  value: 'medium', 
-                  label: 'Media', 
-                  desc: '720p — Recomendado', 
-                  size: '~30MB/min' 
-                },
-                { 
-                  value: 'low', 
-                  label: 'Básica', 
-                  desc: '480p — Menor tamaño', 
-                  size: '~12MB/min' 
-                },
-              ].map((option) => (
-                <TouchableOpacity
-                  key={option.value}
-                  style={[
-                    styles.qualityOption,
-                    videoQuality === option.value && styles.qualityOptionSelected,
-                  ]}
-                  onPress={() => setVideoQuality(option.value as VideoQuality)}
-                >
-                  <View style={{ flex: 1 }}>
-                    <Text style={[
-                      styles.qualityOptionLabel,
-                      videoQuality === option.value && styles.qualityOptionLabelSelected
-                    ]}>
-                      {option.label}
-                    </Text>
-                    <Text style={styles.qualityOptionDesc}>{option.desc}</Text>
-                  </View>
-                  <Text style={styles.qualityOptionSize}>{option.size}</Text>
-                  {videoQuality === option.value && (
-                    <View style={styles.qualityCheckmark}>
-                      <Text style={{ color: '#a78bfa', fontSize: rf(16) }}>✓</Text>
-                    </View>
-                  )}
-                </TouchableOpacity>
-              ))}
-            </View>
-          </View>
 
           {/* Start Recording Button */}
           <View style={styles.configFooter}>
@@ -2794,6 +2881,91 @@ export default function CastingModeScreen() {
           )}
         </>
       )}
+
+      {/* Quality Selector Modal */}
+      <Modal
+        visible={showQualityModal}
+        transparent={true}
+        animationType="fade"
+      >
+        <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.8)', justifyContent: 'center', alignItems: 'center', padding: rp(20) }}>
+          <View style={[styles.qualitySection, { width: '100%', backgroundColor: '#1A1A24', borderColor: '#2A2A35' }]}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: rp(16), gap: rp(8) }}>
+              <Video size={rp(24)} color="#a78bfa" />
+              <Text style={[styles.qualitySectionTitle, { marginBottom: 0 }]}>
+                Calidad del vídeo
+              </Text>
+            </View>
+            <Text style={styles.qualitySectionSubtitle}>
+              Mayor calidad = archivo más grande
+            </Text>
+
+            <View style={styles.qualityOptions}>
+              {[
+                { 
+                  value: 'high', 
+                  label: 'Alta', 
+                  desc: '1080p — Mayor detalle', 
+                  size: '~80MB/min' 
+                },
+                { 
+                  value: 'medium', 
+                  label: 'Media', 
+                  desc: '720p — Recomendado', 
+                  size: '~30MB/min' 
+                },
+                { 
+                  value: 'low', 
+                  label: 'Básica', 
+                  desc: '480p — Menor tamaño', 
+                  size: '~12MB/min' 
+                },
+              ].map((option) => (
+                <TouchableOpacity
+                  key={option.value}
+                  style={[
+                    styles.qualityOption,
+                    videoQuality === option.value && styles.qualityOptionSelected,
+                  ]}
+                  onPress={() => setVideoQuality(option.value as VideoQuality)}
+                >
+                  <View style={{ flex: 1 }}>
+                    <Text style={[
+                      styles.qualityOptionLabel,
+                      videoQuality === option.value && styles.qualityOptionLabelSelected
+                    ]}>
+                      {option.label}
+                    </Text>
+                    <Text style={styles.qualityOptionDesc}>{option.desc}</Text>
+                  </View>
+                  <Text style={styles.qualityOptionSize}>{option.size}</Text>
+                  {videoQuality === option.value && (
+                    <View style={styles.qualityCheckmark}>
+                      <Text style={{ color: '#a78bfa', fontSize: rf(16) }}>✓</Text>
+                    </View>
+                  )}
+                </TouchableOpacity>
+              ))}
+            </View>
+
+            <TouchableOpacity
+              style={{
+                backgroundColor: '#10B981',
+                paddingVertical: rp(14),
+                borderRadius: rp(12),
+                alignItems: 'center',
+                marginTop: rp(24),
+              }}
+              onPress={() => {
+                setShowQualityModal(false);
+                setQualityApplied(true);
+              }}
+            >
+              <Text style={{ color: 'white', fontWeight: 'bold', fontSize: rf(16) }}>Aplicar</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }

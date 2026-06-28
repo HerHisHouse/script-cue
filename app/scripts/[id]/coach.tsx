@@ -37,7 +37,9 @@ import {
   Clapperboard,
   Eye,
   Target,
-  Users
+  Users,
+  Volume2,
+  Square as StopSquare
 } from 'lucide-react-native';
 import { Audio, Video, ResizeMode } from 'expo-av';
 import { supabase } from '@/utils/supabase';
@@ -45,6 +47,7 @@ import { useTheme } from '@/contexts/ThemeContext';
 import { useAuth } from '@/contexts/AuthContext';
 import type { Recording } from '@/types/database';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { getSettings } from '@/utils/appSettings';
 import { getIntroPreferences, setIntroPreference } from '@/utils/introPreferences';
 import { setAudioModeForPlayback } from '@/utils/audioMode';
 import { rf, rp } from '@/utils/responsive';
@@ -82,11 +85,24 @@ export default function CoachModeScreen() {
 
   const [recordings, setRecordings] = useState<Recording[]>([]);
   const [loading, setLoading] = useState(true);
+  const [isLocalOnly, setIsLocalOnly] = useState(false);
+
+  useEffect(() => {
+    const checkLocalMode = async () => {
+      const settings = await getSettings();
+      setIsLocalOnly(settings?.useLocalOnly || false);
+    };
+    checkLocalMode();
+  }, []);
   const [selectedRecording, setSelectedRecording] = useState<Recording | null>(null);
   const [analysis, setAnalysis] = useState<any | null>(null);
   const [analyzing, setAnalyzing] = useState(false);
-  const [activeTab, setActiveTab] = useState<TabType>('feedback');
+  const [activeTab, setActiveTab] = useState<'feedback' | 'propuestas' | 'comparacion'>('feedback');
   const [comparingWith, setComparingWith] = useState<string | null>(null);
+
+  // States for preview audio
+  const [previewingId, setPreviewingId] = useState<string | null>(null);
+  const previewSoundRef = useRef<Audio.Sound | null>(null);
   const [analyzedIds, setAnalyzedIds] = useState<Set<string>>(new Set());
   const [playbackStatus, setPlaybackStatus] = useState<any>(null);
   const [sound, setSound] = useState<Audio.Sound | null>(null);
@@ -134,11 +150,18 @@ export default function CoachModeScreen() {
 
     // Enable playback mode - FORCE SPEAKER OUTPUT
     setAudioModeForPlayback();
-
-    return () => {
-      if (sound) sound.unloadAsync();
-    };
   }, [id]);
+
+  useEffect(() => {
+    return () => {
+      if (sound) {
+        sound.unloadAsync();
+      }
+      if (previewSoundRef.current) {
+        previewSoundRef.current.unloadAsync();
+      }
+    };
+  }, [sound]);
 
   async function loadCharacters() {
     try {
@@ -411,14 +434,18 @@ export default function CoachModeScreen() {
         await sound.unloadAsync();
       }
 
-      const signedUrl = await getSignedUrl(path);
-      if (!signedUrl) {
-        Alert.alert('Error', 'No se pudo obtener la URL del audio');
-        return;
+      let playableUrl = path;
+      if (!path.startsWith('file://')) {
+        const signedUrl = await getSignedUrl(path);
+        if (!signedUrl) {
+          Alert.alert('Error', 'No se pudo obtener la URL del audio');
+          return;
+        }
+        playableUrl = signedUrl;
       }
 
       const { sound: newSound } = await Audio.Sound.createAsync(
-        { uri: signedUrl },
+        { uri: playableUrl },
         { shouldPlay: true }
       );
       setSound(newSound);
@@ -457,6 +484,53 @@ export default function CoachModeScreen() {
     }
   }
 
+  async function togglePreview(recording: Recording) {
+    try {
+      if (previewingId === recording.id) {
+        if (previewSoundRef.current) {
+          await previewSoundRef.current.stopAsync();
+          await previewSoundRef.current.unloadAsync();
+          previewSoundRef.current = null;
+        }
+        setPreviewingId(null);
+      } else {
+        if (previewSoundRef.current) {
+          await previewSoundRef.current.stopAsync();
+          await previewSoundRef.current.unloadAsync();
+        }
+        setPreviewingId(recording.id);
+
+        let playableUrl = recording.audio_url;
+        if (!playableUrl.startsWith('file://')) {
+          const signedUrl = await getSignedUrl(playableUrl);
+          if (!signedUrl) {
+            Alert.alert('Error', 'No se pudo obtener el audio');
+            setPreviewingId(null);
+            return;
+          }
+          playableUrl = signedUrl;
+        }
+
+        const { sound: newSound } = await Audio.Sound.createAsync(
+          { uri: playableUrl },
+          { shouldPlay: true }
+        );
+        previewSoundRef.current = newSound;
+
+        newSound.setOnPlaybackStatusUpdate((status) => {
+          if (status.isLoaded && status.didJustFinish) {
+            setPreviewingId(null);
+            newSound.unloadAsync();
+            previewSoundRef.current = null;
+          }
+        });
+      }
+    } catch (e) {
+      console.error('Preview error:', e);
+      setPreviewingId(null);
+    }
+  }
+
   const renderRecordingItem = ({ item }: { item: Recording }) => (
     <TouchableOpacity
       style={[styles.recordingCard, { backgroundColor: colors.surface, borderColor: colors.border }]}
@@ -483,6 +557,28 @@ export default function CoachModeScreen() {
                     <Text style={[styles.analyzedBadgeText, { color: colors.primary }]}>Analizada</Text>
                 </View>
             )}
+        </View>
+        {/* Indicador de ubicación del archivo */}
+        <View style={styles.storageIndicator}>
+          {(() => {
+            const url = item.audio_url || '';
+            const isLocalFile = url.startsWith('file://') || url.startsWith('/');
+            return isLocalFile ? (
+              <View style={styles.storageTag}>
+                <Text style={styles.storageTagIcon}>📱</Text>
+                <Text style={[styles.storageTagText, { color: colors.textSecondary }]}>
+                  Local
+                </Text>
+              </View>
+            ) : (
+              <View style={styles.storageTag}>
+                <Text style={styles.storageTagIcon}>☁️</Text>
+                <Text style={[styles.storageTagText, { color: colors.textSecondary }]}>
+                  Nube
+                </Text>
+              </View>
+            );
+          })()}
         </View>
       </View>
       <ChevronRight size={20} color={colors.textSecondary} />
@@ -656,13 +752,31 @@ export default function CoachModeScreen() {
                             ) : (
                                 <Repeat size={16} color={comparingWith === r.id ? colors.primary : colors.textSecondary} />
                             )}
-                            <Text style={[
-                                styles.comparisonOptionText, 
-                                { color: comparingWith === r.id ? colors.primary : colors.text }
-                            ]}>
-                              {new Date(r.created_at).toLocaleDateString()} - {new Date(r.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                            </Text>
-                            {comparingWith === r.id && <Sparkles size={14} color={colors.primary} />}
+                            <View style={{ flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+                              <Text style={[
+                                  styles.comparisonOptionText, 
+                                  { color: comparingWith === r.id ? colors.primary : colors.text, marginLeft: 8 }
+                              ]}>
+                                {new Date(r.created_at).toLocaleDateString()} - {new Date(r.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                              </Text>
+                              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+                                {comparingWith === r.id && <Sparkles size={14} color={colors.primary} />}
+                                
+                                <TouchableOpacity 
+                                  style={{ padding: 4 }}
+                                  onPress={(e) => {
+                                    e.stopPropagation(); // Evitar que seleccione la grabación
+                                    togglePreview(r);
+                                  }}
+                                >
+                                  {previewingId === r.id ? (
+                                    <StopSquare size={18} color={colors.primary} fill={colors.primary} />
+                                  ) : (
+                                    <Volume2 size={18} color={colors.textSecondary} />
+                                  )}
+                                </TouchableOpacity>
+                              </View>
+                            </View>
                           </TouchableOpacity>
                         ))}
                     </View>
@@ -709,6 +823,33 @@ export default function CoachModeScreen() {
           <Text style={[styles.subtitle, { color: colors.textSecondary }]}>
             Selecciona una grabación para recibir propuestas.
           </Text>
+
+          {isLocalOnly && (
+            <View style={[styles.localModeBanner, { 
+              backgroundColor: colors.warning + '15',
+              borderColor: colors.warning + '40',
+            }]}>
+              <View style={styles.localModeBannerContent}>
+                <Text style={styles.localModeBannerIcon}>📱</Text>
+                <View style={{ flex: 1 }}>
+                  <Text style={[styles.localModeBannerTitle, { color: colors.warning }]}>
+                    Modo local activo
+                  </Text>
+                  <Text style={[styles.localModeBannerText, { color: colors.textSecondary }]}>
+                    Tus grabaciones no se están subiendo a la nube.
+                  </Text>
+                </View>
+                <TouchableOpacity
+                  onPress={() => router.push('/settings')}
+                  style={styles.localModeBannerAction}
+                >
+                  <Text style={[styles.localModeBannerActionText, { color: colors.warning }]}>
+                    Cambiar
+                  </Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          )}
 
           <FlatList
             data={recordings}
@@ -1389,5 +1530,53 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: '#FFFFFF',
     textAlign: 'center',
+  },
+  localModeBanner: {
+    marginHorizontal: rp(16),
+    marginTop: rp(8),
+    marginBottom: rp(4),
+    borderRadius: rp(10),
+    borderWidth: 1,
+    padding: rp(12),
+  },
+  localModeBannerContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: rp(10),
+  },
+  localModeBannerIcon: {
+    fontSize: rf(20),
+  },
+  localModeBannerTitle: {
+    fontSize: rf(13),
+    fontWeight: '700',
+    marginBottom: rp(2),
+  },
+  localModeBannerText: {
+    fontSize: rf(12),
+    lineHeight: rf(16),
+  },
+  localModeBannerAction: {
+    paddingHorizontal: rp(8),
+    paddingVertical: rp(4),
+  },
+  localModeBannerActionText: {
+    fontSize: rf(13),
+    fontWeight: '600',
+  },
+  storageIndicator: {
+    marginTop: rp(4),
+  },
+  storageTag: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: rp(3),
+  },
+  storageTagIcon: {
+    fontSize: rf(10),
+  },
+  storageTagText: {
+    fontSize: rf(10),
+    opacity: 0.6,
   },
 });

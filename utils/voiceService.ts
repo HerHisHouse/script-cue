@@ -17,6 +17,7 @@ export interface VoiceOption {
   previewUrl?: string;
   gender?: 'male' | 'female' | 'neutral';
   accent?: string;
+  labels?: any;
 }
 
 // ============================================
@@ -150,6 +151,7 @@ export async function getElevenLabsVoices(): Promise<VoiceOption[]> {
       gender: voice.labels?.gender?.toLowerCase() || 'neutral',
       accent: voice.labels?.accent,
       category: voice.category || 'generated', // Categoría de la voz
+      labels: voice.labels,
     }));
 
     // Separar voces en categorías

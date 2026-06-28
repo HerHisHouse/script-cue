@@ -35,6 +35,98 @@ interface VoiceSelectorProps {
     disabled?: boolean;
     systemLanguage?: string; // Para filtrar voces del sistema por idioma
 }
+}
+
+// Mapeo de use_case de ElevenLabs a nombres en español
+const CATEGORY_LABELS: Record<string, string> = {
+  'conversational':          '💬 Conversacional',
+  'narrative_story':         '📖 Narración',
+  'narración':               '📖 Narración',
+  'narracion':               '📖 Narración',
+  'characters_animation':    '🎭 Personajes',
+  'personajes':              '🎭 Personajes',
+  'informative_educational': '🎓 Educativo',
+  'educativo':               '🎓 Educativo',
+  'social_media':            '📱 Redes Sociales',
+  'entertainment_tv':        '🎬 Entretenimiento',
+  'advertisement':           '📣 Publicidad',
+  'news':                    '📰 Noticias',
+  'meditation':              '🧘 Meditación',
+};
+
+// Orden de las secciones (las más relevantes primero)
+const CATEGORY_ORDER = [
+  '💬 Conversacional',
+  '🎭 Personajes',
+  '📖 Narración',
+  '🎓 Educativo',
+  '📱 Redes Sociales',
+  '🎬 Entretenimiento',
+  '📣 Publicidad',
+  '📰 Noticias',
+  '🧘 Meditación',
+  '🔤 Otras',
+];
+
+type VoiceGroup = {
+  category: string;
+  voices: VoiceOption[];
+};
+
+function groupVoicesByCategory(voices: VoiceOption[]): VoiceGroup[] {
+  const groups: Record<string, VoiceOption[]> = {};
+
+  for (const voice of voices) {
+    // Intentar obtener la categoría desde los labels
+    const useCase = voice.labels?.use_case || 
+                    voice.labels?.['use_case'] || 
+                    '';
+    
+    // Normalizar: quitar tildes, minúsculas, espacios
+    const normalized = useCase
+      .toLowerCase()
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .trim();
+
+    // Buscar en el mapeo
+    const categoryLabel = CATEGORY_LABELS[useCase] || 
+                          CATEGORY_LABELS[normalized] || 
+                          '🔤 Otras';
+
+    if (!groups[categoryLabel]) {
+      groups[categoryLabel] = [];
+    }
+    groups[categoryLabel].push(voice);
+  }
+
+  // Ordenar grupos según CATEGORY_ORDER
+  const result: VoiceGroup[] = [];
+  
+  for (const cat of CATEGORY_ORDER) {
+    if (groups[cat] && groups[cat].length > 0) {
+      // Ordenar voces dentro de cada sección alfabéticamente
+      result.push({
+        category: cat,
+        voices: groups[cat].sort((a, b) => 
+          a.name.localeCompare(b.name, 'es')
+        ),
+      });
+    }
+  }
+
+  // Añadir "Otras" al final si existe
+  if (groups['🔤 Otras'] && groups['🔤 Otras'].length > 0) {
+    result.push({
+      category: '🔤 Otras',
+      voices: groups['🔤 Otras'].sort((a, b) => 
+        a.name.localeCompare(b.name, 'es')
+      ),
+    });
+  }
+
+  return result;
+}
 
 export function VoiceSelector({
     selectedVoiceId,
@@ -50,6 +142,7 @@ export function VoiceSelector({
     const [loadingVoices, setLoadingVoices] = useState(false);
     const [playingVoiceId, setPlayingVoiceId] = useState<string | null>(null);
     const [loadingPreview, setLoadingPreview] = useState(false);
+    const [genderFilter, setGenderFilter] = useState<'all' | 'male' | 'female'>('all');
 
     // Cargar voces según el provider
     useEffect(() => {
@@ -254,6 +347,38 @@ export function VoiceSelector({
                             </TouchableOpacity>
                         </View>
 
+                        {/* Filtro de Género (Solo para ElevenLabs) */}
+                        {provider === 'elevenlabs' && (
+                            <View style={styles.genderFilter}>
+                              {[
+                                { value: 'all',    label: 'Todas' },
+                                { value: 'female', label: '♀ Mujer' },
+                                { value: 'male',   label: '♂ Hombre' },
+                              ].map(option => (
+                                <TouchableOpacity
+                                  key={option.value}
+                                  style={[
+                                    styles.genderChip,
+                                    genderFilter === option.value && styles.genderChipActive,
+                                    { borderColor: genderFilter === option.value 
+                                        ? colors.primary 
+                                        : colors.border }
+                                  ]}
+                                  onPress={() => setGenderFilter(option.value as any)}
+                                >
+                                  <Text style={[
+                                    styles.genderChipText,
+                                    { color: genderFilter === option.value 
+                                        ? colors.primary 
+                                        : colors.textSecondary }
+                                  ]}>
+                                    {option.label}
+                                  </Text>
+                                </TouchableOpacity>
+                              ))}
+                            </View>
+                        )}
+
                         {/* Lista de voces */}
                         <ScrollView style={styles.voiceList} contentContainerStyle={styles.voiceListContent}>
                             {loadingVoices ? (
@@ -273,41 +398,95 @@ export function VoiceSelector({
                                                 : 'No hay voces disponibles.'}
                                     </Text>
                                 </View>
+                            ) : provider === 'elevenlabs' ? (
+                                (() => {
+                                    const filteredVoices = genderFilter === 'all'
+                                        ? elevenLabsVoices
+                                        : elevenLabsVoices.filter(v => v.gender === genderFilter);
+                                    
+                                    const voiceGroups = groupVoicesByCategory(filteredVoices);
+
+                                    return voiceGroups.map(group => (
+                                        <View key={group.category} style={styles.voiceSection}>
+                                            <View style={styles.voiceSectionHeader}>
+                                                <Text style={[styles.voiceSectionTitle, { color: colors.textSecondary }]}>
+                                                    {group.category}
+                                                </Text>
+                                                <View style={[styles.voiceSectionLine, { backgroundColor: colors.border }]} />
+                                            </View>
+
+                                            {group.voices.map(voice => {
+                                                const voiceId = voice.id;
+                                                const isSelected = selectedVoiceId === voiceId;
+                                                return (
+                                                    <TouchableOpacity
+                                                        key={voiceId}
+                                                        style={[
+                                                            styles.voiceItem,
+                                                            { backgroundColor: colors.surface, borderColor: colors.border, marginBottom: rp(8) },
+                                                            isSelected && {
+                                                                borderColor: colors.primary,
+                                                                borderWidth: 2,
+                                                            },
+                                                        ]}
+                                                        onPress={() => handleSelect(voiceId)}
+                                                    >
+                                                        <View style={styles.voiceInfo}>
+                                                            <Text style={[styles.voiceName, { color: colors.text }]}>
+                                                                {voice.name}
+                                                            </Text>
+                                                            {voice.description && (
+                                                                <Text style={[styles.voiceDescription, { color: colors.textSecondary }]}>
+                                                                    {voice.description}
+                                                                </Text>
+                                                            )}
+                                                            {voice.gender && (
+                                                                <Text style={[styles.voiceGender, { color: colors.textSecondary }]}>
+                                                                    {voice.gender === 'male' ? '♂️ Masculina' : voice.gender === 'female' ? '♀️ Femenina' : '⚪ Neutra'}
+                                                                </Text>
+                                                            )}
+                                                        </View>
+
+                                                        <View style={styles.voiceActions}>
+                                                            <TouchableOpacity
+                                                                style={[
+                                                                    styles.previewButton,
+                                                                    { backgroundColor: colors.primary + '20' },
+                                                                    playingVoiceId === voiceId && { backgroundColor: colors.primary },
+                                                                ]}
+                                                                onPress={(e) => {
+                                                                    e.stopPropagation();
+                                                                    handlePreview(voiceId);
+                                                                }}
+                                                            >
+                                                                {loadingPreview && playingVoiceId === voiceId ? (
+                                                                    <ActivityIndicator size="small" color={playingVoiceId === voiceId ? '#FFFFFF' : colors.primary} />
+                                                                ) : playingVoiceId === voiceId ? (
+                                                                    <VolumeX size={18} color="#FFFFFF" />
+                                                                ) : (
+                                                                    <Volume2 size={18} color={colors.primary} />
+                                                                )}
+                                                            </TouchableOpacity>
+
+                                                            {isSelected && (
+                                                                <View style={[styles.checkIcon, { backgroundColor: colors.primary }]}>
+                                                                    <Check size={16} color="#FFFFFF" />
+                                                                </View>
+                                                            )}
+                                                        </View>
+                                                    </TouchableOpacity>
+                                                );
+                                            })}
+                                        </View>
+                                    ));
+                                })()
                             ) : (
                                 voiceList.map((voice: any, index: number) => {
                                     const voiceId = voice.id;
                                     const isSelected = selectedVoiceId === voiceId;
 
-                                    // Mostrar separador cuando cambia la categoría (solo para ElevenLabs)
-                                    const prevVoice = index > 0 ? voiceList[index - 1] : null;
-                                    const showCategorySeparator = provider === 'elevenlabs' &&
-                                        prevVoice &&
-                                        (prevVoice as any).category !== voice.category;
-
                                     return (
                                         <React.Fragment key={voiceId}>
-                                            {showCategorySeparator && (
-                                                <View style={styles.categorySeparator}>
-                                                    <View style={[styles.separatorLine, { backgroundColor: colors.border }]} />
-                                                    <Text style={[styles.categoryLabel, { color: colors.textSecondary }]}>
-                                                        {voice.category === 'premade' ? '📢 Voces Públicas' :
-                                                            voice.category === 'cloned' ? '🎭 Voces Clonadas' : ''}
-                                                    </Text>
-                                                    <View style={[styles.separatorLine, { backgroundColor: colors.border }]} />
-                                                </View>
-                                            )}
-
-                                            {/* Mostrar etiqueta "Mis Voces" al inicio si la primera es generated */}
-                                            {index === 0 && provider === 'elevenlabs' && voice.category === 'generated' && (
-                                                <View style={styles.categorySeparator}>
-                                                    <View style={[styles.separatorLine, { backgroundColor: colors.border }]} />
-                                                    <Text style={[styles.categoryLabel, { color: colors.primary }]}>
-                                                        ⭐ Mis Voces
-                                                    </Text>
-                                                    <View style={[styles.separatorLine, { backgroundColor: colors.border }]} />
-                                                </View>
-                                            )}
-
                                             <TouchableOpacity
                                                 style={[
                                                     styles.voiceItem,
@@ -530,5 +709,47 @@ const styles = StyleSheet.create({
         fontSize: rf(12),
         fontWeight: '600',
         paddingHorizontal: rp(8),
+    },
+    voiceSection: {
+        marginBottom: rp(8),
+    },
+    voiceSectionHeader: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        paddingTop: rp(16),
+        paddingBottom: rp(8),
+        gap: rp(10),
+    },
+    voiceSectionTitle: {
+        fontSize: rf(12),
+        fontWeight: '700',
+        letterSpacing: 0.8,
+        textTransform: 'uppercase',
+        flexShrink: 0,
+    },
+    voiceSectionLine: {
+        flex: 1,
+        height: 1,
+        opacity: 0.4,
+    },
+    genderFilter: {
+        flexDirection: 'row',
+        gap: rp(8),
+        paddingHorizontal: rp(16),
+        paddingVertical: rp(12),
+        borderBottomWidth: 1,
+    },
+    genderChip: {
+        paddingHorizontal: rp(14),
+        paddingVertical: rp(6),
+        borderRadius: rp(20),
+        borderWidth: 1,
+    },
+    genderChipActive: {
+        // bg comes from inline styles
+    },
+    genderChipText: {
+        fontSize: rf(13),
+        fontWeight: '600',
     },
 });
