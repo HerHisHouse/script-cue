@@ -6,10 +6,20 @@ import { rf } from '../utils/responsive';
 interface ExpoCameraProps {
     facing: 'front' | 'back';
     zoom: number;
+    videoQuality?: 'high' | 'medium' | 'low';
 }
 
 const ExpoCameraView = forwardRef((props: ExpoCameraProps, ref) => {
-    const { facing, zoom } = props;
+    const { facing, zoom, videoQuality } = props;
+
+    const getExpoQuality = (quality: string | undefined) => {
+        switch (quality) {
+            case 'high':   return '1080p';
+            case 'medium': return '720p';
+            case 'low':    return '480p';
+            default:       return '720p';
+        }
+    };
     const [permission, requestPermission] = useCameraPermissions();
     const [micPermission, requestMicPermission] = useMicrophonePermissions();
     const cameraRef = React.useRef<CameraView>(null);
@@ -78,6 +88,7 @@ const ExpoCameraView = forwardRef((props: ExpoCameraProps, ref) => {
             facing={facing as any}
             mode="video"
             zoom={zoom} // Escala 0-1 según los parámetros del usuario
+            videoQuality={getExpoQuality(videoQuality) as any}
         />
     );
 });

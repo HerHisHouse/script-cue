@@ -21,14 +21,17 @@ import {
 import { Dimensions } from 'react-native';
 import { PinchGestureHandler, State } from 'react-native-gesture-handler';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Play, Pause, Trash2, Clock, FileAudio, MoreVertical, Edit2, Share2, Search, Grid3x3, List, Send, ChevronRight, Circle, SkipBack, SkipForward, Volume2, VolumeX, Repeat, X, Maximize2, Minimize2, Video as VideoIcon, Cast, Waves, Music, Clapperboard, CheckSquare, Gauge, Download, Filter, ArrowUpAZ, Check, Calendar } from 'lucide-react-native';
+import { Play, Pause, Trash2, Clock, FileAudio, MoreVertical, Edit2, Share2, Search, Grid3x3, List, Send, ChevronRight, Circle, SkipBack, SkipForward, Volume2, VolumeX, Repeat, X, Maximize2, Minimize2, Video as VideoIcon, Cast, Waves, Music, Clapperboard, CheckSquare, Square, MinusSquare, Gauge, Download, Filter, ArrowUpAZ, Check, Calendar } from 'lucide-react-native';
 import { AudioVisualizer } from '@/components/AudioVisualizer';
 import { SendToModal } from '@/components/SendToModal';
 import { ScreenHeader } from '@/components/ScreenHeader';
 import { MENU_ITEM_PADDING_H, MENU_ITEM_PADDING_V, MENU_SECTION_PADDING_V, HEADER_HORIZONTAL_PADDING } from '@/utils/ui';
 import { makeHeaderMenuStyles } from '@/components/HeaderMenu';
-import * as Sharing from 'expo-sharing';
+import { rf, rp } from '@/utils/responsive';
 import * as FileSystem from 'expo-file-system/legacy';
+import { BottomSheetMenu } from '@/components/BottomSheetMenu';
+import { BottomSheetOption } from '@/components/BottomSheetOption';
+import * as Sharing from 'expo-sharing';
 import { useAuth } from '@/contexts/AuthContext';
 import { useTheme } from '@/contexts/ThemeContext';
 import { supabase } from '@/utils/supabase';
@@ -42,7 +45,6 @@ import { computeSafeTopPadding } from '../../utils/layout';
 import { validateAndNormalizeFilename, buildNewPath, RenameError, performRename } from '@/utils/rename';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { setAudioModeForPlayback, setAudioModeForBackgroundPlayback } from '@/utils/audioMode';
-import { rf, rp } from '@/utils/responsive';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { REMOTE_CMD_KEY } from '@/services/playbackService';
 
@@ -255,6 +257,8 @@ export default function RecordingsScreen() {
   const [filterType, setFilterType] = useState<'all' | 'audio' | 'video'>('all');
   const [showSortMenu, setShowSortMenu] = useState(false);
   const [showFilterMenu, setShowFilterMenu] = useState(false);
+  const [isFilterExpanded, setIsFilterExpanded] = useState(false);
+  const [isSortExpanded, setIsSortExpanded] = useState(false);
 
   // Load saved preferences
   useEffect(() => {
@@ -2051,7 +2055,7 @@ export default function RecordingsScreen() {
       <TouchableOpacity
         style={[
           viewMode === 'list' ? styles.recordingCard : styles.gridCard,
-          { backgroundColor: colors.surface },
+          { backgroundColor: isSelected ? colors.input : colors.surface },
           viewMode === 'grid' ? { width: gridItemWidth } : null,
           isSelected && { borderColor: colors.primary, borderWidth: 2 },
           showRecordingMenu === item.id ? { zIndex: 1002 } : null
@@ -2099,15 +2103,23 @@ export default function RecordingsScreen() {
                 })}
               </Text>
             </View>
-            {!selectionMode && (
-              <View style={styles.actions}>
-                {/* Papelera eliminada: la acción se hace desde el menú con confirmación */}
-                {/* <TouchableOpacity
-                  style={[styles.deleteButton, { backgroundColor: colors.surface }]}
-                  onPress={() => handleDelete(item.id)}
+            {selectionMode ? (
+              <View style={[styles.actions, { padding: rp(4), paddingRight: rp(8) }]}>
+                <TouchableOpacity
+                  accessibilityRole="checkbox"
+                  accessibilityState={{ checked: !!isSelected }}
+                  style={{
+                    width: 22, height: 22, borderRadius: 6, borderWidth: 2, borderColor: '#9ca3af',
+                    justifyContent: 'center', alignItems: 'center',
+                    ...(isSelected ? { backgroundColor: colors.primary, borderColor: colors.primary } : {})
+                  }}
+                  onPress={() => toggleSelection(item.id)}
                 >
-                  <Trash2 size={20} color={colors.error} />
-                </TouchableOpacity> */}
+                  {isSelected && <Check size={14} color="#fff" />}
+                </TouchableOpacity>
+              </View>
+            ) : (
+              <View style={styles.actions}>
                 <TouchableOpacity
                   style={[styles.menuButton, { backgroundColor: colors.input }]}
                   onPress={() => setShowRecordingMenu(showRecordingMenu === item.id ? null : item.id)}
@@ -2150,7 +2162,22 @@ export default function RecordingsScreen() {
               </Text>
             </View>
             {/* Reproductor modal se abre al seleccionar; sin botón Play en grid */}
-            {!selectionMode && (
+            {selectionMode ? (
+              <View style={{ position: 'absolute', top: 8, right: 8, zIndex: 2 }}>
+                <TouchableOpacity
+                  accessibilityRole="checkbox"
+                  accessibilityState={{ checked: !!isSelected }}
+                  style={{
+                    width: 22, height: 22, borderRadius: 6, borderWidth: 2, borderColor: '#9ca3af',
+                    justifyContent: 'center', alignItems: 'center',
+                    ...(isSelected ? { backgroundColor: colors.primary, borderColor: colors.primary } : {})
+                  }}
+                  onPress={() => toggleSelection(item.id)}
+                >
+                  {isSelected && <Check size={14} color="#fff" />}
+                </TouchableOpacity>
+              </View>
+            ) : (
               <TouchableOpacity
                 style={[styles.gridMenuButton, { backgroundColor: colors.input }]}
                 onPress={() => setShowRecordingMenu(showRecordingMenu === item.id ? null : item.id)}
@@ -2162,74 +2189,60 @@ export default function RecordingsScreen() {
         )}
 
         {showRecordingMenu === item.id && (
-          <Modal
+          <BottomSheetMenu
             visible={isOpen}
-            transparent
-            animationType="fade"
-            onRequestClose={() => setShowRecordingMenu(null)}
+            onClose={() => setShowRecordingMenu(null)}
+            title="Opciones"
           >
-            <TouchableOpacity
-              style={styles.optionsOverlay}
-              activeOpacity={1}
-              onPress={() => setShowRecordingMenu(null)}
-            >
-              <View style={[styles.optionsContent, { backgroundColor: colors.surface }]}>
-                <TouchableOpacity style={styles.optionItem} onPress={() => {
-                  setShowRecordingMenu(null);
-                  setTimeout(() => handleRename(item), 600);
-                }}>
-                  <Edit2 size={20} color={colors.text} />
-                  <Text style={[styles.optionText, { color: colors.text }]}>Renombrar</Text>
-                </TouchableOpacity>
+            <BottomSheetOption
+              label="Renombrar"
+              Icon={Edit2}
+              onPress={() => {
+                setShowRecordingMenu(null);
+                setTimeout(() => handleRename(item), 600);
+              }}
+            />
 
-                <TouchableOpacity style={styles.optionItem} onPress={async () => {
-                  await handleShare(item);
-                  setShowRecordingMenu(null);
-                }}>
-                  <Share2 size={20} color={colors.text} />
-                  <Text style={[styles.optionText, { color: colors.text }]}>Compartir</Text>
-                </TouchableOpacity>
+            <BottomSheetOption
+              label="Compartir"
+              Icon={Share2}
+              onPress={async () => {
+                await handleShare(item);
+                setShowRecordingMenu(null);
+              }}
+            />
 
-                <TouchableOpacity
-                  style={styles.optionItem}
-                  onPress={() => {
-                    setShowRecordingMenu(null);
-                    setTimeout(() => openSendModal(item.id), 600);
-                  }}
-                >
-                  <Send size={20} color={colors.text} />
-                  <Text style={[styles.optionText, { color: colors.text }]}>Enviar a…</Text>
-                </TouchableOpacity>
+            <BottomSheetOption
+              label="Enviar a…"
+              Icon={Send}
+              onPress={() => {
+                setShowRecordingMenu(null);
+                setTimeout(() => openSendModal(item.id), 600);
+              }}
+            />
 
-                <TouchableOpacity
-                  style={styles.optionItem}
-                  onPress={() => {
-                    setShowRecordingMenu(null);
-                    setTimeout(() => handleDownloadOffline(item), 600);
-                  }}
-                  disabled={downloadingId === item.id}
-                >
-                  {downloadingId === item.id ? (
-                    <ActivityIndicator size="small" color={colors.primary} />
-                  ) : (
-                    <Download size={20} color={colors.text} />
-                  )}
-                  <Text style={[styles.optionText, { color: colors.text }]}>Offline</Text>
-                </TouchableOpacity>
+            <BottomSheetOption
+              label="Offline (Descarga en el terminal)"
+              Icon={Download}
+              isLoading={downloadingId === item.id}
+              onPress={() => {
+                setShowRecordingMenu(null);
+                setTimeout(() => handleDownloadOffline(item), 600);
+              }}
+            />
 
-                <TouchableOpacity
-                  style={[styles.optionItem, { borderTopWidth: 1, borderTopColor: isDark ? '#333' : '#eee' }]}
-                  onPress={() => {
-                    setShowRecordingMenu(null);
-                    setTimeout(() => openDeleteConfirm(item), 600);
-                  }}
-                >
-                  <Trash2 size={20} color={colors.error} />
-                  <Text style={[styles.optionText, { color: colors.error }]}>Eliminar</Text>
-                </TouchableOpacity>
-              </View>
-            </TouchableOpacity>
-          </Modal>
+            <View style={{ height: 1, backgroundColor: colors.border, opacity: 0.5, marginVertical: 8 }} />
+
+            <BottomSheetOption
+              label="Eliminar"
+              Icon={Trash2}
+              isDestructive
+              onPress={() => {
+                setShowRecordingMenu(null);
+                setTimeout(() => openDeleteConfirm(item), 600);
+              }}
+            />
+          </BottomSheetMenu>
         )}
       </TouchableOpacity>
     );
@@ -2259,240 +2272,223 @@ export default function RecordingsScreen() {
         )}
 
         <ScreenHeader
-          title="Grabaciones"
+          title={selectionMode ? `${selectedIds.size} seleccionados` : "Grabaciones"}
           onLayout={(e) => setHeaderHeight(e.nativeEvent.layout.height)}
+          leftAction={
+            selectionMode ? (
+              <TouchableOpacity onPress={() => { setSelectionMode(false); setSelectedIds(new Set()); }}>
+                <X size={24} color={colors.text} />
+              </TouchableOpacity>
+            ) : undefined
+          }
+          childrenBelowTitle={
+            selectionMode ? (
+              <Pressable
+                accessibilityRole="checkbox"
+                accessibilityLabel="Seleccionar todo"
+                accessibilityState={{ checked: selectedIds.size > 0 && selectedIds.size === recordings.length }}
+                style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 6 }}
+                onPress={() => {
+                  if (selectedIds.size === recordings.length) {
+                    setSelectedIds(new Set());
+                  } else {
+                    setSelectedIds(new Set(recordings.map(r => r.id)));
+                  }
+                }}
+              >
+                {selectedIds.size === 0 ? (
+                  <Square size={18} color={colors.textSecondary} />
+                ) : selectedIds.size === recordings.length ? (
+                  <CheckSquare size={18} color={colors.primary} />
+                ) : (
+                  <MinusSquare size={18} color={colors.textSecondary} />
+                )}
+                <Text style={{ color: colors.textSecondary, fontSize: rf(14) }}>Seleccionar todo</Text>
+              </Pressable>
+            ) : null
+          }
           rightActions={
-            <TouchableOpacity
-              onPress={() => {
-                if (!showHeaderMenu) {
-                  setShowHeaderMenu(true);
-                  Animated.timing(headerMenuOpacity, {
-                    toValue: 1,
-                    duration: 200,
-                    easing: Easing.inOut(Easing.ease),
-                    useNativeDriver: true,
-                  }).start();
-                } else {
-                  Animated.timing(headerMenuOpacity, {
-                    toValue: 0,
-                    duration: 200,
-                    easing: Easing.inOut(Easing.ease),
-                    useNativeDriver: true,
-                  }).start(({ finished }) => {
-                    if (finished) setShowHeaderMenu(false);
-                  });
-                }
-              }}
-              style={styles.headerMenuButton}
-            >
-              <MoreVertical size={20} color={colors.text} />
-            </TouchableOpacity>
+            selectionMode ? (
+              <TouchableOpacity 
+                onPress={() => {
+                  if (selectedIds.size > 0) handleBulkDelete();
+                }}
+                style={{ opacity: selectedIds.size === 0 ? 0.5 : 1 }}
+                disabled={selectedIds.size === 0}
+              >
+                <Trash2 size={24} color={colors.error} />
+              </TouchableOpacity>
+            ) : (
+              <TouchableOpacity
+                onPress={() => {
+                  if (!showHeaderMenu) {
+                    setShowHeaderMenu(true);
+                    Animated.timing(headerMenuOpacity, {
+                      toValue: 1,
+                      duration: 200,
+                      easing: Easing.inOut(Easing.ease),
+                      useNativeDriver: true,
+                    }).start();
+                  } else {
+                    Animated.timing(headerMenuOpacity, {
+                      toValue: 0,
+                      duration: 200,
+                      easing: Easing.inOut(Easing.ease),
+                      useNativeDriver: true,
+                    }).start(({ finished }) => {
+                      if (finished) setShowHeaderMenu(false);
+                    });
+                  }
+                }}
+                style={styles.headerMenuButton}
+              >
+                <MoreVertical size={20} color={colors.text} />
+              </TouchableOpacity>
+            )
           }
         />
 
 
-        <Modal
+        <BottomSheetMenu
           visible={showHeaderMenu}
-          transparent
-          animationType="fade"
-          onRequestClose={() => {
+          onClose={() => {
             setShowHeaderMenu(false);
             setShowSortMenu(false);
             setShowFilterMenu(false);
           }}
+          title="Opciones"
         >
-          <TouchableOpacity
-            style={styles.bottomSheetOverlay}
-            activeOpacity={1}
+          <BottomSheetOption
+            label="Búsqueda avanzada"
+            Icon={Search}
             onPress={() => {
               setShowHeaderMenu(false);
               setShowSortMenu(false);
               setShowFilterMenu(false);
+              setTimeout(() => setShowSearch(!showSearch), 300);
             }}
+          />
+
+          <BottomSheetOption
+            label={selectionMode ? 'Cancelar selección' : 'Selección múltiple'}
+            Icon={CheckSquare}
+            onPress={() => {
+              setShowHeaderMenu(false);
+              setShowSortMenu(false);
+              setShowFilterMenu(false);
+              setTimeout(() => {
+                setSelectionMode(!selectionMode);
+                setSelectedIds(new Set());
+              }, 300);
+            }}
+          />
+
+          <BottomSheetOption
+            label={viewMode === 'grid' ? 'Vista de lista' : 'Vista de cuadrícula'}
+            Icon={viewMode === 'grid' ? List : Grid3x3}
+            onPress={() => {
+              setShowHeaderMenu(false);
+              setShowSortMenu(false);
+              setShowFilterMenu(false);
+              setTimeout(() => {
+                LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+                setViewMode(prev => (prev === 'grid' ? 'list' : 'grid'));
+              }, 300);
+            }}
+          />
+
+          {/* Filtrar por */}
+          <TouchableOpacity 
+            style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 20, marginTop: 16, marginBottom: isFilterExpanded ? 16 : 8 }}
+            onPress={() => setIsFilterExpanded(!isFilterExpanded)}
           >
-            <View style={[styles.optionsContent, { backgroundColor: colors.surface }]}>
-              <TouchableOpacity
-                style={styles.optionItem}
-                onPress={() => {
-                  setShowHeaderMenu(false);
-                  setShowSortMenu(false);
-                  setShowFilterMenu(false);
-                  setTimeout(() => setShowSearch(!showSearch), 300);
-                }}
-              >
-                <Search size={20} color={colors.text} />
-                <Text style={[styles.optionText, { color: colors.text }]}>Búsqueda avanzada</Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={styles.optionItem}
-                onPress={() => {
-                  setShowHeaderMenu(false);
-                  setShowSortMenu(false);
-                  setShowFilterMenu(false);
-                  setTimeout(() => {
-                    setSelectionMode(!selectionMode);
-                    setSelectedIds(new Set());
-                  }, 300);
-                }}
-              >
-                <CheckSquare size={20} color={colors.text} />
-                <Text style={[styles.optionText, { color: colors.text }]}>
-                  {selectionMode ? 'Cancelar selección' : 'Selección múltiple'}
-                </Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={styles.optionItem}
-                onPress={() => {
-                  setShowHeaderMenu(false);
-                  setShowSortMenu(false);
-                  setShowFilterMenu(false);
-                  setTimeout(() => {
-                    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
-                    setViewMode(prev => (prev === 'grid' ? 'list' : 'grid'));
-                  }, 300);
-                }}
-              >
-                {viewMode === 'grid' ? <List size={20} color={colors.text} /> : <Grid3x3 size={20} color={colors.text} />}
-                <Text style={[styles.optionText, { color: colors.text }]}>
-                  {viewMode === 'grid' ? 'Vista de lista' : 'Vista de cuadrícula'}
-                </Text>
-              </TouchableOpacity>
-
-              {/* Filtrar por */}
-              <TouchableOpacity
-                style={[styles.optionItem, { borderTopWidth: 1, borderTopColor: isDark ? '#333' : '#eee', justifyContent: 'space-between' }]}
-                onPress={() => { setShowFilterMenu((v) => !v); setShowSortMenu(false); }}
-              >
-                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
-                  <Filter size={20} color={colors.text} />
-                  <Text style={[styles.optionText, { color: colors.text }]}>Filtrar</Text>
-                </View>
-                <Text style={{ color: colors.textSecondary, fontSize: rf(13) }}>
-                  {filterType === 'audio' ? 'Solo audio' : filterType === 'video' ? 'Solo vídeo' : 'Todos'}
-                </Text>
-              </TouchableOpacity>
-
-              {showFilterMenu && (
-                <View style={[
-                  styles.sortSubmenu,
-                  { backgroundColor: colors.input, borderColor: colors.border },
-                ]}>
-                  <TouchableOpacity
-                    style={[styles.sortOption, { borderBottomWidth: 1, borderBottomColor: colors.border }]}
-                    onPress={() => changeFilterType('all')}
-                  >
-                    <Text style={[styles.optionText, { color: colors.text }]}>Todos los archivos</Text>
-                    {filterType === 'all' && <Check size={16} color={colors.primary} />}
-                  </TouchableOpacity>
-
-                  <TouchableOpacity
-                    style={[styles.sortOption, { borderBottomWidth: 1, borderBottomColor: colors.border }]}
-                    onPress={() => changeFilterType('audio')}
-                  >
-                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                      <FileAudio size={14} color={colors.textSecondary} />
-                      <Text style={[styles.optionText, { color: colors.text }]}>Solo audio</Text>
-                    </View>
-                    {filterType === 'audio' && <Check size={16} color={colors.primary} />}
-                  </TouchableOpacity>
-
-                  <TouchableOpacity
-                    style={styles.sortOption}
-                    onPress={() => changeFilterType('video')}
-                  >
-                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                      <VideoIcon size={14} color={colors.textSecondary} />
-                      <Text style={[styles.optionText, { color: colors.text }]}>Solo vídeo</Text>
-                    </View>
-                    {filterType === 'video' && <Check size={16} color={colors.primary} />}
-                  </TouchableOpacity>
-                </View>
-              )}
-
-              {/* Ordenar por */}
-              <TouchableOpacity
-                style={[styles.optionItem, { borderTopWidth: 1, borderTopColor: isDark ? '#333' : '#eee', justifyContent: 'space-between' }]}
-                onPress={() => { setShowSortMenu((v) => !v); setShowFilterMenu(false); }}
-              >
-                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
-                  <ArrowUpAZ size={20} color={colors.text} />
-                  <Text style={[styles.optionText, { color: colors.text }]}>Ordenar por…</Text>
-                </View>
-                <Text style={{ color: colors.textSecondary, fontSize: rf(13) }}>
-                  {sortOrder === 'az' ? 'A–Z' : sortOrder === 'last_opened' ? 'Última apertura' : 'Fecha'}
-                </Text>
-              </TouchableOpacity>
-
-              {showSortMenu && (
-                <View style={[
-                  styles.sortSubmenu,
-                  { backgroundColor: colors.input, borderColor: colors.border },
-                ]}>
-                  <TouchableOpacity
-                    style={[styles.sortOption, { borderBottomWidth: 1, borderBottomColor: colors.border }]}
-                    onPress={() => changeSortOrder('az')}
-                  >
-                    <Text style={[styles.optionText, { color: colors.text }]}>A–Z</Text>
-                    {sortOrder === 'az' && <Check size={16} color={colors.primary} />}
-                  </TouchableOpacity>
-
-                  <TouchableOpacity
-                    style={[styles.sortOption, { borderBottomWidth: 1, borderBottomColor: colors.border }]}
-                    onPress={() => changeSortOrder('last_opened')}
-                  >
-                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                      <Clock size={14} color={colors.textSecondary} />
-                      <Text style={[styles.optionText, { color: colors.text }]}>Última apertura</Text>
-                    </View>
-                    {sortOrder === 'last_opened' && <Check size={16} color={colors.primary} />}
-                  </TouchableOpacity>
-
-                  <TouchableOpacity
-                    style={styles.sortOption}
-                    onPress={() => changeSortOrder('date')}
-                  >
-                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                      <Calendar size={14} color={colors.textSecondary} />
-                      <Text style={[styles.optionText, { color: colors.text }]}>Fecha</Text>
-                    </View>
-                    {sortOrder === 'date' && <Check size={16} color={colors.primary} />}
-                  </TouchableOpacity>
-                </View>
-              )}
-            </View>
+            <Text style={{ fontSize: 19, fontWeight: '700', color: colors.text, letterSpacing: 0.5 }}>
+              Filtrar
+            </Text>
+            <ChevronRight size={20} color={colors.textSecondary} style={{ transform: [{ rotate: isFilterExpanded ? '90deg' : '0deg' }] }} />
           </TouchableOpacity>
-        </Modal>
 
-        {/* Search bar moved into FlatList header to avoid remount/focus loss */}
-
-        {selectionMode && selectedIds.size > 0 && (
-          <View style={[styles.selectionBar, { backgroundColor: colors.primary }]}>
-            <Text style={styles.selectionText}>{selectedIds.size} seleccionado(s)</Text>
-            <View style={styles.selectionActions}>
-              <TouchableOpacity onPress={openSendModalBulk} style={styles.selectionButton}>
-                <Send size={20} color="#FFFFFF" />
-              </TouchableOpacity>
-              <TouchableOpacity onPress={handleBulkShare} style={styles.selectionButton}>
-                <Share2 size={20} color="#FFFFFF" />
-              </TouchableOpacity>
-              {/* Eliminado botón de ocultar en selección múltiple */}
-              <TouchableOpacity onPress={handleBulkDelete} style={styles.selectionButton}>
-                <Trash2 size={20} color="#FFFFFF" />
-              </TouchableOpacity>
-              <TouchableOpacity
+          {isFilterExpanded && (
+            <>
+              <BottomSheetOption
+                label="Todos los archivos"
+                Icon={filterType === 'all' ? Check : undefined}
+                iconColor={colors.primary}
                 onPress={() => {
-                  setSelectionMode(false);
-                  setSelectedIds(new Set());
+                  changeFilterType('all');
+                  setShowHeaderMenu(false);
                 }}
-                style={styles.selectionButton}
-              >
-                <Text style={{ color: '#FFFFFF', fontWeight: '600' }}>Cancelar</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-        )}
+              />
+
+              <BottomSheetOption
+                label="Solo audio"
+                Icon={filterType === 'audio' ? Check : undefined}
+                iconColor={colors.primary}
+                onPress={() => {
+                  changeFilterType('audio');
+                  setShowHeaderMenu(false);
+                }}
+              />
+
+              <BottomSheetOption
+                label="Solo vídeo"
+                Icon={filterType === 'video' ? Check : undefined}
+                iconColor={colors.primary}
+                onPress={() => {
+                  changeFilterType('video');
+                  setShowHeaderMenu(false);
+                }}
+              />
+            </>
+          )}
+
+          {/* Ordenar por */}
+          <TouchableOpacity 
+            style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 20, marginTop: 16, marginBottom: isSortExpanded ? 16 : 8 }}
+            onPress={() => setIsSortExpanded(!isSortExpanded)}
+          >
+            <Text style={{ fontSize: 19, fontWeight: '700', color: colors.text, letterSpacing: 0.5 }}>
+              Ordenar por
+            </Text>
+            <ChevronRight size={20} color={colors.textSecondary} style={{ transform: [{ rotate: isSortExpanded ? '90deg' : '0deg' }] }} />
+          </TouchableOpacity>
+
+          {isSortExpanded && (
+            <>
+              <BottomSheetOption
+                label="A-Z"
+                Icon={sortOrder === 'az' ? Check : undefined}
+                iconColor={colors.primary}
+                onPress={() => {
+                  changeSortOrder('az');
+                  setShowHeaderMenu(false);
+                }}
+              />
+
+              <BottomSheetOption
+                label="Última apertura"
+                Icon={sortOrder === 'last_opened' ? Check : undefined}
+                iconColor={colors.primary}
+                onPress={() => {
+                  changeSortOrder('last_opened');
+                  setShowHeaderMenu(false);
+                }}
+              />
+
+              <BottomSheetOption
+                label="Fecha"
+                Icon={sortOrder === 'date' ? Check : undefined}
+                iconColor={colors.primary}
+                onPress={() => {
+                  changeSortOrder('date');
+                  setShowHeaderMenu(false);
+                }}
+              />
+            </>
+          )}
+        </BottomSheetMenu>
+
+
 
         {recordings.length === 0 ? (
           <View style={{ flex: 1 }}>

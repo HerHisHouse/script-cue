@@ -1,11 +1,13 @@
 import React from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, Animated, Easing, Pressable, Modal } from 'react-native';
-import { FileText, Clock, MoreVertical, Send, Trash2, Share2, Edit3, Copy, CheckSquare, Square } from 'lucide-react-native';
+import { FileText, Clock, MoreVertical, Send, Trash2, Share2, Edit3, Copy, CheckSquare, Square, Check } from 'lucide-react-native';
 import { MENU_ITEM_PADDING_H, MENU_ITEM_PADDING_V } from '@/utils/ui';
 import { Script } from '@/types/database';
 import { useTheme } from '@/contexts/ThemeContext';
 import { makeHeaderMenuStyles } from '@/components/HeaderMenu';
 import { rf, rp } from '@/utils/responsive';
+import { BottomSheetMenu } from '@/components/BottomSheetMenu';
+import { BottomSheetOption } from '@/components/BottomSheetOption';
 
 interface ScriptCardProps {
   script: Script;
@@ -46,12 +48,13 @@ export function ScriptCard({ script, onPress, onLongPress, selected = false, sho
       style={[
         styles.card,
         {
-          backgroundColor: colors.surface,
+          backgroundColor: selected ? colors.input : colors.surface,
+          borderColor: selected ? colors.primary : 'transparent',
+          borderWidth: selected ? 2 : 0,
           padding: isGrid ? 12 : 16,
           shadowOpacity: isGrid ? 0.04 : 0.05,
         },
         isGrid ? { flexDirection: 'column', alignItems: 'center', height: 145, justifyContent: 'center' } : null,
-        selected ? { borderWidth: 2, borderColor: colors.primary } : null,
         showMenu ? { zIndex: 1002 } : null,
       ]}
       onPress={() => {
@@ -60,20 +63,7 @@ export function ScriptCard({ script, onPress, onLongPress, selected = false, sho
       }}
       onLongPress={onLongPress}
     >
-      {showSelectionCheckbox && (
-        <TouchableOpacity
-          accessibilityRole="checkbox"
-          accessibilityState={{ checked: !!selected }}
-          style={styles.checkbox}
-          onPress={onToggleSelect}
-        >
-          {selected ? (
-            <CheckSquare size={20} color={colors.primary} />
-          ) : (
-            <Square size={20} color={colors.textSecondary} />
-          )}
-        </TouchableOpacity>
-      )}
+
       {isGrid ? (
         <>
           <View
@@ -158,7 +148,20 @@ export function ScriptCard({ script, onPress, onLongPress, selected = false, sho
           </View>
         </>
       )}
-      {showMenuButton && (
+      {showSelectionCheckbox ? (
+        <View style={[isGrid && { position: 'absolute', top: 8, right: 8 }]}>
+          <TouchableOpacity
+            accessibilityRole="checkbox"
+            accessibilityState={{ checked: !!selected }}
+            style={styles.selectionCheck}
+            onPress={onToggleSelect}
+          >
+            <View style={[styles.customCheckbox, selected && { backgroundColor: colors.primary, borderColor: colors.primary }]}>
+               {selected && <Check size={14} color="#fff" />}
+            </View>
+          </TouchableOpacity>
+        </View>
+      ) : showMenuButton && (
         <TouchableOpacity
           style={styles.menuButton}
           onPress={() => setShowMenu((v) => !v)}
@@ -168,77 +171,61 @@ export function ScriptCard({ script, onPress, onLongPress, selected = false, sho
       )}
 
       {showMenuButton && (
-        <Modal
+        <BottomSheetMenu
           visible={showMenu}
-          transparent
-          animationType="fade"
-          onRequestClose={() => setShowMenu(false)}
+          onClose={() => setShowMenu(false)}
+          title="Opciones"
         >
-          <TouchableOpacity
-            style={styles.modalOverlay}
-            activeOpacity={1}
-            onPress={() => setShowMenu(false)}
-          >
-            <View style={[styles.optionsContent, { backgroundColor: colors.surface }]}>
-              <TouchableOpacity
-                style={styles.optionItem}
-                onPress={() => {
-                  setShowMenu(false);
-                  setTimeout(() => onRename?.(), 600);
-                }}
-              >
-                <Edit3 size={20} color={colors.text} />
-                <Text style={[styles.optionText, { color: colors.text }]}>Renombrar</Text>
-              </TouchableOpacity>
+          <BottomSheetOption
+            label="Renombrar"
+            Icon={Edit3}
+            onPress={() => {
+              setShowMenu(false);
+              setTimeout(() => onRename?.(), 600);
+            }}
+          />
 
-              <TouchableOpacity
-                style={styles.optionItem}
-                onPress={async () => {
-                  if (onShare) {
-                    await onShare();
-                  }
-                  setShowMenu(false);
-                }}
-              >
-                <Share2 size={20} color={colors.text} />
-                <Text style={[styles.optionText, { color: colors.text }]}>Compartir</Text>
-              </TouchableOpacity>
+          <BottomSheetOption
+            label="Compartir"
+            Icon={Share2}
+            onPress={async () => {
+              if (onShare) {
+                await onShare();
+              }
+              setShowMenu(false);
+            }}
+          />
 
-              <TouchableOpacity
-                style={styles.optionItem}
-                onPress={() => {
-                  setShowMenu(false);
-                  setTimeout(() => onDuplicate?.(), 300);
-                }}
-              >
-                <Copy size={20} color={colors.text} />
-                <Text style={[styles.optionText, { color: colors.text }]}>Duplicar</Text>
-              </TouchableOpacity>
+          <BottomSheetOption
+            label="Duplicar"
+            Icon={Copy}
+            onPress={() => {
+              setShowMenu(false);
+              setTimeout(() => onDuplicate?.(), 300);
+            }}
+          />
 
-              <TouchableOpacity
-                style={styles.optionItem}
-                onPress={() => {
-                  setShowMenu(false);
-                  setTimeout(() => onSendTo?.(), 600);
-                }}
-              >
-                <Send size={20} color={colors.text} />
-                <Text style={[styles.optionText, { color: colors.text }]}>Enviar a…</Text>
-              </TouchableOpacity>
+          <BottomSheetOption
+            label="Enviar a…"
+            Icon={Send}
+            onPress={() => {
+              setShowMenu(false);
+              setTimeout(() => onSendTo?.(), 600);
+            }}
+          />
 
-              <TouchableOpacity
-                style={[styles.optionItem, { borderTopWidth: 1, borderTopColor: isDark ? '#333' : '#eee' }]}
-                onPress={() => {
-                  setShowMenu(false);
-                  setTimeout(() => onDelete?.(), 600);
-                }}
-              >
-                <Trash2 size={20} color={colors.error} />
-                <Text style={[styles.optionText, { color: colors.error }]}>Eliminar</Text>
-              </TouchableOpacity>
-            </View>
-          </TouchableOpacity>
-        </Modal>
+          <View style={{ height: 1, backgroundColor: colors.border, opacity: 0.5, marginVertical: 8 }} />
+
+          <BottomSheetOption
+            label="Eliminar"
+            Icon={Trash2}
+            isDestructive
+            onPress={() => {
+              setShowMenu(false);
+              setTimeout(() => onDelete?.(), 600);
+            }}
+          />
+        </BottomSheetMenu>
       )}
     </TouchableOpacity>
   );
@@ -351,5 +338,17 @@ const styles = StyleSheet.create({
   optionText: {
     fontSize: rf(16),
     fontWeight: '500',
+  },
+  selectionCheck: {
+    padding: rp(4),
+  },
+  customCheckbox: {
+    width: 22,
+    height: 22,
+    borderRadius: 6,
+    borderWidth: 2,
+    borderColor: '#9ca3af',
+    justifyContent: 'center',
+    alignItems: 'center',
   },
 });

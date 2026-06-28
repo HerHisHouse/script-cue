@@ -7,7 +7,7 @@ import { SendToModal } from '@/components/SendToModal';
 import { useAuth } from '@/contexts/AuthContext';
 import { useTheme } from '@/contexts/ThemeContext';
 import { Script } from '@/types/database';
-import { Plus, EyeOff, RefreshCw, Upload, Camera, ChevronRight, Search, Grid3x3, List, Circle, MoreVertical, Trash2, CheckSquare, Square, MinusSquare, Info, AlertCircle, ArrowUpAZ, Clock, Calendar, Check } from 'lucide-react-native';
+import { Plus, EyeOff, RefreshCw, Upload, Camera, ChevronRight, Search, Grid3x3, List, Circle, MoreVertical, Trash2, CheckSquare, Square, MinusSquare, Info, AlertCircle, ArrowUpAZ, Clock, Calendar, Check, X } from 'lucide-react-native';
 import { ScreenHeader } from '@/components/ScreenHeader';
 import { useRouter, useFocusEffect } from 'expo-router';
 import { MENU_ITEM_PADDING_V, HEADER_HORIZONTAL_PADDING, MENU_SECTION_PADDING_V } from '@/utils/ui';
@@ -18,6 +18,8 @@ import logger from '@/utils/logger';
 import { deleteScript } from '@/utils/scripts';
 import { rf, rp } from '@/utils/responsive';
 import { BETA_LIMITS, isUserBetaLimited } from '@/constants/betaLimits';
+import { BottomSheetMenu } from '@/components/BottomSheetMenu';
+import { BottomSheetOption } from '@/components/BottomSheetOption';
 
 type SortOrder = 'az' | 'last_opened' | 'date';
 const SORT_STORAGE_KEY = 'guiones_sort_order';
@@ -39,6 +41,7 @@ export default function IndexScreen() {
   const [searchText, setSearchText] = useState('');
   const [showAddMenu, setShowAddMenu] = useState(false);
   const [openScriptMenuId, setOpenScriptMenuId] = useState<string | null>(null);
+  const [isSortExpanded, setIsSortExpanded] = useState(false);
   const [fabFocused, setFabFocused] = useState(false);
   const menuOpacity = React.useRef(new Animated.Value(0)).current;
   const menuScale = React.useRef(new Animated.Value(0.9)).current;
@@ -490,8 +493,15 @@ export default function IndexScreen() {
         />
       )}
       <ScreenHeader
-        title="Guiones"
+        title={scriptSelectionMode ? `${selectedScriptIds.size} seleccionados` : "Guiones"}
         onLayout={(e) => setHeaderHeight(e.nativeEvent.layout.height)}
+        leftAction={
+          scriptSelectionMode ? (
+            <TouchableOpacity onPress={() => { setScriptSelectionMode(false); setSelectedScriptIds(new Set()); }}>
+              <X size={24} color={colors.text} />
+            </TouchableOpacity>
+          ) : undefined
+        }
         childrenBelowTitle={
           scriptSelectionMode ? (
             <Pressable
@@ -513,6 +523,19 @@ export default function IndexScreen() {
           ) : null
         }
         rightActions={
+          scriptSelectionMode ? (
+            <TouchableOpacity 
+              onPress={() => {
+                if (selectedScriptIds.size > 0) {
+                  setBulkDeleteModalVisible(true);
+                }
+              }}
+              style={{ opacity: selectedScriptIds.size === 0 ? 0.5 : 1 }}
+              disabled={selectedScriptIds.size === 0}
+            >
+              <Trash2 size={24} color={colors.error} />
+            </TouchableOpacity>
+          ) : (
           <>
             <Pressable
               accessibilityRole="button"
@@ -561,6 +584,7 @@ export default function IndexScreen() {
               <Plus size={22} color={isAtLimit ? colors.textSecondary : "#FFFFFF"} />
             </Pressable>
           </>
+          )
         }
       />
 
@@ -574,118 +598,92 @@ export default function IndexScreen() {
       )}
 
       {/* Menú de encabezado: opciones estándar (búsqueda, selección, vistas y ordenación) */}
-      <Modal
+      <BottomSheetMenu
         visible={showHeaderMenu}
-        transparent
-        animationType="fade"
-        onRequestClose={() => {
+        onClose={() => {
           setShowSortMenu(false);
           setShowHeaderMenu(false);
         }}
+        title="Opciones"
       >
-        <TouchableOpacity
-          style={styles.bottomSheetOverlay}
-          activeOpacity={1}
+        <BottomSheetOption
+          label="Búsqueda avanzada"
+          Icon={Search}
           onPress={() => {
             setShowSortMenu(false);
             setShowHeaderMenu(false);
+            setTimeout(() => setShowSearch(true), 300);
           }}
+        />
+
+        <BottomSheetOption
+          label="Selección múltiple"
+          Icon={CheckSquare}
+          onPress={() => {
+            setShowSortMenu(false);
+            setShowHeaderMenu(false);
+            setTimeout(() => {
+              setScriptSelectionMode(true);
+              setSelectedScriptIds(new Set());
+            }, 300);
+          }}
+        />
+
+        <BottomSheetOption
+          label={viewMode === 'grid' ? 'Vista de lista' : 'Vista de cuadrícula'}
+          Icon={viewMode === 'grid' ? List : Grid3x3}
+          onPress={() => {
+            setShowSortMenu(false);
+            setShowHeaderMenu(false);
+            setTimeout(() => setViewMode(viewMode === 'grid' ? 'list' : 'grid'), 300);
+          }}
+        />
+
+        {/* Sección Ordenar por */}
+        <TouchableOpacity 
+          style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 20, marginTop: 16, marginBottom: isSortExpanded ? 16 : 8 }}
+          onPress={() => setIsSortExpanded(!isSortExpanded)}
         >
-          <View style={[styles.optionsContent, { backgroundColor: colors.surface }]}>
-            <TouchableOpacity
-              style={styles.optionItem}
-              onPress={() => {
-                setShowSortMenu(false);
-                setShowHeaderMenu(false);
-                setTimeout(() => setShowSearch(true), 300);
-              }}
-            >
-              <Search size={20} color={colors.text} />
-              <Text style={[styles.optionText, { color: colors.text }]}>Búsqueda avanzada</Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={styles.optionItem}
-              onPress={() => {
-                setShowSortMenu(false);
-                setShowHeaderMenu(false);
-                setTimeout(() => {
-                  setScriptSelectionMode(true);
-                  setSelectedScriptIds(new Set());
-                }, 300);
-              }}
-            >
-              <CheckSquare size={20} color={colors.text} />
-              <Text style={[styles.optionText, { color: colors.text }]}>Selección múltiple</Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={styles.optionItem}
-              onPress={() => {
-                setShowSortMenu(false);
-                setShowHeaderMenu(false);
-                setTimeout(() => setViewMode(viewMode === 'grid' ? 'list' : 'grid'), 300);
-              }}
-            >
-              {viewMode === 'grid' ? <List size={20} color={colors.text} /> : <Grid3x3 size={20} color={colors.text} />}
-              <Text style={[styles.optionText, { color: colors.text }]}>
-                {viewMode === 'grid' ? 'Vista de lista' : 'Vista de cuadrícula'}
-              </Text>
-            </TouchableOpacity>
-
-            {/* Sección Ordenar por */}
-            <TouchableOpacity
-              style={[styles.optionItem, { borderTopWidth: 1, borderTopColor: isDark ? '#333' : '#eee', justifyContent: 'space-between' }]}
-              onPress={() => setShowSortMenu((v) => !v)}
-            >
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
-                <ArrowUpAZ size={20} color={colors.text} />
-                <Text style={[styles.optionText, { color: colors.text }]}>Ordenar por…</Text>
-              </View>
-              <Text style={{ color: colors.textSecondary, fontSize: rf(13) }}>
-                {sortOrder === 'az' ? 'A–Z' : sortOrder === 'last_opened' ? 'Última apertura' : 'Fecha'}
-              </Text>
-            </TouchableOpacity>
-
-            {showSortMenu && (
-              <View style={[
-                styles.sortSubmenu,
-                { backgroundColor: colors.input, borderColor: colors.border },
-              ]}>
-                <TouchableOpacity
-                  style={[styles.sortOption, { borderBottomWidth: 1, borderBottomColor: colors.border }]}
-                  onPress={() => changeSortOrder('az')}
-                >
-                  <Text style={[styles.optionText, { color: colors.text }]}>A–Z</Text>
-                  {sortOrder === 'az' && <Check size={16} color={colors.primary} />}
-                </TouchableOpacity>
-
-                <TouchableOpacity
-                  style={[styles.sortOption, { borderBottomWidth: 1, borderBottomColor: colors.border }]}
-                  onPress={() => changeSortOrder('last_opened')}
-                >
-                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                    <Clock size={14} color={colors.textSecondary} />
-                    <Text style={[styles.optionText, { color: colors.text }]}>Última apertura</Text>
-                  </View>
-                  {sortOrder === 'last_opened' && <Check size={16} color={colors.primary} />}
-                </TouchableOpacity>
-
-                <TouchableOpacity
-                  style={styles.sortOption}
-                  onPress={() => changeSortOrder('date')}
-                >
-                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                    <Calendar size={14} color={colors.textSecondary} />
-                    <Text style={[styles.optionText, { color: colors.text }]}>Fecha</Text>
-                  </View>
-                  {sortOrder === 'date' && <Check size={16} color={colors.primary} />}
-                </TouchableOpacity>
-              </View>
-            )}
-          </View>
+          <Text style={{ fontSize: 19, fontWeight: '700', color: colors.text, letterSpacing: 0.5 }}>
+            Ordenar por
+          </Text>
+          <ChevronRight size={20} color={colors.textSecondary} style={{ transform: [{ rotate: isSortExpanded ? '90deg' : '0deg' }] }} />
         </TouchableOpacity>
-      </Modal>
+
+        {isSortExpanded && (
+          <>
+            <BottomSheetOption
+              label="A-Z"
+              Icon={sortOrder === 'az' ? Check : undefined}
+              iconColor={colors.primary}
+              onPress={() => {
+                changeSortOrder('az');
+                setShowHeaderMenu(false);
+              }}
+            />
+
+            <BottomSheetOption
+              label="Última apertura"
+              Icon={sortOrder === 'last_opened' ? Check : undefined}
+              iconColor={colors.primary}
+              onPress={() => {
+                changeSortOrder('last_opened');
+                setShowHeaderMenu(false);
+              }}
+            />
+
+            <BottomSheetOption
+              label="Fecha"
+              Icon={sortOrder === 'date' ? Check : undefined}
+              iconColor={colors.primary}
+              onPress={() => {
+                changeSortOrder('date');
+                setShowHeaderMenu(false);
+              }}
+            />
+          </>
+        )}
+      </BottomSheetMenu>
 
       {showSearch && (
         <View style={[styles.searchContainer, { borderColor: colors.border, backgroundColor: colors.surface }]}>

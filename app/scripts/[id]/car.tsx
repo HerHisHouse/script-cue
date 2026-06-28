@@ -41,6 +41,9 @@ import {
 import { Stack } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { REMOTE_CMD_KEY } from '@/services/playbackService';
+import { BottomSheetMenu } from '@/components/BottomSheetMenu';
+import { BottomSheetToggle } from '@/components/BottomSheetToggle';
+import { BottomSheetOption } from '@/components/BottomSheetOption';
 
 // TrackPlayer for lock screen controls - Optional (only works in native builds)
 let TrackPlayer: any = null;
@@ -1658,213 +1661,110 @@ export default function CarModeScreen() {
       </SafeAreaView>
 
       {/* Bottom Sheet de ajustes */}
-      {showMenu && (
-        <>
-          {/* Backdrop */}
-          <Pressable
-            style={{
-              position: 'absolute',
-              inset: 0,
-              backgroundColor: 'rgba(0,0,0,0.6)',
-            }}
-            onPress={() => setShowMenu(false)}
-          />
-
-          {/* Panel deslizable desde abajo */}
-          <View style={{
-            position: 'absolute',
-            bottom: 0,
-            left: 0,
-            right: 0,
-            backgroundColor: '#1c1c1e', // gris oscuro iOS
-            borderTopLeftRadius: 20,
-            borderTopRightRadius: 20,
-            paddingTop: 8,
-            paddingBottom: 40,
+      <BottomSheetMenu
+        visible={showMenu}
+        onClose={() => setShowMenu(false)}
+        title="Ajustes"
+        backgroundColor="#1c1c1e" // gris oscuro iOS
+      >
+        {/* Opción: Vista */}
+        <View style={{ paddingHorizontal: 20, marginBottom: 24 }}>
+          <Text style={{
+            color: 'rgba(255,255,255,0.4)',
+            fontSize: 11,
+            fontWeight: '700',
+            letterSpacing: 1,
+            textTransform: 'uppercase',
+            marginBottom: 12,
           }}>
-            {/* Handle */}
-            <View style={{
-              width: 36,
-              height: 4,
-              borderRadius: 2,
-              backgroundColor: 'rgba(255,255,255,0.2)',
-              alignSelf: 'center',
-              marginBottom: 20,
-            }} />
+            Visualización
+          </Text>
 
-            <Text style={{
-              color: 'white',
-              fontSize: 17,
-              fontWeight: '600',
-              paddingHorizontal: 20,
-              marginBottom: 20,
-            }}>
-              Ajustes
-            </Text>
-
-            {/* Opción: Vista */}
-            <View style={{
-              paddingHorizontal: 20,
-              marginBottom: 24,
-            }}>
-              <Text style={{
-                color: 'rgba(255,255,255,0.4)',
-                fontSize: 11,
-                fontWeight: '700',
-                letterSpacing: 1,
-                textTransform: 'uppercase',
-                marginBottom: 12,
-              }}>
-                Visualización
-              </Text>
-
-              {/* Toggle Script / Teleprompter */}
-              <View style={{
-                flexDirection: 'row',
-                backgroundColor: 'rgba(255,255,255,0.08)',
-                borderRadius: 10,
-                padding: 3,
-              }}>
-                {['Guion', 'Teleprompter'].map((option) => (
-                  <TouchableOpacity
-                    key={option}
-                    style={{
-                      flex: 1,
-                      paddingVertical: 8,
-                      borderRadius: 8,
-                      backgroundColor: viewMode === option
-                        ? 'rgba(255,255,255,0.15)'
-                        : 'transparent',
-                      alignItems: 'center',
-                    }}
-                    onPress={() => setViewMode(option)}
-                  >
-                    <Text style={{
-                      color: viewMode === option
-                        ? 'white'
-                        : 'rgba(255,255,255,0.4)',
-                      fontSize: 14,
-                      fontWeight: '600',
-                    }}>
-                      {option}
-                    </Text>
-                  </TouchableOpacity>
-                ))}
-              </View>
-            </View>
-
-            {/* Opción: Mostrar acciones de escena */}
-            <TouchableOpacity style={{
-              flexDirection: 'row',
-              alignItems: 'center',
-              justifyContent: 'space-between',
-              paddingHorizontal: 20,
-              paddingVertical: 14,
-              borderTopWidth: 1,
-              borderTopColor: 'rgba(255,255,255,0.06)',
-            }}
-            onPress={() => setReadActions(!readActions)}
-            >
-              <Text style={{ color: 'white', fontSize: 15 }}>
-                Mostrar acciones de escena
-              </Text>
-              <Switch
-                value={readActions}
-                onValueChange={setReadActions}
-                trackColor={{ false: 'rgba(255,255,255,0.15)', true: '#34C759' }}
-              />
-            </TouchableOpacity>
-
-            {/* Opción: Mostrar acotaciones */}
-            <TouchableOpacity style={{
-              flexDirection: 'row',
-              alignItems: 'center',
-              justifyContent: 'space-between',
-              paddingHorizontal: 20,
-              paddingVertical: 14,
-              borderTopWidth: 1,
-              borderTopColor: 'rgba(255,255,255,0.06)',
-            }}
-            onPress={() => setShowStageDirections(!showStageDirections)}
-            >
-              <Text style={{ color: 'white', fontSize: 15 }}>
-                Mostrar acotaciones
-              </Text>
-              <Switch
-                value={showStageDirections}
-                onValueChange={setShowStageDirections}
-                trackColor={{ false: 'rgba(255,255,255,0.15)', true: '#34C759' }}
-              />
-            </TouchableOpacity>
-
-            {/* Opción: Loop */}
-            <TouchableOpacity style={{
-              flexDirection: 'row',
-              alignItems: 'center',
-              justifyContent: 'space-between',
-              paddingHorizontal: 20,
-              paddingVertical: 14,
-              borderTopWidth: 1,
-              borderTopColor: 'rgba(255,255,255,0.06)',
-            }}
-            onPress={() => setLoopEnabled(!loopEnabled)}
-            >
-              <Text style={{ color: 'white', fontSize: 15 }}>
-                Repetir en bucle
-              </Text>
-              <Switch
-                value={loopEnabled}
-                onValueChange={setLoopEnabled}
-                trackColor={{ false: 'rgba(255,255,255,0.15)', true: '#34C759' }}
-              />
-            </TouchableOpacity>
-
-            {/* Opción: Asignar voces — navega a configuración */}
-            <TouchableOpacity style={{
-              flexDirection: 'row',
-              alignItems: 'center',
-              justifyContent: 'space-between',
-              paddingHorizontal: 20,
-              paddingVertical: 14,
-              borderTopWidth: 1,
-              borderTopColor: 'rgba(255,255,255,0.06)',
-            }}
-              onPress={() => {
-                setShowMenu(false);
-                setIsActive(false);
-                setShowConfig(true);
-              }}
-            >
-              <Text style={{ color: 'white', fontSize: 15 }}>
-                Asignar voces
-              </Text>
-              <ChevronRight size={16} color="rgba(255,255,255,0.3)" />
-            </TouchableOpacity>
-
-            {/* Opción: Descargar audio */}
-            <TouchableOpacity style={{
-              flexDirection: 'row',
-              alignItems: 'center',
-              justifyContent: 'space-between',
-              paddingHorizontal: 20,
-              paddingVertical: 14,
-              borderTopWidth: 1,
-              borderTopColor: 'rgba(255,255,255,0.06)',
-            }}
-              onPress={() => {
-                setShowMenu(false);
-                generateSceneAudio();
-              }}
-            >
-              <Text style={{ color: 'white', fontSize: 15 }}>
-                Descargar audio de escena
-              </Text>
-              <Download size={16} color="rgba(255,255,255,0.3)" />
-            </TouchableOpacity>
-
+          {/* Toggle Script / Teleprompter */}
+          <View style={{
+            flexDirection: 'row',
+            backgroundColor: 'rgba(255,255,255,0.08)',
+            borderRadius: 10,
+            padding: 3,
+          }}>
+            {['Guion', 'Teleprompter'].map((option) => (
+              <TouchableOpacity
+                key={option}
+                style={{
+                  flex: 1,
+                  paddingVertical: 8,
+                  borderRadius: 8,
+                  backgroundColor: viewMode === option
+                    ? 'rgba(255,255,255,0.15)'
+                    : 'transparent',
+                  alignItems: 'center',
+                }}
+                onPress={() => setViewMode(option)}
+              >
+                <Text style={{
+                  color: viewMode === option
+                    ? 'white'
+                    : 'rgba(255,255,255,0.4)',
+                  fontSize: 14,
+                  fontWeight: '600',
+                }}>
+                  {option}
+                </Text>
+              </TouchableOpacity>
+            ))}
           </View>
-        </>
-      )}
+        </View>
+
+        <BottomSheetToggle
+          label="Mostrar acciones de escena"
+          description="Si quieres que la IA también lea las acciones especificadas en el guion, activa el botón y configura la voz que desees."
+          value={readActions}
+          onValueChange={setReadActions}
+          textColor="white"
+          borderColor="rgba(255,255,255,0.06)"
+          Icon={Info}
+          iconColor="white"
+        />
+
+        <BottomSheetToggle
+          label="Mostrar acotaciones"
+          value={showStageDirections}
+          onValueChange={setShowStageDirections}
+          textColor="white"
+          borderColor="rgba(255,255,255,0.06)"
+        />
+
+        <BottomSheetToggle
+          label="Repetir en bucle"
+          value={loopEnabled}
+          onValueChange={setLoopEnabled}
+          textColor="white"
+          borderColor="rgba(255,255,255,0.06)"
+        />
+
+        <BottomSheetOption
+          label="Asignar voces"
+          onPress={() => {
+            setShowMenu(false);
+            setIsActive(false);
+            setShowConfig(true);
+          }}
+          textColor="white"
+          Icon={ChevronRight}
+          iconColor="rgba(255,255,255,0.3)"
+        />
+
+        <BottomSheetOption
+          label="Descargar audio de escena"
+          onPress={() => {
+            setShowMenu(false);
+            generateSceneAudio();
+          }}
+          textColor="white"
+          Icon={Download}
+          iconColor="rgba(255,255,255,0.3)"
+        />
+      </BottomSheetMenu>
       
       {/* Audio Generation Progress Overlay */}
       {isGeneratingAudio && (

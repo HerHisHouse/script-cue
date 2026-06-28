@@ -404,20 +404,38 @@ app.post('/process-casting', upload.any(), async (req, res) => {
                 .run();
         });
 
-        // 5. Replace video audio with mixed audio (OPTIMIZED FOR SPEED)
+        // 5. Replace video audio with mixed audio (CONDITIONAL COMPRESSION)
         console.log('[Casting] Replacing video audio track...');
+        const videoStats = fs.statSync(videoFile);
+        const videoSizeMB = videoStats.size / (1024 * 1024);
+        const SIZE_LIMIT_MB = 45;
+
+        console.log(`[Casting] Tamaño del vídeo: ${videoSizeMB.toFixed(1)}MB`);
+        const needsCompression = videoSizeMB > SIZE_LIMIT_MB;
+        console.log(`[Casting] ${needsCompression ? 'Comprimiendo...' : 'Sin compresión necesaria'}`);
+
         await new Promise((resolve, reject) => {
             ffmpeg()
                 .input(videoFile)
                 .input(mixedAudioFile)
-                .outputOptions([
-                    '-c:v copy',           // Copy video stream WITHOUT re-encoding (FAST!)
-                    '-c:a aac',            // Encode audio as AAC
-                    '-b:a 128k',           // Audio bitrate
-                    '-map 0:v:0',          // Map video from first input
-                    '-map 1:a:0',          // Map audio from second input
-                    '-shortest',           // Match shortest stream duration
-                    '-movflags +faststart' // Optimize for web playback
+                .outputOptions(needsCompression ? [
+                    '-c:v libx264',
+                    '-crf 23',
+                    '-preset fast',
+                    '-c:a aac',
+                    '-b:a 128k',
+                    '-map 0:v:0',
+                    '-map 1:a:0',
+                    '-movflags +faststart',
+                    '-shortest'
+                ] : [
+                    '-c:v copy',
+                    '-c:a aac',
+                    '-b:a 128k',
+                    '-map 0:v:0',
+                    '-map 1:a:0',
+                    '-movflags +faststart',
+                    '-shortest'
                 ])
                 .output(outputFile)
                 .on('start', (cmd) => console.log('[FFmpeg] Final command:', cmd))
@@ -429,6 +447,10 @@ app.post('/process-casting', upload.any(), async (req, res) => {
                 .on('error', reject)
                 .run();
         });
+
+        const outputStats = fs.statSync(outputFile);
+        const outputSizeMB = outputStats.size / (1024 * 1024);
+        console.log(`[Casting] Tamaño final: ${outputSizeMB.toFixed(1)}MB`);
 
         // 6. Instead of uploading to Supabase, save to server's public folder
         // and provide a download URL for the client to fetch

@@ -10,6 +10,9 @@ import { ScreenHeader } from '@/components/ScreenHeader';
 import { SendToModal } from '@/components/SendToModal';
 import { rf, rp } from '@/utils/responsive';
 import { Project, Script, Recording } from '@/types/database';
+import { BETA_LIMITS, isUserBetaLimited } from '@/constants/betaLimits';
+import { BottomSheetMenu } from '@/components/BottomSheetMenu';
+import { BottomSheetOption } from '@/components/BottomSheetOption';
 
 // Unified type for the list
 type ListItem =
@@ -535,55 +538,38 @@ export default function ProjectsScreen() {
       />
 
       {/* Menu Overlay */}
-      <Modal
+      <BottomSheetMenu
         visible={showMenu}
-        transparent
-        animationType="fade"
-        onRequestClose={() => setShowMenu(false)}
+        onClose={() => setShowMenu(false)}
+        title="Opciones"
       >
-        <TouchableOpacity
-          style={styles.bottomSheetOverlay}
-          activeOpacity={1}
-          onPress={() => setShowMenu(false)}
-        >
-          <View style={[styles.optionsContent, { backgroundColor: colors.surface }]}>
-            <TouchableOpacity
-              style={styles.optionItem}
-              onPress={() => {
-                setShowMenu(false);
-                setTimeout(() => setShowSearch(!showSearch), 300);
-              }}
-            >
-              <Search size={20} color={colors.text} />
-              <Text style={[styles.optionText, { color: colors.text }]}>Búsqueda avanzada</Text>
-            </TouchableOpacity>
+        <BottomSheetOption
+          label="Búsqueda avanzada"
+          Icon={Search}
+          onPress={() => {
+            setShowMenu(false);
+            setTimeout(() => setShowSearch(!showSearch), 300);
+          }}
+        />
 
-            <TouchableOpacity
-              style={styles.optionItem}
-              onPress={() => {
-                setShowMenu(false);
-                setTimeout(() => setSelectionMode(true), 300);
-              }}
-            >
-              <CheckSquare size={20} color={colors.text} />
-              <Text style={[styles.optionText, { color: colors.text }]}>Selección múltiple</Text>
-            </TouchableOpacity>
+        <BottomSheetOption
+          label="Selección múltiple"
+          Icon={CheckSquare}
+          onPress={() => {
+            setShowMenu(false);
+            setTimeout(() => setSelectionMode(true), 300);
+          }}
+        />
 
-            <TouchableOpacity
-              style={[styles.optionItem, { borderBottomWidth: 0 }]}
-              onPress={() => {
-                setShowMenu(false);
-                setTimeout(() => setViewMode(prev => prev === 'grid' ? 'list' : 'grid'), 300);
-              }}
-            >
-              {viewMode === 'grid' ? <List size={20} color={colors.text} /> : <Grid size={20} color={colors.text} />}
-              <Text style={[styles.optionText, { color: colors.text }]}>
-                {viewMode === 'grid' ? 'Vista lista' : 'Vista cuadrícula'}
-              </Text>
-            </TouchableOpacity>
-          </View>
-        </TouchableOpacity>
-      </Modal>
+        <BottomSheetOption
+          label={viewMode === 'grid' ? 'Vista lista' : 'Vista cuadrícula'}
+          Icon={viewMode === 'grid' ? List : Grid}
+          onPress={() => {
+            setShowMenu(false);
+            setTimeout(() => setViewMode(prev => prev === 'grid' ? 'list' : 'grid'), 300);
+          }}
+        />
+      </BottomSheetMenu>
 
       {/* Search Bar */}
       {showSearch && (
@@ -687,63 +673,51 @@ export default function ProjectsScreen() {
       </Modal>
 
       {/* Options Modal */}
-      <Modal
+      <BottomSheetMenu
         visible={optionsModal.visible}
-        transparent
-        animationType="fade"
-        onRequestClose={() => setOptionsModal({ visible: false, item: null })}
+        onClose={() => setOptionsModal({ visible: false, item: null })}
+        title="Opciones"
       >
-        <TouchableOpacity
-          style={styles.bottomSheetOverlay}
-          activeOpacity={1}
-          onPress={() => setOptionsModal({ visible: false, item: null })}
-        >
-          <View style={[styles.optionsContent, { backgroundColor: colors.surface }]}>
-            <TouchableOpacity
-              style={styles.optionItem}
-              onPress={() => {
-                const item = optionsModal.item;
-                setOptionsModal({ visible: false, item: null });
-                if (item) setSendToModal({ visible: true, item });
-              }}
-            >
-              <Send size={20} color={colors.text} />
-              <Text style={[styles.optionText, { color: colors.text }]}>Enviar a...</Text>
-            </TouchableOpacity>
+        <BottomSheetOption
+          label="Enviar a..."
+          Icon={Send}
+          onPress={() => {
+            const item = optionsModal.item;
+            setOptionsModal({ visible: false, item: null });
+            if (item) setSendToModal({ visible: true, item });
+          }}
+        />
 
-            <TouchableOpacity
-              style={styles.optionItem}
-              onPress={() => {
-                const item = optionsModal.item;
-                if (item) {
-                  const currentName = item.type === 'folder'
-                    ? (item.data as Project).name
-                    : item.type === 'script'
-                      ? (item.data as Script).title
-                      : (item.data as Recording).title || 'Grabación';
+        <BottomSheetOption
+          label="Renombrar"
+          Icon={Edit3}
+          onPress={() => {
+            const item = optionsModal.item;
+            if (item) {
+              const currentName = item.type === 'folder'
+                ? (item.data as Project).name
+                : item.type === 'script'
+                  ? (item.data as Script).title
+                  : (item.data as Recording).title || 'Grabación';
 
-                  setRenameModal({ visible: true, item, newName: currentName });
-                }
-                setOptionsModal({ visible: false, item: null });
-              }}
-            >
-              <Edit3 size={20} color={colors.text} />
-              <Text style={[styles.optionText, { color: colors.text }]}>Renombrar</Text>
-            </TouchableOpacity>
+              setRenameModal({ visible: true, item, newName: currentName });
+            }
+            setOptionsModal({ visible: false, item: null });
+          }}
+        />
 
-            <TouchableOpacity
-              style={[styles.optionItem, { borderTopWidth: 1, borderTopColor: colors.border }]}
-              onPress={() => {
-                const item = optionsModal.item;
-                if (item) handleDelete(item);
-              }}
-            >
-              <Trash2 size={20} color={colors.error} />
-              <Text style={[styles.optionText, { color: colors.error }]}>Eliminar</Text>
-            </TouchableOpacity>
-          </View>
-        </TouchableOpacity>
-      </Modal>
+        <View style={{ height: 1, backgroundColor: colors.border, opacity: 0.5, marginVertical: 8 }} />
+
+        <BottomSheetOption
+          label="Eliminar"
+          Icon={Trash2}
+          isDestructive
+          onPress={() => {
+            const item = optionsModal.item;
+            if (item) handleDelete(item);
+          }}
+        />
+      </BottomSheetMenu>
 
       {/* Send To Modal */}
       <SendToModal

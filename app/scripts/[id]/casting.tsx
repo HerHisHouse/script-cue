@@ -177,6 +177,8 @@ export default function CastingModeScreen() {
   type CastingMode = 'selection' | 'script_config' | 'free_input' | 'recording';
   const [castingMode, setCastingMode] = useState<CastingMode>('selection');
   const [castingType, setCastingType] = useState<'script' | 'free' | null>(null);
+  type VideoQuality = 'high' | 'medium' | 'low';
+  const [videoQuality, setVideoQuality] = useState<VideoQuality>('medium');
   // Voice recognition speech event handlers (assigned inside startListening)
   const onSpeechStartRef = useRef<(() => void) | null>(null);
   const onSpeechEndRef = useRef<(() => void) | null>(null);
@@ -1636,6 +1638,33 @@ export default function CastingModeScreen() {
         });
 
         if (uploadResult.status !== 200 && uploadResult.status !== 201) {
+          if (uploadResult.body?.includes('413') || uploadResult.body?.includes('exceeded')) {
+            // Fallback: guardar localmente
+            console.log('[Casting] Video too large for Supabase. Saving locally.');
+            
+            await supabase.from('recordings').insert({
+              user_id: user?.id,
+              script_id: id,
+              scene_id: dialogueLines[currentIndex]?.sceneId ?? dialogueLines[0]?.sceneId,
+              project_id: null,
+              title: `Casting - ${script?.title || 'Guión'}`,
+              audio_url: downloadResult.uri,
+              type: 'video',
+              duration_seconds: recordingTimeRef.current,
+              file_size_bytes: 0,
+            });
+
+            setProcessingProgress(100);
+            setIsProcessing(false);
+            Alert.alert(
+              'Vídeo guardado localmente',
+              'El vídeo es demasiado grande para subir a la nube. ' +
+              'Lo encontrarás en la pantalla de Grabaciones. ' +
+              'Puedes compartirlo directamente desde ahí.',
+              [{ text: 'Entendido', onPress: () => router.replace(`/scripts/${id}`) }]
+            );
+            return;
+          }
           throw new Error(`Error subiendo video a la nube: ${uploadResult.body}`);
         }
 
@@ -2038,6 +2067,64 @@ export default function CastingModeScreen() {
             })}
           </ScrollView>
 
+          {/* Quality Selector */}
+          <View style={styles.qualitySection}>
+            <Text style={styles.qualitySectionTitle}>
+              📹 Calidad del vídeo
+            </Text>
+            <Text style={styles.qualitySectionSubtitle}>
+              Mayor calidad = archivo más grande
+            </Text>
+
+            <View style={styles.qualityOptions}>
+              {[
+                { 
+                  value: 'high', 
+                  label: 'Alta', 
+                  desc: '1080p — Mayor detalle', 
+                  size: '~80MB/min' 
+                },
+                { 
+                  value: 'medium', 
+                  label: 'Media', 
+                  desc: '720p — Recomendado', 
+                  size: '~30MB/min' 
+                },
+                { 
+                  value: 'low', 
+                  label: 'Básica', 
+                  desc: '480p — Menor tamaño', 
+                  size: '~12MB/min' 
+                },
+              ].map((option) => (
+                <TouchableOpacity
+                  key={option.value}
+                  style={[
+                    styles.qualityOption,
+                    videoQuality === option.value && styles.qualityOptionSelected,
+                  ]}
+                  onPress={() => setVideoQuality(option.value as VideoQuality)}
+                >
+                  <View style={{ flex: 1 }}>
+                    <Text style={[
+                      styles.qualityOptionLabel,
+                      videoQuality === option.value && styles.qualityOptionLabelSelected
+                    ]}>
+                      {option.label}
+                    </Text>
+                    <Text style={styles.qualityOptionDesc}>{option.desc}</Text>
+                  </View>
+                  <Text style={styles.qualityOptionSize}>{option.size}</Text>
+                  {videoQuality === option.value && (
+                    <View style={styles.qualityCheckmark}>
+                      <Text style={{ color: '#a78bfa', fontSize: rf(16) }}>✓</Text>
+                    </View>
+                  )}
+                </TouchableOpacity>
+              ))}
+            </View>
+          </View>
+
           {/* Start Recording Button */}
           <View style={styles.configFooter}>
             <TouchableOpacity
@@ -2062,6 +2149,7 @@ export default function CastingModeScreen() {
               isActive={castingMode === 'recording' && !isProcessing}
               facing={facing}
               zoom={zoom}
+              videoQuality={videoQuality}
             />
           )}
           {castingType === 'free' && globalBackground !== 'transparent' && (
@@ -3616,6 +3704,63 @@ const styles = StyleSheet.create({
     color: 'white',
     fontSize: rf(13),
     fontWeight: '700'
+  },
+  qualitySection: {
+    backgroundColor: 'rgba(255,255,255,0.04)',
+    borderRadius: rp(16),
+    padding: rp(16),
+    marginBottom: rp(16),
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.08)',
+  },
+  qualitySectionTitle: {
+    color: '#ffffff',
+    fontSize: rf(15),
+    fontWeight: '700',
+    marginBottom: rp(4),
+  },
+  qualitySectionSubtitle: {
+    color: '#9090b0',
+    fontSize: rf(13),
+    marginBottom: rp(14),
+  },
+  qualityOptions: {
+    gap: rp(8),
+  },
+  qualityOption: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(255,255,255,0.05)',
+    borderRadius: rp(10),
+    padding: rp(12),
+    borderWidth: 1.5,
+    borderColor: 'rgba(255,255,255,0.1)',
+  },
+  qualityOptionSelected: {
+    borderColor: '#a78bfa',
+    backgroundColor: 'rgba(124,106,247,0.12)',
+  },
+  qualityOptionLabel: {
+    color: '#9090b0',
+    fontSize: rf(14),
+    fontWeight: '600',
+    marginBottom: rp(2),
+  },
+  qualityOptionLabelSelected: {
+    color: '#ffffff',
+  },
+  qualityOptionDesc: {
+    color: '#666',
+    fontSize: rf(12),
+  },
+  qualityOptionSize: {
+    color: '#9090b0',
+    fontSize: rf(11),
+    marginRight: rp(8),
+  },
+  qualityCheckmark: {
+    width: rp(24),
+    alignItems: 'center',
   },
 });
 
