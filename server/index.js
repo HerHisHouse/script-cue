@@ -318,42 +318,47 @@ app.post('/process-casting', upload.any(), async (req, res) => {
             );
 
         } else {
-            // ── ESTRATEGIA SIN AURICULARES ──────────────────────────────────
-            // Ducking suave al 50%: minimiza el eco residual que el AEC no cancela
-            console.log('[Casting] Estrategia sin auriculares: ducking suave anti-eco');
+            // ── SIN AURICULARES: silenciar usuario cuando habla la IA ──────────
+            // El altavoz genera eco en el micro, así que cuando habla la IA
+            // se baja el usuario a 0 y se mezcla el audio limpio de la IA encima.
+            // Fade de 80ms en las transiciones para evitar clicks.
+            console.log('[Casting] Estrategia: ducking completo anti-eco (sin auriculares)');
 
-            // 1. Audio del usuario: normalización + reducción de ruido
+            // 1. Normalización suave del usuario
             filterParts.push(
-                '[0:a]highpass=f=80,afftdn=nf=-20,' +
-                'loudnorm=I=-16:TP=-1.5:LRA=11[user_norm]'
+                '[0:a]highpass=f=100,afftdn=nf=-25,' +
+                'loudnorm=I=-16:TP=-1.5:LRA=11[user_normalized]'
             );
 
-            // 2. Ducking expression: usuario al 50% cuando habla la IA
-            // Más permisivo que el 35% anterior porque el AEC de hardware ya ayudó
-            let duckExpression = '1';
+            // 2. Construir expresión de silenciado dinámico
+            // Cuando habla la IA el usuario baja a 0 (no al 15%, directamente a 0
+            // para eliminar el eco por completo)
+            // Márgenes de 80ms antes y después para transición suave
+            let volumeExpression = '1';
             if (aiSegments.length > 0) {
                 const conditions = aiSegments.map(segment => {
-                    const start = Math.max(0, segment.startTime - 0.15).toFixed(3);
-                    const end = (segment.startTime + segment.duration + 0.15).toFixed(3);
+                    const start = Math.max(0, (segment.startTime - 0.08)).toFixed(3);
+                    const end = (segment.startTime + segment.duration + 0.08).toFixed(3);
                     return `between(t,${start},${end})`;
                 });
                 const combined = conditions.join('+');
-                duckExpression = `if(gte(${combined},1),0.5,1)`;
+                volumeExpression = `if(gte(${combined},1),0,1)`;
             }
 
             filterParts.push(
-                `[user_norm]volume='${duckExpression}':eval=frame[user_clean]`
+                `[user_normalized]volume='${volumeExpression}':eval=frame[user_controlled]`
             );
 
-            // 3. Cada segmento de IA al mismo nivel que el usuario
+            // 3. Audio de la IA con normalización y fade suave de 80ms
             aiSegments.forEach((segment, idx) => {
                 const delayMs = Math.round(segment.startTime * 1000);
                 const duration = segment.duration || 3;
-                const fade = Math.min(0.05, duration * 0.1).toFixed(3);
-                const fadeOut = Math.max(0, duration - parseFloat(fade)).toFixed(3);
+                const fade = '0.08';
+                const fadeOut = Math.max(0, duration - 0.08).toFixed(3);
 
                 filterParts.push(
-                    `[${idx + 1}:a]loudnorm=I=-16:TP=-1.5:LRA=7,` +
+                    `[${idx + 1}:a]highpass=f=100,` +
+                    `loudnorm=I=-18:TP=-1.5:LRA=7,` +
                     `afade=t=in:st=0:d=${fade},` +
                     `afade=t=out:st=${fadeOut}:d=${fade},` +
                     `adelay=${delayMs}|${delayMs}[ai${idx}]`
@@ -362,14 +367,15 @@ app.post('/process-casting', upload.any(), async (req, res) => {
 
             // 4. Mezcla final
             const allStreams = [
-                '[user_clean]',
+                '[user_controlled]',
                 ...aiSegments.map((_, i) => `[ai${i}]`)
             ].join('');
 
             filterParts.push(
                 `${allStreams}amix=inputs=${aiSegments.length + 1}:` +
                 `duration=longest:dropout_transition=0:normalize=0,` +
-                `alimiter=limit=0.95:attack=2:release=50[outa]`
+                `acompressor=threshold=-20dB:ratio=2.5:attack=8:release=150:makeup=1,` +
+                `alimiter=limit=0.92:attack=2:release=80[outa]`
             );
         }
 
