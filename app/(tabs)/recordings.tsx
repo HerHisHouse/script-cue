@@ -606,8 +606,44 @@ export default function RecordingsScreen() {
               '⚠️ Vídeo pesado procesado',
               job.error_message ||
                 'Tu selftape era demasiado grande para guardarse en la nube. ' +
-                'Se ha guardado temporalmente en el servidor.',
-              [{ text: 'OK' }]
+                'Se ha guardado temporalmente en el servidor. Tienes 1 hora para descargarlo.',
+              [
+                { text: 'Ignorar', style: 'cancel' },
+                {
+                  text: 'Descargar al carrete y app',
+                  onPress: async () => {
+                    try {
+                      const renderUrl = process.env.EXPO_PUBLIC_RENDER_SERVER_URL || 'https://script-cue-merge-server.onrender.com';
+                      const downloadUrl = `${renderUrl}/download-casting/${job.job_id}`;
+                      const localUri = `${FileSystem.documentDirectory}casting_${job.job_id}.mp4`;
+                      
+                      // 1. Descargar al FileSystem del dispositivo
+                      const { uri } = await FileSystem.downloadAsync(downloadUrl, localUri);
+                      
+                      // 2. Ofrecer guardarlo en la galería
+                      if (await Sharing.isAvailableAsync()) {
+                        await Sharing.shareAsync(uri, { UTI: 'public.mpeg-4', mimeType: 'video/mp4', dialogTitle: 'Guardar Casting' });
+                      }
+
+                      // 3. Añadirlo a la tabla de grabaciones para que aparezca en la app con la ruta local
+                      if (job.script_id) {
+                        await supabase.from('recordings').insert({
+                            user_id: user.id,
+                            script_id: job.script_id,
+                            title: `Casting Local - ${new Date().toLocaleDateString('es-ES')}`,
+                            audio_url: uri,
+                            type: 'video',
+                            duration_seconds: 0,
+                            file_size_bytes: 0,
+                        });
+                        loadRecordings(true);
+                      }
+                    } catch (e) {
+                      Alert.alert('Error', 'No se pudo descargar el vídeo. Comprueba tu conexión a internet.');
+                    }
+                  }
+                }
+              ]
             );
           }
           if (job.status === 'error') {

@@ -464,6 +464,22 @@ async function processCastingInBackground(jobId, files, body) {
             // Vídeo demasiado grande para Supabase incluso comprimido
             console.log(`[Job ${jobId}] ⚠️ Vídeo grande (${finalSizeMB.toFixed(0)}MB), guardando localmente`);
             
+            const downloadsDir = path.join(__dirname, 'downloads');
+            if (!fs.existsSync(downloadsDir)) fs.mkdirSync(downloadsDir, { recursive: true });
+            
+            const localDownloadPath = path.join(downloadsDir, `${jobId}.mp4`);
+            fs.copyFileSync(outputFile, localDownloadPath);
+            
+            // Delete file after 1 hour (3600000 ms)
+            setTimeout(() => {
+                try {
+                    if (fs.existsSync(localDownloadPath)) {
+                        fs.unlinkSync(localDownloadPath);
+                        console.log(`[Job ${jobId}] Deleted local download file after 1 hour.`);
+                    }
+                } catch (e) {}
+            }, 3600000);
+
             await supabase.from('casting_jobs').update({
                 status: 'completed_local',
                 error_message: `Vídeo de ${finalSizeMB.toFixed(0)}MB guardado en el servidor temporalmente.`,
@@ -487,6 +503,23 @@ async function processCastingInBackground(jobId, files, body) {
         }
     }
 }
+
+// Endpoint para descargar vídeos guardados temporalmente en el servidor
+app.get('/download-casting/:jobId', (req, res) => {
+    const { jobId } = req.params;
+    const downloadsDir = path.join(__dirname, 'downloads');
+    const filePath = path.join(downloadsDir, `${jobId}.mp4`);
+    
+    if (fs.existsSync(filePath)) {
+        res.download(filePath, `casting_${jobId}.mp4`, (err) => {
+            if (err) {
+                console.error(`[Download] Error downloading file ${jobId}:`, err);
+            }
+        });
+    } else {
+        res.status(404).send('El archivo ya no está disponible o ha expirado. (Se mantienen un máximo de 1 hora)');
+    }
+});
 
 
 
