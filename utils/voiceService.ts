@@ -130,17 +130,41 @@ export async function getElevenLabsVoices(): Promise<VoiceOption[]> {
   }
 
   try {
-    const response = await fetch('https://api.elevenlabs.io/v1/voices', {
+    const collectionId = process.env.EXPO_PUBLIC_ELEVENLABS_COLLECTION_ID || 'Cy4MgTzrGqXsWuRKrXaQ';
+    let response = await fetch(`https://api.elevenlabs.io/v1/voices?collection_id=${collectionId}`, {
       headers: {
         'xi-api-key': apiKey,
       },
     });
 
     if (!response.ok) {
+      console.warn(`ElevenLabs collection fetch failed: ${response.status}. Falling back to all voices.`);
+      response = await fetch('https://api.elevenlabs.io/v1/voices', {
+        headers: {
+          'xi-api-key': apiKey,
+        },
+      });
+    }
+
+    if (!response.ok) {
       throw new Error(`ElevenLabs API error: ${response.status}`);
     }
 
-    const data = await response.json();
+    let data = await response.json();
+
+    // If collection returns empty, fallback to all voices
+    if (!data.voices || data.voices.length === 0) {
+      console.warn('ElevenLabs collection empty. Falling back to all voices.');
+      response = await fetch('https://api.elevenlabs.io/v1/voices', {
+        headers: {
+          'xi-api-key': apiKey,
+        },
+      });
+      if (!response.ok) {
+        throw new Error(`ElevenLabs API error: ${response.status}`);
+      }
+      data = await response.json();
+    }
     
     const voices: VoiceOption[] = data.voices.map((voice: any) => ({
       id: voice.voice_id,

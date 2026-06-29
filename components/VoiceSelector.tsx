@@ -114,16 +114,6 @@ function groupVoicesByCategory(voices: VoiceOption[]): VoiceGroup[] {
     }
   }
 
-  // Añadir "Otras" al final si existe
-  if (groups['🔤 Otras'] && groups['🔤 Otras'].length > 0) {
-    result.push({
-      category: '🔤 Otras',
-      voices: groups['🔤 Otras'].sort((a, b) => 
-        a.name.localeCompare(b.name, 'es')
-      ),
-    });
-  }
-
   return result;
 }
 
