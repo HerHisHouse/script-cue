@@ -375,9 +375,9 @@ export default function SettingsScreen() {
                 <Switch
                   value={rotationEnabled}
                   onValueChange={toggleRotation}
-                  trackColor={{ false: isDark ? '#374151' : '#D1D5DB', true: colors.primary }}
+                  trackColor={{ false: isDark ? '#374151' : '#9CA3AF', true: colors.primary }}
                   thumbColor={Platform.OS === 'android' ? '#FFFFFF' : undefined}
-                  ios_backgroundColor={isDark ? '#374151' : '#D1D5DB'}
+                  ios_backgroundColor={isDark ? '#374151' : '#9CA3AF'}
                 />
               </View>
             </View>
@@ -425,9 +425,9 @@ export default function SettingsScreen() {
                 <Switch
                   value={localOnly}
                   onValueChange={toggleLocalOnly}
-                  trackColor={{ false: isDark ? '#374151' : '#D1D5DB', true: colors.primary }}
+                  trackColor={{ false: isDark ? '#374151' : '#9CA3AF', true: colors.primary }}
                   thumbColor={Platform.OS === 'android' ? '#FFFFFF' : undefined}
-                  ios_backgroundColor={isDark ? '#374151' : '#D1D5DB'}
+                  ios_backgroundColor={isDark ? '#374151' : '#9CA3AF'}
                 />
               </View>
             </View>

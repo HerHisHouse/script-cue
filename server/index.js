@@ -199,126 +199,112 @@ const upload = multer({
 // - scriptId, userId: text fields
 // - lineTimings: JSON string
 app.post('/process-casting', upload.any(), async (req, res) => {
-    console.log('[Casting] Received request');
+    const jobId = `job_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+    console.log(`[Casting] Job iniciado: ${jobId}`);
 
-    let processTempDir = null; // Declare processTempDir here for broader scope
+    const { scriptId, userId, lineTimings: lineTimingsJson, hasHeadphones } = req.body;
+    const files = req.files;
+
+    if (!files || files.length === 0 || !scriptId || !userId || !lineTimingsJson) {
+        return res.status(400).json({ error: 'Missing required fields or files' });
+    }
+
+    // Responder inmediatamente — el cliente puede navegar mientras el servidor procesa
+    res.json({ success: true, jobId, message: 'Procesamiento iniciado' });
+
+    // Registrar el job en Supabase
+    await supabase.from('casting_jobs').insert({
+        job_id: jobId,
+        user_id: userId,
+        script_id: scriptId,
+        status: 'processing',
+    }).catch(err => console.error('[Casting] Error registrando job:', err));
+
+    // Procesar en segundo plano (no bloqueante)
+    processCastingInBackground(jobId, files, req.body)
+        .catch(async (err) => {
+            console.error(`[Job ${jobId}] Error fatal:`, err.message);
+            await supabase.from('casting_jobs').update({
+                status: 'error',
+                error_message: err.message,
+                updated_at: new Date().toISOString(),
+            }).eq('job_id', jobId).catch(() => {});
+        });
+});
+
+async function processCastingInBackground(jobId, files, body) {
+    const { scriptId, userId, lineTimings: lineTimingsJson, hasHeadphones: hasHeadphonesRaw } = body;
+    const lineTimings = JSON.parse(lineTimingsJson);
+    const hasHeadphones = hasHeadphonesRaw === 'true';
+
+    const tempDir = path.join(__dirname, 'temp', `casting_${Date.now()}`);
+    fs.mkdirSync(tempDir, { recursive: true });
+
+    const videoFile = path.join(tempDir, 'input.mp4');
+    const userAudioFile = path.join(tempDir, 'user_audio.m4a');
+    const mixedAudioFile = path.join(tempDir, 'mixed_audio.m4a');
+    const outputFile = path.join(tempDir, 'output.mp4');
 
     try {
-        const { scriptId, userId, lineTimings: lineTimingsJson } = req.body;
-        const files = req.files;
+        // Mover el vídeo subido a la carpeta temporal
+        const uploadedVideo = Array.isArray(files) ? files.find(f => f.fieldname === 'video') : files['video']?.[0];
+        if (!uploadedVideo) throw new Error('No video file uploaded');
+        fs.renameSync(uploadedVideo.path, videoFile);
 
-        if (!files || files.length === 0 || !scriptId || !userId || !lineTimingsJson) {
-            return res.status(400).json({ error: 'Missing required fields or files' });
+        const videoSizeMB = fs.statSync(videoFile).size / (1024 * 1024);
+        console.log(`[Job ${jobId}] Vídeo: ${videoSizeMB.toFixed(1)}MB`);
+
+        if (videoSizeMB > 200) {
+            throw new Error(
+                `Vídeo demasiado grande (${videoSizeMB.toFixed(0)}MB). ` +
+                'Usa calidad Básica para escenas largas.'
+            );
         }
 
-        const lineTimings = JSON.parse(lineTimingsJson);
-        processTempDir = path.join(__dirname, 'temp', `casting_${Date.now()}`);
-
-        // Create specific temp dir for this process
-        await fs.promises.mkdir(processTempDir, { recursive: true });
-
-        // Identify video file
-        const videoUpload = files.find(f => f.fieldname === 'video');
-        if (!videoUpload) {
-            throw new Error('No video file uploaded');
-        }
-
-        const videoFile = path.join(processTempDir, 'input.mp4');
-        // Move video from multer temp to our processing dir
-        await fs.promises.rename(videoUpload.path, videoFile);
-
-        console.log(`[Casting] Processing video for user ${userId}, script ${scriptId}`);
-        console.log(`[Casting] Video saved: ${videoFile} (${(videoUpload.size / 1024 / 1024).toFixed(2)} MB)`);
-
-        // CAMBIO 1: Rechazar vídeos demasiado grandes antes de que ffmpeg los toque
-        const videoStats = fs.statSync(videoFile);
-        const videoSizeMBInput = videoStats.size / (1024 * 1024);
-        console.log(`[Casting] Tamaño del vídeo recibido: ${videoSizeMBInput.toFixed(1)}MB`);
-
-        if (videoSizeMBInput > 200) {
-            console.warn(`[Casting] Rechazando vídeo de ${videoSizeMBInput.toFixed(0)} MB (límite: 200MB)`);
-            try { fs.unlinkSync(videoFile); } catch {}
-            return res.status(413).json({
-                success: false,
-                error: `El vídeo es demasiado grande (${videoSizeMBInput.toFixed(0)}MB). ` +
-                       'Para escenas de más de 1 minuto usa calidad Media (720p) ' +
-                       'en la pantalla de configuración.',
-                errorCode: 'VIDEO_TOO_LARGE'
-            });
-        }
-
-        const userAudioFile = path.join(processTempDir, 'user_audio.m4a');
-        const mixedAudioFile = path.join(processTempDir, 'mixed_audio.m4a');
-        const outputFile = path.join(processTempDir, 'output.mp4');
-
-        // 2. Extract user audio from video
-        console.log('[Casting] Extracting user audio from video...');
+        // ── PASO 1: Extraer audio del usuario ──────────────────────────────────
+        console.log(`[Job ${jobId}] Extrayendo audio del usuario...`);
         await new Promise((resolve, reject) => {
             ffmpeg(videoFile)
                 .output(userAudioFile)
                 .audioCodec('aac')
                 .audioBitrate('192k')
                 .noVideo()
-                .outputOptions([
-                    '-threads', '1',    // CAMBIO 2: un solo hilo, menos RAM
-                    '-bufsize', '2M',   // CAMBIO 2: limitar buffer interno
-                ])
-                .on('end', () => {
-                    console.log('[Casting] User audio extracted');
-                    resolve();
-                })
+                .outputOptions(['-threads', '1', '-bufsize', '2M'])
+                .on('end', resolve)
                 .on('error', reject)
                 .run();
         });
 
-        // 3. Process AI audio files
-        console.log('[Casting] Processing AI audio files...');
+        // ── PASO 2: Procesar y mezclar audios de la IA ─────────────────────────
+        console.log(`[Job ${jobId}] Procesando audios de la IA...`);
         const aiSegments = [];
+        const allFiles = Array.isArray(files) ? files : Object.values(files).flat();
 
-        // Map uploaded files to timings
         for (const timing of lineTimings) {
             if (timing.type === 'ai') {
-                const fieldName = `aiAudio_${timing.index}`;
-                const upload = files.find(f => f.fieldname === fieldName);
-
+                const upload = allFiles.find(f => f.fieldname === `aiAudio_${timing.index}`);
                 if (upload) {
-                    const aiAudioFile = path.join(processTempDir, `ai_${timing.index}.mp3`);
-                    await fs.promises.rename(upload.path, aiAudioFile);
-
+                    const aiAudioFile = path.join(tempDir, `ai_${timing.index}.mp3`);
+                    fs.renameSync(upload.path, aiAudioFile);
                     aiSegments.push({
                         file: aiAudioFile,
                         startTime: timing.startTime,
-                        duration: timing.duration
+                        duration: timing.duration,
                     });
-                    console.log(`[Casting] Found audio for line ${timing.index}`);
-                } else {
-                    console.warn(`[Casting] No audio file found for AI line ${timing.index}`);
+                    console.log(`[Job ${jobId}] Audio IA línea ${timing.index}`);
                 }
             }
         }
 
-        const hasHeadphones = req.body.hasHeadphones === 'true';
-        console.log(`[Casting] Auriculares: ${hasHeadphones ? 'SÍ' : 'NO'}`);
-
         const filterParts = [];
 
         if (hasHeadphones) {
-            // ── ESTRATEGIA AURICULARES ──────────────────────────────────────
-            // Superposición simple: el AEC de hardware ya garantiza audio limpio
-            console.log('[Casting] Estrategia auriculares: superposición simple');
-
-            // 1. Audio del usuario: normalización + filtro paso-alto
-            filterParts.push(
-                '[0:a]highpass=f=80,loudnorm=I=-16:TP=-1.5:LRA=11[user_clean]'
-            );
-
-            // 2. Cada segmento de IA a mismo nivel que el usuario
+            filterParts.push('[0:a]highpass=f=80,loudnorm=I=-16:TP=-1.5:LRA=11[user_clean]');
             aiSegments.forEach((segment, idx) => {
                 const delayMs = Math.round(segment.startTime * 1000);
                 const duration = segment.duration || 3;
                 const fade = Math.min(0.05, duration * 0.1).toFixed(3);
                 const fadeOut = Math.max(0, duration - parseFloat(fade)).toFixed(3);
-
                 filterParts.push(
                     `[${idx + 1}:a]loudnorm=I=-16:TP=-1.5:LRA=7,` +
                     `afade=t=in:st=0:d=${fade},` +
@@ -326,36 +312,17 @@ app.post('/process-casting', upload.any(), async (req, res) => {
                     `adelay=${delayMs}|${delayMs}[ai${idx}]`
                 );
             });
-
-            // 3. Mezcla final
-            const allStreams = [
-                '[user_clean]',
-                ...aiSegments.map((_, i) => `[ai${i}]`)
-            ].join('');
-
+            const allStreams = ['[user_clean]', ...aiSegments.map((_, i) => `[ai${i}]`)].join('');
             filterParts.push(
                 `${allStreams}amix=inputs=${aiSegments.length + 1}:` +
                 `duration=longest:dropout_transition=0:normalize=0,` +
                 `alimiter=limit=0.95:attack=2:release=50[outa]`
             );
-
         } else {
-            // ── SIN AURICULARES: silenciar usuario cuando habla la IA ──────────
-            // El altavoz genera eco en el micro, así que cuando habla la IA
-            // se baja el usuario a 0 y se mezcla el audio limpio de la IA encima.
-            // Fade de 80ms en las transiciones para evitar clicks.
-            console.log('[Casting] Estrategia: ducking completo anti-eco (sin auriculares)');
-
-            // 1. Normalización suave del usuario
             filterParts.push(
                 '[0:a]highpass=f=100,afftdn=nf=-25,' +
                 'loudnorm=I=-16:TP=-1.5:LRA=11[user_normalized]'
             );
-
-            // 2. Construir expresión de silenciado dinámico
-            // Cuando habla la IA el usuario baja a 0 (no al 15%, directamente a 0
-            // para eliminar el eco por completo)
-            // Márgenes de 80ms antes y después para transición suave
             let volumeExpression = '1';
             if (aiSegments.length > 0) {
                 const conditions = aiSegments.map(segment => {
@@ -363,21 +330,14 @@ app.post('/process-casting', upload.any(), async (req, res) => {
                     const end = (segment.startTime + segment.duration + 0.08).toFixed(3);
                     return `between(t,${start},${end})`;
                 });
-                const combined = conditions.join('+');
-                volumeExpression = `if(gte(${combined},1),0,1)`;
+                volumeExpression = `if(gte(${conditions.join('+')},1),0,1)`;
             }
-
-            filterParts.push(
-                `[user_normalized]volume='${volumeExpression}':eval=frame[user_controlled]`
-            );
-
-            // 3. Audio de la IA con normalización y fade suave de 80ms
+            filterParts.push(`[user_normalized]volume='${volumeExpression}':eval=frame[user_controlled]`);
             aiSegments.forEach((segment, idx) => {
                 const delayMs = Math.round(segment.startTime * 1000);
                 const duration = segment.duration || 3;
                 const fade = '0.08';
                 const fadeOut = Math.max(0, duration - 0.08).toFixed(3);
-
                 filterParts.push(
                     `[${idx + 1}:a]highpass=f=100,` +
                     `loudnorm=I=-18:TP=-1.5:LRA=7,` +
@@ -386,13 +346,7 @@ app.post('/process-casting', upload.any(), async (req, res) => {
                     `adelay=${delayMs}|${delayMs}[ai${idx}]`
                 );
             });
-
-            // 4. Mezcla final
-            const allStreams = [
-                '[user_controlled]',
-                ...aiSegments.map((_, i) => `[ai${i}]`)
-            ].join('');
-
+            const allStreams = ['[user_controlled]', ...aiSegments.map((_, i) => `[ai${i}]`)].join('');
             filterParts.push(
                 `${allStreams}amix=inputs=${aiSegments.length + 1}:` +
                 `duration=longest:dropout_transition=0:normalize=0,` +
@@ -401,69 +355,34 @@ app.post('/process-casting', upload.any(), async (req, res) => {
             );
         }
 
-        const filterComplex = filterParts.join(';');
-        console.log('[Casting] Filter complex:', filterComplex);
-
-
         await new Promise((resolve, reject) => {
             const command = ffmpeg();
-
-            command.input(userAudioFile); // Entrada 0: audio original del usuario
-
-            aiSegments.forEach(segment => {
-                command.input(segment.file); // Entradas 1..N: audios de la IA
-            });
-
+            command.input(userAudioFile);
+            aiSegments.forEach(segment => command.input(segment.file));
             command
-                .complexFilter(filterComplex)
+                .complexFilter(filterParts.join(';'))
                 .map('[outa]')
                 .audioCodec('aac')
                 .audioBitrate('192k')
-                .audioChannels(1) // Mono para evitar fase
+                .audioChannels(1)
                 .audioFrequency(44100)
                 .output(mixedAudioFile)
-                .on('start', (cmd) => console.log('[FFmpeg] Mix command:', cmd))
-                .on('progress', (progress) => console.log(`[FFmpeg] Mixing: ${progress.percent?.toFixed(1)}%`))
-                .on('end', () => {
-                    console.log('[Casting] Audio mixing completed');
-                    resolve();
-                })
+                .on('start', (cmd) => console.log(`[Job ${jobId}] Mix cmd:`, cmd))
+                .on('end', resolve)
                 .on('error', reject)
                 .run();
         });
 
-        // CAMBIO 3: Limpiar audios individuales de IA tras mezclarlos
-        console.log('[Casting] Limpiando audios temporales de IA...');
+        // Limpiar audios individuales de IA
+        console.log(`[Job ${jobId}] Limpiando audios temporales de IA...`);
         for (const segment of aiSegments) {
-            try {
-                if (segment.file && fs.existsSync(segment.file)) {
-                    fs.unlinkSync(segment.file);
-                    console.log(`[Casting] Borrado: ${segment.file}`);
-                }
-            } catch (e) {
-                console.warn('[Casting] No se pudo borrar audio temporal:', e.message);
-            }
+            try { if (fs.existsSync(segment.file)) fs.unlinkSync(segment.file); } catch {}
         }
+        try { if (fs.existsSync(userAudioFile)) fs.unlinkSync(userAudioFile); } catch {}
 
-        // 5. Replace video audio with mixed audio (CONDITIONAL COMPRESSION)
-        console.log('[Casting] Replacing video audio track...');
-        const videoStatsFinal = fs.statSync(videoFile);
-        const videoSizeMB = videoStatsFinal.size / (1024 * 1024);
-        const SIZE_LIMIT_MB = 45;
-
-        console.log(`[Casting] Tamaño del vídeo: ${videoSizeMB.toFixed(1)}MB`);
-        const needsCompression = videoSizeMB > SIZE_LIMIT_MB;
-        console.log(`[Casting] ${needsCompression ? 'Comprimiendo...' : 'Sin compresión necesaria'}`);
-
-        // CAMBIO 3: Liberar el audio del usuario ya que ya tenemos mixedAudioFile
-        try {
-            if (fs.existsSync(userAudioFile)) {
-                fs.unlinkSync(userAudioFile);
-                console.log('[Casting] userAudioFile liberado de RAM/disco');
-            }
-        } catch (e) {
-            console.warn('[Casting] No se pudo borrar userAudioFile:', e.message);
-        }
+        // ── PASO 3: Unir vídeo + audio mezclado (compresión inteligente) ──────
+        const needsCompression = videoSizeMB > 45;
+        console.log(`[Job ${jobId}] ${needsCompression ? 'Comprimiendo (ultrafast)...' : 'Copia directa...'}`);
 
         await new Promise((resolve, reject) => {
             ffmpeg()
@@ -471,112 +390,109 @@ app.post('/process-casting', upload.any(), async (req, res) => {
                 .input(mixedAudioFile)
                 .outputOptions(needsCompression ? [
                     '-c:v libx264',
-                    '-crf 23',
-                    '-preset ultrafast',  // CAMBIO 2: ultrafast en vez de fast
-                    '-threads', '1',      // CAMBIO 2: un solo hilo, menos RAM
+                    '-crf 28',
+                    '-preset ultrafast',
+                    '-vf', 'scale=-2:720',
+                    '-threads', '1',
                     '-c:a aac',
                     '-b:a 128k',
                     '-map 0:v:0',
                     '-map 1:a:0',
                     '-movflags +faststart',
-                    '-shortest'
+                    '-shortest',
                 ] : [
-                    '-c:v copy',          // sin recomprimir = mínima RAM
+                    '-c:v copy',
                     '-c:a aac',
                     '-b:a 128k',
                     '-map 0:v:0',
                     '-map 1:a:0',
                     '-movflags +faststart',
-                    '-shortest'
+                    '-shortest',
                 ])
                 .output(outputFile)
-                .on('start', (cmd) => console.log('[FFmpeg] Final command:', cmd))
-                .on('progress', (progress) => console.log(`[FFmpeg] Finalizing: ${progress.percent?.toFixed(1)}%`))
-                .on('end', () => {
-                    console.log('[Casting] Video processing completed');
-                    resolve();
-                })
+                .on('start', (cmd) => console.log(`[Job ${jobId}] Final cmd:`, cmd))
+                .on('end', resolve)
                 .on('error', reject)
                 .run();
         });
 
-        // CAMBIO 3: Limpiar video original y mixedAudio ya que tenemos el outputFile
-        console.log('[Casting] Limpiando archivos temporales intermedios...');
-        for (const filePath of [videoFile, mixedAudioFile]) {
-            try {
-                if (filePath && fs.existsSync(filePath)) {
-                    fs.unlinkSync(filePath);
-                    console.log(`[Casting] Liberado: ${path.basename(filePath)}`);
-                }
-            } catch (e) {
-                console.warn('[Casting] Error limpiando temporal:', e.message);
-            }
+        // Limpiar temporales intermedios
+        try { fs.unlinkSync(videoFile); } catch {}
+        try { fs.unlinkSync(mixedAudioFile); } catch {}
+
+        // ── PASO 4: Subir a Supabase ───────────────────────────────────────────
+        const finalSizeMB = fs.statSync(outputFile).size / (1024 * 1024);
+        console.log(`[Job ${jobId}] Tamaño final: ${finalSizeMB.toFixed(1)}MB`);
+
+        const remotePath = `${userId}/${Date.now()}_casting.mp4`;
+        
+        if (finalSizeMB <= 49) {
+            // Subir a Supabase
+            const fileBuffer = fs.readFileSync(outputFile);
+            const { error: uploadError } = await supabase.storage
+                .from('recordings')
+                .upload(remotePath, fileBuffer, { contentType: 'video/mp4', upsert: false });
+
+            if (uploadError) throw new Error(`Error subiendo a Supabase: ${uploadError.message}`);
+
+            const { data: { publicUrl } } = supabase.storage
+                .from('recordings')
+                .getPublicUrl(remotePath);
+
+            // Crear registro en recordings
+            const { error: dbError } = await supabase.from('recordings').insert({
+                user_id: userId,
+                script_id: scriptId,
+                title: `Casting - ${new Date().toLocaleDateString('es-ES')}`,
+                audio_url: publicUrl, // Usa publicUrl aquí como en la documentación original
+                type: 'video',
+                duration_seconds: 0,
+                file_size_bytes: Math.round(finalSizeMB * 1024 * 1024),
+            });
+            
+            if (dbError) throw new Error(`Error guardando en DB: ${dbError.message}`);
+
+            console.log(`[Job ${jobId}] ✅ Subido a Supabase: ${remotePath}`);
+            
+            // Marcar job como completado
+            await supabase.from('casting_jobs').update({
+                status: 'completed',
+                updated_at: new Date().toISOString(),
+            }).eq('job_id', jobId);
+            
+        } else {
+            // Vídeo demasiado grande para Supabase incluso comprimido
+            console.log(`[Job ${jobId}] ⚠️ Vídeo grande (${finalSizeMB.toFixed(0)}MB), guardando localmente`);
+            
+            await supabase.from('casting_jobs').update({
+                status: 'completed_local',
+                error_message: `Vídeo de ${finalSizeMB.toFixed(0)}MB guardado en el servidor temporalmente.`,
+            }).eq('job_id', jobId);
         }
 
-        const outputStats = fs.statSync(outputFile);
-        const outputSizeMB = outputStats.size / (1024 * 1024);
-        console.log(`[Casting] Tamaño final: ${outputSizeMB.toFixed(1)}MB`);
+        console.log(`[Job ${jobId}] ✅ Proceso completo`);
 
-        // 6. Instead of uploading to Supabase, save to server's public folder
-        // and provide a download URL for the client to fetch
-        const publicDir = path.join(__dirname, 'public');
-        if (!fs.existsSync(publicDir)) {
-            fs.mkdirSync(publicDir, { recursive: true });
-        }
+    } finally {
+        // Limpiar carpeta temporal siempre
+        try { fs.rmSync(tempDir, { recursive: true, force: true }); } catch {}
 
-        const fileName = `casting_${userId}_${Date.now()}.mp4`;
-        const publicPath = path.join(publicDir, fileName);
-
-        console.log('[Casting] Moving processed video to public folder...');
-        await fs.promises.rename(outputFile, publicPath);
-
-        // Get file size for logging
-        const stats = await fs.promises.stat(publicPath);
-        console.log(`[Casting] File ready for download: ${(stats.size / 1024 / 1024).toFixed(2)} MB`);
-
-        // Cleanup temp files
-        await fs.promises.rm(processTempDir, { recursive: true, force: true });
-
-        // Return download URL
-        const downloadUrl = `${req.protocol}://${req.get('host')}/download/${fileName}`;
-        console.log('[Casting] Success! Download URL:', downloadUrl);
-
-        res.json({
-            success: true,
-            downloadUrl: downloadUrl,
-            fileName: fileName,
-            message: 'Video processed successfully'
-        });
-
-    } catch (error) {
-        console.error('[Casting] Error:', error);
-
-        // Cleanup on error
-        if (processTempDir) { // Only try to remove if it was successfully created
-            try {
-                await fs.promises.rm(processTempDir, { recursive: true, force: true });
-            } catch (cleanupError) {
-                console.error('[Casting] Error cleaning up process temp directory:', cleanupError);
-            }
-        }
-
-        // Cleanup uploaded files (only if they weren't moved/deleted)
-        if (req.files) {
-            for (const file of req.files) {
-                // Check if file still exists before trying to delete
+        // Limpiar archivos subidos por multer que no se pudieron mover
+        if (files) {
+            const allFiles = Array.isArray(files) ? files : Object.values(files).flat();
+            for (const file of allFiles) {
                 try {
-                    await fs.promises.access(file.path);
-                    await fs.promises.unlink(file.path);
-                } catch { }
+                    if (fs.existsSync(file.path)) fs.unlinkSync(file.path);
+                } catch {}
             }
         }
-
-        res.status(500).json({
-            error: 'Processing failed',
-            message: error.message
-        });
     }
-});
+}
+
+
+
+
+
+
 
 // =============================================================================
 // COMPRESS VIDEO (TELEPROMPTER) ENDPOINT

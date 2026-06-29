@@ -177,7 +177,7 @@ export default function CastingModeScreen() {
   type CastingMode = 'selection' | 'script_config' | 'free_input' | 'recording';
   const [castingMode, setCastingMode] = useState<CastingMode>('selection');
   const [castingType, setCastingType] = useState<'script' | 'free' | null>(null);
-  type VideoQuality = 'high' | 'medium' | 'low';
+  type VideoQuality = 'medium' | 'low';
   const [videoQuality, setVideoQuality] = useState<VideoQuality>('medium');
   const [showQualityModal, setShowQualityModal] = useState(false);
   const [qualityApplied, setQualityApplied] = useState(false);
@@ -1596,25 +1596,19 @@ export default function CastingModeScreen() {
     }
   }
 
-  // Nueva función para cancelar grabación sin procesar
+  // Cancelar grabación sin procesar
   function cancelRecording() {
     if (cameraRef.current && isRecording) {
-      // Signal cancellation to the countdown loop immediately
       countdownCancelledRef.current = true;
       (cameraRef.current as any)._cancelRecording = true;
-
-      // Stop the camera recording
       cameraRef.current.stopRecording();
 
-      // setIsRecording(false) + setIsPlaying(false) will trigger the timer useEffect cleanup
       setIsRecording(false);
       setIsPlaying(false);
       setCountdown(null);
       setRecordingTime(0);
       recordingTimeRef.current = 0;
       cleanupSound();
-
-      // Limpiar timings
       lineTimingsRef.current = [];
       setLineTimingsCount(0);
 
@@ -1622,66 +1616,50 @@ export default function CastingModeScreen() {
     }
   }
 
-  async function handleRecordingFinished(uri: string, hasHeadphones: boolean = false) {
-    // Verificar si la grabación fue cancelada
+  async function handleRecordingFinished(uri: string, _hasHeadphonesArg: boolean = false) {
     if ((cameraRef.current as any)?._cancelRecording) {
       (cameraRef.current as any)._cancelRecording = false;
-      console.log('[Casting] Recording was cancelled, skipping processing');
       return;
     }
 
     try {
       setIsProcessing(true);
-      setProcessingProgress(10);
+      setProcessingProgress(20);
 
-      // STRATEGY: Send video + AI audio files directly to Render server using FormData
-      // This avoids loading huge base64 strings into memory and prevents 502 errors
-      console.log('[Casting] Preparing video and audio for processing (FormData)...');
-      console.log(`[Casting] Current lineTimings count: ${lineTimingsRef.current.length}`);
-
-      const lineTimings = lineTimingsRef.current; // Use ref value
+      const lineTimings = lineTimingsRef.current;
 
       const formData = new FormData();
-
-      // Add metadata
-      formData.append('scriptId', id as string);
       formData.append('userId', user?.id || '');
+      formData.append('scriptId', id as string);
       formData.append('lineTimings', JSON.stringify(lineTimings));
-      formData.append('hasHeadphones', hasHeadphones ? 'true' : 'false');
-      console.log(`[Casting] Auriculares: ${hasHeadphones ? 'SÍ' : 'NO'} — estrategia Render: ${hasHeadphones ? 'superposición simple' : 'ducking anti-eco'}`);
+      formData.append('hasHeadphones', _hasHeadphonesArg ? 'true' : 'false');
 
-      // Add video file
-      // Note: React Native FormData expects { uri, name, type }
+      // Vídeo
       formData.append('video', {
-        uri: uri,
+        uri,
         name: 'video.mp4',
         type: 'video/mp4',
       } as any);
 
-      // Add AI audio files
-      console.log('[Casting] Adding AI audio files to upload...');
-
+      // Audios de la IA
       for (const timing of lineTimings) {
         if (timing.type === 'ai' && timing.audioPath) {
-          // Add file to FormData
-          // We use a naming convention aiAudio_{index} to map it on server
           formData.append(`aiAudio_${timing.index}`, {
             uri: timing.audioPath,
             name: `ai_${timing.index}.mp3`,
             type: 'audio/mpeg',
           } as any);
-          console.log(`[Casting] Added AI audio for line ${timing.index}`);
         }
       }
 
-      setProcessingProgress(30);
-      console.log('[Casting] Sending data to Render for processing...');
+      setProcessingProgress(60);
+      console.log('[Casting] Sending data to Render for background processing...');
 
       const renderUrl = process.env.EXPO_PUBLIC_RENDER_SERVER_URL || 'https://script-cue-merge-server.onrender.com';
 
-      // Crear AbortController para timeout de 3 minutos
+      // Timeout de 2 minutos solo para la subida — el procesamiento ocurre en segundo plano
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 180000);
+      const timeoutId = setTimeout(() => controller.abort(), 120000);
 
       let response;
       try {
@@ -1694,228 +1672,85 @@ export default function CastingModeScreen() {
       } catch (fetchError: any) {
         clearTimeout(timeoutId);
         if (fetchError.name === 'AbortError') {
-          throw new Error('El procesamiento tardó más de 3 minutos. Esto puede ocurrir con videos largos o si el servidor está ocupado. Intenta con un video más corto o espera unos minutos y vuelve a intentarlo.');
+          throw new Error(
+            'La subida del vídeo tardó demasiado. ' +
+            'Comprueba tu conexión a internet e inténtalo de nuevo.'
+          );
         }
         throw fetchError;
       }
 
       if (!response.ok) {
-        const errorText = await response.text();
-        console.error('[Casting] Server error:', errorText);
+        const errorData = await response.json().catch(() => ({}));
 
-        // CAMBIO 4: Error 413 - vídeo demasiado grande
         if (response.status === 413) {
-          let errorData: any;
-          try { errorData = JSON.parse(errorText); } catch {}
           Alert.alert(
             '📹 Vídeo demasiado grande',
-            errorData?.error ||
-            'El vídeo supera el límite de procesamiento. ' +
-            'Usa calidad Media (720p) para escenas largas.',
-            [{ text: 'Entendido', style: 'default' }]
+            errorData.error || 'Graba en calidad Básica (480p) para escenas largas.',
+            [{ text: 'Entendido' }]
           );
           setIsProcessing(false);
           return;
         }
 
-        // CAMBIO 4: Error 502 - servidor reiniciado por falta de memoria
         if (response.status === 502) {
           Alert.alert(
             '⚠️ Error del servidor',
             'El servidor no pudo procesar el vídeo. ' +
-            'Esto suele ocurrir con vídeos muy largos o de alta calidad.\n\n' +
-            'Prueba con calidad Media (720p) o graba una escena más corta.',
-            [{ text: 'Entendido', style: 'default' }]
+            'Prueba con calidad Básica (480p) o graba una escena más corta.',
+            [{ text: 'Entendido' }]
           );
           setIsProcessing(false);
           return;
         }
 
-        // Detectar timeout del servidor (504 Gateway Timeout, 524 Cloudflare Timeout)
         if (response.status === 504 || response.status === 524) {
-          throw new Error('El servidor tardó demasiado en procesar el video. Esto suele ocurrir cuando el servidor está iniciándose (tarda ~1 minuto). Por favor, espera un momento e inténtalo de nuevo.');
+          throw new Error('El servidor tardó demasiado. Espera un momento e inténtalo de nuevo.');
         }
 
-        throw new Error(`Error del servidor: ${response.status} ${response.statusText}`);
+        throw new Error(`Error del servidor: ${response.status}`);
       }
 
       const result = await response.json();
 
-      if (!result.downloadUrl) {
-        throw new Error('Server did not return a download URL');
-      }
+      setProcessingProgress(100);
+      setIsProcessing(false);
 
-      setProcessingProgress(70);
-      console.log('[Casting] Downloading processed video...');
-
-      // Save to local file system with progress tracking
-      const localPath = `${FileSystem.documentDirectory}casting_${Date.now()}.mp4`;
-
-      try {
-        const downloadResumable = FileSystem.createDownloadResumable(
-          result.downloadUrl,
-          localPath,
-          {},
-          (downloadProgress) => {
-            const progress = downloadProgress.totalBytesWritten / downloadProgress.totalBytesExpectedToWrite;
-            const downloadPercent = 70 + (progress * 20); // 70-90%
-            setProcessingProgress(Math.min(90, downloadPercent));
-            console.log(`[Casting] Download progress: ${(progress * 100).toFixed(1)}%`);
-          }
-        );
-
-        const downloadResult = await downloadResumable.downloadAsync();
-        if (!downloadResult || !downloadResult.uri) {
-          throw new Error('Download failed - no URI returned');
-        }
-
-        console.log('[Casting] Video downloaded to:', downloadResult.uri);
-        setProcessingProgress(90);
-
-        // ── LOCAL-ONLY MODE ────────────────────────────────────────────────────
-        const castingSettings = await getSettings();
-        if (castingSettings.useLocalOnly) {
-          console.log('[Casting] Local-only mode — skipping Supabase upload');
-
-          await supabase.from('recordings').insert({
-            user_id: user?.id,
-            script_id: id,
-            scene_id: dialogueLines[currentIndex]?.sceneId ?? dialogueLines[0]?.sceneId,
-            project_id: null,
-            title: `Casting - ${script?.title || 'Guión'}`,
-            audio_url: downloadResult.uri,  // local file:// URI → shows 📱 Local
-            type: 'video',
-            duration_seconds: recordingTimeRef.current,
-            file_size_bytes: 0,
-          });
-
-          setProcessingProgress(100);
-          setIsProcessing(false);
-          Alert.alert(
-            '¡Video guardado!',
-            'Tu casting está guardado en este dispositivo (📱 Local).',
-            [{ text: 'OK', onPress: () => router.replace(`/scripts/${id}`) }]
-          );
-          return;
-        }
-        // ──────────────────────────────────────────────────────────────────────
-
-        // Upload to Supabase Storage
-        console.log('[Casting] Uploading processed video to Supabase Storage...');
-        const fileExt = downloadResult.uri.split('.').pop() || 'mp4';
-        const fileName = `video_${Date.now()}.${fileExt}`;
-        const storagePath = `${user?.id}/${fileName}`;
-        const uploadUrl = `${process.env.EXPO_PUBLIC_SUPABASE_URL}/storage/v1/object/recordings/${storagePath}`;
-
-        const { data: sessionData } = await supabase.auth.getSession();
-        const token = sessionData.session?.access_token || process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY;
-
-        const uploadResult = await FileSystem.uploadAsync(uploadUrl, downloadResult.uri, {
-          httpMethod: 'POST',
-          uploadType: FileSystem.FileSystemUploadType.BINARY_CONTENT,
-          headers: {
-            'Authorization': `Bearer ${token}`,
-            'apikey': process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY || '',
-            'Content-Type': `video/${fileExt === 'mp4' ? 'mp4' : 'quicktime'}`,
-          },
-        });
-
-        if (uploadResult.status !== 200 && uploadResult.status !== 201) {
-          if (uploadResult.body?.includes('413') || uploadResult.body?.includes('exceeded')) {
-            // Fallback: guardar localmente
-            console.log('[Casting] Video too large for Supabase. Saving locally.');
-            
-            await supabase.from('recordings').insert({
-              user_id: user?.id,
-              script_id: id,
-              scene_id: dialogueLines[currentIndex]?.sceneId ?? dialogueLines[0]?.sceneId,
-              project_id: null,
-              title: `Casting - ${script?.title || 'Guión'}`,
-              audio_url: downloadResult.uri,
-              type: 'video',
-              duration_seconds: recordingTimeRef.current,
-              file_size_bytes: 0,
-            });
-
-            setProcessingProgress(100);
-            setIsProcessing(false);
-            Alert.alert(
-              'Vídeo guardado localmente',
-              'El vídeo es demasiado grande para subir a la nube. ' +
-              'Lo encontrarás en la pantalla de Grabaciones. ' +
-              'Puedes compartirlo directamente desde ahí.',
-              [{ text: 'Entendido', onPress: () => router.replace(`/scripts/${id}`) }]
-            );
-            return;
-          }
-          throw new Error(`Error subiendo video a la nube: ${uploadResult.body}`);
-        }
-
-        setProcessingProgress(95);
-
-        // Insert into DB with cloud path
-        const { error: dbError } = await supabase.from('recordings').insert({
-          user_id: user?.id,
-          script_id: id,
-          scene_id: dialogueLines[currentIndex]?.sceneId ?? dialogueLines[0]?.sceneId,
-          project_id: null,
-          title: `Casting - ${script?.title || 'Guión'}`,
-          audio_url: storagePath, // Store cloud path relative to bucket
-          type: 'video',
-          duration_seconds: recordingTimeRef.current,
-          file_size_bytes: 0,
-        });
-
-        if (dbError) {
-          console.error('[Casting] DB Error:', dbError);
-          throw new Error(`Error al guardar en base de datos: ${dbError.message}`);
-        }
-
-        // Clean up local downloaded file
-        try {
-          await FileSystem.deleteAsync(downloadResult.uri, { idempotent: true });
-        } catch (e) {
-          console.warn('[Casting] Could not delete local video file', e);
-        }
-
-        setProcessingProgress(100);
-        setIsProcessing(false);
-
-        console.log('[Casting] Success! Video saved to database');
-
+      if (result.jobId) {
+        // El servidor ha recibido el vídeo y está procesando en segundo plano
         Alert.alert(
-          '¡Video procesado con éxito!',
-          'Tu casting con audio de IA ha sido guardado en Grabaciones.',
+          '🎬 ¡Selftape enviado!',
+          'Tu vídeo se está procesando en segundo plano.\n\n' +
+            'Te avisaremos en Grabaciones cuando esté listo. ' +
+            'Puedes seguir usando la app mientras tanto.',
           [
             {
-              text: 'OK',
-              onPress: () => {
-                router.replace(`/scripts/${id}`);
-              }
-            }
+              text: 'Ver Grabaciones',
+              onPress: () => router.replace('/(tabs)/recordings'),
+            },
+            {
+              text: 'Seguir en la app',
+              style: 'cancel',
+              onPress: () => router.replace(`/scripts/${id}`),
+            },
           ]
         );
-
-      } catch (downloadError: any) {
-        console.error('[Casting] Download/Save Error:', downloadError);
-        throw new Error(`Error al descargar o guardar el video: ${downloadError.message}`);
+      } else {
+        // Servidor con flujo clásico (descarga directa)
+        Alert.alert(
+          '🎬 ¡Grabación enviada!',
+          'Tu selftape se ha guardado en Grabaciones.',
+          [{ text: 'OK', onPress: () => router.replace(`/scripts/${id}`) }]
+        );
       }
 
-
     } catch (e: any) {
-      console.error('[Casting] Error:', e);
+      console.error('[Casting] Error enviando vídeo:', e);
       setIsProcessing(false);
       Alert.alert(
-        'Error al procesar video',
-        e.message || 'No se pudo procesar el video. Inténtalo de nuevo.',
-        [
-          {
-            text: 'OK',
-            onPress: () => {
-              router.replace(`/scripts/${id}`);
-            }
-          }
-        ]
+        'Error al enviar',
+        e.message || 'No se pudo enviar el vídeo. Comprueba tu conexión.',
+        [{ text: 'OK' }]
       );
     }
   }
@@ -2341,12 +2176,17 @@ export default function CastingModeScreen() {
 
 
 
-            {/* Audio Loading Overlay */}
+            {/* Pantalla de procesamiento — solo mientras se sube */}
             {isProcessing && (
               <View style={[styles.processingOverlay, { backgroundColor: 'rgba(0,0,0,0.9)' }]}>
                 <ActivityIndicator size="large" color={colors.primary} />
-                <Text style={[styles.processingText, { color: colors.text }]}>
-                  Procesando tu casting...
+                <Text style={[styles.processingText, { color: colors.text, fontSize: rf(18), fontWeight: '700', marginTop: rp(16) }]}>
+                  Enviando tu selftape...
+                </Text>
+                <Text style={[styles.processingText, { color: colors.textSecondary, marginTop: rp(8) }]}>
+                  {processingProgress < 60
+                    ? 'Preparando el vídeo...'
+                    : 'Subiendo al servidor...'}
                 </Text>
                 <Text style={[styles.processingText, { color: colors.primary, fontSize: rf(24), fontWeight: '700', marginTop: 8 }]}>
                   {processingProgress}%
@@ -2355,10 +2195,7 @@ export default function CastingModeScreen() {
                   <View style={[styles.progressBar, { width: `${processingProgress}%`, backgroundColor: colors.primary }]} />
                 </View>
                 <Text style={[styles.processingText, { color: colors.textSecondary, fontSize: rf(12), marginTop: 8 }]}>
-                  {processingProgress < 30 ? 'Subiendo video...' :
-                    processingProgress < 70 ? 'Mezclando audio con IA...' :
-                      processingProgress < 90 ? 'Descargando video procesado...' :
-                        'Guardando...'}
+                  El procesamiento ocurrirá en segundo plano
                 </Text>
               </View>
             )}
@@ -2948,21 +2785,15 @@ export default function CastingModeScreen() {
             <View style={styles.qualityOptions}>
               {[
                 { 
-                  value: 'high', 
-                  label: 'Alta', 
-                  desc: '1080p — Mayor detalle', 
-                  size: '~80MB/min' 
-                },
-                { 
                   value: 'medium', 
-                  label: 'Media', 
-                  desc: '720p — Recomendado', 
+                  label: 'Alta', 
+                  desc: '720p — Estándar profesional', 
                   size: '~30MB/min' 
                 },
                 { 
                   value: 'low', 
                   label: 'Básica', 
-                  desc: '480p — Menor tamaño', 
+                  desc: '480p — Archivos más pequeños', 
                   size: '~12MB/min' 
                 },
               ].map((option) => (

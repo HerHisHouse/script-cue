@@ -146,6 +146,9 @@ export default function RecordingsScreen() {
   const [recordings, setRecordings] = useState<Recording[]>([]);
   const [loading, setLoading] = useState(true);
   const [isLocalOnly, setIsLocalOnly] = useState(false);
+  // Casting jobs en segundo plano
+  const [processingJobs, setProcessingJobs] = useState<string[]>([]);
+  const [completedBanner, setCompletedBanner] = useState(false);
   // URL resolved (signed Supabase URL or local file URI) for the current video being played
   const [videoPlayableUrl, setVideoPlayableUrl] = useState<string | null>(null);
   const [videoUrlLoading, setVideoUrlLoading] = useState(false);
@@ -560,6 +563,71 @@ export default function RecordingsScreen() {
       sub.remove();
     };
   }, [loadRecordings]);
+
+  // Listener Realtime para casting_jobs (notificaciones de procesamiento en segundo plano)
+  useEffect(() => {
+    if (!user?.id) return;
+
+    // Verificar si hay jobs en proceso al montar
+    const checkPendingJobs = async () => {
+      const { data } = await supabase
+        .from('casting_jobs')
+        .select('job_id, status')
+        .eq('user_id', user.id)
+        .eq('status', 'processing');
+      if (data && data.length > 0) {
+        setProcessingJobs(data.map((j: any) => j.job_id));
+      }
+    };
+    checkPendingJobs();
+
+    // Suscribirse a cambios en tiempo real
+    const subscription = supabase
+      .channel(`casting_jobs_${user.id}`)
+      .on(
+        'postgres_changes',
+        {
+          event: 'UPDATE',
+          schema: 'public',
+          table: 'casting_jobs',
+          filter: `user_id=eq.${user.id}`,
+        },
+        (payload: any) => {
+          const job = payload.new;
+          if (job.status === 'completed') {
+            setProcessingJobs((prev) => prev.filter((jid) => jid !== job.job_id));
+            setCompletedBanner(true);
+            loadRecordings(true);
+            setTimeout(() => setCompletedBanner(false), 5000);
+          }
+          if (job.status === 'completed_local') {
+            setProcessingJobs((prev) => prev.filter((jid) => jid !== job.job_id));
+            Alert.alert(
+              '⚠️ Vídeo pesado procesado',
+              job.error_message ||
+                'Tu selftape era demasiado grande para guardarse en la nube. ' +
+                'Se ha guardado temporalmente en el servidor.',
+              [{ text: 'OK' }]
+            );
+          }
+          if (job.status === 'error') {
+            setProcessingJobs((prev) => prev.filter((jid) => jid !== job.job_id));
+            Alert.alert(
+              '⚠️ Error procesando selftape',
+              job.error_message ||
+                'Hubo un problema procesando tu vídeo. ' +
+                'Inténtalo de nuevo con una grabación más corta.',
+              [{ text: 'OK' }]
+            );
+          }
+        }
+      )
+      .subscribe();
+
+    return () => {
+      try { supabase.removeChannel(subscription); } catch {}
+    };
+  }, [user?.id]);
 
   // Sin filtros adicionales en cliente: usar directamente recordings
 
@@ -2405,6 +2473,31 @@ export default function RecordingsScreen() {
           }
         />
 
+        {/* Banner de procesamiento en segundo plano */}
+        {processingJobs.length > 0 && (
+          <View style={[styles.processingBanner, {
+            backgroundColor: 'rgba(124,106,247,0.12)',
+            borderColor: 'rgba(124,106,247,0.35)',
+          }]}>
+            <ActivityIndicator size="small" color={colors.primary} />
+            <Text style={[styles.processingBannerText, { color: colors.primary }]}>
+              Procesando tu selftape en segundo plano...
+            </Text>
+          </View>
+        )}
+
+        {completedBanner && (
+          <View style={[styles.processingBanner, {
+            backgroundColor: 'rgba(16,185,129,0.12)',
+            borderColor: 'rgba(16,185,129,0.35)',
+          }]}>
+            <Text style={{ fontSize: rp(16) }}>✅</Text>
+            <Text style={[styles.processingBannerText, { color: '#10B981' }]}>
+              ¡Tu selftape está listo!
+            </Text>
+          </View>
+        )}
+
 
         <BottomSheetMenu
           visible={showHeaderMenu}
@@ -3119,6 +3212,22 @@ const styles = StyleSheet.create({
   },
   headerMenuButton: {
     padding: rp(4),
+  },
+  processingBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: rp(10),
+    marginHorizontal: rp(16),
+    marginTop: rp(8),
+    marginBottom: rp(4),
+    padding: rp(12),
+    borderRadius: rp(10),
+    borderWidth: 1,
+  },
+  processingBannerText: {
+    fontSize: rf(13),
+    fontWeight: '600',
+    flex: 1,
   },
   headerMenu: {
     position: 'absolute',
