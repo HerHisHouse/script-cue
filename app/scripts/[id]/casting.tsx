@@ -1287,10 +1287,9 @@ export default function CastingModeScreen() {
           } else {
             // Sin auriculares: advertencia clara con opción de no volver a mostrar
             Alert.alert(
-              '\uD83D\uDCF1 Sin auriculares',
-              'Para obtener la mejor calidad en tu selftape ' +
-              'te recomendamos usar auriculares.\n\n' +
-              'Sin auriculares puede haber algo de eco en el audio final.',
+              '\uD83C\uDFA7 Sin auriculares',
+              'Para obtener la mejor calidad en tu selftape te recomendamos usar auriculares.\n\n' +
+              'Sin ellos tu voz y la de la IA nunca podrán sonar simultaneamente (es para evitar eco)',
               [
                 {
                   text: 'No volver a mostrar',
@@ -1379,6 +1378,18 @@ export default function CastingModeScreen() {
       setIsRecording(false);
       setIsPlaying(false);
     }
+  }
+
+  async function cancelCountdown() {
+    countdownCancelledRef.current = true;
+    if (cameraRef.current) {
+      (cameraRef.current as any)._cancelRecording = true;
+      cameraRef.current.stopRecording();
+    }
+    setCountdown(null);
+    setIsRecording(false);
+    setIsPlaying(false);
+    deactivateKeepAwake();
   }
 
   async function stopRecording() {
@@ -2346,6 +2357,12 @@ export default function CastingModeScreen() {
                       <Text style={styles.countdownText}>{countdown}</Text>
                     </View>
                     <Text style={styles.countdownLabel}>Prepárate para grabar...</Text>
+                    <TouchableOpacity 
+                      style={styles.cancelCountdownButton} 
+                      onPress={cancelCountdown}
+                    >
+                      <Text style={styles.cancelCountdownText}>Cancelar</Text>
+                    </TouchableOpacity>
                   </>
                 )}
               </View>
@@ -3084,6 +3101,21 @@ const styles = StyleSheet.create({
     fontSize: rf(18),
     lineHeight: rp(26),
     fontWeight: '500',
+  },
+
+  cancelCountdownButton: {
+    marginTop: rp(32),
+    paddingHorizontal: rp(24),
+    paddingVertical: rp(12),
+    backgroundColor: 'rgba(255, 255, 255, 0.2)',
+    borderRadius: rp(24),
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.4)',
+  },
+  cancelCountdownText: {
+    color: 'white',
+    fontSize: rf(16),
+    fontWeight: '600',
   },
   cardText: {
     color: 'rgba(255,255,255,0.9)',
