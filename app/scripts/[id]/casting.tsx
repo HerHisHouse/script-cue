@@ -1703,6 +1703,34 @@ export default function CastingModeScreen() {
         const errorText = await response.text();
         console.error('[Casting] Server error:', errorText);
 
+        // CAMBIO 4: Error 413 - vídeo demasiado grande
+        if (response.status === 413) {
+          let errorData: any;
+          try { errorData = JSON.parse(errorText); } catch {}
+          Alert.alert(
+            '📹 Vídeo demasiado grande',
+            errorData?.error ||
+            'El vídeo supera el límite de procesamiento. ' +
+            'Usa calidad Media (720p) para escenas largas.',
+            [{ text: 'Entendido', style: 'default' }]
+          );
+          setIsProcessing(false);
+          return;
+        }
+
+        // CAMBIO 4: Error 502 - servidor reiniciado por falta de memoria
+        if (response.status === 502) {
+          Alert.alert(
+            '⚠️ Error del servidor',
+            'El servidor no pudo procesar el vídeo. ' +
+            'Esto suele ocurrir con vídeos muy largos o de alta calidad.\n\n' +
+            'Prueba con calidad Media (720p) o graba una escena más corta.',
+            [{ text: 'Entendido', style: 'default' }]
+          );
+          setIsProcessing(false);
+          return;
+        }
+
         // Detectar timeout del servidor (504 Gateway Timeout, 524 Cloudflare Timeout)
         if (response.status === 504 || response.status === 524) {
           throw new Error('El servidor tardó demasiado en procesar el video. Esto suele ocurrir cuando el servidor está iniciándose (tarda ~1 minuto). Por favor, espera un momento e inténtalo de nuevo.');

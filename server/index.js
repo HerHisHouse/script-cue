@@ -230,6 +230,23 @@ app.post('/process-casting', upload.any(), async (req, res) => {
         console.log(`[Casting] Processing video for user ${userId}, script ${scriptId}`);
         console.log(`[Casting] Video saved: ${videoFile} (${(videoUpload.size / 1024 / 1024).toFixed(2)} MB)`);
 
+        // CAMBIO 1: Rechazar vídeos demasiado grandes antes de que ffmpeg los toque
+        const videoStats = fs.statSync(videoFile);
+        const videoSizeMBInput = videoStats.size / (1024 * 1024);
+        console.log(`[Casting] Tamaño del vídeo recibido: ${videoSizeMBInput.toFixed(1)}MB`);
+
+        if (videoSizeMBInput > 200) {
+            console.warn(`[Casting] Rechazando vídeo de ${videoSizeMBInput.toFixed(0)} MB (límite: 200MB)`);
+            try { fs.unlinkSync(videoFile); } catch {}
+            return res.status(413).json({
+                success: false,
+                error: `El vídeo es demasiado grande (${videoSizeMBInput.toFixed(0)}MB). ` +
+                       'Para escenas de más de 1 minuto usa calidad Media (720p) ' +
+                       'en la pantalla de configuración.',
+                errorCode: 'VIDEO_TOO_LARGE'
+            });
+        }
+
         const userAudioFile = path.join(processTempDir, 'user_audio.m4a');
         const mixedAudioFile = path.join(processTempDir, 'mixed_audio.m4a');
         const outputFile = path.join(processTempDir, 'output.mp4');
@@ -240,7 +257,12 @@ app.post('/process-casting', upload.any(), async (req, res) => {
             ffmpeg(videoFile)
                 .output(userAudioFile)
                 .audioCodec('aac')
+                .audioBitrate('192k')
                 .noVideo()
+                .outputOptions([
+                    '-threads', '1',    // CAMBIO 2: un solo hilo, menos RAM
+                    '-bufsize', '2M',   // CAMBIO 2: limitar buffer interno
+                ])
                 .on('end', () => {
                     console.log('[Casting] User audio extracted');
                     resolve();
@@ -410,15 +432,38 @@ app.post('/process-casting', upload.any(), async (req, res) => {
                 .run();
         });
 
+        // CAMBIO 3: Limpiar audios individuales de IA tras mezclarlos
+        console.log('[Casting] Limpiando audios temporales de IA...');
+        for (const segment of aiSegments) {
+            try {
+                if (segment.file && fs.existsSync(segment.file)) {
+                    fs.unlinkSync(segment.file);
+                    console.log(`[Casting] Borrado: ${segment.file}`);
+                }
+            } catch (e) {
+                console.warn('[Casting] No se pudo borrar audio temporal:', e.message);
+            }
+        }
+
         // 5. Replace video audio with mixed audio (CONDITIONAL COMPRESSION)
         console.log('[Casting] Replacing video audio track...');
-        const videoStats = fs.statSync(videoFile);
-        const videoSizeMB = videoStats.size / (1024 * 1024);
+        const videoStatsFinal = fs.statSync(videoFile);
+        const videoSizeMB = videoStatsFinal.size / (1024 * 1024);
         const SIZE_LIMIT_MB = 45;
 
         console.log(`[Casting] Tamaño del vídeo: ${videoSizeMB.toFixed(1)}MB`);
         const needsCompression = videoSizeMB > SIZE_LIMIT_MB;
         console.log(`[Casting] ${needsCompression ? 'Comprimiendo...' : 'Sin compresión necesaria'}`);
+
+        // CAMBIO 3: Liberar el audio del usuario ya que ya tenemos mixedAudioFile
+        try {
+            if (fs.existsSync(userAudioFile)) {
+                fs.unlinkSync(userAudioFile);
+                console.log('[Casting] userAudioFile liberado de RAM/disco');
+            }
+        } catch (e) {
+            console.warn('[Casting] No se pudo borrar userAudioFile:', e.message);
+        }
 
         await new Promise((resolve, reject) => {
             ffmpeg()
@@ -427,7 +472,8 @@ app.post('/process-casting', upload.any(), async (req, res) => {
                 .outputOptions(needsCompression ? [
                     '-c:v libx264',
                     '-crf 23',
-                    '-preset fast',
+                    '-preset ultrafast',  // CAMBIO 2: ultrafast en vez de fast
+                    '-threads', '1',      // CAMBIO 2: un solo hilo, menos RAM
                     '-c:a aac',
                     '-b:a 128k',
                     '-map 0:v:0',
@@ -435,7 +481,7 @@ app.post('/process-casting', upload.any(), async (req, res) => {
                     '-movflags +faststart',
                     '-shortest'
                 ] : [
-                    '-c:v copy',
+                    '-c:v copy',          // sin recomprimir = mínima RAM
                     '-c:a aac',
                     '-b:a 128k',
                     '-map 0:v:0',
@@ -453,6 +499,19 @@ app.post('/process-casting', upload.any(), async (req, res) => {
                 .on('error', reject)
                 .run();
         });
+
+        // CAMBIO 3: Limpiar video original y mixedAudio ya que tenemos el outputFile
+        console.log('[Casting] Limpiando archivos temporales intermedios...');
+        for (const filePath of [videoFile, mixedAudioFile]) {
+            try {
+                if (filePath && fs.existsSync(filePath)) {
+                    fs.unlinkSync(filePath);
+                    console.log(`[Casting] Liberado: ${path.basename(filePath)}`);
+                }
+            } catch (e) {
+                console.warn('[Casting] Error limpiando temporal:', e.message);
+            }
+        }
 
         const outputStats = fs.statSync(outputFile);
         const outputSizeMB = outputStats.size / (1024 * 1024);
