@@ -1655,7 +1655,7 @@ export default function CastingModeScreen() {
       setProcessingProgress(60);
       console.log('[Casting] Sending data to Render for background processing...');
 
-      const renderUrl = process.env.EXPO_PUBLIC_RENDER_SERVER_URL || 'https://script-cue-merge-server.onrender.com';
+      const castingServerUrl = process.env.EXPO_PUBLIC_CASTING_SERVER_URL || 'https://script-cue-merge-server-production.up.railway.app';
 
       // Timeout de 2 minutos solo para la subida — el procesamiento ocurre en segundo plano
       const controller = new AbortController();
@@ -1663,7 +1663,7 @@ export default function CastingModeScreen() {
 
       let response;
       try {
-        response = await fetch(`${renderUrl}/process-casting`, {
+        response = await fetch(`${castingServerUrl}/process-casting`, {
           method: 'POST',
           body: formData,
           signal: controller.signal,

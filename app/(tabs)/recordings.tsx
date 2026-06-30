@@ -603,43 +603,43 @@ export default function RecordingsScreen() {
           if (job.status === 'completed_local') {
             setProcessingJobs((prev) => prev.filter((jid) => jid !== job.job_id));
             Alert.alert(
-              '⚠️ Vídeo pesado procesado',
+              '📹 Selftape listo (archivo grande)',
               job.error_message ||
-                'Tu selftape era demasiado grande para guardarse en la nube. ' +
-                'Se ha guardado temporalmente en el servidor. Tienes 1 hora para descargarlo.',
+                'Tu vídeo es demasiado grande para la nube. Descárgalo ahora — ' +
+                'estará disponible solo durante 1 hora.',
               [
-                { text: 'Ignorar', style: 'cancel' },
+                { text: 'Más tarde', style: 'cancel' },
                 {
-                  text: 'Descargar al carrete y app',
+                  text: 'Descargar ahora',
+                  style: 'destructive',
                   onPress: async () => {
                     try {
-                      const renderUrl = process.env.EXPO_PUBLIC_RENDER_SERVER_URL || 'https://script-cue-merge-server.onrender.com';
-                      const downloadUrl = `${renderUrl}/download-casting/${job.job_id}`;
-                      const localUri = `${FileSystem.documentDirectory}casting_${job.job_id}.mp4`;
+                      const castingServerUrl = process.env.EXPO_PUBLIC_CASTING_SERVER_URL || 'https://script-cue-merge-server-production.up.railway.app';
+                      const downloadUrl = `${castingServerUrl}/download-casting/${job.job_id}`;
+                      const localUri = `${FileSystem.documentDirectory}selftape_${job.job_id}.mp4`;
                       
                       // 1. Descargar al FileSystem del dispositivo
-                      const { uri } = await FileSystem.downloadAsync(downloadUrl, localUri);
+                      const downloadResult = await FileSystem.downloadAsync(downloadUrl, localUri);
+                      
+                      if (downloadResult.status !== 200) {
+                        throw new Error('El vídeo ya no está disponible (puede haber expirado).');
+                      }
                       
                       // 2. Ofrecer guardarlo en la galería
-                      if (await Sharing.isAvailableAsync()) {
-                        await Sharing.shareAsync(uri, { UTI: 'public.mpeg-4', mimeType: 'video/mp4', dialogTitle: 'Guardar Casting' });
+                      const isAvailable = await Sharing.isAvailableAsync();
+                      if (!isAvailable) {
+                        Alert.alert('Error', 'No se puede compartir en este dispositivo.');
+                        return;
                       }
 
-                      // 3. Añadirlo a la tabla de grabaciones para que aparezca en la app con la ruta local
-                      if (job.script_id) {
-                        await supabase.from('recordings').insert({
-                            user_id: user.id,
-                            script_id: job.script_id,
-                            title: `Casting Local - ${new Date().toLocaleDateString('es-ES')}`,
-                            audio_url: uri,
-                            type: 'video',
-                            duration_seconds: 0,
-                            file_size_bytes: 0,
-                        });
-                        loadRecordings(true);
-                      }
-                    } catch (e) {
-                      Alert.alert('Error', 'No se pudo descargar el vídeo. Comprueba tu conexión a internet.');
+                      await Sharing.shareAsync(downloadResult.uri, { 
+                        UTI: 'public.mpeg-4', 
+                        mimeType: 'video/mp4', 
+                        dialogTitle: 'Guardar selftape' 
+                      });
+                      
+                    } catch (e: any) {
+                      Alert.alert('Error al descargar', e.message || 'No se pudo descargar el vídeo. Comprueba tu conexión a internet.');
                     }
                   }
                 }
