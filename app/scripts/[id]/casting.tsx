@@ -1446,13 +1446,13 @@ export default function CastingModeScreen() {
         type: 'video/mp4',
       } as any);
 
-      const renderUrl = process.env.EXPO_PUBLIC_RENDER_SERVER_URL || 'https://script-cue-merge-server.onrender.com';
+      const castingServerUrl = process.env.EXPO_PUBLIC_CASTING_SERVER_URL || 'https://script-cue-merge-server-production.up.railway.app';
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 180000);
 
       let response;
       try {
-        response = await fetch(`${renderUrl}/compress-video`, {
+        response = await fetch(`${castingServerUrl}/compress-video`, {
           method: 'POST',
           body: formData,
           signal: controller.signal,

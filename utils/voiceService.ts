@@ -152,18 +152,18 @@ export async function getElevenLabsVoices(): Promise<VoiceOption[]> {
 
     let data = await response.json();
 
-    // If collection returns empty, fallback to all voices
-    if (!data.voices || data.voices.length === 0) {
-      console.warn('ElevenLabs collection empty. Falling back to all voices.');
-      response = await fetch('https://api.elevenlabs.io/v1/voices', {
-        headers: {
-          'xi-api-key': apiKey,
-        },
-      });
-      if (!response.ok) {
-        throw new Error(`ElevenLabs API error: ${response.status}`);
+    // El API de ElevenLabs ignora el parámetro collection_id en /v1/voices.
+    // Tenemos que filtrar manualmente por collection_ids si existe.
+    if (data.voices && collectionId) {
+      const filteredVoices = data.voices.filter((v: any) => 
+        v.collection_ids && v.collection_ids.includes(collectionId)
+      );
+      
+      if (filteredVoices.length > 0) {
+        data.voices = filteredVoices;
+      } else {
+        console.warn('Ninguna voz coincidió con el collectionId. Mostrando todas.');
       }
-      data = await response.json();
     }
     
     const voices: VoiceOption[] = data.voices.map((voice: any) => ({
