@@ -1,6 +1,15 @@
 const express = require('express');
 const cors = require('cors');
 const ffmpeg = require('fluent-ffmpeg');
+const ffmpegPath = require('ffmpeg-static');
+const ffprobePath = require('ffprobe-static').path;
+
+ffmpeg.setFfmpegPath(ffmpegPath);
+ffmpeg.setFfprobePath(ffprobePath);
+
+console.log('[Casting] ffmpeg path:', ffmpegPath);
+console.log('[Casting] ffprobe path:', ffprobePath);
+
 const { createClient } = require('@supabase/supabase-js');
 const fetch = require('node-fetch');
 const fs = require('fs');
