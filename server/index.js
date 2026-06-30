@@ -7,6 +7,13 @@ const fs = require('fs');
 const path = require('path');
 const { promisify } = require('util');
 
+process.on('uncaughtException', (err) => {
+  console.error('🔴 [FATAL] Excepción no capturada:', err);
+});
+
+process.on('unhandledRejection', (reason, promise) => {
+  console.error('🔴 [FATAL] Promise rechazada sin manejar:', reason);
+});
 const app = express();
 const PORT = process.env.PORT || 3000;
 
@@ -213,22 +220,32 @@ app.post('/process-casting', upload.any(), async (req, res) => {
     res.json({ success: true, jobId, message: 'Procesamiento iniciado' });
 
     // Registrar el job en Supabase
-    await supabase.from('casting_jobs').insert({
-        job_id: jobId,
-        user_id: userId,
-        script_id: scriptId,
-        status: 'processing',
-    }).catch(err => console.error('[Casting] Error registrando job:', err));
+    try {
+        const { error } = await supabase.from('casting_jobs').insert({
+            job_id: jobId,
+            user_id: userId,
+            script_id: scriptId,
+            status: 'processing',
+        });
+        if (error) console.error('[Casting] Error registrando job:', error);
+    } catch (err) {
+        console.error('[Casting] Error registrando job:', err);
+    }
 
     // Procesar en segundo plano (no bloqueante)
     processCastingInBackground(jobId, files, req.body)
         .catch(async (err) => {
             console.error(`[Job ${jobId}] Error fatal:`, err.message);
-            await supabase.from('casting_jobs').update({
-                status: 'error',
-                error_message: err.message,
-                updated_at: new Date().toISOString(),
-            }).eq('job_id', jobId).catch(() => {});
+            try {
+                const { error } = await supabase.from('casting_jobs').update({
+                    status: 'error',
+                    error_message: err.message,
+                    updated_at: new Date().toISOString(),
+                }).eq('job_id', jobId);
+                if (error) console.error('[Casting] Error actualizando job a error:', error);
+            } catch (updateErr) {
+                console.error('[Casting] Excepción actualizando job:', updateErr);
+            }
         });
 });
 
