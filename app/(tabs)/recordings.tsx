@@ -148,6 +148,7 @@ export default function RecordingsScreen() {
   const [isLocalOnly, setIsLocalOnly] = useState(false);
   // Casting jobs en segundo plano
   const [processingJobs, setProcessingJobs] = useState<string[]>([]);
+  const flatListRef = useRef<FlatList>(null);
   const [completedBanner, setCompletedBanner] = useState(false);
   // URL resolved (signed Supabase URL or local file URI) for the current video being played
   const [videoPlayableUrl, setVideoPlayableUrl] = useState<string | null>(null);
@@ -634,8 +635,13 @@ export default function RecordingsScreen() {
           if (job.status === 'completed') {
             console.log('[Realtime] Job completado, limpiando banner'); // DEBUG
             setProcessingJobs((prev) => prev.filter((jid) => jid !== job.job_id));
-            setCompletedBanner(true);
             loadRecordings(true);
+            
+            setTimeout(() => {
+              flatListRef.current?.scrollToOffset({ offset: 0, animated: true });
+            }, 300);
+
+            setCompletedBanner(true);
             setTimeout(() => setCompletedBanner(false), 5000);
           }
           if (job.status === 'completed_local') {
@@ -695,8 +701,13 @@ export default function RecordingsScreen() {
       for (const job of data) {
         if (job.status === 'completed') {
           setProcessingJobs(prev => prev.filter(id => id !== job.job_id));
-          setCompletedBanner(true);
           loadRecordings(true);
+          
+          setTimeout(() => {
+            flatListRef.current?.scrollToOffset({ offset: 0, animated: true });
+          }, 300);
+
+          setCompletedBanner(true);
           setTimeout(() => setCompletedBanner(false), 5000);
         }
         if (job.status === 'completed_local') {
@@ -2786,6 +2797,7 @@ export default function RecordingsScreen() {
           >
             <View style={{ flex: 1 }}>
               <FlatList
+                ref={flatListRef}
                 data={recordings}
                 renderItem={({ item }) => <RecordingCard item={item} />}
                 keyExtractor={(item) => item.id}
