@@ -593,8 +593,10 @@ export default function RecordingsScreen() {
           filter: `user_id=eq.${user.id}`,
         },
         (payload: any) => {
+          console.log('[Realtime] Cambio recibido:', payload.new); // DEBUG
           const job = payload.new;
           if (job.status === 'completed') {
+            console.log('[Realtime] Job completado, limpiando banner'); // DEBUG
             setProcessingJobs((prev) => prev.filter((jid) => jid !== job.job_id));
             setCompletedBanner(true);
             loadRecordings(true);
@@ -658,12 +660,27 @@ export default function RecordingsScreen() {
           }
         }
       )
-      .subscribe();
+      .subscribe((status) => {
+        console.log('[Realtime] Estado de suscripción:', status); // DEBUG
+      });
 
     return () => {
       try { supabase.removeChannel(subscription); } catch {}
     };
-  }, [user?.id]);
+  }, [user?.id, loadRecordings]);
+
+  // Timeout de seguridad para el banner
+  useEffect(() => {
+    if (processingJobs.length === 0) return;
+
+    const safetyTimeout = setTimeout(() => {
+      console.log('[Casting] Timeout de seguridad: recargando grabaciones');
+      setProcessingJobs([]);
+      loadRecordings(true);
+    }, 10 * 60 * 1000); // 10 minutos
+
+    return () => clearTimeout(safetyTimeout);
+  }, [processingJobs, loadRecordings]);
 
   // Sin filtros adicionales en cliente: usar directamente recordings
 

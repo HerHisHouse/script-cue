@@ -258,6 +258,15 @@ app.post('/process-casting', upload.any(), async (req, res) => {
         });
 });
 
+function getVideoDuration(filePath) {
+  return new Promise((resolve, reject) => {
+    ffmpeg.ffprobe(filePath, (err, metadata) => {
+      if (err) return reject(err);
+      resolve(metadata.format.duration || 0);
+    });
+  });
+}
+
 async function processCastingInBackground(jobId, files, body) {
     const { scriptId, userId, lineTimings: lineTimingsJson, hasHeadphones: hasHeadphonesRaw } = body;
     const lineTimings = JSON.parse(lineTimingsJson);
@@ -459,32 +468,52 @@ async function processCastingInBackground(jobId, files, body) {
                 .from('recordings')
                 .upload(remotePath, fileBuffer, { contentType: 'video/mp4', upsert: false });
 
-            if (uploadError) throw new Error(`Error subiendo a Supabase: ${uploadError.message}`);
+            if (uploadError) {
+                throw new Error(`Error subiendo a Supabase: ${uploadError.message}`);
+            }
 
-            const { data: { publicUrl } } = supabase.storage
+            const { data: urlData } = supabase.storage
                 .from('recordings')
                 .getPublicUrl(remotePath);
+
+            const publicUrl = urlData?.publicUrl;
+            if (!publicUrl) {
+                throw new Error('No se pudo generar la URL pública del vídeo');
+            }
+            console.log(`[Job ${jobId}] URL pública generada: ${publicUrl}`);
+
+            // Obtener duración del video usando ffprobe
+            const durationSeconds = await getVideoDuration(outputFile);
+            console.log(`[Job ${jobId}] Duración detectada: ${durationSeconds}s`);
 
             // Crear registro en recordings
             const { error: dbError } = await supabase.from('recordings').insert({
                 user_id: userId,
                 script_id: scriptId,
                 title: `Casting - ${new Date().toLocaleDateString('es-ES')}`,
-                audio_url: publicUrl, // Usa publicUrl aquí como en la documentación original
+                audio_url: publicUrl,
                 type: 'video',
-                duration_seconds: 0,
+                duration_seconds: Math.round(durationSeconds),
                 file_size_bytes: Math.round(finalSizeMB * 1024 * 1024),
             });
             
-            if (dbError) throw new Error(`Error guardando en DB: ${dbError.message}`);
+            if (dbError) {
+                throw new Error(`Error guardando en DB: ${dbError.message}`);
+            }
 
-            console.log(`[Job ${jobId}] ✅ Subido a Supabase: ${remotePath}`);
+            console.log(`[Job ${jobId}] ✅ Subido a Supabase y guardado en DB`);
             
-            // Marcar job como completado
-            await supabase.from('casting_jobs').update({
+            // Marcar job como completado al final, tras asegurar éxito total
+            const { error: jobUpdateError } = await supabase.from('casting_jobs').update({
                 status: 'completed',
                 updated_at: new Date().toISOString(),
             }).eq('job_id', jobId);
+
+            if (jobUpdateError) {
+                console.error(`[Job ${jobId}] Error actualizando status final:`, jobUpdateError);
+            } else {
+                console.log(`[Job ${jobId}] ✅ Status actualizado a completed`);
+            }
             
         } else {
             // Vídeo demasiado grande para Supabase incluso comprimido
