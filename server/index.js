@@ -630,8 +630,6 @@ app.get('/download-casting/:jobId', (req, res) => {
 // =============================================================================
 app.post('/compress-video', upload.any(), async (req, res) => {
     console.log('[Compress] Received request');
-    let processTempDir = null;
-
     try {
         const { userId } = req.body;
         const files = req.files;
@@ -640,30 +638,62 @@ app.post('/compress-video', upload.any(), async (req, res) => {
             return res.status(400).json({ error: 'Missing required fields or files' });
         }
 
-        processTempDir = path.join(__dirname, 'temp', `compress_${Date.now()}`);
-        await fs.promises.mkdir(processTempDir, { recursive: true });
-
         const videoUpload = files.find(f => f.fieldname === 'video');
         if (!videoUpload) throw new Error('No video file uploaded');
 
-        const videoFile = path.join(processTempDir, 'input.mp4');
-        const outputFile = path.join(processTempDir, 'output.mp4');
-        await fs.promises.rename(videoUpload.path, videoFile);
+        const jobId = `teleprompter_${Date.now()}_${Math.random().toString(36).substring(7)}`;
 
-        const videoStats = fs.statSync(videoFile);
-        const videoSizeMB = videoStats.size / (1024 * 1024);
-        const SIZE_LIMIT_MB = 45;
+        try {
+            const { error: insertError } = await supabase.from('casting_jobs').insert({
+                job_id: jobId,
+                user_id: userId,
+                status: 'processing',
+            });
+            if (insertError) console.error('[Compress] Error insertando job:', insertError);
+        } catch (e) {}
 
-        console.log(`[Compress] Tamaño del vídeo: ${videoSizeMB.toFixed(1)}MB`);
-        const needsCompression = videoSizeMB > SIZE_LIMIT_MB;
-        console.log(`[Compress] ${needsCompression ? 'Comprimiendo...' : 'Sin compresión necesaria'}`);
+        res.json({ success: true, jobId, message: 'Procesamiento iniciado en segundo plano' });
+
+        processCompressInBackground(jobId, videoUpload, userId)
+            .catch(async (err) => {
+                console.error(`[Job ${jobId}] Error:`, err.message);
+                try {
+                    await supabase.from('casting_jobs').update({
+                        status: 'error',
+                        error_message: err.message,
+                        updated_at: new Date().toISOString(),
+                    }).eq('job_id', jobId);
+                } catch (updateErr) {}
+            });
+
+    } catch (error) {
+        console.error('[Compress] Error:', error);
+        res.status(500).json({ error: 'Compression failed', message: error.message });
+    }
+});
+
+async function processCompressInBackground(jobId, videoUpload, userId) {
+    const processTempDir = path.join(__dirname, 'temp', `compress_${Date.now()}`);
+    fs.mkdirSync(processTempDir, { recursive: true });
+    
+    const videoFile = path.join(processTempDir, 'input.mp4');
+    const outputFile = path.join(processTempDir, 'output.mp4');
+    
+    try {
+        fs.renameSync(videoUpload.path, videoFile);
+        
+        const videoSizeMB = fs.statSync(videoFile).size / (1024 * 1024);
+        console.log(`[Job ${jobId}] Vídeo: ${videoSizeMB.toFixed(1)}MB`);
+        const needsCompression = videoSizeMB > 45;
+
+        const videoDuration = await getVideoDuration(videoFile);
 
         await new Promise((resolve, reject) => {
             ffmpeg()
                 .input(videoFile)
                 .outputOptions(needsCompression ? [
                     '-c:v libx264',
-                    '-crf 23',
+                    '-crf 28',
                     '-preset fast',
                     '-c:a aac',
                     '-b:a 128k',
@@ -674,40 +704,63 @@ app.post('/compress-video', upload.any(), async (req, res) => {
                     '-movflags +faststart'
                 ])
                 .output(outputFile)
-                .on('start', (cmd) => console.log('[FFmpeg] Compress command:', cmd))
-                .on('progress', (progress) => console.log(`[FFmpeg] Compressing: ${progress.percent?.toFixed(1)}%`))
-                .on('end', () => resolve())
+                .on('end', resolve)
                 .on('error', reject)
                 .run();
         });
 
-        const publicDir = path.join(__dirname, 'public');
-        if (!fs.existsSync(publicDir)) fs.mkdirSync(publicDir, { recursive: true });
+        const finalSizeMB = fs.statSync(outputFile).size / (1024 * 1024);
+        console.log(`[Job ${jobId}] Tamaño final: ${finalSizeMB.toFixed(1)}MB`);
 
-        const fileName = `compress_${userId}_${Date.now()}.mp4`;
-        const publicPath = path.join(publicDir, fileName);
-        await fs.promises.rename(outputFile, publicPath);
+        if (finalSizeMB <= 49) {
+            const remotePath = `${userId}/${Date.now()}_teleprompter.mp4`;
+            const fileBuffer = fs.readFileSync(outputFile);
+            
+            const { error: uploadError } = await supabase.storage
+                .from('recordings')
+                .upload(remotePath, fileBuffer, { contentType: 'video/mp4', upsert: false });
 
-        await fs.promises.rm(processTempDir, { recursive: true, force: true });
+            if (uploadError) throw new Error(`Error subiendo a Supabase: ${uploadError.message}`);
 
-        const downloadUrl = `${req.protocol}://${req.get('host')}/download/${fileName}`;
-        console.log('[Compress] Success! Download URL:', downloadUrl);
+            const { data: urlData } = supabase.storage.from('recordings').getPublicUrl(remotePath);
+            const publicUrl = urlData?.publicUrl;
 
-        res.json({
-            success: true,
-            downloadUrl: downloadUrl,
-            fileName: fileName,
-            message: 'Video compressed successfully'
-        });
+            const { error: dbError } = await supabase.from('recordings').insert({
+                user_id: userId,
+                title: `Teleprompter - ${new Date().toLocaleDateString('es-ES')}`,
+                audio_url: publicUrl,
+                type: 'video',
+                duration_seconds: Math.round(videoDuration),
+                file_size_bytes: Math.round(finalSizeMB * 1024 * 1024),
+            });
+            
+            if (dbError) throw new Error(`Error guardando en DB: ${dbError.message}`);
 
-    } catch (error) {
-        console.error('[Compress] Error:', error);
-        if (processTempDir) {
-            try { await fs.promises.rm(processTempDir, { recursive: true, force: true }); } catch (e) {}
+            await supabase.from('casting_jobs').update({
+                status: 'completed',
+                updated_at: new Date().toISOString(),
+            }).eq('job_id', jobId);
+        } else {
+            console.log(`[Job ${jobId}] Vídeo grande (${finalSizeMB.toFixed(0)}MB), guardando localmente`);
+            const downloadsDir = path.join(__dirname, 'downloads');
+            if (!fs.existsSync(downloadsDir)) fs.mkdirSync(downloadsDir, { recursive: true });
+            
+            const localDownloadPath = path.join(downloadsDir, `${jobId}.mp4`);
+            fs.copyFileSync(outputFile, localDownloadPath);
+            
+            setTimeout(() => {
+                try { if (fs.existsSync(localDownloadPath)) fs.unlinkSync(localDownloadPath); } catch {}
+            }, 3600000);
+
+            await supabase.from('casting_jobs').update({
+                status: 'completed_local',
+                error_message: `Vídeo de ${finalSizeMB.toFixed(0)}MB guardado temporalmente.`,
+            }).eq('job_id', jobId);
         }
-        res.status(500).json({ error: 'Compression failed', message: error.message });
+    } finally {
+        try { fs.rmSync(processTempDir, { recursive: true, force: true }); } catch {}
     }
-});
+}
 
 // --- COACH MODE ENDPOINT ---
 app.post('/analyze-recording', async (req, res) => {

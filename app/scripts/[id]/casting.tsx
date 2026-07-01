@@ -1436,8 +1436,30 @@ export default function CastingModeScreen() {
       setIsProcessing(true);
       setProcessingProgress(10);
 
-      // 1. Enviar a Render para compresión condicional
-      console.log('[Teleprompter] Sending video to Render for compression...');
+      const teleSettings = await getSettings();
+
+      // 1. Local-only mode
+      if (teleSettings.useLocalOnly) {
+        console.log('[Teleprompter] Local-only mode — skipping upload');
+        await supabase.from('recordings').insert({
+          user_id: user?.id,
+          script_id: id,
+          project_id: null,
+          title: `Teleprompter - ${new Date().toLocaleDateString('es-ES')}`,
+          audio_url: uri,  // local file:// URI → shows 📱 Local
+          type: 'video',
+          duration_seconds: recordingTimeRef.current,
+          file_size_bytes: 0,
+        });
+        setIsProcessing(false);
+        Alert.alert('¡Video guardado!', 'Tu grabación está guardada en este dispositivo (📱 Local).', [
+          { text: 'Ver Grabaciones', onPress: () => router.replace('/(tabs)/recordings') }
+        ]);
+        return;
+      }
+
+      // 2. Enviar a Railway para procesamiento en segundo plano
+      console.log('[Teleprompter] Sending video to Railway for background processing...');
       const formData = new FormData();
       formData.append('userId', user?.id || '');
       formData.append('video', {
@@ -1446,8 +1468,11 @@ export default function CastingModeScreen() {
         type: 'video/mp4',
       } as any);
 
+      setProcessingProgress(50); // Muestra progreso mientras sube
+
       const castingServerUrl = process.env.EXPO_PUBLIC_CASTING_SERVER_URL || 'https://script-cue-merge-server-production.up.railway.app';
       const controller = new AbortController();
+      // Timeout largo para la subida (180s)
       const timeoutId = setTimeout(() => controller.abort(), 180000);
 
       let response;
@@ -1461,7 +1486,7 @@ export default function CastingModeScreen() {
       } catch (fetchError: any) {
         clearTimeout(timeoutId);
         if (fetchError.name === 'AbortError') {
-          throw new Error('El procesamiento tardó más de 3 minutos. Intenta con un video más corto.');
+          throw new Error('La subida tardó más de 3 minutos. Intenta con un video más corto o una mejor conexión.');
         }
         throw fetchError;
       }
@@ -1471,123 +1496,15 @@ export default function CastingModeScreen() {
       }
 
       const result = await response.json();
-      if (!result.downloadUrl) {
-        throw new Error('Server did not return a download URL');
+      if (!result.success || !result.jobId) {
+        throw new Error('El servidor no devolvió confirmación del trabajo en segundo plano.');
       }
-
-      setProcessingProgress(50);
-      console.log('[Teleprompter] Downloading compressed video...');
-
-      const localPath = `${FileSystem.documentDirectory}teleprompter_${Date.now()}.mp4`;
-      const downloadResumable = FileSystem.createDownloadResumable(
-        result.downloadUrl,
-        localPath,
-        {},
-        (downloadProgress) => {
-          const progress = downloadProgress.totalBytesWritten / downloadProgress.totalBytesExpectedToWrite;
-          setProcessingProgress(50 + (progress * 30)); // 50-80%
-        }
-      );
-
-      const downloadResult = await downloadResumable.downloadAsync();
-      if (!downloadResult || !downloadResult.uri) {
-        throw new Error('Download failed - no URI returned');
-      }
-
-      setProcessingProgress(80);
-
-      // ── LOCAL-ONLY MODE ────────────────────────────────────────────────────
-      const teleSettings = await getSettings();
-      if (teleSettings.useLocalOnly) {
-        console.log('[Teleprompter] Local-only mode — skipping Supabase upload');
-        await supabase.from('recordings').insert({
-          user_id: user?.id,
-          script_id: id,
-          project_id: null,
-          title: `Teleprompter - Libre`,
-          audio_url: downloadResult.uri,  // local file:// URI → shows 📱 Local
-          type: 'video',
-          duration_seconds: recordingTimeRef.current,
-          file_size_bytes: 0,
-        });
-        setProcessingProgress(100);
-        setIsProcessing(false);
-        Alert.alert('¡Video guardado!', 'Tu grabación está guardada en este dispositivo (📱 Local).', [
-          { text: 'OK', onPress: () => router.replace(`/scripts/${id}`) }
-        ]);
-        return;
-      }
-      // ──────────────────────────────────────────────────────────────────────
-
-      // 2. Subir a Supabase Storage
-      console.log('[Teleprompter] Uploading to Supabase Storage...');
-      const fileExt = downloadResult.uri.split('.').pop() || 'mp4';
-      const fileName = `video_${Date.now()}.${fileExt}`;
-      const storagePath = `${user?.id}/${fileName}`;
-      const uploadUrl = `${process.env.EXPO_PUBLIC_SUPABASE_URL}/storage/v1/object/recordings/${storagePath}`;
-
-      const { data: sessionData } = await supabase.auth.getSession();
-      const token = sessionData.session?.access_token || process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY;
-
-      const uploadResult = await FileSystem.uploadAsync(uploadUrl, downloadResult.uri, {
-        httpMethod: 'POST',
-        uploadType: FileSystem.FileSystemUploadType.BINARY_CONTENT,
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'apikey': process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY || '',
-          'Content-Type': `video/${fileExt === 'mp4' ? 'mp4' : 'quicktime'}`,
-        },
-      });
-
-      if (uploadResult.status !== 200 && uploadResult.status !== 201) {
-        if (uploadResult.body?.includes('413') || uploadResult.body?.includes('exceeded')) {
-          // Fallback: guardar localmente
-          console.log('[Teleprompter] Video too large for Supabase. Saving locally.');
-          await supabase.from('recordings').insert({
-            user_id: user?.id,
-            script_id: id,
-            project_id: null,
-            title: `Teleprompter - Libre`,
-            audio_url: downloadResult.uri,
-            type: 'video',
-            duration_seconds: recordingTimeRef.current,
-            file_size_bytes: 0,
-          });
-
-          setProcessingProgress(100);
-          setIsProcessing(false);
-          Alert.alert(
-            'Vídeo guardado localmente',
-            'El vídeo es demasiado grande para subir a la nube. ' +
-            'Lo encontrarás en la pantalla de Grabaciones. ' +
-            'Puedes compartirlo directamente desde ahí.',
-            [{ text: 'Entendido', onPress: () => router.replace(`/scripts/${id}`) }]
-          );
-          return;
-        }
-        throw new Error(`Error subiendo video: ${uploadResult.body}`);
-      }
-
-      setProcessingProgress(95);
-
-      const { error: dbError } = await supabase.from('recordings').insert({
-        user_id: user?.id,
-        script_id: id,
-        project_id: null,
-        title: `Teleprompter - Libre`,
-        audio_url: storagePath,
-        type: 'video',
-        duration_seconds: recordingTimeRef.current,
-        file_size_bytes: 0,
-      });
-
-      if (dbError) throw new Error(dbError.message);
 
       setProcessingProgress(100);
       setIsProcessing(false);
-      Alert.alert('¡Video guardado!', 'Tu grabación está disponible en la pantalla de Grabaciones.', [
-        { text: 'OK', onPress: () => router.replace(`/scripts/${id}`) }
-      ]);
+
+      // Redirigir a la pestaña de grabaciones donde se verá el banner de "Procesando..."
+      router.replace('/(tabs)/recordings');
 
     } catch (e: any) {
       console.error(e);
@@ -2748,16 +2665,18 @@ export default function CastingModeScreen() {
               <View style={styles.processingModal}>
                 <ActivityIndicator size="large" color="#3B82F6" />
                 <Text style={styles.processingTitle}>
-                  {castingType === 'free' ? 'Guardando video...' : 'Procesando tu casting...'}
+                  {castingType === 'free' ? 'Enviando vídeo...' : 'Procesando tu casting...'}
                 </Text>
                 <Text style={styles.processingText}>
                   {castingType === 'free' 
-                    ? 'Estamos guardando tu grabación en la nube.' 
+                    ? 'Estamos guardando el vídeo, podrás encontrarlo en Grabaciones.' 
                     : 'Estamos mezclando tu actuación con el audio de IA de alta calidad.'}
                 </Text>
-                <Text style={styles.processingSubtext}>
-                  Dependiendo de tu conexión esto puede tardar varios minutos
-                </Text>
+                {castingType !== 'free' && (
+                  <Text style={styles.processingSubtext}>
+                    Dependiendo de tu conexión esto puede tardar varios minutos
+                  </Text>
+                )}
               </View>
             </View>
           )}
