@@ -419,6 +419,31 @@ async function processCastingInBackground(jobId, files, body) {
         const needsCompression = videoSizeMB > 45;
         console.log(`[Job ${jobId}] ${needsCompression ? 'Comprimiendo (ultrafast)...' : 'Copia directa...'}`);
 
+        const getInfo = (file) => new Promise((resolve) => {
+            ffmpeg.ffprobe(file, (err, meta) => {
+                if (err) resolve({ error: err.message });
+                else resolve({
+                    duration: meta.format.duration,
+                    size: meta.format.size,
+                    streams: meta.streams.map(s => ({
+                        codec: s.codec_name,
+                        duration: s.duration,
+                        type: s.codec_type
+                    }))
+                });
+            });
+        });
+
+        const videoInfo = await getInfo(videoFile);
+        const audioInfo = await getInfo(mixedAudioFile);
+
+        console.log(`[Job ${jobId}] Input vídeo info:`, JSON.stringify(videoInfo));
+        console.log(`[Job ${jobId}] Input audio info:`, JSON.stringify(audioInfo));
+
+        // Obtener duración del vídeo original para usar -t en lugar de -shortest
+        const videoDuration = await getVideoDuration(videoFile);
+        console.log(`[Job ${jobId}] Duración del vídeo original: ${videoDuration}s`);
+
         await new Promise((resolve, reject) => {
             ffmpeg()
                 .input(videoFile)
@@ -434,7 +459,7 @@ async function processCastingInBackground(jobId, files, body) {
                     '-map 0:v:0',
                     '-map 1:a:0',
                     '-movflags +faststart',
-                    '-shortest',
+                    '-t', String(videoDuration),
                 ] : [
                     '-c:v copy',
                     '-c:a aac',
@@ -442,12 +467,30 @@ async function processCastingInBackground(jobId, files, body) {
                     '-map 0:v:0',
                     '-map 1:a:0',
                     '-movflags +faststart',
-                    '-shortest',
+                    '-t', String(videoDuration),
                 ])
                 .output(outputFile)
                 .on('start', (cmd) => console.log(`[Job ${jobId}] Final cmd:`, cmd))
+                .on('stderr', (line) => {
+                    if (
+                        line.includes('Duration') ||
+                        line.includes('frame=') ||
+                        line.includes('time=') ||
+                        line.includes('Output') ||
+                        line.includes('error') ||
+                        line.includes('Error') ||
+                        line.includes('Invalid') ||
+                        line.includes('moov atom')
+                    ) {
+                        console.log(`[Job ${jobId}] [ffmpeg]:`, line);
+                    }
+                })
                 .on('end', resolve)
-                .on('error', reject)
+                .on('error', (err, stdout, stderr) => {
+                    console.error(`[Job ${jobId}] [ffmpeg error]:`, err.message);
+                    console.error(`[Job ${jobId}] [ffmpeg stderr]:`, stderr);
+                    reject(err);
+                })
                 .run();
         });
 
