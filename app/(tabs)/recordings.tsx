@@ -1112,6 +1112,15 @@ export default function RecordingsScreen() {
       }
 
       console.log(`[Playback] Storage path: ${storagePath}`);
+
+      if (
+        storagePath.startsWith('https://') && 
+        storagePath.includes('/object/public/')
+      ) {
+        console.log('[Playback] URL pública detectada, usando directamente');
+        return storagePath;
+      }
+
       const filename = storagePath.split('/').pop() ?? '';
       const localUri = (FileSystem.documentDirectory ?? '') + filename;
       const isLocalPath = storagePath.startsWith('local/');
