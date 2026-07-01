@@ -564,22 +564,58 @@ export default function RecordingsScreen() {
     };
   }, [loadRecordings]);
 
+  const checkPendingJobs = async () => {
+    if (!user?.id) return;
+    const thirtyMinsAgo = new Date(Date.now() - 30 * 60 * 1000).toISOString();
+    const { data } = await supabase
+      .from('casting_jobs')
+      .select('job_id, status')
+      .eq('user_id', user.id)
+      .eq('status', 'processing')
+      .gt('created_at', thirtyMinsAgo);
+
+    if (data && data.length > 0) {
+      setProcessingJobs(data.map((j: any) => j.job_id));
+      console.log('[Grabaciones] Jobs pendientes encontrados:', data.length);
+    }
+  };
+
+  useEffect(() => {
+    loadRecordings();
+    checkPendingJobs();
+  }, [user?.id, loadRecordings]);
+
+  const downloadLargeCastingVideo = async (jobId: string) => {
+    try {
+      const castingServerUrl = process.env.EXPO_PUBLIC_CASTING_SERVER_URL || 'https://script-cue-merge-server-production.up.railway.app';
+      const downloadUrl = `${castingServerUrl}/download-casting/${jobId}`;
+      const localUri = `${FileSystem.documentDirectory}selftape_${jobId}.mp4`;
+      
+      const downloadResult = await FileSystem.downloadAsync(downloadUrl, localUri);
+      
+      if (downloadResult.status !== 200) {
+        throw new Error('El vídeo ya no está disponible (puede haber expirado).');
+      }
+      
+      const isAvailable = await Sharing.isAvailableAsync();
+      if (!isAvailable) {
+        Alert.alert('Error', 'No se puede compartir en este dispositivo.');
+        return;
+      }
+
+      await Sharing.shareAsync(downloadResult.uri, { 
+        UTI: 'public.mpeg-4', 
+        mimeType: 'video/mp4', 
+        dialogTitle: 'Guardar selftape' 
+      });
+    } catch (e: any) {
+      Alert.alert('Error al descargar', e.message || 'No se pudo descargar el vídeo. Comprueba tu conexión a internet.');
+    }
+  };
+
   // Listener Realtime para casting_jobs (notificaciones de procesamiento en segundo plano)
   useEffect(() => {
     if (!user?.id) return;
-
-    // Verificar si hay jobs en proceso al montar
-    const checkPendingJobs = async () => {
-      const { data } = await supabase
-        .from('casting_jobs')
-        .select('job_id, status')
-        .eq('user_id', user.id)
-        .eq('status', 'processing');
-      if (data && data.length > 0) {
-        setProcessingJobs(data.map((j: any) => j.job_id));
-      }
-    };
-    checkPendingJobs();
 
     // Suscribirse a cambios en tiempo real
     const subscription = supabase
@@ -614,36 +650,7 @@ export default function RecordingsScreen() {
                 {
                   text: 'Descargar ahora',
                   style: 'destructive',
-                  onPress: async () => {
-                    try {
-                      const castingServerUrl = process.env.EXPO_PUBLIC_CASTING_SERVER_URL || 'https://script-cue-merge-server-production.up.railway.app';
-                      const downloadUrl = `${castingServerUrl}/download-casting/${job.job_id}`;
-                      const localUri = `${FileSystem.documentDirectory}selftape_${job.job_id}.mp4`;
-                      
-                      // 1. Descargar al FileSystem del dispositivo
-                      const downloadResult = await FileSystem.downloadAsync(downloadUrl, localUri);
-                      
-                      if (downloadResult.status !== 200) {
-                        throw new Error('El vídeo ya no está disponible (puede haber expirado).');
-                      }
-                      
-                      // 2. Ofrecer guardarlo en la galería
-                      const isAvailable = await Sharing.isAvailableAsync();
-                      if (!isAvailable) {
-                        Alert.alert('Error', 'No se puede compartir en este dispositivo.');
-                        return;
-                      }
-
-                      await Sharing.shareAsync(downloadResult.uri, { 
-                        UTI: 'public.mpeg-4', 
-                        mimeType: 'video/mp4', 
-                        dialogTitle: 'Guardar selftape' 
-                      });
-                      
-                    } catch (e: any) {
-                      Alert.alert('Error al descargar', e.message || 'No se pudo descargar el vídeo. Comprueba tu conexión a internet.');
-                    }
-                  }
+                  onPress: () => downloadLargeCastingVideo(job.job_id)
                 }
               ]
             );
@@ -669,18 +676,63 @@ export default function RecordingsScreen() {
     };
   }, [user?.id, loadRecordings]);
 
-  // Timeout de seguridad para el banner
+  // Timeout de seguridad y Polling para el banner
   useEffect(() => {
     if (processingJobs.length === 0) return;
 
+    // Polling cada 15 segundos como fallback a Realtime
+    const pollInterval = setInterval(async () => {
+      if (!user?.id) return;
+
+      const { data } = await supabase
+        .from('casting_jobs')
+        .select('job_id, status, error_message')
+        .eq('user_id', user.id)
+        .in('job_id', processingJobs);
+
+      if (!data) return;
+
+      for (const job of data) {
+        if (job.status === 'completed') {
+          setProcessingJobs(prev => prev.filter(id => id !== job.job_id));
+          setCompletedBanner(true);
+          loadRecordings(true);
+          setTimeout(() => setCompletedBanner(false), 5000);
+        }
+        if (job.status === 'completed_local') {
+          setProcessingJobs(prev => prev.filter(id => id !== job.job_id));
+          Alert.alert(
+            '📹 Selftape listo (archivo grande)',
+            'Tu vídeo es demasiado grande para la nube. ' +
+            'Descárgalo ahora — disponible solo 1 hora.',
+            [
+              { text: 'Más tarde', style: 'cancel' },
+              { text: '⬇️ Descargar ahora', onPress: () => downloadLargeCastingVideo(job.job_id) }
+            ]
+          );
+        }
+        if (job.status === 'error') {
+          setProcessingJobs(prev => prev.filter(id => id !== job.job_id));
+          Alert.alert(
+            'Error procesando selftape',
+            job.error_message || 'Hubo un problema. Inténtalo de nuevo.'
+          );
+        }
+      }
+    }, 15000);
+
+    // Timeout de seguridad: limpiar banner si pasan 10 minutos
     const safetyTimeout = setTimeout(() => {
-      console.log('[Casting] Timeout de seguridad: recargando grabaciones');
+      console.log('[Grabaciones] Safety timeout: limpiando banner');
       setProcessingJobs([]);
       loadRecordings(true);
-    }, 10 * 60 * 1000); // 10 minutos
+    }, 10 * 60 * 1000);
 
-    return () => clearTimeout(safetyTimeout);
-  }, [processingJobs, loadRecordings]);
+    return () => {
+      clearInterval(pollInterval);
+      clearTimeout(safetyTimeout);
+    };
+  }, [processingJobs, user?.id, loadRecordings]);
 
   // Sin filtros adicionales en cliente: usar directamente recordings
 

@@ -445,33 +445,32 @@ async function processCastingInBackground(jobId, files, body) {
         const videoDuration = await getVideoDuration(videoFile);
         console.log(`[Job ${jobId}] Duración del vídeo original: ${videoDuration}s`);
 
-        const isHevc = videoInfo.streams[0]?.codec === 'hevc';
+        const videoCodec = videoInfo.streams[0]?.codec || 'h264';
+        const isHEVC = videoCodec === 'hevc';
+        const crf = isHEVC ? '23' : '28';
 
-        await new Promise((resolve, reject) => {
+        const minAcceptableMB = (videoDuration / 60) * 20;
+
+        console.log(`[Job ${jobId}] Codec: ${videoCodec}, CRF: ${crf}`);
+        console.log(`[Job ${jobId}] Mínimo aceptable: ${minAcceptableMB.toFixed(1)}MB`);
+
+        const runFfmpeg = (crfValue) => new Promise((resolve, reject) => {
             ffmpeg()
                 .input(videoFile)
                 .input(mixedAudioFile)
-                .outputOptions(needsCompression ? [
+                .outputOptions([
                     '-c:v libx264',
-                    '-crf 28',
+                    `-crf ${crfValue}`,
                     '-preset ultrafast',
                     '-vf', 'scale=-2:720',
                     '-pix_fmt', 'yuv420p',
-                    '-threads', '1',
+                    '-threads 1',
                     '-c:a aac',
                     '-b:a 128k',
                     '-map 0:v:0',
                     '-map 1:a:0',
                     '-movflags +faststart',
-                    '-t', String(videoDuration),
-                ] : [
-                    '-c:v copy',
-                    '-c:a aac',
-                    '-b:a 128k',
-                    '-map 0:v:0',
-                    '-map 1:a:0',
-                    '-movflags +faststart',
-                    '-t', String(videoDuration),
+                    `-t ${videoDuration}`,
                 ])
                 .output(outputFile)
                 .on('start', (cmd) => console.log(`[Job ${jobId}] Final cmd:`, cmd))
@@ -497,6 +496,43 @@ async function processCastingInBackground(jobId, files, body) {
                 })
                 .run();
         });
+
+        if (needsCompression) {
+            await runFfmpeg(crf);
+            
+            let finalSizeMB = fs.statSync(outputFile).size / (1024 * 1024);
+            console.log(`[Job ${jobId}] Tamaño tras primera compresión: ${finalSizeMB.toFixed(1)}MB`);
+
+            if (finalSizeMB < minAcceptableMB) {
+                const betterCrf = isHEVC ? '18' : '20';
+                console.log(`[Job ${jobId}] ⚠️ Resultado demasiado pequeño. Reintentando con CRF ${betterCrf}...`);
+                
+                try { fs.unlinkSync(outputFile); } catch {}
+                await runFfmpeg(betterCrf);
+                
+                finalSizeMB = fs.statSync(outputFile).size / (1024 * 1024);
+                console.log(`[Job ${jobId}] Tamaño tras reintento: ${finalSizeMB.toFixed(1)}MB`);
+            }
+        } else {
+            await new Promise((resolve, reject) => {
+                ffmpeg()
+                    .input(videoFile)
+                    .input(mixedAudioFile)
+                    .outputOptions([
+                        '-c:v copy',
+                        '-c:a aac',
+                        '-b:a 128k',
+                        '-map 0:v:0',
+                        '-map 1:a:0',
+                        '-movflags +faststart',
+                        '-t', String(videoDuration),
+                    ])
+                    .output(outputFile)
+                    .on('end', resolve)
+                    .on('error', reject)
+                    .run();
+            });
+        }
 
         // Limpiar temporales intermedios
         try { fs.unlinkSync(videoFile); } catch {}
@@ -527,7 +563,11 @@ async function processCastingInBackground(jobId, files, body) {
             if (!publicUrl) {
                 throw new Error('No se pudo generar la URL pública del vídeo');
             }
-            console.log(`[Job ${jobId}] URL pública generada: ${publicUrl}`);
+            if (!publicUrl.includes('/object/public/')) {
+                console.error(`[Job ${jobId}] ❌ URL no parece pública: ${publicUrl}`);
+                throw new Error(`URL de vídeo no accesible: ${publicUrl}`);
+            }
+            console.log(`[Job ${jobId}] ✅ URL pública verificada: ${publicUrl}`);
 
             // Obtener duración del video usando ffprobe
             const durationSeconds = await getVideoDuration(outputFile);
@@ -708,24 +748,25 @@ async function processCompressInBackground(jobId, videoUpload, userId) {
 
         const videoInfo = await getInfo(videoFile);
         console.log(`[Job ${jobId}] Codec vídeo: ${videoInfo.streams[0]?.codec}`);
-        const isHevc = videoInfo.streams[0]?.codec === 'hevc';
+        const videoCodec = videoInfo.streams[0]?.codec || 'h264';
+        const isHEVC = videoCodec === 'hevc';
+        const crf = isHEVC ? '23' : '28';
 
-        const videoDuration = await getVideoDuration(videoFile);
+        const minAcceptableMB = (videoDuration / 60) * 20;
 
-        await new Promise((resolve, reject) => {
+        console.log(`[Job ${jobId}] Codec: ${videoCodec}, CRF: ${crf}`);
+        console.log(`[Job ${jobId}] Mínimo aceptable: ${minAcceptableMB.toFixed(1)}MB`);
+
+        const runCompress = (crfValue) => new Promise((resolve, reject) => {
             ffmpeg()
                 .input(videoFile)
-                .outputOptions(needsCompression ? [
+                .outputOptions([
                     '-c:v libx264',
-                    '-crf 28',
+                    `-crf ${crfValue}`,
                     '-preset fast',
                     '-pix_fmt', 'yuv420p',
                     '-c:a aac',
                     '-b:a 128k',
-                    '-movflags +faststart'
-                ] : [
-                    '-c:v copy',
-                    '-c:a copy',
                     '-movflags +faststart'
                 ])
                 .output(outputFile)
@@ -733,6 +774,38 @@ async function processCompressInBackground(jobId, videoUpload, userId) {
                 .on('error', reject)
                 .run();
         });
+
+        if (needsCompression) {
+            await runCompress(crf);
+            
+            let finalSizeMB = fs.statSync(outputFile).size / (1024 * 1024);
+            console.log(`[Job ${jobId}] Tamaño tras primera compresión: ${finalSizeMB.toFixed(1)}MB`);
+
+            if (finalSizeMB < minAcceptableMB) {
+                const betterCrf = isHEVC ? '18' : '20';
+                console.log(`[Job ${jobId}] ⚠️ Resultado demasiado pequeño. Reintentando con CRF ${betterCrf}...`);
+                
+                try { fs.unlinkSync(outputFile); } catch {}
+                await runCompress(betterCrf);
+                
+                finalSizeMB = fs.statSync(outputFile).size / (1024 * 1024);
+                console.log(`[Job ${jobId}] Tamaño tras reintento: ${finalSizeMB.toFixed(1)}MB`);
+            }
+        } else {
+            await new Promise((resolve, reject) => {
+                ffmpeg()
+                    .input(videoFile)
+                    .outputOptions([
+                        '-c:v copy',
+                        '-c:a copy',
+                        '-movflags +faststart'
+                    ])
+                    .output(outputFile)
+                    .on('end', resolve)
+                    .on('error', reject)
+                    .run();
+            });
+        }
 
         const finalSizeMB = fs.statSync(outputFile).size / (1024 * 1024);
         console.log(`[Job ${jobId}] Tamaño final: ${finalSizeMB.toFixed(1)}MB`);
@@ -749,6 +822,14 @@ async function processCompressInBackground(jobId, videoUpload, userId) {
 
             const { data: urlData } = supabase.storage.from('recordings').getPublicUrl(remotePath);
             const publicUrl = urlData?.publicUrl;
+            if (!publicUrl) {
+                throw new Error('No se pudo generar la URL pública del vídeo');
+            }
+            if (!publicUrl.includes('/object/public/')) {
+                console.error(`[Job ${jobId}] ❌ URL no parece pública: ${publicUrl}`);
+                throw new Error(`URL de vídeo no accesible: ${publicUrl}`);
+            }
+            console.log(`[Job ${jobId}] ✅ URL pública verificada: ${publicUrl}`);
 
             const { data: recordingData, error: dbError } = await supabase.from('recordings').insert({
                 user_id: userId,
