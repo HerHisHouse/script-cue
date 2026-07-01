@@ -2785,14 +2785,20 @@ export default function CastingModeScreen() {
             <View style={styles.qualityOptions}>
               {[
                 { 
-                  value: 'medium', 
+                  value: 'high', 
                   label: 'Alta', 
+                  desc: '1080p — Máxima calidad', 
+                  size: '~60MB/min' 
+                },
+                { 
+                  value: 'medium', 
+                  label: 'Media (Recomendada)', 
                   desc: '720p — Estándar profesional', 
                   size: '~30MB/min' 
                 },
                 { 
                   value: 'low', 
-                  label: 'Básica', 
+                  label: 'Baja', 
                   desc: '480p — Archivos más pequeños', 
                   size: '~12MB/min' 
                 },
