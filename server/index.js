@@ -448,13 +448,8 @@ async function processCastingInBackground(jobId, files, body) {
         const isHevc = videoInfo.streams[0]?.codec === 'hevc';
 
         await new Promise((resolve, reject) => {
-            const command = ffmpeg();
-            
-            if (isHevc) {
-                command.inputOptions(['-c:v', 'hevc']);
-            }
-            
-            command.input(videoFile)
+            ffmpeg()
+                .input(videoFile)
                 .input(mixedAudioFile)
                 .outputOptions(needsCompression ? [
                     '-c:v libx264',
@@ -718,13 +713,8 @@ async function processCompressInBackground(jobId, videoUpload, userId) {
         const videoDuration = await getVideoDuration(videoFile);
 
         await new Promise((resolve, reject) => {
-            const command = ffmpeg();
-            
-            if (isHevc) {
-                command.inputOptions(['-c:v', 'hevc']);
-            }
-            
-            command.input(videoFile)
+            ffmpeg()
+                .input(videoFile)
                 .outputOptions(needsCompression ? [
                     '-c:v libx264',
                     '-crf 28',
