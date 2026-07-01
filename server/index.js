@@ -438,21 +438,30 @@ async function processCastingInBackground(jobId, files, body) {
         const audioInfo = await getInfo(mixedAudioFile);
 
         console.log(`[Job ${jobId}] Input vídeo info:`, JSON.stringify(videoInfo));
+        console.log(`[Job ${jobId}] Codec vídeo: ${videoInfo.streams[0]?.codec}`);
         console.log(`[Job ${jobId}] Input audio info:`, JSON.stringify(audioInfo));
 
         // Obtener duración del vídeo original para usar -t en lugar de -shortest
         const videoDuration = await getVideoDuration(videoFile);
         console.log(`[Job ${jobId}] Duración del vídeo original: ${videoDuration}s`);
 
+        const isHevc = videoInfo.streams[0]?.codec === 'hevc';
+
         await new Promise((resolve, reject) => {
-            ffmpeg()
-                .input(videoFile)
+            const command = ffmpeg();
+            
+            if (isHevc) {
+                command.inputOptions(['-c:v', 'hevc']);
+            }
+            
+            command.input(videoFile)
                 .input(mixedAudioFile)
                 .outputOptions(needsCompression ? [
                     '-c:v libx264',
                     '-crf 28',
                     '-preset ultrafast',
                     '-vf', 'scale=-2:720',
+                    '-pix_fmt', 'yuv420p',
                     '-threads', '1',
                     '-c:a aac',
                     '-b:a 128k',
@@ -530,7 +539,7 @@ async function processCastingInBackground(jobId, files, body) {
             console.log(`[Job ${jobId}] Duración detectada: ${durationSeconds}s`);
 
             // Crear registro en recordings
-            const { error: dbError } = await supabase.from('recordings').insert({
+            const { data: recordingData, error: dbError } = await supabase.from('recordings').insert({
                 user_id: userId,
                 script_id: scriptId,
                 title: `Casting - ${new Date().toLocaleDateString('es-ES')}`,
@@ -538,13 +547,14 @@ async function processCastingInBackground(jobId, files, body) {
                 type: 'video',
                 duration_seconds: Math.round(durationSeconds),
                 file_size_bytes: Math.round(finalSizeMB * 1024 * 1024),
-            });
+            }).select();
             
             if (dbError) {
-                throw new Error(`Error guardando en DB: ${dbError.message}`);
+                console.error(`[Job ${jobId}] ❌ Error guardando en recordings:`, JSON.stringify(dbError));
+                throw new Error(`Error en DB: ${dbError.message}`);
             }
 
-            console.log(`[Job ${jobId}] ✅ Subido a Supabase y guardado en DB`);
+            console.log(`[Job ${jobId}] ✅ Guardado en recordings con ID:`, recordingData?.[0]?.id);
             
             // Marcar job como completado al final, tras asegurar éxito total
             const { error: jobUpdateError } = await supabase.from('casting_jobs').update({
@@ -686,15 +696,40 @@ async function processCompressInBackground(jobId, videoUpload, userId) {
         console.log(`[Job ${jobId}] Vídeo: ${videoSizeMB.toFixed(1)}MB`);
         const needsCompression = videoSizeMB > 45;
 
+        const getInfo = (file) => new Promise((resolve) => {
+            ffmpeg.ffprobe(file, (err, meta) => {
+                if (err) resolve({ error: err.message });
+                else resolve({
+                    duration: meta.format.duration,
+                    size: meta.format.size,
+                    streams: meta.streams.map(s => ({
+                        codec: s.codec_name,
+                        duration: s.duration,
+                        type: s.codec_type
+                    }))
+                });
+            });
+        });
+
+        const videoInfo = await getInfo(videoFile);
+        console.log(`[Job ${jobId}] Codec vídeo: ${videoInfo.streams[0]?.codec}`);
+        const isHevc = videoInfo.streams[0]?.codec === 'hevc';
+
         const videoDuration = await getVideoDuration(videoFile);
 
         await new Promise((resolve, reject) => {
-            ffmpeg()
-                .input(videoFile)
+            const command = ffmpeg();
+            
+            if (isHevc) {
+                command.inputOptions(['-c:v', 'hevc']);
+            }
+            
+            command.input(videoFile)
                 .outputOptions(needsCompression ? [
                     '-c:v libx264',
                     '-crf 28',
                     '-preset fast',
+                    '-pix_fmt', 'yuv420p',
                     '-c:a aac',
                     '-b:a 128k',
                     '-movflags +faststart'
@@ -725,16 +760,21 @@ async function processCompressInBackground(jobId, videoUpload, userId) {
             const { data: urlData } = supabase.storage.from('recordings').getPublicUrl(remotePath);
             const publicUrl = urlData?.publicUrl;
 
-            const { error: dbError } = await supabase.from('recordings').insert({
+            const { data: recordingData, error: dbError } = await supabase.from('recordings').insert({
                 user_id: userId,
                 title: `Teleprompter - ${new Date().toLocaleDateString('es-ES')}`,
                 audio_url: publicUrl,
                 type: 'video',
                 duration_seconds: Math.round(videoDuration),
                 file_size_bytes: Math.round(finalSizeMB * 1024 * 1024),
-            });
+            }).select();
             
-            if (dbError) throw new Error(`Error guardando en DB: ${dbError.message}`);
+            if (dbError) {
+                console.error(`[Job ${jobId}] ❌ Error guardando en recordings:`, JSON.stringify(dbError));
+                throw new Error(`Error en DB: ${dbError.message}`);
+            }
+
+            console.log(`[Job ${jobId}] ✅ Guardado en recordings con ID:`, recordingData?.[0]?.id);
 
             await supabase.from('casting_jobs').update({
                 status: 'completed',
