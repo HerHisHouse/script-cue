@@ -673,8 +673,183 @@ app.get('/download-casting/:jobId', (req, res) => {
 // =============================================================================
 // COMPRESS VIDEO (TELEPROMPTER) ENDPOINT
 // =============================================================================
-        try { fs.rmSync(processTempDir, { recursive: true, force: true }); } catch {}
+app.post('/compress-video', upload.fields([
+  { name: 'video', maxCount: 1 }
+]), async (req, res) => {
+
+  const jobId = `teleprompter_${Date.now()}_${Math.random().toString(36).slice(2,8)}`;
+  console.log(`[Teleprompter] Job iniciado: ${jobId}`);
+
+  // Responder inmediatamente
+  res.json({ success: true, jobId });
+
+  // Registrar en casting_jobs
+  try {
+    await supabase.from('casting_jobs').insert({
+      job_id: jobId,
+      user_id: req.body.userId,
+      script_id: req.body.scriptId || null,
+      status: 'processing',
+    });
+  } catch (err) {
+    console.error('[Teleprompter] Error registrando job:', err);
+  }
+
+  // Procesar en background
+  processTeleprompterInBackground(jobId, req.files, req.body)
+    .catch(async (err) => {
+      console.error(`[Job ${jobId}] Error fatal:`, err.message);
+      await supabase.from('casting_jobs').update({
+        status: 'error',
+        error_message: err.message,
+        updated_at: new Date().toISOString(),
+      }).eq('job_id', jobId).catch(() => {});
+    });
+});
+
+async function processTeleprompterInBackground(jobId, files, body) {
+  const tempDir = path.join(__dirname, 'temp', `teleprompter_${Date.now()}`);
+  fs.mkdirSync(tempDir, { recursive: true });
+
+  const videoFile = path.join(tempDir, 'input.mp4');
+  const outputFile = path.join(tempDir, 'output.mp4');
+
+  try {
+    const uploadedVideo = files['video'][0];
+    fs.renameSync(uploadedVideo.path, videoFile);
+
+    const videoSizeMB = fs.statSync(videoFile).size / (1024 * 1024);
+    console.log(`[Job ${jobId}] Vídeo: ${videoSizeMB.toFixed(1)}MB`);
+
+    // Obtener metadata
+    const getInfo = (file) => new Promise((resolve) => {
+      ffmpeg.ffprobe(file, (err, meta) => {
+        if (err) resolve({ duration: 0, streams: [] });
+        else resolve({
+          duration: meta.format.duration || 0,
+          streams: meta.streams.map(s => ({
+            codec: s.codec_name,
+            type: s.codec_type
+          }))
+        });
+      });
+    });
+
+    const videoInfo = await getInfo(videoFile);
+    const videoDuration = videoInfo.duration || 0;
+    const videoCodec = videoInfo.streams?.[0]?.codec || 'h264';
+    const isHEVC = videoCodec === 'hevc';
+
+    console.log(`[Job ${jobId}] Codec: ${videoCodec}, Duración: ${videoDuration}s`);
+
+    // Compresión inteligente (igual que casting)
+    const needsCompression = videoSizeMB > 45;
+
+    if (!needsCompression) {
+      console.log(`[Job ${jobId}] Sin compresión, copiando directo...`);
+      fs.copyFileSync(videoFile, outputFile);
+    } else {
+      const crf = isHEVC ? '23' : '28';
+      const minAcceptableMB = (videoDuration / 60) * 20;
+
+      console.log(`[Job ${jobId}] Comprimiendo con CRF ${crf}...`);
+
+      const runFfmpeg = (crfValue) => new Promise((resolve, reject) => {
+        ffmpeg()
+          .input(videoFile)
+          .outputOptions([
+            '-c:v libx264',
+            `-crf ${crfValue}`,
+            '-preset ultrafast',
+            '-vf', 'scale=-2:720',
+            '-pix_fmt', 'yuv420p',
+            '-threads 1',
+            '-c:a aac',
+            '-b:a 128k',
+            '-movflags +faststart',
+            `-t ${videoDuration}`,
+          ])
+          .output(outputFile)
+          .on('end', resolve)
+          .on('error', reject)
+          .run();
+      });
+
+      await runFfmpeg(crf);
+      let finalSizeMB = fs.statSync(outputFile).size / (1024 * 1024);
+      console.log(`[Job ${jobId}] Tamaño tras compresión: ${finalSizeMB.toFixed(1)}MB`);
+
+      if (finalSizeMB < minAcceptableMB) {
+        console.log(`[Job ${jobId}] ⚠️ Reintentando con CRF 18...`);
+        await runFfmpeg('18');
+        finalSizeMB = fs.statSync(outputFile).size / (1024 * 1024);
+        console.log(`[Job ${jobId}] Tamaño tras reintento: ${finalSizeMB.toFixed(1)}MB`);
+      }
     }
+
+    // Subir a Supabase
+    const finalSizeMB = fs.statSync(outputFile).size / (1024 * 1024);
+    const remotePath = `${body.userId}/${Date.now()}_teleprompter.mp4`;
+
+    if (finalSizeMB <= 49) {
+      const fileBuffer = fs.readFileSync(outputFile);
+      const { error: uploadError } = await supabase.storage
+        .from('recordings')
+        .upload(remotePath, fileBuffer, { contentType: 'video/mp4' });
+
+      if (uploadError) throw new Error(`Error subiendo: ${uploadError.message}`);
+
+      const { data: urlData } = supabase.storage
+        .from('recordings')
+        .getPublicUrl(remotePath);
+
+      const publicUrl = urlData?.publicUrl;
+      if (!publicUrl?.includes('/object/public/')) {
+        throw new Error(`URL no pública: ${publicUrl}`);
+      }
+
+      console.log(`[Job ${jobId}] ✅ URL: ${publicUrl}`);
+
+      const { error: recordingError } = await supabase
+        .from('recordings')
+        .insert({
+          user_id: body.userId,
+          script_id: body.scriptId || null,
+          title: `Teleprompter - ${new Date().toLocaleDateString('es-ES')}`,
+          audio_url: publicUrl,
+          type: 'video',
+          duration_seconds: Math.round(videoDuration),
+        });
+
+      if (recordingError) {
+        console.error(`[Job ${jobId}] ❌ Error en recordings:`, recordingError);
+        throw new Error(`Error DB: ${recordingError.message}`);
+      }
+
+      console.log(`[Job ${jobId}] ✅ Guardado en recordings`);
+
+    } else {
+      // Vídeo demasiado grande incluso tras comprimir
+      console.log(`[Job ${jobId}] ⚠️ Vídeo grande, guardando para descarga...`);
+      await supabase.from('casting_jobs').update({
+        status: 'completed_local',
+        error_message: `Vídeo de ${finalSizeMB.toFixed(0)}MB. Disponible 1 hora.`,
+        updated_at: new Date().toISOString(),
+      }).eq('job_id', jobId);
+      return;
+    }
+
+    // Marcar como completado
+    await supabase.from('casting_jobs').update({
+      status: 'completed',
+      updated_at: new Date().toISOString(),
+    }).eq('job_id', jobId);
+
+    console.log(`[Job ${jobId}] ✅ Proceso completo`);
+
+  } finally {
+    try { fs.rmSync(tempDir, { recursive: true, force: true }); } catch {}
+  }
 }
 
 // --- COACH MODE ENDPOINT ---
