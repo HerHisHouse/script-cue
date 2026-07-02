@@ -1722,6 +1722,133 @@ app.post('/tts-azure', async (req, res) => {
     }
 });
 
+let azureVoicesCache = null;
+let azureVoicesCacheTime = 0;
+
+// Endpoint: obtener voces de Azure
+app.get('/api/azure/voices', async (req, res) => {
+    try {
+        const azureKey = (process.env.AZURE_TTS_KEY || '').trim();
+        const azureRegion = (process.env.AZURE_TTS_REGION || '').trim();
+
+        if (!azureKey || !azureRegion) {
+            return res.status(500).json({ error: 'Azure TTS not configured' });
+        }
+
+        const now = Date.now();
+        // Caché de 24 horas
+        if (azureVoicesCache && (now - azureVoicesCacheTime < 24 * 60 * 60 * 1000)) {
+            return res.json(azureVoicesCache);
+        }
+
+        const response = await fetch(`https://${azureRegion}.tts.speech.microsoft.com/cognitiveservices/voices/list`, {
+            headers: {
+                'Ocp-Apim-Subscription-Key': azureKey,
+            }
+        });
+
+        if (!response.ok) {
+            throw new Error(`Azure API error: ${response.statusText}`);
+        }
+
+        const data = await response.json();
+        
+        const voices = data.map(v => ({
+            id: v.ShortName,
+            name: v.DisplayName,
+            gender: v.Gender.toLowerCase(),
+            locale: v.Locale,
+            localeName: v.LocaleName,
+            language: v.Locale.split('-')[0],
+            country: v.Locale.split('-')[1],
+            styles: v.StyleList || [],
+            voiceType: v.VoiceType,
+            sampleRate: v.SampleRateHertz,
+            provider: 'azure'
+        }));
+
+        azureVoicesCache = voices;
+        azureVoicesCacheTime = now;
+
+        res.json(voices);
+    } catch (error) {
+        console.error('[Azure TTS] Error fetching voices:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Endpoint unificado para previsualizaciones (caché en DB/Storage)
+app.get('/api/tts/preview/:provider/:voiceId', async (req, res) => {
+    const { provider, voiceId } = req.params;
+    
+    try {
+        const filePath = `previews/${provider}/${voiceId}.mp3`;
+        
+        // 1. Comprobar si existe en Supabase
+        const { data: fileExists } = await supabase.storage
+            .from('tts-cache')
+            .list(`previews/${provider}`, {
+                search: `${voiceId}.mp3`
+            });
+            
+        if (fileExists && fileExists.length > 0) {
+            // Descargar y servir el binario usando el cliente de server (bypass RLS)
+            const { data: audioData, error: downloadError } = await supabase.storage
+                .from('tts-cache')
+                .download(filePath);
+                
+            if (audioData) {
+                const arrayBuffer = await audioData.arrayBuffer();
+                res.set('Content-Type', 'audio/mpeg');
+                res.set('Content-Length', arrayBuffer.byteLength);
+                return res.send(Buffer.from(arrayBuffer));
+            }
+        }
+        
+        // 2. Si no existe, generarlo
+        let audioBuffer;
+        const textToSpeak = "Hola, esta es una muestra de mi voz en Script Cue. Espero que te guste.";
+        
+        if (provider === 'azure') {
+            audioBuffer = await generateAzureTTS({ text: textToSpeak, voice: voiceId });
+        } else if (provider === 'elevenlabs') {
+            const elevenKey = (process.env.EXPO_PUBLIC_ELEVENLABS_API_KEY || '').trim();
+            const response = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${voiceId}?output_format=mp3_44100_128`, {
+                method: 'POST',
+                headers: {
+                    'xi-api-key': elevenKey,
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    text: textToSpeak,
+                    model_id: 'eleven_multilingual_v2'
+                })
+            });
+            if (!response.ok) throw new Error(`ElevenLabs error: ${response.statusText}`);
+            const buffer = await response.arrayBuffer();
+            audioBuffer = Buffer.from(buffer);
+        } else {
+            return res.status(400).json({ error: 'Provider not supported for previews' });
+        }
+        
+        // 3. Subir a Supabase
+        await supabase.storage
+            .from('tts-cache')
+            .upload(filePath, audioBuffer, {
+                contentType: 'audio/mpeg',
+                upsert: true
+            });
+            
+        // 4. Devolver al cliente
+        res.set('Content-Type', 'audio/mpeg');
+        res.set('Content-Length', audioBuffer.length);
+        res.send(audioBuffer);
+        
+    } catch (error) {
+        console.error(`[Preview] Error generating preview for ${provider}/${voiceId}:`, error);
+        res.status(500).json({ error: error.message });
+    }
+});
 
 app.listen(PORT, () => {
     console.log(`🎵 Audio Merge Server running on port ${PORT}`);

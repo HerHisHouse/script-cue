@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
     View,
     Text,
@@ -7,8 +7,10 @@ import {
     ScrollView,
     ActivityIndicator,
     Modal,
+    TextInput,
+    SafeAreaView
 } from 'react-native';
-import { Volume2, VolumeX, Check, ChevronDown, X } from 'lucide-react-native';
+import { Volume2, VolumeX, Check, ChevronDown, X, Heart, Search, RefreshCw } from 'lucide-react-native';
 import { useTheme } from '@/contexts/ThemeContext';
 import { rf, rp } from '@/utils/responsive';
 import {
@@ -18,8 +20,9 @@ import {
     getElevenLabsVoices,
     playVoicePreview,
     stopVoicePreview,
-    AZURE_VOICES,
+    getAzureVoices
 } from '@/utils/voiceService';
+import { getFavoriteVoices, toggleFavoriteVoice } from '@/utils/favoritesService';
 import * as Speech from 'expo-speech';
 
 interface SystemVoice {
@@ -30,91 +33,10 @@ interface SystemVoice {
 
 interface VoiceSelectorProps {
     selectedVoiceId?: string;
-    provider: 'openai' | 'elevenlabs' | 'azure' | 'system'; // Provider seleccionado en "Operador de voces"
+    provider: 'openai' | 'elevenlabs' | 'azure' | 'system';
     onVoiceSelect: (voiceId: string, provider: 'openai' | 'elevenlabs' | 'azure' | 'system') => void;
     disabled?: boolean;
-    systemLanguage?: string; // Para filtrar voces del sistema por idioma
-}
-
-// Mapeo de use_case de ElevenLabs a nombres en español
-const CATEGORY_LABELS: Record<string, string> = {
-  'conversational':          '💬 Conversacional',
-  'narrative_story':         '📖 Narración',
-  'narración':               '📖 Narración',
-  'narracion':               '📖 Narración',
-  'characters_animation':    '🎭 Personajes',
-  'personajes':              '🎭 Personajes',
-  'informative_educational': '🎓 Educativo',
-  'educativo':               '🎓 Educativo',
-  'social_media':            '📱 Redes Sociales',
-  'entertainment_tv':        '🎬 Entretenimiento',
-  'advertisement':           '📣 Publicidad',
-  'news':                    '📰 Noticias',
-  'meditation':              '🧘 Meditación',
-};
-
-// Orden de las secciones (las más relevantes primero)
-const CATEGORY_ORDER = [
-  '💬 Conversacional',
-  '🎭 Personajes',
-  '📖 Narración',
-  '🎓 Educativo',
-  '📱 Redes Sociales',
-  '🎬 Entretenimiento',
-  '📣 Publicidad',
-  '📰 Noticias',
-  '🧘 Meditación',
-  '🔤 Otras',
-];
-
-type VoiceGroup = {
-  category: string;
-  voices: VoiceOption[];
-};
-
-function groupVoicesByCategory(voices: VoiceOption[]): VoiceGroup[] {
-  const groups: Record<string, VoiceOption[]> = {};
-
-  for (const voice of voices) {
-    // Intentar obtener la categoría desde los labels
-    const useCase = voice.labels?.use_case || 
-                    voice.labels?.['use_case'] || 
-                    '';
-    
-    // Normalizar: quitar tildes, minúsculas, espacios
-    const normalized = useCase
-      .toLowerCase()
-      .normalize('NFD')
-      .replace(/[\u0300-\u036f]/g, '')
-      .trim();
-
-    // Buscar en el mapeo
-    const categoryLabel = CATEGORY_LABELS[useCase] || 
-                          CATEGORY_LABELS[normalized] || 
-                          '🔤 Otras';
-
-    if (!groups[categoryLabel]) {
-      groups[categoryLabel] = [];
-    }
-    groups[categoryLabel].push(voice);
-  }
-
-  // Ordenar grupos según CATEGORY_ORDER
-  const result: VoiceGroup[] = [];
-  
-  for (const cat of CATEGORY_ORDER) {
-    if (groups[cat] && groups[cat].length > 0) {
-      // Ordenar voces dentro de cada sección alfabéticamente
-      result.push({
-        category: cat,
-        voices: groups[cat].sort((a, b) => 
-          a.name.localeCompare(b.name, 'es')
-        ),
-      });
-    }
-  }
-
-  return result;
+    systemLanguage?: string;
 }
 
 export function VoiceSelector({
@@ -126,66 +48,73 @@ export function VoiceSelector({
 }: VoiceSelectorProps) {
     const { colors } = useTheme();
     const [modalVisible, setModalVisible] = useState(false);
-    const [elevenLabsVoices, setElevenLabsVoices] = useState<VoiceOption[]>([]);
+    
+    const [voices, setVoices] = useState<VoiceOption[]>([]);
     const [systemVoices, setSystemVoices] = useState<SystemVoice[]>([]);
+    const [favorites, setFavorites] = useState<string[]>([]);
+    
     const [loadingVoices, setLoadingVoices] = useState(false);
     const [playingVoiceId, setPlayingVoiceId] = useState<string | null>(null);
     const [loadingPreview, setLoadingPreview] = useState(false);
-    const [genderFilter, setGenderFilter] = useState<'all' | 'male' | 'female' | 'neutral'>('all');
+    const [refreshing, setRefreshing] = useState(false);
+    
+    // Filters
+    const [searchQuery, setSearchQuery] = useState('');
+    const [genderFilters, setGenderFilters] = useState<string[]>([]);
+    const [languageFilters, setLanguageFilters] = useState<string[]>([]);
+    const [countryFilters, setCountryFilters] = useState<string[]>([]);
+    
+    // UI State for Filters
+    const [expandedFilter, setExpandedFilter] = useState<'gender' | 'language' | 'country' | null>(null);
 
-    // Cargar voces según el provider
     useEffect(() => {
         if (modalVisible) {
-            if (provider === 'elevenlabs' && elevenLabsVoices.length === 0) {
-                loadElevenLabsVoices();
-            } else if (provider === 'system' && systemVoices.length === 0) {
-                loadSystemVoices();
-            }
+            loadData();
         }
     }, [modalVisible, provider]);
 
-    const loadElevenLabsVoices = async () => {
+    const loadData = async (forceRefresh = false) => {
         setLoadingVoices(true);
+        if (forceRefresh) setRefreshing(true);
         try {
-            const voices = await getElevenLabsVoices();
-            setElevenLabsVoices(voices);
-        } catch (error) {
-            console.error('Error loading ElevenLabs voices:', error);
-        } finally {
-            setLoadingVoices(false);
-        }
-    };
+            const favs = await getFavoriteVoices();
+            setFavorites(favs.filter(f => f.provider === provider).map(f => f.voice_id));
 
-    const loadSystemVoices = async () => {
-        setLoadingVoices(true);
-        try {
-            const voices = await Speech.getAvailableVoicesAsync();
-            // Filtrar voces por idioma
-            const filtered = voices
-                .filter(v => v.language.startsWith(systemLanguage.split('-')[0]))
-                .map(v => ({
+            if (provider === 'elevenlabs') {
+                const data = await getElevenLabsVoices(forceRefresh);
+                setVoices(data);
+            } else if (provider === 'azure') {
+                const data = await getAzureVoices(forceRefresh);
+                setVoices(data);
+            } else if (provider === 'openai') {
+                setVoices(OPENAI_VOICES);
+            } else if (provider === 'system') {
+                const sysVoices = await Speech.getAvailableVoicesAsync();
+                const filtered = sysVoices
+                    .filter(v => v.language.startsWith(systemLanguage.split('-')[0]))
+                    .map(v => ({
+                        id: v.identifier,
+                        name: v.name || v.identifier,
+                        language: v.language,
+                    }));
+                setSystemVoices(filtered.length > 0 ? filtered : sysVoices.map(v => ({
                     id: v.identifier,
                     name: v.name || v.identifier,
                     language: v.language,
-                }));
-            setSystemVoices(filtered.length > 0 ? filtered : voices.map(v => ({
-                id: v.identifier,
-                name: v.name || v.identifier,
-                language: v.language,
-            })));
+                })));
+            }
         } catch (error) {
-            console.error('Error loading system voices:', error);
+            console.error(`Error loading voices for ${provider}:`, error);
         } finally {
             setLoadingVoices(false);
+            if (forceRefresh) setRefreshing(false);
         }
     };
 
     const handlePreview = async (voiceId: string) => {
         if (playingVoiceId === voiceId) {
             await stopVoicePreview();
-            if (provider === 'system') {
-                await Speech.stop();
-            }
+            if (provider === 'system') await Speech.stop();
             setPlayingVoiceId(null);
             return;
         }
@@ -195,7 +124,6 @@ export function VoiceSelector({
 
         try {
             if (provider === 'system') {
-                // Preview de voz del sistema
                 await Speech.speak('Hola, esta es mi voz. ¿Qué te parece?', {
                     voice: voiceId,
                     language: systemLanguage,
@@ -203,13 +131,7 @@ export function VoiceSelector({
                     onError: () => setPlayingVoiceId(null),
                 });
             } else {
-                // Preview de OpenAI o ElevenLabs
-                const voice = provider === 'openai'
-                    ? OPENAI_VOICES.find(v => v.id === voiceId)
-                    : provider === 'azure'
-                        ? AZURE_VOICES.find(v => v.id === voiceId)
-                        : elevenLabsVoices.find(v => v.id === voiceId);
-
+                const voice = voices.find(v => v.id === voiceId);
                 if (voice) {
                     await playVoicePreview(voice);
                     setTimeout(() => setPlayingVoiceId(null), 5000);
@@ -225,9 +147,7 @@ export function VoiceSelector({
 
     const handleSelect = (voiceId: string) => {
         stopVoicePreview();
-        if (provider === 'system') {
-            Speech.stop();
-        }
+        if (provider === 'system') Speech.stop();
         setPlayingVoiceId(null);
         onVoiceSelect(voiceId, provider);
         setModalVisible(false);
@@ -235,46 +155,65 @@ export function VoiceSelector({
 
     const handleClose = () => {
         stopVoicePreview();
-        if (provider === 'system') {
-            Speech.stop();
-        }
+        if (provider === 'system') Speech.stop();
         setPlayingVoiceId(null);
         setModalVisible(false);
     };
 
-    // Obtener nombre de la voz seleccionada
+    const handleToggleFavorite = async (voiceId: string) => {
+        const isFav = favorites.includes(voiceId);
+        setFavorites(prev => isFav ? prev.filter(id => id !== voiceId) : [...prev, voiceId]);
+        const newStatus = await toggleFavoriteVoice(voiceId, provider, isFav);
+        if (newStatus === isFav) {
+            setFavorites(prev => !isFav ? prev.filter(id => id !== voiceId) : [...prev, voiceId]);
+        }
+    };
+
     const getSelectedVoiceName = (): string => {
         if (!selectedVoiceId) return 'Seleccionar voz';
-
-        if (provider === 'openai') {
-            const voice = OPENAI_VOICES.find(v => v.id === selectedVoiceId);
-            return voice?.name || selectedVoiceId;
-        } else if (provider === 'elevenlabs') {
-            const voice = elevenLabsVoices.find(v => v.id === selectedVoiceId);
-            return voice?.name || selectedVoiceId;
-        } else if (provider === 'azure') {
-            const voice = AZURE_VOICES.find(v => v.id === selectedVoiceId);
-            return voice?.name || selectedVoiceId;
-        } else {
-            const voice = systemVoices.find(v => v.id === selectedVoiceId);
-            return voice?.name || selectedVoiceId;
+        if (provider === 'system') {
+            return systemVoices.find(v => v.id === selectedVoiceId)?.name || selectedVoiceId;
         }
+        return voices.find(v => v.id === selectedVoiceId)?.name || selectedVoiceId;
     };
 
-    // Obtener lista de voces según provider
-    const getVoiceList = () => {
-        if (provider === 'openai') {
-            return OPENAI_VOICES;
-        } else if (provider === 'elevenlabs') {
-            return elevenLabsVoices;
-        } else if (provider === 'azure') {
-            return AZURE_VOICES;
-        } else {
-            return systemVoices;
-        }
-    };
+    // Extract unique options for filters
+    const availableLanguages = useMemo(() => {
+        const langs = new Set<string>();
+        voices.forEach(v => { if (v.language) langs.add(v.language); });
+        return Array.from(langs).sort();
+    }, [voices]);
 
-    const voiceList = getVoiceList();
+    const availableCountries = useMemo(() => {
+        const countries = new Set<string>();
+        voices.forEach(v => { if (v.country) countries.add(v.country); });
+        return Array.from(countries).sort();
+    }, [voices]);
+
+    // Apply Filters
+    const processedVoices = useMemo(() => {
+        if (provider === 'system') return systemVoices as any;
+        
+        let filtered = voices.filter((v: any) => {
+            if (searchQuery && !v.name.toLowerCase().includes(searchQuery.toLowerCase())) return false;
+            if (genderFilters.length > 0 && (!v.gender || !genderFilters.includes(v.gender))) return false;
+            if (languageFilters.length > 0 && (!v.language || !languageFilters.includes(v.language))) return false;
+            if (countryFilters.length > 0 && (!v.country || !countryFilters.includes(v.country))) return false;
+            return true;
+        });
+        
+        filtered.sort((a, b) => a.name.localeCompare(b.name, 'es'));
+        return filtered;
+    }, [voices, provider, systemVoices, searchQuery, genderFilters, languageFilters, countryFilters]);
+
+    // Sections
+    const favoriteVoices = useMemo(() => processedVoices.filter((v: any) => favorites.includes(v.id)), [processedVoices, favorites]);
+    const recommendedVoices = useMemo(() => processedVoices.filter((v: any) => 
+        !favorites.includes(v.id) && (v.country === 'ES' || v.accent === 'es-ES' || v.language === 'es-ES' || v.language === 'es')
+    ), [processedVoices, favorites]);
+    const otherVoices = useMemo(() => processedVoices.filter((v: any) => 
+        !favorites.includes(v.id) && !(v.country === 'ES' || v.accent === 'es-ES' || v.language === 'es-ES' || v.language === 'es')
+    ), [processedVoices, favorites]);
 
     const getProviderTitle = () => {
         switch (provider) {
@@ -285,18 +224,133 @@ export function VoiceSelector({
         }
     };
 
-    const getProviderEmoji = () => {
-        switch (provider) {
-            case 'openai': return '🎯';
-            case 'elevenlabs': return '🎭';
-            case 'azure': return '🌐';
-            case 'system': return '📱';
-        }
+    const toggleArrayFilter = (setFilter: React.Dispatch<React.SetStateAction<string[]>>, val: string) => {
+        setFilter(prev => prev.includes(val) ? prev.filter(x => x !== val) : [...prev, val]);
+    };
+
+    const renderFilterDropdown = (
+        id: 'gender' | 'language' | 'country',
+        title: string,
+        options: { label: string, value: string }[],
+        selectedValues: string[],
+        setValues: React.Dispatch<React.SetStateAction<string[]>>
+    ) => {
+        const isExpanded = expandedFilter === id;
+        const activeCount = selectedValues.length;
+        if (options.length === 0) return null;
+
+        return (
+            <View style={styles.filterDropdownContainer}>
+                <TouchableOpacity 
+                    style={[styles.filterDropdownHeader, { borderColor: colors.border, backgroundColor: isExpanded || activeCount > 0 ? colors.primary + '15' : colors.surface }]} 
+                    onPress={() => setExpandedFilter(isExpanded ? null : id)}
+                >
+                    <Text style={[styles.filterDropdownTitle, { color: activeCount > 0 ? colors.primary : colors.text }]}>
+                        {title} {activeCount > 0 ? `(${activeCount})` : ''}
+                    </Text>
+                    <ChevronDown size={16} color={activeCount > 0 ? colors.primary : colors.textSecondary} style={{ transform: [{ rotate: isExpanded ? '180deg' : '0deg' }] }} />
+                </TouchableOpacity>
+                
+                {isExpanded && (
+                    <View style={styles.filterDropdownContent}>
+                        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.filterDropdownScroll}>
+                            {options.map(opt => {
+                                const isSelected = selectedValues.includes(opt.value);
+                                return (
+                                    <TouchableOpacity 
+                                        key={opt.value} 
+                                        style={[
+                                            styles.filterChip, 
+                                            { borderColor: isSelected ? colors.primary : colors.border, backgroundColor: isSelected ? colors.primary + '20' : colors.surface }
+                                        ]}
+                                        onPress={() => toggleArrayFilter(setValues, opt.value)}
+                                    >
+                                        <Text style={[styles.filterChipText, { color: isSelected ? colors.primary : colors.textSecondary }]}>{opt.label}</Text>
+                                        {isSelected && <Check size={14} color={colors.primary} style={{ marginLeft: 4 }} />}
+                                    </TouchableOpacity>
+                                );
+                            })}
+                        </ScrollView>
+                    </View>
+                )}
+            </View>
+        );
+    };
+
+    const renderVoiceItem = (voice: any, isSelected: boolean) => (
+        <TouchableOpacity
+            key={voice.id}
+            style={[
+                styles.voiceItem,
+                { backgroundColor: colors.surface, borderColor: colors.border },
+                isSelected && { borderColor: colors.primary, borderWidth: 2 },
+            ]}
+            onPress={() => handleSelect(voice.id)}
+        >
+            <View style={styles.voiceInfo}>
+                <View style={styles.voiceNameRow}>
+                    <Text style={[styles.voiceName, { color: colors.text }]}>{voice.name}</Text>
+                </View>
+                {voice.description && (
+                    <Text style={[styles.voiceDescription, { color: colors.textSecondary }]}>{voice.description}</Text>
+                )}
+                {voice.gender && provider !== 'system' && (
+                    <Text style={[styles.voiceGender, { color: colors.textSecondary }]}>
+                        {voice.gender === 'male' ? '♂️ Masculina' : voice.gender === 'female' ? '♀️ Femenina' : '⚪ Neutra'}
+                        {voice.country ? ` • ${voice.country}` : ''}
+                        {voice.styles && voice.styles.length > 0 ? ` • ${voice.styles.length} estilos` : ''}
+                    </Text>
+                )}
+                {voice.language && provider === 'system' && (
+                    <Text style={[styles.voiceGender, { color: colors.textSecondary }]}>🌐 {voice.language}</Text>
+                )}
+            </View>
+            <View style={styles.voiceActions}>
+                {provider !== 'system' && (
+                    <TouchableOpacity onPress={(e) => { e.stopPropagation(); handleToggleFavorite(voice.id); }} style={styles.heartButton}>
+                        <Heart size={20} color={favorites.includes(voice.id) ? colors.error : colors.textSecondary} fill={favorites.includes(voice.id) ? colors.error : 'transparent'} />
+                    </TouchableOpacity>
+                )}
+                <TouchableOpacity
+                    style={[
+                        styles.previewButton,
+                        { backgroundColor: colors.primary + '20' },
+                        playingVoiceId === voice.id && { backgroundColor: colors.primary },
+                    ]}
+                    onPress={(e) => { e.stopPropagation(); handlePreview(voice.id); }}
+                >
+                    {loadingPreview && playingVoiceId === voice.id ? (
+                        <ActivityIndicator size="small" color="#FFFFFF" />
+                    ) : playingVoiceId === voice.id ? (
+                        <VolumeX size={18} color="#FFFFFF" />
+                    ) : (
+                        <Volume2 size={18} color={colors.primary} />
+                    )}
+                </TouchableOpacity>
+                {isSelected && (
+                    <View style={[styles.checkIcon, { backgroundColor: colors.primary }]}>
+                        <Check size={16} color="#FFFFFF" />
+                    </View>
+                )}
+            </View>
+        </TouchableOpacity>
+    );
+
+    const renderSection = (title: string, data: any[]) => {
+        if (data.length === 0) return null;
+        return (
+            <View style={styles.voiceSection}>
+                <View style={styles.voiceSectionHeader}>
+                    <Text style={[styles.voiceSectionTitle, { color: colors.textSecondary }]}>{title}</Text>
+                    <View style={[styles.voiceSectionLine, { backgroundColor: colors.border }]} />
+                </View>
+                {data.map(v => renderVoiceItem(v, selectedVoiceId === v.id))}
+            </View>
+        );
     };
 
     return (
         <>
-            {/* Botón selector */}
             <TouchableOpacity
                 style={[
                     styles.selectorButton,
@@ -307,439 +361,139 @@ export function VoiceSelector({
                 disabled={disabled}
             >
                 <View style={styles.selectorContent}>
-                    <Text style={[styles.selectorLabel, { color: colors.textSecondary }]}>
-                        Voz del personaje
-                    </Text>
-                    <Text style={[styles.selectorValue, { color: colors.text }]}>
-                        {getSelectedVoiceName()}
-                    </Text>
+                    <Text style={[styles.selectorLabel, { color: colors.textSecondary }]}>Voz del personaje</Text>
+                    <Text style={[styles.selectorValue, { color: colors.text }]}>{getSelectedVoiceName()}</Text>
                 </View>
                 <ChevronDown size={20} color={colors.textSecondary} />
             </TouchableOpacity>
 
-            {/* Modal de selección */}
-            <Modal
-                visible={modalVisible}
-                animationType="slide"
-                transparent={true}
-                onRequestClose={handleClose}
-            >
-                <View style={styles.modalOverlay}>
-                    <View style={[styles.modalContent, { backgroundColor: colors.background }]}>
-                        {/* Header */}
-                        <View style={[styles.modalHeader, { borderBottomColor: colors.border }]}>
-                            <Text style={[styles.modalTitle, { color: colors.text }]}>
-                                {getProviderTitle()}
-                            </Text>
+            <Modal visible={modalVisible} animationType="slide" transparent={false} onRequestClose={handleClose}>
+                <SafeAreaView style={[styles.fullScreenModal, { backgroundColor: colors.background }]}>
+                    <View style={[styles.modalHeader, { borderBottomColor: colors.border }]}>
+                        <Text style={[styles.modalTitle, { color: colors.text }]}>{getProviderTitle()}</Text>
+                        <View style={styles.headerActions}>
+                            {provider !== 'system' && provider !== 'openai' && (
+                                <TouchableOpacity onPress={() => loadData(true)} style={[styles.refreshButton, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+                                    {refreshing ? <ActivityIndicator size="small" color={colors.primary} /> : <RefreshCw size={18} color={colors.textSecondary} />}
+                                </TouchableOpacity>
+                            )}
                             <TouchableOpacity onPress={handleClose} style={styles.closeButton}>
                                 <X size={24} color={colors.text} />
                             </TouchableOpacity>
                         </View>
-
-                        {/* Filtro de Género (Solo para ElevenLabs) */}
-                        {provider === 'elevenlabs' && (
-                            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ flexGrow: 0 }} contentContainerStyle={styles.genderFilter}>
-                              {[
-                                { value: 'all',    label: 'Todas' },
-                                { value: 'female', label: '♀ Femeninas' },
-                                { value: 'male',   label: '♂ Masculinas' },
-                                { value: 'neutral', label: '⚪ Neutras' },
-                              ].map(option => (
-                                <TouchableOpacity
-                                  key={option.value}
-                                  style={[
-                                    styles.genderChip,
-                                    genderFilter === option.value && styles.genderChipActive,
-                                    { borderColor: genderFilter === option.value 
-                                        ? colors.primary 
-                                        : colors.border }
-                                  ]}
-                                  onPress={() => setGenderFilter(option.value as any)}
-                                >
-                                  <Text style={[
-                                    styles.genderChipText,
-                                    { color: genderFilter === option.value 
-                                        ? colors.primary 
-                                        : colors.textSecondary }
-                                  ]}>
-                                    {option.label}
-                                  </Text>
-                                </TouchableOpacity>
-                              ))}
-                            </ScrollView>
-                        )}
-
-                        {/* Lista de voces */}
-                        <ScrollView style={styles.voiceList} contentContainerStyle={styles.voiceListContent}>
-                            {loadingVoices ? (
-                                <View style={styles.loadingContainer}>
-                                    <ActivityIndicator size="large" color={colors.primary} />
-                                    <Text style={[styles.loadingText, { color: colors.textSecondary }]}>
-                                        Cargando voces...
-                                    </Text>
-                                </View>
-                            ) : voiceList.length === 0 ? (
-                                <View style={styles.emptyContainer}>
-                                    <Text style={[styles.emptyText, { color: colors.textSecondary }]}>
-                                        {provider === 'elevenlabs'
-                                            ? 'No se pudieron cargar las voces de ElevenLabs.\nVerifica tu API key.'
-                                            : provider === 'system'
-                                                ? 'No hay voces del sistema disponibles.'
-                                                : 'No hay voces disponibles.'}
-                                    </Text>
-                                </View>
-                            ) : provider === 'elevenlabs' ? (
-                                (() => {
-                                    const filteredVoices = genderFilter === 'all'
-                                        ? elevenLabsVoices
-                                        : elevenLabsVoices.filter(v => v.gender === genderFilter);
-                                    
-                                    const voiceGroups = groupVoicesByCategory(filteredVoices);
-
-                                    return voiceGroups.map(group => (
-                                        <View key={group.category} style={styles.voiceSection}>
-                                            <View style={styles.voiceSectionHeader}>
-                                                <Text style={[styles.voiceSectionTitle, { color: colors.textSecondary }]}>
-                                                    {group.category}
-                                                </Text>
-                                                <View style={[styles.voiceSectionLine, { backgroundColor: colors.border }]} />
-                                            </View>
-
-                                            {group.voices.map(voice => {
-                                                const voiceId = voice.id;
-                                                const isSelected = selectedVoiceId === voiceId;
-                                                return (
-                                                    <TouchableOpacity
-                                                        key={voiceId}
-                                                        style={[
-                                                            styles.voiceItem,
-                                                            { backgroundColor: colors.surface, borderColor: colors.border, marginBottom: rp(8) },
-                                                            isSelected && {
-                                                                borderColor: colors.primary,
-                                                                borderWidth: 2,
-                                                            },
-                                                        ]}
-                                                        onPress={() => handleSelect(voiceId)}
-                                                    >
-                                                        <View style={styles.voiceInfo}>
-                                                            <Text style={[styles.voiceName, { color: colors.text }]}>
-                                                                {voice.name}
-                                                            </Text>
-                                                            {voice.description && (
-                                                                <Text style={[styles.voiceDescription, { color: colors.textSecondary }]}>
-                                                                    {voice.description}
-                                                                </Text>
-                                                            )}
-                                                            {voice.gender && (
-                                                                <Text style={[styles.voiceGender, { color: colors.textSecondary }]}>
-                                                                    {voice.gender === 'male' ? '♂️ Masculina' : voice.gender === 'female' ? '♀️ Femenina' : '⚪ Neutra'}
-                                                                </Text>
-                                                            )}
-                                                        </View>
-
-                                                        <View style={styles.voiceActions}>
-                                                            <TouchableOpacity
-                                                                style={[
-                                                                    styles.previewButton,
-                                                                    { backgroundColor: colors.primary + '20' },
-                                                                    playingVoiceId === voiceId && { backgroundColor: colors.primary },
-                                                                ]}
-                                                                onPress={(e) => {
-                                                                    e.stopPropagation();
-                                                                    handlePreview(voiceId);
-                                                                }}
-                                                            >
-                                                                {loadingPreview && playingVoiceId === voiceId ? (
-                                                                    <ActivityIndicator size="small" color={playingVoiceId === voiceId ? '#FFFFFF' : colors.primary} />
-                                                                ) : playingVoiceId === voiceId ? (
-                                                                    <VolumeX size={18} color="#FFFFFF" />
-                                                                ) : (
-                                                                    <Volume2 size={18} color={colors.primary} />
-                                                                )}
-                                                            </TouchableOpacity>
-
-                                                            {isSelected && (
-                                                                <View style={[styles.checkIcon, { backgroundColor: colors.primary }]}>
-                                                                    <Check size={16} color="#FFFFFF" />
-                                                                </View>
-                                                            )}
-                                                        </View>
-                                                    </TouchableOpacity>
-                                                );
-                                            })}
-                                        </View>
-                                    ));
-                                })()
-                            ) : (
-                                voiceList.map((voice: any, index: number) => {
-                                    const voiceId = voice.id;
-                                    const isSelected = selectedVoiceId === voiceId;
-
-                                    return (
-                                        <React.Fragment key={voiceId}>
-                                            <TouchableOpacity
-                                                style={[
-                                                    styles.voiceItem,
-                                                    { backgroundColor: colors.surface, borderColor: colors.border },
-                                                    isSelected && {
-                                                        borderColor: colors.primary,
-                                                        borderWidth: 2,
-                                                    },
-                                                ]}
-                                                onPress={() => handleSelect(voiceId)}
-                                            >
-                                                <View style={styles.voiceInfo}>
-                                                    <Text style={[styles.voiceName, { color: colors.text }]}>
-                                                        {voice.name}
-                                                    </Text>
-                                                    {voice.description && (
-                                                        <Text style={[styles.voiceDescription, { color: colors.textSecondary }]}>
-                                                            {voice.description}
-                                                        </Text>
-                                                    )}
-                                                    {voice.gender && provider !== 'system' && (
-                                                        <Text style={[styles.voiceGender, { color: colors.textSecondary }]}>
-                                                            {voice.gender === 'male' ? '♂️ Masculina' : voice.gender === 'female' ? '♀️ Femenina' : '⚪ Neutra'}
-                                                        </Text>
-                                                    )}
-                                                    {voice.language && provider === 'system' && (
-                                                        <Text style={[styles.voiceGender, { color: colors.textSecondary }]}>
-                                                            🌐 {voice.language}
-                                                        </Text>
-                                                    )}
-                                                </View>
-
-                                                <View style={styles.voiceActions}>
-                                                    {/* Botón de preview */}
-                                                    <TouchableOpacity
-                                                        style={[
-                                                            styles.previewButton,
-                                                            { backgroundColor: colors.primary + '20' },
-                                                            playingVoiceId === voiceId && { backgroundColor: colors.primary },
-                                                        ]}
-                                                        onPress={(e) => {
-                                                            e.stopPropagation();
-                                                            handlePreview(voiceId);
-                                                        }}
-                                                    >
-                                                        {loadingPreview && playingVoiceId === voiceId ? (
-                                                            <ActivityIndicator size="small" color={playingVoiceId === voiceId ? '#FFFFFF' : colors.primary} />
-                                                        ) : playingVoiceId === voiceId ? (
-                                                            <VolumeX size={18} color="#FFFFFF" />
-                                                        ) : (
-                                                            <Volume2 size={18} color={colors.primary} />
-                                                        )}
-                                                    </TouchableOpacity>
-
-                                                    {/* Check si está seleccionada */}
-                                                    {isSelected && (
-                                                        <View style={[styles.checkIcon, { backgroundColor: colors.primary }]}>
-                                                            <Check size={16} color="#FFFFFF" />
-                                                        </View>
-                                                    )}
-                                                </View>
-                                            </TouchableOpacity>
-                                        </React.Fragment>
-                                    );
-                                })
-                            )}
-                        </ScrollView>
-
-                        {/* Footer con info */}
-                        <View style={[styles.footer, { borderTopColor: colors.border }]}>
-                            <Text style={[styles.footerText, { color: colors.textSecondary }]}>
-                                {getProviderEmoji()} {provider === 'openai'
-                                    ? 'Voces de alta calidad optimizadas para múltiples idiomas'
-                                    : provider === 'elevenlabs'
-                                        ? 'Voces con personalización de emociones avanzada'
-                                        : provider === 'azure'
-                                            ? 'Voces realistas de Microsoft Azure AI'
-                                            : 'Voces offline del dispositivo'}
-                            </Text>
-                        </View>
                     </View>
-                </View>
+
+                    {provider !== 'system' && (
+                        <View style={styles.filtersContainer}>
+                            <View style={[styles.searchBox, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+                                <Search size={18} color={colors.textSecondary} />
+                                <TextInput
+                                    style={[styles.searchInput, { color: colors.text }]}
+                                    placeholder="Buscar voz..."
+                                    placeholderTextColor={colors.textSecondary}
+                                    value={searchQuery}
+                                    onChangeText={setSearchQuery}
+                                />
+                                {searchQuery !== '' && (
+                                    <TouchableOpacity onPress={() => setSearchQuery('')}>
+                                        <X size={16} color={colors.textSecondary} />
+                                    </TouchableOpacity>
+                                )}
+                            </View>
+
+                            <View style={styles.filterDropdownsRow}>
+                                {renderFilterDropdown('gender', 'Género', [
+                                    { label: 'Femeninas', value: 'female' },
+                                    { label: 'Masculinas', value: 'male' },
+                                    { label: 'Neutras', value: 'neutral' }
+                                ], genderFilters, setGenderFilters)}
+                                
+                                {renderFilterDropdown('language', 'Idioma', 
+                                    availableLanguages.map(l => ({ label: l.toUpperCase(), value: l })), 
+                                languageFilters, setLanguageFilters)}
+                                
+                                {renderFilterDropdown('country', 'País', 
+                                    availableCountries.map(c => ({ label: c, value: c })), 
+                                countryFilters, setCountryFilters)}
+                            </View>
+                        </View>
+                    )}
+
+                    <ScrollView style={styles.voiceList} contentContainerStyle={styles.voiceListContent}>
+                        {loadingVoices ? (
+                            <View style={styles.loadingContainer}>
+                                <ActivityIndicator size="large" color={colors.primary} />
+                                <Text style={[styles.loadingText, { color: colors.textSecondary }]}>Cargando voces...</Text>
+                            </View>
+                        ) : processedVoices.length === 0 ? (
+                            <View style={styles.emptyContainer}>
+                                <Text style={[styles.emptyText, { color: colors.textSecondary }]}>No se encontraron voces.</Text>
+                            </View>
+                        ) : provider === 'system' ? (
+                            processedVoices.map((v: any) => renderVoiceItem(v, selectedVoiceId === v.id))
+                        ) : (
+                            <>
+                                {renderSection('⭐ Favoritas', favoriteVoices)}
+                                {renderSection('🇪🇸 Recomendadas', recommendedVoices)}
+                                {renderSection('🌐 Todas las voces', otherVoices)}
+                            </>
+                        )}
+                    </ScrollView>
+                </SafeAreaView>
             </Modal>
         </>
     );
 }
 
 const styles = StyleSheet.create({
-    selectorButton: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-        padding: rp(12),
-        borderRadius: 12,
-        borderWidth: 1,
-    },
-    selectorContent: {
-        flex: 1,
-    },
-    selectorLabel: {
-        fontSize: rf(12),
-        marginBottom: 2,
-    },
-    selectorValue: {
-        fontSize: rf(15),
-        fontWeight: '600',
-    },
-    modalOverlay: {
-        flex: 1,
-        backgroundColor: 'rgba(0,0,0,0.5)',
-        justifyContent: 'flex-end',
-    },
-    modalContent: {
-        height: '70%',
-        minHeight: 400,
-        borderTopLeftRadius: 24,
-        borderTopRightRadius: 24,
-        overflow: 'hidden',
-    },
-    modalHeader: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-        padding: rp(20),
-        borderBottomWidth: 1,
-    },
-    modalTitle: {
-        fontSize: rf(20),
-        fontWeight: '700',
-    },
-    closeButton: {
-        padding: rp(4),
-    },
-    voiceList: {
-        flex: 1,
-    },
-    voiceListContent: {
-        padding: rp(16),
-        paddingBottom: rp(20),
-        gap: rp(12),
-    },
-    loadingContainer: {
-        padding: rp(40),
-        alignItems: 'center',
-        gap: rp(16),
-    },
-    loadingText: {
-        fontSize: rf(14),
-    },
-    emptyContainer: {
-        padding: rp(40),
-        alignItems: 'center',
-    },
-    emptyText: {
-        fontSize: rf(14),
-        textAlign: 'center',
-    },
-    voiceItem: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-        padding: rp(16),
-        borderRadius: 12,
-        borderWidth: 1,
-    },
-    voiceInfo: {
-        flex: 1,
-        marginRight: rp(12),
-    },
-    voiceName: {
-        fontSize: rf(16),
-        fontWeight: '600',
-        marginBottom: 4,
-    },
-    voiceDescription: {
-        fontSize: rf(13),
-        marginBottom: 2,
-    },
-    voiceGender: {
-        fontSize: rf(12),
-    },
-    voiceActions: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        gap: rp(8),
-    },
-    previewButton: {
-        width: 40,
-        height: 40,
-        borderRadius: 20,
-        alignItems: 'center',
-        justifyContent: 'center',
-    },
-    checkIcon: {
-        width: 28,
-        height: 28,
-        borderRadius: 14,
-        alignItems: 'center',
-        justifyContent: 'center',
-    },
-    footer: {
-        padding: rp(16),
-        borderTopWidth: 1,
-    },
-    footerText: {
-        fontSize: rf(13),
-        textAlign: 'center',
-    },
-    categorySeparator: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        marginVertical: rp(12),
-        gap: rp(8),
-    },
-    separatorLine: {
-        flex: 1,
-        height: 1,
-    },
-    categoryLabel: {
-        fontSize: rf(12),
-        fontWeight: '600',
-        paddingHorizontal: rp(8),
-    },
-    voiceSection: {
-        marginBottom: rp(8),
-    },
-    voiceSectionHeader: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        paddingTop: rp(16),
-        paddingBottom: rp(8),
-        gap: rp(10),
-    },
-    voiceSectionTitle: {
-        fontSize: rf(12),
-        fontWeight: '700',
-        letterSpacing: 0.8,
-        textTransform: 'uppercase',
-        flexShrink: 0,
-    },
-    voiceSectionLine: {
-        flex: 1,
-        height: 1,
-        opacity: 0.4,
-    },
-    genderFilter: {
-        flexDirection: 'row',
-        gap: rp(8),
-        paddingHorizontal: rp(16),
-        paddingVertical: rp(12),
-        borderBottomWidth: 1,
-    },
-    genderChip: {
-        paddingHorizontal: rp(14),
-        paddingVertical: rp(6),
-        borderRadius: rp(20),
-        borderWidth: 1,
-    },
-    genderChipActive: {
-        // bg comes from inline styles
-    },
-    genderChipText: {
-        fontSize: rf(13),
-        fontWeight: '600',
-    },
+    selectorButton: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', padding: rp(12), borderRadius: 12, borderWidth: 1 },
+    selectorContent: { flex: 1 },
+    selectorLabel: { fontSize: rf(12), marginBottom: 2 },
+    selectorValue: { fontSize: rf(15), fontWeight: '600' },
+    
+    fullScreenModal: { flex: 1 },
+    modalHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', padding: rp(20), borderBottomWidth: 1 },
+    modalTitle: { fontSize: rf(20), fontWeight: '700' },
+    headerActions: { flexDirection: 'row', alignItems: 'center', gap: rp(12) },
+    refreshButton: { padding: rp(6), borderRadius: 8, borderWidth: 1 },
+    closeButton: { padding: rp(4) },
+    
+    filtersContainer: { paddingVertical: rp(12), borderBottomWidth: 1, borderBottomColor: '#333' },
+    searchBox: { flexDirection: 'row', alignItems: 'center', marginHorizontal: rp(16), paddingHorizontal: rp(12), height: 44, borderRadius: 22, borderWidth: 1, marginBottom: rp(12) },
+    searchInput: { flex: 1, marginLeft: rp(8), fontSize: rf(14) },
+    
+    filterDropdownsRow: { flexDirection: 'column', paddingHorizontal: rp(16), gap: rp(8) },
+    filterDropdownContainer: { marginBottom: 4 },
+    filterDropdownHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: rp(16), paddingVertical: rp(12), borderRadius: 12, borderWidth: 1 },
+    filterDropdownTitle: { fontSize: rf(14), fontWeight: '600' },
+    filterDropdownContent: { marginTop: rp(8), paddingLeft: rp(4) },
+    filterDropdownScroll: { gap: rp(8), paddingRight: rp(20) },
+    
+    filterChip: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: rp(14), paddingVertical: rp(8), borderRadius: rp(20), borderWidth: 1 },
+    filterChipText: { fontSize: rf(13), fontWeight: '600' },
+    
+    voiceList: { flex: 1 },
+    voiceListContent: { padding: rp(16), paddingBottom: rp(40), gap: rp(12) },
+    
+    voiceSection: { marginBottom: rp(8) },
+    voiceSectionHeader: { flexDirection: 'row', alignItems: 'center', paddingTop: rp(8), paddingBottom: rp(12), gap: rp(10) },
+    voiceSectionTitle: { fontSize: rf(12), fontWeight: '700', letterSpacing: 0.8, textTransform: 'uppercase', flexShrink: 0 },
+    voiceSectionLine: { flex: 1, height: 1, opacity: 0.4 },
+    
+    voiceItem: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', padding: rp(16), borderRadius: 12, borderWidth: 1, marginBottom: rp(8) },
+    voiceInfo: { flex: 1, marginRight: rp(12) },
+    voiceNameRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 4 },
+    voiceName: { fontSize: rf(16), fontWeight: '600', marginRight: rp(8) },
+    voiceDescription: { fontSize: rf(13), marginBottom: 2 },
+    voiceGender: { fontSize: rf(12) },
+    
+    voiceActions: { flexDirection: 'row', alignItems: 'center', gap: rp(12) },
+    heartButton: { padding: rp(4) },
+    previewButton: { width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center' },
+    checkIcon: { width: 28, height: 28, borderRadius: 14, alignItems: 'center', justifyContent: 'center' },
+    
+    loadingContainer: { padding: rp(40), alignItems: 'center', gap: rp(16) },
+    loadingText: { fontSize: rf(14) },
+    emptyContainer: { padding: rp(40), alignItems: 'center' },
+    emptyText: { fontSize: rf(14), textAlign: 'center' }
 });

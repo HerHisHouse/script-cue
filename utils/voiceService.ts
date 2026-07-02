@@ -18,6 +18,9 @@ export interface VoiceOption {
   gender?: 'male' | 'female' | 'neutral';
   accent?: string;
   labels?: any;
+  language?: string;
+  country?: string;
+  styles?: string[];
 }
 
 // ============================================
@@ -73,40 +76,33 @@ export const OPENAI_VOICES: VoiceOption[] = [
 // VOCES DE AZURE (Lista estática)
 // ============================================
 
-export const AZURE_VOICES: VoiceOption[] = [
-  {
-    id: 'es-ES-AlvaroNeural',
-    name: 'Alvaro',
-    provider: 'azure' as VoiceProvider,
-    description: 'Hombre, español castellano',
-    gender: 'male',
-    accent: 'es-ES',
-  },
-  {
-    id: 'es-ES-ElviraNeural',
-    name: 'Elvira',
-    provider: 'azure' as VoiceProvider,
-    description: 'Mujer, español castellano',
-    gender: 'female',
-    accent: 'es-ES',
-  },
-  {
-    id: 'es-MX-DaliaNeural',
-    name: 'Dalia',
-    provider: 'azure' as VoiceProvider,
-    description: 'Mujer, español mexicano',
-    gender: 'female',
-    accent: 'es-MX',
-  },
-  {
-    id: 'es-AR-TomasNeural',
-    name: 'Tomás',
-    provider: 'azure' as VoiceProvider,
-    description: 'Hombre, español argentino',
-    gender: 'male',
-    accent: 'es-AR',
-  },
-];
+let cachedAzureVoices: VoiceOption[] | null = null;
+
+export async function getAzureVoices(forceRefresh = false): Promise<VoiceOption[]> {
+  if (cachedAzureVoices && !forceRefresh) return cachedAzureVoices;
+
+  const renderUrl = process.env.EXPO_PUBLIC_RENDER_SERVER_URL;
+  if (!renderUrl) {
+    console.warn('RENDER_SERVER_URL not configured');
+    return [];
+  }
+
+  try {
+    const response = await fetch(`${renderUrl}/api/azure/voices`);
+    if (!response.ok) throw new Error(`Azure Voices API error: ${response.status}`);
+    
+    const voices = await response.json();
+    cachedAzureVoices = voices;
+    return voices;
+  } catch (error) {
+    console.error('Error fetching Azure voices:', error);
+    return [];
+  }
+}
+
+export function clearAzureCache(): void {
+  cachedAzureVoices = null;
+}
 
 // ============================================
 // VOCES DE ELEVENLABS
@@ -117,9 +113,9 @@ let cachedElevenLabsVoices: VoiceOption[] | null = null;
 /**
  * Obtiene las voces disponibles de ElevenLabs
  */
-export async function getElevenLabsVoices(): Promise<VoiceOption[]> {
+export async function getElevenLabsVoices(forceRefresh = false): Promise<VoiceOption[]> {
   // Retornar cache si existe
-  if (cachedElevenLabsVoices) {
+  if (cachedElevenLabsVoices && !forceRefresh) {
     return cachedElevenLabsVoices;
   }
 
@@ -166,17 +162,33 @@ export async function getElevenLabsVoices(): Promise<VoiceOption[]> {
       }
     }
     
-    const voices: VoiceOption[] = data.voices.map((voice: any) => ({
-      id: voice.voice_id,
-      name: voice.name,
-      provider: 'elevenlabs' as VoiceProvider,
-      description: voice.labels?.description || voice.labels?.accent || '',
-      previewUrl: voice.preview_url,
-      gender: voice.labels?.gender?.toLowerCase() || 'neutral',
-      accent: voice.labels?.accent,
-      category: voice.category || 'generated', // Categoría de la voz
-      labels: voice.labels,
-    }));
+    const voices: VoiceOption[] = data.voices.map((voice: any) => {
+      let lang = voice.labels?.language || 'en';
+      let ctry = voice.labels?.accent || 'US';
+      
+      // Basic normalization based on accent if language is missing
+      if (voice.labels?.accent && !voice.labels?.language) {
+        const accent = voice.labels.accent.toLowerCase();
+        if (accent.includes('spanish') || accent.includes('mexican') || accent.includes('peninsular')) {
+          lang = 'es';
+          ctry = accent.includes('mexican') ? 'MX' : accent.includes('peninsular') ? 'ES' : 'US';
+        }
+      }
+
+      return {
+        id: voice.voice_id,
+        name: voice.name,
+        provider: 'elevenlabs' as VoiceProvider,
+        description: voice.labels?.description || voice.labels?.accent || '',
+        previewUrl: voice.preview_url,
+        gender: voice.labels?.gender?.toLowerCase() || 'neutral',
+        accent: voice.labels?.accent,
+        language: lang,
+        country: ctry,
+        category: voice.category || 'generated',
+        labels: voice.labels,
+      };
+    });
 
     // Separar voces en categorías
     // - Mis voces: TODAS las que NO sean 'premade' (voces públicas)
@@ -239,65 +251,30 @@ export async function playVoicePreview(voice: VoiceOption): Promise<void> {
     const sampleText = 'Hola, esta es mi voz. ¿Qué te parece?';
     const tempPath = `${FileSystem.cacheDirectory}voice_preview_${Date.now()}.mp3`;
 
-    if (voice.provider === 'elevenlabs') {
-      if (voice.previewUrl) {
-        // ElevenLabs: descargar el preview URL a fichero temporal
-        try {
-          const downloadResult = await FileSystem.downloadAsync(voice.previewUrl, tempPath);
-          audioUri = downloadResult.uri;
-        } catch (dlErr) {
-          console.warn('[Preview] ElevenLabs previewUrl download failed, generating on-the-fly...');
-        }
-      }
-      if (!audioUri) {
-        // Si no hay previewUrl o falló, generar con la API
-        try {
-          const arrayBuffer = await generateElevenLabsAudio(sampleText, voice.id);
-          const base64 = arrayBufferToBase64(arrayBuffer);
-          await FileSystem.writeAsStringAsync(tempPath, base64, {
-            encoding: FileSystem.EncodingType.Base64,
-          });
-          audioUri = tempPath;
-        } catch (genErr) {
-          console.error('[Preview] ElevenLabs generation failed:', genErr);
-          throw genErr;
-        }
-      }
-    } else if (voice.provider === 'azure') {
-      // Azure: generar preview vía el servidor Render (devuelve MP3 binario directamente)
+    if (voice.provider === 'elevenlabs' || voice.provider === 'azure') {
       const renderUrl = process.env.EXPO_PUBLIC_RENDER_SERVER_URL;
       if (!renderUrl) {
-        throw new Error('RENDER_SERVER_URL no configurado para preview de Azure');
+        throw new Error(`RENDER_SERVER_URL no configurado para preview de ${voice.provider}`);
       }
       try {
-        const response = await fetch(`${renderUrl}/tts-azure`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            text: sampleText,
-            voice: voice.id,
-            userId: 'preview',
-          }),
-        });
-
+        const response = await fetch(`${renderUrl}/api/tts/preview/${voice.provider}/${voice.id}`);
         if (!response.ok) {
           const bodyText = await response.text().catch(() => response.statusText);
-          throw new Error(`Azure preview error ${response.status}: ${bodyText}`);
+          throw new Error(`Preview error ${response.status}: ${bodyText}`);
         }
 
-        // El servidor devuelve el binario MP3 directamente — guardar en fichero temporal
         const arrayBuffer = await response.arrayBuffer();
         if (!arrayBuffer || arrayBuffer.byteLength === 0) {
-          throw new Error('Azure preview: empty audio buffer received');
+          throw new Error('Preview: empty audio buffer received');
         }
         const base64 = arrayBufferToBase64(arrayBuffer);
         await FileSystem.writeAsStringAsync(tempPath, base64, {
           encoding: FileSystem.EncodingType.Base64,
         });
         audioUri = tempPath;
-      } catch (azureErr) {
-        console.error('[Preview] Azure generation failed:', azureErr);
-        throw azureErr;
+      } catch (err) {
+        console.error(`[Preview] ${voice.provider} generation failed:`, err);
+        throw err;
       }
     } else if (voice.provider === 'openai') {
       // OpenAI: generar audio y guardar en fichero temporal (data URIs NO funcionan en RN)
@@ -379,15 +356,18 @@ function arrayBufferToBase64(buffer: ArrayBuffer): string {
 /**
  * Obtiene todas las voces disponibles de todos los proveedores
  */
-export async function getAllVoices(): Promise<{
+export async function getAllVoices(forceRefresh = false): Promise<{
   openai: VoiceOption[];
   elevenlabs: VoiceOption[];
+  azure: VoiceOption[];
 }> {
-  const elevenLabsVoices = await getElevenLabsVoices();
+  const elevenLabsVoices = await getElevenLabsVoices(forceRefresh);
+  const azureVoices = await getAzureVoices(forceRefresh);
   
   return {
     openai: OPENAI_VOICES,
     elevenlabs: elevenLabsVoices,
+    azure: azureVoices,
   };
 }
 
@@ -398,6 +378,11 @@ export async function getVoiceById(voiceId: string): Promise<VoiceOption | null>
   // Primero buscar en OpenAI
   const openaiVoice = OPENAI_VOICES.find(v => v.id === voiceId);
   if (openaiVoice) return openaiVoice;
+
+  // Luego en Azure
+  const azureVoices = await getAzureVoices();
+  const azureVoice = azureVoices.find(v => v.id === voiceId);
+  if (azureVoice) return azureVoice;
 
   // Luego en ElevenLabs
   const elevenLabsVoices = await getElevenLabsVoices();
