@@ -1812,7 +1812,7 @@ app.get('/api/tts/preview/:provider/:voiceId', async (req, res) => {
         if (provider === 'azure') {
             audioBuffer = await generateAzureTTS({ text: textToSpeak, voice: voiceId });
         } else if (provider === 'elevenlabs') {
-            const elevenKey = (process.env.EXPO_PUBLIC_ELEVENLABS_API_KEY || '').trim();
+            const elevenKey = (process.env.ELEVENLABS_API_KEY || process.env.EXPO_PUBLIC_ELEVENLABS_API_KEY || '').trim();
             const response = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${voiceId}?output_format=mp3_44100_128`, {
                 method: 'POST',
                 headers: {
