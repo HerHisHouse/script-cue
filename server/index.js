@@ -699,11 +699,15 @@ app.post('/compress-video', upload.fields([
   processTeleprompterInBackground(jobId, req.files, req.body)
     .catch(async (err) => {
       console.error(`[Job ${jobId}] Error fatal:`, err.message);
-      await supabase.from('casting_jobs').update({
-        status: 'error',
-        error_message: err.message,
-        updated_at: new Date().toISOString(),
-      }).eq('job_id', jobId).catch(() => {});
+      try {
+        await supabase.from('casting_jobs').update({
+          status: 'error',
+          error_message: err.message,
+          updated_at: new Date().toISOString(),
+        }).eq('job_id', jobId);
+      } catch (updateErr) {
+        console.error('[Job] Error actualizando status de error:', updateErr);
+      }
     });
 });
 

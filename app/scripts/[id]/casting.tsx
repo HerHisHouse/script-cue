@@ -197,7 +197,7 @@ export default function CastingModeScreen() {
   const [globalFormatBold, setGlobalFormatBold] = useState(false);
   const [globalFormatItalic, setGlobalFormatItalic] = useState(false);
   const [globalFormatUnderline, setGlobalFormatUnderline] = useState(false);
-  const [globalFormatAlign, setGlobalFormatAlign] = useState<'left'|'center'|'right'>('center');
+  const [globalFormatAlign, setGlobalFormatAlign] = useState<'left' | 'center' | 'right'>('center');
   const [globalFormatColor, setGlobalFormatColor] = useState('white');
   const [globalSpacing, setGlobalSpacing] = useState(0);
   const [globalBackground, setGlobalBackground] = useState('transparent');
@@ -221,13 +221,13 @@ export default function CastingModeScreen() {
     const loadFreeText = async () => {
       try {
         const AsyncStorage = (await import('@react-native-async-storage/async-storage')).default;
-        
+
         // Cargar texto y configuraciones globales
         const saved = await AsyncStorage.getItem('freeTeleprompterText');
         if (saved) {
           setFreeText(saved);
         }
-        
+
         const formatSettings = await AsyncStorage.getItem('freeTeleprompterFormat');
         if (formatSettings) {
           const parsed = JSON.parse(formatSettings);
@@ -881,7 +881,7 @@ export default function CastingModeScreen() {
   // Get duration for a line (calculated + adjustment)
   function getLineDuration(line: DialogueLine): number {
     const adjustment = sceneConfig?.lineTimings.find(lt => lt.lineId === line.id)?.timingAdjustment || 0;
-    
+
     // Si es una tarjeta de acción (isAction = true), usar tiempo base fijo de 2s en lugar del cálculo por palabras.
     if (line.isAction || line.characterName === 'ACCIÓN') {
       return Math.max(0, 2 + adjustment);
@@ -1443,7 +1443,7 @@ export default function CastingModeScreen() {
         console.log('[Teleprompter] Local-only mode — skipping upload');
         await supabase.from('recordings').insert({
           user_id: user?.id,
-          script_id: id,
+          script_id: null,
           project_id: null,
           title: `Teleprompter - ${new Date().toLocaleDateString('es-ES')}`,
           audio_url: uri,  // local file:// URI → shows 📱 Local
@@ -1638,8 +1638,8 @@ export default function CastingModeScreen() {
         Alert.alert(
           '🎬 ¡Selftape enviado!',
           'Tu vídeo se está procesando en segundo plano.\n\n' +
-            'Te avisaremos en Grabaciones cuando esté listo. ' +
-            'Puedes seguir usando la app mientras tanto.',
+          'Te avisaremos en Grabaciones cuando esté listo. ' +
+          'Puedes seguir usando la app mientras tanto.',
           [
             {
               text: 'Ver Grabaciones',
@@ -2139,8 +2139,8 @@ export default function CastingModeScreen() {
                       <Text style={styles.countdownText}>{countdown}</Text>
                     </View>
                     <Text style={styles.countdownLabel}>Prepárate para grabar...</Text>
-                    <TouchableOpacity 
-                      style={styles.cancelCountdownButton} 
+                    <TouchableOpacity
+                      style={styles.cancelCountdownButton}
                       onPress={cancelCountdown}
                     >
                       <Text style={styles.cancelCountdownText}>Cancelar</Text>
@@ -2310,10 +2310,10 @@ export default function CastingModeScreen() {
                         No hay texto para mostrar. Vuelve atrás y escribe algo.
                       </Text>
                     ) : (
-                      <View style={{ 
-                        width: '100%', 
-                        alignItems: globalFormatAlign === 'left' ? 'flex-start' : globalFormatAlign === 'right' ? 'flex-end' : 'center', 
-                        transform: [{ scaleX: isMirrored ? -1 : 1 }] 
+                      <View style={{
+                        width: '100%',
+                        alignItems: globalFormatAlign === 'left' ? 'flex-start' : globalFormatAlign === 'right' ? 'flex-end' : 'center',
+                        transform: [{ scaleX: isMirrored ? -1 : 1 }]
                       }}>
                         <Text style={{
                           fontSize: freeFontSize,
@@ -2490,7 +2490,7 @@ export default function CastingModeScreen() {
                   ) : (
                     <>
                       {/* 1. Edición de texto (Collapsible) */}
-                      <TouchableOpacity 
+                      <TouchableOpacity
                         onPress={() => setIsTextEditExpanded(!isTextEditExpanded)}
                         style={[styles.menuItem, { paddingHorizontal: 20, justifyContent: 'space-between' }]}
                       >
@@ -2500,7 +2500,7 @@ export default function CastingModeScreen() {
                         </View>
                         <ChevronRight size={rp(20)} color="white" style={{ transform: [{ rotate: isTextEditExpanded ? '90deg' : '0deg' }] }} />
                       </TouchableOpacity>
-                      
+
                       {isTextEditExpanded && (
                         <View style={{ backgroundColor: 'rgba(255,255,255,0.05)', paddingVertical: rp(12) }}>
                           {/* Tamaño de texto */}
@@ -2668,8 +2668,8 @@ export default function CastingModeScreen() {
                   {castingType === 'free' ? 'Enviando vídeo...' : 'Procesando tu casting...'}
                 </Text>
                 <Text style={styles.processingText}>
-                  {castingType === 'free' 
-                    ? 'Estamos guardando el vídeo, podrás encontrarlo en Grabaciones.' 
+                  {castingType === 'free'
+                    ? 'Estamos guardando el vídeo, podrás encontrarlo en Grabaciones.'
                     : 'Estamos mezclando tu actuación con el audio de IA de alta calidad.'}
                 </Text>
                 {castingType !== 'free' && (
@@ -2703,23 +2703,23 @@ export default function CastingModeScreen() {
 
             <View style={styles.qualityOptions}>
               {[
-                { 
-                  value: 'high', 
-                  label: 'Alta', 
-                  desc: '1080p — Máxima calidad', 
-                  size: '~60MB/min' 
+                {
+                  value: 'high',
+                  label: 'Alta',
+                  desc: '1080p — Máxima calidad',
+                  size: '~60MB/min'
                 },
-                { 
-                  value: 'medium', 
-                  label: 'Media (Recomendada)', 
-                  desc: '720p — Estándar profesional', 
-                  size: '~30MB/min' 
+                {
+                  value: 'medium',
+                  label: 'Media (Recomendada)',
+                  desc: '720p — Estándar profesional',
+                  size: '~30MB/min'
                 },
-                { 
-                  value: 'low', 
-                  label: 'Baja', 
-                  desc: '480p — Archivos más pequeños', 
-                  size: '~12MB/min' 
+                {
+                  value: 'low',
+                  label: 'Baja',
+                  desc: '480p — Archivos más pequeños',
+                  size: '~12MB/min'
                 },
               ].map((option) => (
                 <TouchableOpacity
