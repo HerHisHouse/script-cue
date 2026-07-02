@@ -149,7 +149,7 @@ export default function RecordingsScreen() {
   // Casting jobs en segundo plano
   const [processingJobs, setProcessingJobs] = useState<string[]>([]);
   const flatListRef = useRef<FlatList>(null);
-  const [completedBanner, setCompletedBanner] = useState(false);
+  const [completedBanner, setCompletedBanner] = useState<string | null>(null);
   // URL resolved (signed Supabase URL or local file URI) for the current video being played
   const [videoPlayableUrl, setVideoPlayableUrl] = useState<string | null>(null);
   const [videoUrlLoading, setVideoUrlLoading] = useState(false);
@@ -641,8 +641,9 @@ export default function RecordingsScreen() {
               flatListRef.current?.scrollToOffset({ offset: 0, animated: true });
             }, 300);
 
-            setCompletedBanner(true);
-            setTimeout(() => setCompletedBanner(false), 5000);
+            const isTeleprompter = job.job_id?.startsWith('teleprompter_');
+            setCompletedBanner(isTeleprompter ? '¡Tu vídeo de teleprompter está listo!' : '¡Tu selftape está listo!');
+            setTimeout(() => setCompletedBanner(null), 5000);
           }
           if (job.status === 'completed_local') {
             setProcessingJobs((prev) => prev.filter((jid) => jid !== job.job_id));
@@ -707,8 +708,9 @@ export default function RecordingsScreen() {
             flatListRef.current?.scrollToOffset({ offset: 0, animated: true });
           }, 300);
 
-          setCompletedBanner(true);
-          setTimeout(() => setCompletedBanner(false), 5000);
+          const isTeleprompter = job.job_id?.startsWith('teleprompter_');
+          setCompletedBanner(isTeleprompter ? '¡Tu vídeo de teleprompter está listo!' : '¡Tu selftape está listo!');
+          setTimeout(() => setCompletedBanner(null), 5000);
         }
         if (job.status === 'completed_local') {
           setProcessingJobs(prev => prev.filter(id => id !== job.job_id));
@@ -2606,7 +2608,12 @@ export default function RecordingsScreen() {
           }]}>
             <ActivityIndicator size="small" color={colors.primary} />
             <Text style={[styles.processingBannerText, { color: colors.primary }]}>
-              Procesando tu selftape en segundo plano...
+              {processingJobs.some(id => id.startsWith('teleprompter_')) && processingJobs.some(id => id.startsWith('casting_') || id.startsWith('job_'))
+                ? 'Procesando tus vídeos en segundo plano...'
+                : processingJobs.some(id => id.startsWith('teleprompter_'))
+                ? 'Procesando tu vídeo de teleprompter en segundo plano...'
+                : 'Procesando tu selftape en segundo plano...'
+              }
             </Text>
           </View>
         )}
@@ -2618,7 +2625,7 @@ export default function RecordingsScreen() {
           }]}>
             <Text style={{ fontSize: rp(16) }}>✅</Text>
             <Text style={[styles.processingBannerText, { color: '#10B981' }]}>
-              ¡Tu selftape está listo!
+              {completedBanner}
             </Text>
           </View>
         )}
