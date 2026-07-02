@@ -177,17 +177,74 @@ export function VoiceSelector({
         return voices.find(v => v.id === selectedVoiceId)?.name || selectedVoiceId;
     };
 
-    // Extract unique options for filters
-    const availableLanguages = useMemo(() => {
-        const langs = new Set<string>();
-        voices.forEach(v => { if (v.language) langs.add(v.language); });
-        return Array.from(langs).sort();
+    const getLanguageName = (code: string) => {
+        if (!code) return 'Desconocido';
+        const lower = code.toLowerCase();
+        if (lower.startsWith('es')) return 'Español';
+        if (lower.startsWith('en')) return 'Inglés';
+        if (lower.startsWith('fr')) return 'Francés';
+        if (lower.startsWith('de')) return 'Alemán';
+        if (lower.startsWith('it')) return 'Italiano';
+        if (lower.startsWith('pt')) return 'Portugués';
+        if (lower.startsWith('ca')) return 'Catalán';
+        if (lower.startsWith('gl')) return 'Gallego';
+        if (lower.startsWith('eu')) return 'Euskera';
+        if (lower.startsWith('zh')) return 'Chino';
+        if (lower.startsWith('ja')) return 'Japonés';
+        if (lower.startsWith('ko')) return 'Coreano';
+        return code.toUpperCase();
+    };
+
+    const getCountryName = (code: string) => {
+        if (!code) return 'Desconocido';
+        const mapping: Record<string, string> = {
+            'ES': 'España', 'MX': 'México', 'US': 'Estados Unidos', 
+            'GB': 'Reino Unido', 'UK': 'Reino Unido', 'AR': 'Argentina',
+            'CO': 'Colombia', 'CL': 'Chile', 'PE': 'Perú', 'VE': 'Venezuela',
+            'EC': 'Ecuador', 'GT': 'Guatemala', 'CU': 'Cuba', 'BO': 'Bolivia',
+            'DO': 'Rep. Dominicana', 'HN': 'Honduras', 'PY': 'Paraguay',
+            'SV': 'El Salvador', 'NI': 'Nicaragua', 'CR': 'Costa Rica',
+            'PR': 'Puerto Rico', 'PA': 'Panamá', 'UY': 'Uruguay',
+            'FR': 'Francia', 'DE': 'Alemania', 'IT': 'Italia', 'PT': 'Portugal',
+            'BR': 'Brasil', 'AU': 'Australia', 'CA': 'Canadá',
+            'AMERICAN': 'Estados Unidos', 'BRITISH': 'Reino Unido',
+            'AUSTRALIAN': 'Australia', 'SPANISH': 'España', 'MEXICAN': 'México'
+        };
+        return mapping[code.toUpperCase()] || code.toUpperCase();
+    };
+
+    const languageOptions = useMemo(() => {
+        const langMap = new Map<string, string[]>();
+        voices.forEach(v => { 
+            if (v.language) {
+                const name = getLanguageName(v.language);
+                if (!langMap.has(name)) langMap.set(name, []);
+                if (!langMap.get(name)!.includes(v.language)) {
+                    langMap.get(name)!.push(v.language);
+                }
+            } 
+        });
+        return Array.from(langMap.entries()).map(([name, values]) => ({
+            label: name,
+            value: values.join(',')
+        })).sort((a, b) => a.label.localeCompare(b.label));
     }, [voices]);
 
-    const availableCountries = useMemo(() => {
-        const countries = new Set<string>();
-        voices.forEach(v => { if (v.country) countries.add(v.country); });
-        return Array.from(countries).sort();
+    const countryOptions = useMemo(() => {
+        const countryMap = new Map<string, string[]>();
+        voices.forEach(v => { 
+            if (v.country) {
+                const name = getCountryName(v.country);
+                if (!countryMap.has(name)) countryMap.set(name, []);
+                if (!countryMap.get(name)!.includes(v.country)) {
+                    countryMap.get(name)!.push(v.country);
+                }
+            } 
+        });
+        return Array.from(countryMap.entries()).map(([name, values]) => ({
+            label: name,
+            value: values.join(',')
+        })).sort((a, b) => a.label.localeCompare(b.label));
     }, [voices]);
 
     // Apply Filters
@@ -197,8 +254,16 @@ export function VoiceSelector({
         let filtered = voices.filter((v: any) => {
             if (searchQuery && !v.name.toLowerCase().includes(searchQuery.toLowerCase())) return false;
             if (genderFilters.length > 0 && (!v.gender || !genderFilters.includes(v.gender))) return false;
-            if (languageFilters.length > 0 && (!v.language || !languageFilters.includes(v.language))) return false;
-            if (countryFilters.length > 0 && (!v.country || !countryFilters.includes(v.country))) return false;
+            if (languageFilters.length > 0) {
+                if (!v.language) return false;
+                const activeCodes = languageFilters.flatMap(f => f.split(','));
+                if (!activeCodes.includes(v.language)) return false;
+            }
+            if (countryFilters.length > 0) {
+                if (!v.country) return false;
+                const activeCodes = countryFilters.flatMap(f => f.split(','));
+                if (!activeCodes.includes(v.country)) return false;
+            }
             return true;
         });
         
@@ -297,8 +362,8 @@ export function VoiceSelector({
                 {voice.gender && provider !== 'system' && (
                     <Text style={[styles.voiceGender, { color: colors.textSecondary }]}>
                         {voice.gender === 'male' ? '♂️ Masculina' : voice.gender === 'female' ? '♀️ Femenina' : '⚪ Neutra'}
-                        {voice.country ? ` • ${voice.country}` : ''}
-                        {voice.styles && voice.styles.length > 0 ? ` • ${voice.styles.length} estilos` : ''}
+                        {voice.language ? ` • ${getLanguageName(voice.language)}` : ''}
+                        {voice.country ? ` • ${getCountryName(voice.country)}` : ''}
                     </Text>
                 )}
                 {voice.language && provider === 'system' && (
@@ -408,13 +473,9 @@ export function VoiceSelector({
                                     { label: 'Neutras', value: 'neutral' }
                                 ], genderFilters, setGenderFilters)}
                                 
-                                {renderFilterDropdown('language', 'Idioma', 
-                                    availableLanguages.map(l => ({ label: l.toUpperCase(), value: l })), 
-                                languageFilters, setLanguageFilters)}
+                                {renderFilterDropdown('language', 'Idioma', languageOptions, languageFilters, setLanguageFilters)}
                                 
-                                {renderFilterDropdown('country', 'País', 
-                                    availableCountries.map(c => ({ label: c, value: c })), 
-                                countryFilters, setCountryFilters)}
+                                {renderFilterDropdown('country', 'País', countryOptions, countryFilters, setCountryFilters)}
                             </View>
                         </View>
                     )}
