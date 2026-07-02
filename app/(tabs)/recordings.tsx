@@ -1123,18 +1123,29 @@ export default function RecordingsScreen() {
         return storagePath;
       }
 
+      if (storagePath.startsWith('file://')) {
+        const exactLocalInfo = await FileSystem.getInfoAsync(storagePath);
+        if (exactLocalInfo.exists) {
+          console.log('[Playback] Using exact local file URI:', storagePath);
+          return storagePath;
+        } else {
+          console.warn('[Playback] Exact local file not found:', storagePath);
+          // Don't return null immediately, let it fallback just in case, though it will likely fail
+        }
+      }
+
       const filename = storagePath.split('/').pop() ?? '';
       const localUri = (FileSystem.documentDirectory ?? '') + filename;
       const isLocalPath = storagePath.startsWith('local/');
 
-      // Check local file first
+      // Check local file in documentDirectory fallback
       const localInfo = await FileSystem.getInfoAsync(localUri);
       if (localInfo.exists) {
         console.log('[Playback] Using local file:', localUri);
         return localUri;
       }
 
-      if (isLocalPath || settings.useLocalOnly) {
+      if (isLocalPath || settings.useLocalOnly || storagePath.startsWith('file://')) {
         console.warn('[Playback] Local file not found and remote disabled');
         return null;
       }

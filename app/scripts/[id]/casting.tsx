@@ -1544,12 +1544,14 @@ export default function CastingModeScreen() {
       setProcessingProgress(20);
 
       const lineTimings = lineTimingsRef.current;
+      const teleSettings = await getSettings();
 
       const formData = new FormData();
       formData.append('userId', user?.id || '');
       formData.append('scriptId', id as string);
       formData.append('lineTimings', JSON.stringify(lineTimings));
       formData.append('hasHeadphones', _hasHeadphonesArg ? 'true' : 'false');
+      formData.append('useLocalOnly', teleSettings.useLocalOnly ? 'true' : 'false');
 
       // Vídeo
       formData.append('video', {

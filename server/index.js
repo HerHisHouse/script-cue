@@ -543,6 +543,17 @@ async function processCastingInBackground(jobId, files, body) {
         console.log(`[Job ${jobId}] Tamaño final: ${finalSizeMB.toFixed(1)}MB`);
 
         const remotePath = `${userId}/${Date.now()}_casting.mp4`;
+        const useLocalOnly = body.useLocalOnly === 'true';
+
+        if (useLocalOnly) {
+            console.log(`[Job ${jobId}] ⚠️ Modo local activado, guardando para descarga directa...`);
+            await supabase.from('casting_jobs').update({
+                status: 'completed_local',
+                error_message: `Vídeo mezclado en modo local. Descárgalo ahora — disponible solo 1 hora.`,
+                updated_at: new Date().toISOString(),
+            }).eq('job_id', jobId);
+            return; // Detiene la ejecución para no subir a Supabase
+        }
         
         if (finalSizeMB <= 49) {
             // Subir a Supabase
