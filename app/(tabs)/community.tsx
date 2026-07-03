@@ -9,6 +9,8 @@ import {
   Alert,
   ActivityIndicator,
   Animated,
+  Modal,
+  FlatList,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Users, CheckCircle, Check } from 'lucide-react-native';
@@ -32,42 +34,54 @@ const OPCIONES: Opcion[] = [
   {
     id: 'replica',
     icon: '🎭',
-    texto: 'Encontrar compis de escena online',
-    subtexto: 'Para ensayar escenas juntos',
-  },
-  {
-    id: 'feedback_pro',
-    icon: '🎓',
-    texto: 'Recibir feedback de coaches profesionales',
-    subtexto: 'Sesiones privadas con profesoras/es y directoras/es',
-  },
-  {
-    id: 'grupos',
-    icon: '👥',
-    texto: 'Crear grupos de ensayo',
-    subtexto: 'Grupos estables para trabajar proyectos',
+    texto: 'Encontrar pareja de escena',
+    subtexto: 'Para que te den una réplica real y humana',
   },
   {
     id: 'ciudad',
     icon: '📍',
-    texto: 'Buscar actores/actrices en mi ciudad',
-    subtexto: 'Conectar con gente cerca de ti',
+    texto: 'Buscar en mi ciudad',
+    subtexto: 'Conectar con gente del gremio cerca de ti',
   },
   {
-    id: 'casting_partner',
+    id: 'proyectos',
     icon: '🎬',
-    texto: 'Encontrar pareja para selftapes',
-    subtexto: 'Alguien que te dé la réplica en cámara',
+    texto: 'Proyectos',
+    subtexto: 'Descubre proyectos o castings compartidos por la comunidad.',
+  },
+  {
+    id: 'grupos',
+    icon: '👥',
+    texto: 'Grupos de ensayo',
+    subtexto: 'Grupos estables para crear o ensayar',
+  },
+  {
+    id: 'feedback_pro',
+    icon: '🎓',
+    texto: 'Feedback profesional',
+    subtexto: 'Concertar sesiones con coaches profesionales',
+  },
+  {
+    id: 'networking',
+    icon: '🌐',
+    texto: 'Networking',
+    subtexto: 'Amplia tu red de contactos',
   },
 ];
 
 const LABEL_MAP: Record<string, string> = {
-  replica: 'Compis de escena online',
-  feedback_pro: 'Feedback de coaches profesionales',
+  replica: 'Encontrar pareja de escena',
+  ciudad: 'Buscar en mi ciudad',
+  proyectos: 'Proyectos',
   grupos: 'Grupos de ensayo',
-  ciudad: 'Actores/actrices en mi ciudad',
-  casting_partner: 'Pareja para selftapes',
+  feedback_pro: 'Feedback profesional',
+  networking: 'Networking',
 };
+
+
+const PROVINCES = [
+  "Álava", "Albacete", "Alicante", "Almería", "Ávila", "Badajoz", "Baleares", "Barcelona", "Burgos", "Cáceres", "Cádiz", "Castellón", "Ciudad Real", "Córdoba", "A Coruña", "Cuenca", "Girona", "Granada", "Guadalajara", "Gipuzkoa", "Huelva", "Huesca", "Jaén", "León", "Lleida", "La Rioja", "Lugo", "Madrid", "Málaga", "Murcia", "Navarra", "Ourense", "Asturias", "Palencia", "Las Palmas", "Pontevedra", "Salamanca", "Santa Cruz de Tenerife", "Cantabria", "Segovia", "Sevilla", "Soria", "Tarragona", "Teruel", "Toledo", "Valencia", "Valladolid", "Bizkaia", "Zamora", "Zaragoza", "Ceuta", "Melilla"
+];
 
 export default function CommunityScreen() {
   const { user } = useAuth();
@@ -77,7 +91,9 @@ export default function CommunityScreen() {
 
   const [estado, setEstado] = useState<Estado>('cargando');
   const [selectedOptions, setSelectedOptions] = useState<string[]>([]);
-  const [ciudad, setCiudad] = useState('');
+  const [ciudad, setCiudad] = useState<string[]>([]);
+  const [cityModalVisible, setCityModalVisible] = useState(false);
+  const [citySearch, setCitySearch] = useState('');
   const [loading, setLoading] = useState(false);
   const [userIntereses, setUserIntereses] = useState<string[]>([]);
 
@@ -100,7 +116,7 @@ export default function CommunityScreen() {
       if (data) {
         setUserIntereses(data.intereses || []);
         setSelectedOptions(data.intereses || []);
-        setCiudad(data.ciudad || '');
+        setCiudad(data.ciudad ? data.ciudad.split(', ') : []);
         setEstado('ya-apuntado');
       } else {
         setEstado('formulario');
@@ -138,7 +154,7 @@ export default function CommunityScreen() {
           user_id: user.id,
           email: user.email,
           intereses: selectedOptions,
-          ciudad: ciudad.trim() || null,
+          ciudad: ciudad.length > 0 ? ciudad.join(', ') : null,
         });
 
       if (!error) {
@@ -353,26 +369,82 @@ export default function CommunityScreen() {
 
           {/* City field */}
           <View style={styles.section}>
-            <Text style={[styles.fieldLabel, { color: colors.text }]}>¿En qué ciudad estás?</Text>
-            <TextInput
+            <Text style={[styles.fieldLabel, { color: colors.text }]}>¿En qué ciudad(es) estás?</Text>
+            <TouchableOpacity
               style={[
                 styles.input,
                 {
                   backgroundColor: colors.input,
                   borderColor: colors.border,
-                  color: colors.text,
+                  justifyContent: 'center',
+                  minHeight: 50,
                 },
               ]}
-              placeholder="Ej: Madrid, Barcelona, Valencia..."
-              placeholderTextColor={colors.placeholder}
-              value={ciudad}
-              onChangeText={setCiudad}
-              returnKeyType="done"
-            />
+              onPress={() => setCityModalVisible(true)}
+            >
+              <Text style={{ color: ciudad.length > 0 ? colors.text : colors.placeholder, fontSize: 15 }}>
+                {ciudad.length > 0 ? ciudad.join(', ') : 'Seleccionar ciudades'}
+              </Text>
+            </TouchableOpacity>
             <Text style={[styles.fieldHint, { color: colors.textSecondary }]}>
-              Opcional. Nos ayuda a saber dónde hay más interés.
+              Obligatorio. Puedes elegir más de una.
             </Text>
           </View>
+
+          {/* City Selector Modal */}
+          <Modal visible={cityModalVisible} animationType="slide" presentationStyle="pageSheet" onRequestClose={() => setCityModalVisible(false)}>
+            <SafeAreaView style={{ flex: 1, backgroundColor: colors.background }}>
+              <View style={{ padding: 16, borderBottomWidth: 1, borderBottomColor: colors.border, flexDirection: 'row', alignItems: 'center' }}>
+                <TextInput
+                  style={{
+                    flex: 1,
+                    backgroundColor: colors.input,
+                    color: colors.text,
+                    paddingHorizontal: 16,
+                    paddingVertical: 12,
+                    borderRadius: 10,
+                    marginRight: 12,
+                    fontSize: 16,
+                  }}
+                  placeholder="Buscar ciudad..."
+                  placeholderTextColor={colors.placeholder}
+                  value={citySearch}
+                  onChangeText={setCitySearch}
+                  autoFocus
+                />
+                <TouchableOpacity onPress={() => setCityModalVisible(false)}>
+                  <Text style={{ color: PURPLE, fontWeight: '600', fontSize: 16 }}>Hecho</Text>
+                </TouchableOpacity>
+              </View>
+              <FlatList
+                data={PROVINCES.filter(p => p.toLowerCase().includes(citySearch.toLowerCase()))}
+                keyExtractor={item => item}
+                renderItem={({ item }) => {
+                  const isSelected = ciudad.includes(item);
+                  return (
+                    <TouchableOpacity
+                      style={{
+                        padding: 16,
+                        flexDirection: 'row',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        borderBottomWidth: 1,
+                        borderBottomColor: colors.border
+                      }}
+                      onPress={() => {
+                        setCiudad(prev => 
+                          prev.includes(item) ? prev.filter(c => c !== item) : [...prev, item]
+                        );
+                      }}
+                    >
+                      <Text style={{ color: colors.text, fontSize: 16 }}>{item}</Text>
+                      {isSelected && <Check size={20} color={PURPLE} />}
+                    </TouchableOpacity>
+                  );
+                }}
+              />
+            </SafeAreaView>
+          </Modal>
 
           {/* Submit button */}
           <View style={styles.section}>
@@ -380,12 +452,12 @@ export default function CommunityScreen() {
               style={[
                 styles.submitButton,
                 {
-                  backgroundColor: selectedOptions.length === 0 ? colors.border : PURPLE_DARK,
+                  backgroundColor: (selectedOptions.length === 0 || ciudad.length === 0) ? colors.border : PURPLE_DARK,
                   opacity: loading ? 0.7 : 1,
                 },
               ]}
               onPress={handleSubmit}
-              disabled={selectedOptions.length === 0 || loading}
+              disabled={selectedOptions.length === 0 || ciudad.length === 0 || loading}
               activeOpacity={0.8}
             >
               {loading ? (
