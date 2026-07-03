@@ -545,17 +545,35 @@ async function processCastingInBackground(jobId, files, body) {
         const remotePath = `${userId}/${Date.now()}_casting.mp4`;
         const useLocalOnly = body.useLocalOnly === 'true';
 
-        if (useLocalOnly) {
-            console.log(`[Job ${jobId}] ⚠️ Modo local activado, guardando para descarga directa...`);
+        if (useLocalOnly || finalSizeMB > 49) {
+            let message = useLocalOnly 
+                ? `Selftape (Modo Local). Tu vídeo ha sido mezclado. Descárgalo ahora — disponible solo 1 hora.` 
+                : `Tu vídeo es demasiado grande para la nube (${finalSizeMB.toFixed(0)}MB). Descárgalo ahora — disponible solo 1 hora.`;
+                
+            console.log(`[Job ${jobId}] ⚠️ Guardando para descarga directa. Razón: ${useLocalOnly ? 'Modo Local' : 'Tamaño excedido'}`);
+
+            const downloadsDir = path.join(__dirname, 'downloads');
+            if (!fs.existsSync(downloadsDir)) fs.mkdirSync(downloadsDir, { recursive: true });
+            
+            const localDownloadPath = path.join(downloadsDir, `${jobId}.mp4`);
+            fs.copyFileSync(outputFile, localDownloadPath);
+            
+            // Delete file after 1 hour (3600000 ms)
+            setTimeout(() => {
+                try {
+                    if (fs.existsSync(localDownloadPath)) {
+                        fs.unlinkSync(localDownloadPath);
+                        console.log(`[Job ${jobId}] Deleted local download file after 1 hour.`);
+                    }
+                } catch (e) {}
+            }, 3600000);
+
             await supabase.from('casting_jobs').update({
                 status: 'completed_local',
-                error_message: `Vídeo mezclado en modo local. Descárgalo ahora — disponible solo 1 hora.`,
-                updated_at: new Date().toISOString(),
+                error_message: message,
             }).eq('job_id', jobId);
-            return; // Detiene la ejecución para no subir a Supabase
-        }
-        
-        if (finalSizeMB <= 49) {
+
+        } else {
             // Subir a Supabase
             const fileBuffer = fs.readFileSync(outputFile);
             const { error: uploadError } = await supabase.storage
@@ -613,31 +631,6 @@ async function processCastingInBackground(jobId, files, body) {
             } else {
                 console.log(`[Job ${jobId}] ✅ Status actualizado a completed`);
             }
-            
-        } else {
-            // Vídeo demasiado grande para Supabase incluso comprimido
-            console.log(`[Job ${jobId}] ⚠️ Vídeo grande (${finalSizeMB.toFixed(0)}MB), guardando localmente`);
-            
-            const downloadsDir = path.join(__dirname, 'downloads');
-            if (!fs.existsSync(downloadsDir)) fs.mkdirSync(downloadsDir, { recursive: true });
-            
-            const localDownloadPath = path.join(downloadsDir, `${jobId}.mp4`);
-            fs.copyFileSync(outputFile, localDownloadPath);
-            
-            // Delete file after 1 hour (3600000 ms)
-            setTimeout(() => {
-                try {
-                    if (fs.existsSync(localDownloadPath)) {
-                        fs.unlinkSync(localDownloadPath);
-                        console.log(`[Job ${jobId}] Deleted local download file after 1 hour.`);
-                    }
-                } catch (e) {}
-            }, 3600000);
-
-            await supabase.from('casting_jobs').update({
-                status: 'completed_local',
-                error_message: `Vídeo de ${finalSizeMB.toFixed(0)}MB guardado en el servidor temporalmente.`,
-            }).eq('job_id', jobId);
         }
 
         console.log(`[Job ${jobId}] ✅ Proceso completo`);

@@ -647,8 +647,9 @@ export default function RecordingsScreen() {
           }
           if (job.status === 'completed_local') {
             setProcessingJobs((prev) => prev.filter((jid) => jid !== job.job_id));
+            const isLocalMode = job.error_message?.includes('Local');
             Alert.alert(
-              '📹 Selftape listo (archivo grande)',
+              isLocalMode ? '📹 Selftape listo (Modo Local)' : '📹 Selftape listo (archivo grande)',
               job.error_message ||
                 'Tu vídeo es demasiado grande para la nube. Descárgalo ahora — ' +
                 'estará disponible solo durante 1 hora.',
@@ -714,8 +715,10 @@ export default function RecordingsScreen() {
         }
         if (job.status === 'completed_local') {
           setProcessingJobs(prev => prev.filter(id => id !== job.job_id));
+          const isLocalMode = job.error_message?.includes('Local');
           Alert.alert(
-            '📹 Selftape listo (archivo grande)',
+            isLocalMode ? '📹 Selftape listo (Modo Local)' : '📹 Selftape listo (archivo grande)',
+            job.error_message ||
             'Tu vídeo es demasiado grande para la nube. ' +
             'Descárgalo ahora — disponible solo 1 hora.',
             [
