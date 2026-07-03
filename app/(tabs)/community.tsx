@@ -155,7 +155,7 @@ export default function CommunityScreen() {
           email: user.email,
           intereses: selectedOptions,
           ciudad: ciudad.length > 0 ? ciudad.join(', ') : null,
-        });
+        }, { onConflict: 'email' });
 
       if (!error) {
         setEstado('confirmacion');
