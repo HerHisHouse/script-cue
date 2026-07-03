@@ -303,9 +303,9 @@ export default function CommunityScreen() {
             </View>
 
             <Text style={[styles.description, { color: colors.textSecondary }]}>
-              Encuentra actores y actrices en tu ciudad para ensayar juntos y grabar los castings con réplica real.{'\n\n'}
               La IA está bien.{'\n'}
-              Una persona de verdad es otra cosa.
+              Una persona de verdad es otra cosa.{'\n\n'}
+              Estamos creando una comunidad donde actores y actrices podrán encontrarse, preparar castings juntos y ayudarse a crecer profesionalmente.
             </Text>
           </View>
 
