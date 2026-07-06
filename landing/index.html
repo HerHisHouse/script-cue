@@ -81,6 +81,40 @@
     background: rgba(124, 106, 247, 0.12) !important;
     border-top: 2px solid #a78bfa !important;
   }
+
+  .pricing-card {
+    position: relative;
+    overflow: hidden;
+  }
+  .coming-soon-overlay {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    backdrop-filter: blur(4px);
+    -webkit-backdrop-filter: blur(4px);
+    background: rgba(10, 10, 20, 0.3);
+    z-index: 10;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    pointer-events: auto;
+  }
+  .coming-soon-band {
+    position: absolute;
+    background: linear-gradient(135deg, #7c6af7 0%, #9b87f5 100%);
+    color: #fff;
+    font-weight: 800;
+    font-size: 16px;
+    letter-spacing: 3px;
+    padding: 12px 150%;
+    transform: rotate(-35deg);
+    text-align: center;
+    box-shadow: 0 4px 20px rgba(0,0,0,0.4);
+    white-space: nowrap;
+    text-transform: uppercase;
+  }
 </style>
 </head>
 
@@ -406,6 +440,9 @@
             <div class="pricing-grid">
                 <!-- Free Plan -->
                 <div class="pricing-card">
+                    <div class="coming-soon-overlay">
+                        <div class="coming-soon-band">PRÓXIMAMENTE</div>
+                    </div>
                     <h3 class="pricing-title">Gratuito</h3>
                     <div class="pricing-price">0€<span>/mes</span></div>
                     <ul class="pricing-features">
@@ -417,6 +454,9 @@
                 </div>
                 <!-- Basic Plan -->
                 <div class="pricing-card highlighted">
+                    <div class="coming-soon-overlay">
+                        <div class="coming-soon-band">PRÓXIMAMENTE</div>
+                    </div>
                     <div class="pricing-badge">Más popular</div>
                     <h3 class="pricing-title">Básico</h3>
                     <div class="pricing-price">--€<span>/mes</span></div>
@@ -429,6 +469,9 @@
                 </div>
                 <!-- Premium Plan -->
                 <div class="pricing-card">
+                    <div class="coming-soon-overlay">
+                        <div class="coming-soon-band">PRÓXIMAMENTE</div>
+                    </div>
                     <h3 class="pricing-title">Premium</h3>
                     <div class="pricing-price">--€<span>/mes</span></div>
                     <ul class="pricing-features">
