@@ -58,8 +58,8 @@
     "android": {
       "package": "com.alexdiaz.scriptcue",
       "adaptiveIcon": {
-        "foregroundImage": "./assets/images/logo-android.png",
-        "monochromeImage": "./assets/images/logo-android.png",
+        "foregroundImage": "./assets/images/logo-android-morado.png",
+        "monochromeImage": "./assets/images/logo-android-morado.png",
         "backgroundColor": "#FFFFFF"
       },
       "permissions": [

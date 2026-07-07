@@ -1,4 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
+import * as Crypto from 'expo-crypto';
+import * as FileSystem from 'expo-file-system/legacy';
 import {
   View,
   Text,
@@ -964,8 +966,7 @@ export default function CarModeScreen() {
       const { data: { user: currentUser } } = await supabase.auth.getUser();
       if (!currentUser) throw new Error('No user');
 
-      const Crypto = await import('expo-crypto');
-      const FileSystem = await import('expo-file-system/legacy');
+
 
       // Helper: subida binaria via XHR - evita "Invalid Content-Type header"
       async function uploadBinaryToStorage(

@@ -118,7 +118,6 @@ export default function ScriptDetailScreen() {
     })();
     (async () => {
       try {
-        const { getElevenLabsVoices } = await import('@/utils/voiceService');
         const voices = await getElevenLabsVoices();
         setElevenLabsVoices(voices || []);
       } catch { }

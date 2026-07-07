@@ -816,16 +816,16 @@ export default function ImportScriptScreen() {
               <Text style={[styles.label, { color: colors.text }]}>Archivo PDF o DOCX</Text>
               <TouchableOpacity
                 style={[
-                  styles.uploadButton,
+                  styles.scanButton,
                   { backgroundColor: colors.surface, borderColor: colors.border },
                   ...(file ? [styles.uploadButtonSuccess] : [])
                 ]}
                 onPress={pickDocument}
               >
-                <Upload size={24} color={file ? colors.success : colors.textSecondary} />
+                <Upload size={24} color={file ? colors.success : colors.primary} />
                 <Text style={[
-                  styles.uploadText,
-                  { color: file ? colors.success : colors.textSecondary }
+                  styles.scanButtonText,
+                  { color: file ? colors.success : colors.primary }
                 ]}>
                   {file ? file.name : 'Seleccionar Archivo'}
                 </Text>

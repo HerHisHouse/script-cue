@@ -160,10 +160,12 @@ export default function CommunityScreen() {
       if (!error) {
         setEstado('confirmacion');
       } else {
-        Alert.alert('Error', 'No se pudo guardar. Inténtalo de nuevo.');
+        console.error('Supabase upsert error:', error);
+        Alert.alert('Error', `No se pudo guardar: ${error.message || JSON.stringify(error)}`);
       }
-    } catch {
-      Alert.alert('Error', 'No se pudo guardar. Inténtalo de nuevo.');
+    } catch (e: any) {
+      console.error('Catch error:', e);
+      Alert.alert('Error', `No se pudo guardar: ${e.message || 'Error desconocido'}`);
     } finally {
       setLoading(false);
     }

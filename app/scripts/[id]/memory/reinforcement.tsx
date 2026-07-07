@@ -369,7 +369,6 @@ export default function ReinforcementScreen() {
         setEchoPhase('speak');
         try {
             await Audio.requestPermissionsAsync();
-            const { enableRecordingMode } = await import('@/utils/audioMode');
             await enableRecordingMode();
 
             const { recording } = await Audio.Recording.createAsync(

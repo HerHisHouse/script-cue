@@ -43,8 +43,10 @@ import * as Speech from 'expo-speech';
 import { Script, Character } from '@/types/database';
 import { parseScreenplay, ParsedScript } from '@/utils/pdfParser';
 import { DialogueContent } from '@/types/database';
-import { DialogueLine } from '@/utils/dialogueParser';
+import { DialogueLine, extractDialogue } from '@/utils/dialogueParser';
 import { loadDialogueLines } from '@/utils/loadDialogueLines';
+import { generateAndCacheAudio } from '@/utils/ttsCache';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import {
   SceneConfig,
   ActionCard,
@@ -220,7 +222,6 @@ export default function CastingModeScreen() {
   useEffect(() => {
     const loadFreeText = async () => {
       try {
-        const AsyncStorage = (await import('@react-native-async-storage/async-storage')).default;
 
         // Cargar texto y configuraciones globales
         const saved = await AsyncStorage.getItem('freeTeleprompterText');
@@ -456,7 +457,6 @@ export default function CastingModeScreen() {
             }));
 
             // Use extractDialogue for fallback
-            const { extractDialogue } = await import('@/utils/dialogueParser');
             lines = extractDialogue(fallbackScenes as any, charData || []);
           } catch (e) {
             console.warn('Fallback parsing failed:', e);
@@ -546,7 +546,6 @@ export default function CastingModeScreen() {
 
     // Check if we have enough cached audio to start immediately
     // We'll run the full check in background
-    const { generateAndCacheAudio } = await import('@/utils/ttsCache');
 
     // Start background loading
     (async () => {
@@ -759,7 +758,6 @@ export default function CastingModeScreen() {
       }
 
       // 4. Intentar obtener del cache en disco (Supabase Storage / FileSystem) o generar
-      const { generateAndCacheAudio } = await import('@/utils/ttsCache');
       const text = line.cleanText || line.text;
 
       const effectiveProvider = (provider === 'google' ? 'openai' : provider) as 'openai' | 'elevenlabs';
@@ -949,7 +947,6 @@ export default function CastingModeScreen() {
 
     // Guardar borrador (texto y configuración de formato)
     try {
-      const AsyncStorage = (await import('@react-native-async-storage/async-storage')).default;
       await AsyncStorage.setItem('freeTeleprompterText', freeText);
       await AsyncStorage.setItem('freeTeleprompterFormat', JSON.stringify({
         bold: globalFormatBold,
@@ -1270,8 +1267,6 @@ export default function CastingModeScreen() {
       const hasHeadphones = await detectHeadphones();
 
       // Mostrar aviso de auriculares (solo una vez si el usuario lo descarta)
-      const AsyncStorage =
-        (await import('@react-native-async-storage/async-storage')).default;
       const hideWarning =
         await AsyncStorage.getItem('casting_hide_headphone_warning');
 

@@ -225,8 +225,6 @@ export default function EchoModeScreen() {
 
 
             // Intentar usar caché de TTS
-            const { generateAndCacheAudio } = await import('@/utils/ttsCache');
-            const { setAudioModeForPlayback } = await import('@/utils/audioMode');
 
             // Find character to get voice_id
             const characterName = line.characterName.toUpperCase();
@@ -320,7 +318,6 @@ export default function EchoModeScreen() {
             setPhase('speak');
 
             await Audio.requestPermissionsAsync();
-            const { enableRecordingMode } = await import('@/utils/audioMode');
             await enableRecordingMode();
 
             const { recording } = await Audio.Recording.createAsync(

@@ -599,7 +599,7 @@ export default function StudioV2Screen() {
 
             // Use cloud TTS (OpenAI, ElevenLabs, Google) with cache
             try {
-                const { generateAndCacheAudio } = await import('@/utils/ttsCache');
+
 
                 // Determine provider and voice from character-specific settings
                 const characterName = line.characterName.toUpperCase();
@@ -1509,7 +1509,7 @@ export default function StudioV2Screen() {
                 throw new Error(`Failed to save recording: ${insertError.message}`);
             }
 
-            Alert.alert('Éxito', 'Sesión guardada y procesada correctamente.');
+            Alert.alert('Éxito', 'Sesión guardada y procesada correctamente. Encontrarás el archivo en "Grabaciones".');
 
             // Cleanup segments from storage (optional)
             for (const segment of segmentsRef.current) {

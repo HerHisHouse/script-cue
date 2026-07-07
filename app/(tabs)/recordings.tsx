@@ -844,18 +844,24 @@ export default function RecordingsScreen() {
         return;
       }
 
-      // Get signed URL
-      const { data, error } = await supabase.storage
-        .from('recordings')
-        .createSignedUrl(storagePath, 3600);
+      let downloadUrl = '';
+      if (storagePath.startsWith('http://') || storagePath.startsWith('https://')) {
+        downloadUrl = storagePath;
+      } else {
+        // Get signed URL
+        const { data, error } = await supabase.storage
+          .from('recordings')
+          .createSignedUrl(storagePath, 3600);
 
-      if (error || !data?.signedUrl) {
-        throw new Error('No se pudo obtener el enlace de descarga.');
+        if (error || !data?.signedUrl) {
+          throw new Error('No se pudo obtener el enlace de descarga.');
+        }
+        downloadUrl = data.signedUrl;
       }
 
       // Download
-      console.log('[Offline] Downloading...', data.signedUrl, 'to', localUri);
-      const downloadRes = await FileSystem.downloadAsync(data.signedUrl, localUri);
+      console.log('[Offline] Downloading...', downloadUrl, 'to', localUri);
+      const downloadRes = await FileSystem.downloadAsync(downloadUrl, localUri);
 
       if (downloadRes.status !== 200) {
         throw new Error(`Error en descarga: ${downloadRes.status}`);
