@@ -184,38 +184,81 @@
 
     <div class="gradient-divider"></div>
 
-        <!-- Video Tutorial Section -->
-    <section class="video-tutorial" id="tutorial">
-        <div class="container">
-            <div class="section-header">
-                <span class="section-badge">Tutorial</span>
-                <h2 class="section-title">Aprende a usar <span class="gradient-text">ScriptCue</span></h2>
-                <p class="section-subtitle">Descubre en este breve vídeo cómo importar tus guiones y empezar a ensayar con la IA.</p>
-            </div>
-            <div class="video-placeholder">
-                <div class="play-button">
-                    <svg viewBox="0 0 24 24" fill="currentColor">
-                        <path d="M8 5v14l11-7z" />
-                    </svg>
-                </div>
-            </div>
-        </div>
-    </section>
+        
 
     <div class="gradient-divider"></div>
 
-    <section class="pain-points" style="padding: 80px 0; text-align: center; background: rgba(255,255,255,0.02);">
+    <section class="pain-points" style="padding: 100px 0; background: radial-gradient(circle at top, rgba(124, 106, 247, 0.08) 0%, transparent 60%); position: relative;">
+        <style>
+            .pain-card {
+                background: rgba(255,255,255,0.02);
+                border: 1px solid rgba(255,255,255,0.06);
+                border-radius: 24px;
+                padding: 32px;
+                transition: transform 0.3s ease, background 0.3s ease, border-color 0.3s ease;
+                position: relative;
+                overflow: hidden;
+            }
+            .pain-card:hover {
+                transform: translateY(-5px);
+                background: rgba(255,255,255,0.04);
+                border-color: rgba(124, 106, 247, 0.3);
+            }
+            .pain-card::before {
+                content: '';
+                position: absolute;
+                top: 0;
+                left: 0;
+                width: 4px;
+                height: 100%;
+                background: linear-gradient(to bottom, #7c6af7, #9b87f5);
+                opacity: 0.5;
+                transition: opacity 0.3s ease;
+            }
+            .pain-card:hover::before {
+                opacity: 1;
+            }
+            .pain-icon {
+                font-size: 28px;
+                margin-bottom: 16px;
+                display: inline-block;
+            }
+        </style>
         <div class="container">
-            <h2 class="section-title" style="margin-bottom: 30px;">Lo sé, hemos pasado por esto.</h2>
-            <p style="font-size: 18px; color: #9090b0; line-height: 1.8; max-width: 700px; margin: 0 auto 40px; text-align: left; padding: 20px; background: rgba(255,255,255,0.04); border-radius: 12px; border-left: 4px solid #a78bfa;">
-                No encontrar a nadie que te dé la réplica.<br><br>
-                Ensayar leyendo tú las respuestas del otro personaje.<br><br>
-                Llegar al casting sin haber podido probar la escena en condiciones.<br><br>
-                Memorizarte el texto a fuerza de repetirlo, sin ningún método.
-            </p>
-            <p style="font-size: 20px; color: #fff; font-weight: 600;">
-                ScriptCue nace de ahí: de vivir esto en primera persona y decidir hacer algo con ello.
-            </p>
+            <div class="section-header">
+                <span class="section-badge">El Origen</span>
+                <h2 class="section-title">Lo sé, hemos pasado <span class="gradient-text">por esto</span></h2>
+            </div>
+            
+            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 24px; margin: 50px 0;">
+                
+                <div class="pain-card">
+                    <div class="pain-icon">🤷🏽‍♀️</div>
+                    <p style="font-size: 16px; color: #d0d0d0; line-height: 1.6; margin: 0; font-weight: 500;">No encontrar a nadie que te dé la réplica en el momento que lo necesitas.</p>
+                </div>
+
+                <div class="pain-card">
+                    <div class="pain-icon">📖</div>
+                    <p style="font-size: 16px; color: #d0d0d0; line-height: 1.6; margin: 0; font-weight: 500;">Ensayar leyendo tú las respuestas del otro personaje.</p>
+                </div>
+
+                <div class="pain-card">
+                    <div class="pain-icon">😓</div>
+                    <p style="font-size: 16px; color: #d0d0d0; line-height: 1.6; margin: 0; font-weight: 500;">Llegar al casting sin haber podido probar la escena en condiciones.</p>
+                </div>
+
+                <div class="pain-card">
+                    <div class="pain-icon">🦜</div>
+                    <p style="font-size: 16px; color: #d0d0d0; line-height: 1.6; margin: 0; font-weight: 500;">Memorizarte el texto a fuerza de repetirlo, sin ningún método.</p>
+                </div>
+
+            </div>
+
+            <div style="text-align: center; margin-top: 60px; padding: 40px 20px; background: rgba(124, 106, 247, 0.08); border-radius: 24px; border: 1px solid rgba(124, 106, 247, 0.15);">
+                <p style="font-size: 22px; color: #fff; font-weight: 700; margin: 0; letter-spacing: -0.5px;">
+                    ScriptCue nace de ahí: <br class="mobile-break"><span style="color: #a78bfa;">de vivir esto en primera persona</span> y decidir hacer algo con ello.
+                </p>
+            </div>
         </div>
     </section>
 
@@ -283,6 +326,41 @@
     </section>
 
     
+
+    <!-- How It Works -->
+    <section class="how-it-works" id="how-it-works">
+        <div class="container">
+            <div class="section-header">
+                <span class="section-badge">Fácil y rápido</span>
+                <h2 class="section-title">Empieza en <span class="gradient-text">3 pasos</span></h2>
+            </div>
+            <div class="steps">
+                <div class="step">
+                    <div class="step-number">1</div>
+                    <div class="step-content">
+                        <h3 class="step-title">Sube tu guión</h3>
+                        <p class="step-description">Importa tu guión en PDF, DOCX o escanéalo directamente con la cámara de tu móvil. También podrás subir imágenes y la app extraerá el texto automáticamente.</p>
+                    </div>
+                </div>
+                <div class="step-connector"></div>
+                <div class="step">
+                    <div class="step-number">2</div>
+                    <div class="step-content">
+                        <h3 class="step-title">Configura personajes</h3>
+                        <p class="step-description">Configura los personajes que aparecen en tu guion. Asígnale las voces IA. Después podrás revisa el guion, editar diálogos o crear nuevos.</p>
+                    </div>
+                </div>
+                <div class="step-connector"></div>
+                <div class="step">
+                    <div class="step-number">3</div>
+                    <div class="step-content">
+                        <h3 class="step-title">¡A ensayar!</h3>
+                        <p class="step-description">Elige el modo que prefieras y comienza a practicar. La IA siempre te dará la réplica.</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
 
     <!-- Modes Section -->
     <section class="modes" id="modes">
