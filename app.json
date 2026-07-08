@@ -32,7 +32,7 @@
           }
         }
       },
-      "bundleIdentifier": "com.alexdiaz.scriptcue"
+      "bundleIdentifier": "es.scriptcue.app"
     },
     "web": {
       "bundler": "metro",
