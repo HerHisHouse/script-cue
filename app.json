@@ -56,7 +56,7 @@
       "typedRoutes": true
     },
     "android": {
-      "package": "com.alexdiaz.scriptcue",
+      "package": "es.scriptcue.app",
       "adaptiveIcon": {
         "foregroundImage": "./assets/images/logo-android-morado.png",
         "monochromeImage": "./assets/images/logo-android-morado.png",

@@ -1,8 +1,8 @@
 // Dynamic Expo config to support identifier coexistence across environments.
 // Uses APP_ID_SUFFIX to switch between dev/preview/prod IDs without breaking the dev client.
 
-const BASE_BUNDLE_ID = "com.alexdiaz.scriptcue";
-const BASE_PACKAGE_ID = "com.alexdiaz.scriptcue";
+const BASE_BUNDLE_ID = "es.scriptcue.app";
+const BASE_PACKAGE_ID = "es.scriptcue.app";
 
 function withSuffix(base, suffix) {
   if (!suffix) return base;
