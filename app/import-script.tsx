@@ -190,8 +190,6 @@ export default function ImportScriptScreen() {
             ]);
           }
 
-          const firstNonUserIndex = mapped.findIndex((c) => !c.isMyCharacter);
-          if (firstNonUserIndex >= 0) setOpenOperatorIndex(firstNonUserIndex);
           setTimeout(() => {
             if (scrollRef.current) {
               scrollRef.current.scrollTo({ y: Math.max(configSectionY - 12, 0), animated: true });

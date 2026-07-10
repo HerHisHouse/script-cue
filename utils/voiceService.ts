@@ -248,7 +248,7 @@ export async function playVoicePreview(voice: VoiceOption): Promise<void> {
     });
 
     let audioUri: string | null = null;
-    const sampleText = 'Hola, esta es mi voz. ¿Qué te parece?';
+    const sampleText = 'Hola, esta es una muestra de mi voz en Scriptquiu. Espero que te guste.';
     const tempPath = `${FileSystem.cacheDirectory}voice_preview_${Date.now()}.mp3`;
 
     if (voice.provider === 'elevenlabs' || voice.provider === 'azure') {
