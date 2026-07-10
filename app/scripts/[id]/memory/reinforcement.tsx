@@ -105,19 +105,17 @@ export default function ReinforcementScreen() {
         if (!currentItem || currentItem.reason !== 'echo_error') return;
         if (echoPhase !== 'read') return;
 
-        const timer = setInterval(() => {
-            setEchoTimeLeft(t => {
-                if (t <= 1) {
-                    clearInterval(timer);
-                    startEchoListening();
-                    return 0;
-                }
-                return t - 1;
-            });
+        if (echoTimeLeft <= 0) {
+            startEchoListening();
+            return;
+        }
+
+        const timer = setTimeout(() => {
+            setEchoTimeLeft(prev => prev - 1);
         }, 1000);
 
-        return () => clearInterval(timer);
-    }, [echoPhase, currentIndex, failedItems]);
+        return () => clearTimeout(timer);
+    }, [echoPhase, echoTimeLeft, currentItem]);
 
     useEffect(() => {
         return () => {

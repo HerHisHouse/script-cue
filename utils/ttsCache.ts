@@ -128,8 +128,9 @@ export async function getCachedAudio(
         const query = supabase
             .from('tts_cache')
             .select('*')
-            .eq('line_id', lineId)
-            .eq('provider', provider);
+            .eq('text_hash', textHash)
+            .eq('provider', provider)
+            .limit(1);
 
         if (voiceId) {
             query.eq('voice_id', voiceId);
@@ -137,16 +138,10 @@ export async function getCachedAudio(
             query.is('voice_id', null);
         }
 
-        const { data, error } = await query.single();
+        const { data: results, error } = await query;
 
-        if (error || !data) return null;
-
-        // Verify text hasn't changed
-        if (data.text_hash !== textHash) {
-            console.log('Text changed, invalidating cache for line:', lineId);
-            await invalidateCacheEntry(data.id);
-            return null;
-        }
+        if (error || !results || results.length === 0) return null;
+        const data = results[0];
 
         // Download from Supabase Storage to local cache
         const { data: fileData, error: downloadError } = await supabase.storage
