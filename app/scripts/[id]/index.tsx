@@ -21,7 +21,7 @@ import { getSettings, setSettings } from '@/utils/appSettings';
 import * as Speech from 'expo-speech';
 import { FixedFooter, FixedFooterSpacer } from '@/components/FixedFooter';
 import { rf, rp } from '@/utils/responsive';
-import { OPENAI_VOICES, AZURE_VOICES } from '@/utils/voiceService';
+import { OPENAI_VOICES, AZURE_VOICES, getElevenLabsVoices } from '@/utils/voiceService';
 
 export default function ScriptDetailScreen() {
   const router = useRouter();

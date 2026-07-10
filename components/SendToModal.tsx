@@ -152,7 +152,7 @@ export function SendToModal({ visible, onClose, onMove, currentProjectId }: Send
                             contentContainerStyle={styles.list}
                             ListEmptyComponent={
                                 <Text style={[styles.emptyText, { color: colors.textSecondary }]}>
-                                    No hay carpetas creadas.
+                                    No hay carpetas creadas. Puedes crearlas en la pantalla Proyectos.
                                 </Text>
                             }
                             renderItem={({ item }) => (
