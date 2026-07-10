@@ -54,6 +54,21 @@ class AudioEchoCancellationModule: NSObject {
   
   @objc func isHeadphonesConnected(_ callback: @escaping ([Any]) -> Void) {
     let session = AVAudioSession.sharedInstance()
+    
+    // Activar la sesión con permisos Bluetooth ANTES de comprobar la ruta.
+    // Si no hacemos esto, currentRoute puede no mostrar los auriculares Bluetooth 
+    // porque iOS no ha enrutado el audio todavía.
+    do {
+      try session.setCategory(
+        .playAndRecord,
+        mode: .default,
+        options: [.allowBluetooth, .allowBluetoothA2DP, .defaultToSpeaker]
+      )
+      try session.setActive(true)
+    } catch {
+      print("[AEC] Error activando sesión para detectar auriculares: \(error)")
+    }
+    
     let currentRoute = session.currentRoute
     
     let hasHeadphones = currentRoute.outputs.contains { output in
