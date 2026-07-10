@@ -293,11 +293,19 @@ export default function ImportScriptScreen() {
   }
 
   function toggleMyCharacter(index: number) {
-    const newCharacters = characters.map((char, i) => ({
+    let newCharacters = characters.map((char, i) => ({
       ...char,
       isMyCharacter: i === index,
       color: i === index ? GREEN_COLOR : (char.color === GREEN_COLOR ? CHARACTER_COLORS[0].value : char.color),
     }));
+
+    // Mover el personaje seleccionado a la posición 0 ("Personaje 1")
+    if (index !== 0) {
+      const selectedChar = newCharacters[index];
+      newCharacters.splice(index, 1);
+      newCharacters.unshift(selectedChar);
+    }
+
     setCharacters(newCharacters);
   }
 
