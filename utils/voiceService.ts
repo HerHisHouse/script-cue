@@ -251,7 +251,7 @@ export async function playVoicePreview(voice: VoiceOption): Promise<void> {
     const sampleText = 'Hola, esta es una muestra de mi voz en Scriptquiu. Espero que te guste.';
     const tempPath = `${FileSystem.cacheDirectory}voice_preview_${Date.now()}.mp3`;
 
-    if (voice.provider === 'elevenlabs' || voice.provider === 'azure') {
+    if (voice.provider === 'elevenlabs' || voice.provider === 'azure' || voice.provider === 'openai') {
       const renderUrl = process.env.EXPO_PUBLIC_RENDER_SERVER_URL;
       if (!renderUrl) {
         throw new Error(`RENDER_SERVER_URL no configurado para preview de ${voice.provider}`);
@@ -276,19 +276,6 @@ export async function playVoicePreview(voice: VoiceOption): Promise<void> {
         console.error(`[Preview] ${voice.provider} generation failed:`, err);
         throw err;
       }
-    } else if (voice.provider === 'openai') {
-      // OpenAI: generar audio y guardar en fichero temporal (data URIs NO funcionan en RN)
-      const mp3Response = await client.audio.speech.create({
-        model: 'tts-1',
-        voice: voice.id as any,
-        input: sampleText,
-      });
-      const arrayBuffer = await mp3Response.arrayBuffer();
-      const base64 = arrayBufferToBase64(arrayBuffer);
-      await FileSystem.writeAsStringAsync(tempPath, base64, {
-        encoding: FileSystem.EncodingType.Base64,
-      });
-      audioUri = tempPath;
     }
 
     if (!audioUri) {

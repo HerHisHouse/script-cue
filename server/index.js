@@ -1832,6 +1832,24 @@ app.get('/api/tts/preview/:provider/:voiceId', async (req, res) => {
             if (!response.ok) throw new Error(`ElevenLabs error: ${response.statusText}`);
             const buffer = await response.arrayBuffer();
             audioBuffer = Buffer.from(buffer);
+        } else if (provider === 'openai') {
+            const textToSpeak = "Hola, esta es una muestra de mi voz en Scriptquiu. Espero que te guste.";
+            const openaiKey = (process.env.OPENAI_API_KEY || process.env.EXPO_PUBLIC_OPENAI_API_KEY || '').trim();
+            const response = await fetch('https://api.openai.com/v1/audio/speech', {
+                method: 'POST',
+                headers: {
+                    'Authorization': `Bearer ${openaiKey}`,
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    model: 'tts-1',
+                    input: textToSpeak,
+                    voice: voiceId
+                })
+            });
+            if (!response.ok) throw new Error(`OpenAI error: ${response.statusText}`);
+            const buffer = await response.arrayBuffer();
+            audioBuffer = Buffer.from(buffer);
         } else {
             return res.status(400).json({ error: 'Provider not supported for previews' });
         }

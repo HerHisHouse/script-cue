@@ -19,6 +19,7 @@ import { loadDialogueLines } from '@/utils/loadDialogueLines';
 import { ArrowLeft, Mic, Clock, Check, X, ChevronLeft, ChevronRight, Brain } from 'lucide-react-native';
 import { getFailedLines, clearFailedLine, saveScore, FailedLine } from '@/utils/gamification';
 import { Audio } from 'expo-av';
+import { enableRecordingMode } from '@/utils/audioMode';
 import * as Speech from 'expo-speech';
 import { transcribeAudio } from '@/services/transcription';
 import { rf, rp } from '@/utils/responsive';
