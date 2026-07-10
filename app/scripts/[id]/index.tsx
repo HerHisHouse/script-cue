@@ -21,7 +21,7 @@ import { getSettings, setSettings } from '@/utils/appSettings';
 import * as Speech from 'expo-speech';
 import { FixedFooter, FixedFooterSpacer } from '@/components/FixedFooter';
 import { rf, rp } from '@/utils/responsive';
-import { OPENAI_VOICES, AZURE_VOICES, getElevenLabsVoices } from '@/utils/voiceService';
+import { OPENAI_VOICES, getElevenLabsVoices, getAzureVoices } from '@/utils/voiceService';
 
 export default function ScriptDetailScreen() {
   const router = useRouter();
@@ -40,6 +40,7 @@ export default function ScriptDetailScreen() {
   const [ttsProvider, setTtsProvider] = useState<'openai' | 'elevenlabs' | 'google' | 'system'>('openai');
   const [availableVoices, setAvailableVoices] = useState<any[]>([]);
   const [elevenLabsVoices, setElevenLabsVoices] = useState<any[]>([]);
+  const [azureVoices, setAzureVoices] = useState<any[]>([]);
   const [systemLang, setSystemLang] = useState<string>('es-ES');
   const [systemVoiceId, setSystemVoiceId] = useState<string | undefined>(undefined);
   const [langDropdownOpen, setLangDropdownOpen] = useState<boolean>(false);
@@ -122,6 +123,12 @@ export default function ScriptDetailScreen() {
         setElevenLabsVoices(voices || []);
       } catch { }
     })();
+    (async () => {
+      try {
+        const voices = await getAzureVoices();
+        setAzureVoices(voices || []);
+      } catch { }
+    })();
   }, []);
 
   function uniqueLanguages(): string[] {
@@ -169,7 +176,7 @@ export default function ScriptDetailScreen() {
         const v = OPENAI_VOICES.find(v => v.id === voiceId);
         if (v) voiceName = v.name;
       } else if (provider === 'azure') {
-        const v = AZURE_VOICES.find(v => v.id === voiceId);
+        const v = azureVoices.find(v => v.id === voiceId);
         if (v) voiceName = v.name;
       }
 
