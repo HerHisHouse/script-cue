@@ -55,7 +55,7 @@ import {
   calculateLineDuration,
   generateActionId
 } from '@/utils/sceneConfig';
-import { activateAEC, deactivateAEC, detectHeadphones } from '@/modules/audio-echo-cancellation';
+import { activateAEC, deactivateAEC } from '@/modules/audio-echo-cancellation';
 
 type SceneItem = ParsedScript['scenes'][0];
 
@@ -183,6 +183,7 @@ export default function CastingModeScreen() {
   const [videoQuality, setVideoQuality] = useState<VideoQuality>('medium');
   const [showQualityModal, setShowQualityModal] = useState(false);
   const [qualityApplied, setQualityApplied] = useState(false);
+  const [hasHeadphones, setHasHeadphones] = useState<boolean | null>(null);
 
   useEffect(() => {
     if ((castingMode === 'script_config' || castingMode === 'free_input') && !qualityApplied) {
@@ -1263,53 +1264,21 @@ export default function CastingModeScreen() {
     if (!cameraRef.current) return;
 
     try {
-      // Detectar auriculares ANTES de activar AEC
-      const hasHeadphones = await detectHeadphones();
+    try {
+      // Usar el valor que el usuario seleccionó en el modal
+      const userSelectedHeadphones = hasHeadphones ?? false;
 
-      // Mostrar aviso de auriculares (solo una vez si el usuario lo descarta)
-      const hideWarning =
-        await AsyncStorage.getItem('casting_hide_headphone_warning');
-
-      if (hideWarning !== 'true' && castingType !== 'free') {
-        await new Promise<void>((resolve) => {
-          if (hasHeadphones) {
-            // Con auriculares: mensaje positivo, continuar directamente
-            Alert.alert(
-              '\uD83C\uDFA7 Auriculares detectados',
-              'Perfecto. Grabarás con la máxima calidad de audio.',
-              [{ text: 'Empezar', onPress: () => resolve() }]
-            );
-          } else {
-            // Sin auriculares: advertencia clara con opción de no volver a mostrar
-            Alert.alert(
-              '\uD83C\uDFA7 Sin auriculares',
-              'Para obtener la mejor calidad en tu selftape te recomendamos usar auriculares.\n\n' +
-              'Sin ellos tu voz y la de la IA nunca podrán sonar simultaneamente (es para evitar eco)',
-              [
-                {
-                  text: 'No volver a mostrar',
-                  onPress: async () => {
-                    await AsyncStorage.setItem(
-                      'casting_hide_headphone_warning', 'true'
-                    );
-                    resolve();
-                  }
-                },
-                { text: 'Continuar de todas formas', onPress: () => resolve() }
-              ]
-            );
-          }
-        });
-      }
+      console.log('[Casting] Auriculares seleccionados por usuario:',
+        userSelectedHeadphones ? 'SÍ' : 'NO');
 
       // Activar AEC nativo con el modo correcto según auriculares
-      activateAEC(hasHeadphones);
+      activateAEC(userSelectedHeadphones);
 
       // Pequeña pausa para que el sistema aplique el nuevo modo de audio
       await new Promise(resolve => setTimeout(resolve, 200));
 
       // Sin auriculares: bajar volumen de la IA para reducir eco residual
-      if (!hasHeadphones) {
+      if (!userSelectedHeadphones) {
         setTtsVolume(0.6);
         console.log('[Casting] Sin auriculares: volumen IA reducido a 60%');
       }
@@ -1545,7 +1514,7 @@ export default function CastingModeScreen() {
       formData.append('userId', user?.id || '');
       formData.append('scriptId', id as string);
       formData.append('lineTimings', JSON.stringify(lineTimings));
-      formData.append('hasHeadphones', _hasHeadphonesArg ? 'true' : 'false');
+      formData.append('hasHeadphones', (hasHeadphones ?? false) ? 'true' : 'false');
       formData.append('useLocalOnly', teleSettings.useLocalOnly ? 'true' : 'false');
 
       // Vídeo
@@ -2746,14 +2715,78 @@ export default function CastingModeScreen() {
               ))}
             </View>
 
+            {/* Sección auriculares */}
+            <View style={{ marginTop: rp(24) }}>
+              <Text style={[styles.qualitySectionTitle, { marginBottom: rp(4) }]}>
+                🎧 ¿Usarás auriculares?
+              </Text>
+              <Text style={styles.qualitySectionSubtitle}>
+                Afecta a la calidad del audio mezclado
+              </Text>
+
+              <View style={{ flexDirection: 'row', gap: rp(10), marginTop: rp(12) }}>
+                
+                <TouchableOpacity
+                  style={[
+                    styles.qualityOption,
+                    { flex: 1, flexDirection: 'column', alignItems: 'center' },
+                    hasHeadphones === true && styles.qualityOptionSelected,
+                  ]}
+                  onPress={() => setHasHeadphones(true)}
+                >
+                  <Text style={{ fontSize: rf(28), marginBottom: rp(8) }}>🎧</Text>
+                  <Text style={[
+                    styles.qualityOptionLabel,
+                    hasHeadphones === true && styles.qualityOptionLabelSelected
+                  ]}>
+                    Sí
+                  </Text>
+                  <Text style={styles.qualityOptionDesc}>
+                    Ambas voces suenan a la vez
+                  </Text>
+                  {hasHeadphones === true && (
+                    <Text style={{ color: '#a78bfa', fontSize: rf(16), marginTop: rp(4) }}>✓</Text>
+                  )}
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={[
+                    styles.qualityOption,
+                    { flex: 1, flexDirection: 'column', alignItems: 'center' },
+                    hasHeadphones === false && styles.qualityOptionSelected,
+                  ]}
+                  onPress={() => setHasHeadphones(false)}
+                >
+                  <Text style={{ fontSize: rf(28), marginBottom: rp(8) }}>📱</Text>
+                  <Text style={[
+                    styles.qualityOptionLabel,
+                    hasHeadphones === false && styles.qualityOptionLabelSelected
+                  ]}>
+                    No
+                  </Text>
+                  <Text style={styles.qualityOptionDesc}>
+                    Se silencia el eco automáticamente
+                  </Text>
+                  {hasHeadphones === false && (
+                    <Text style={{ color: '#a78bfa', fontSize: rf(16), marginTop: rp(4) }}>✓</Text>
+                  )}
+                </TouchableOpacity>
+
+              </View>
+            </View>
+
             <TouchableOpacity
               style={{
-                backgroundColor: '#10B981',
+                backgroundColor: (qualityApplied || videoQuality) && hasHeadphones !== null
+                  ? '#10B981'
+                  : '#444',
                 paddingVertical: rp(14),
                 borderRadius: rp(12),
                 alignItems: 'center',
                 marginTop: rp(24),
+                opacity: hasHeadphones !== null ? 1 : 0.5,
               }}
+              disabled={hasHeadphones === null}
               onPress={() => {
                 setShowQualityModal(false);
                 setQualityApplied(true);
