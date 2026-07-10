@@ -38,6 +38,7 @@ export default function ReinforcementScreen() {
     const [loading, setLoading] = useState(true);
     const [failedItems, setFailedItems] = useState<FailedLineWithData[]>([]);
     const [currentIndex, setCurrentIndex] = useState(0);
+    const currentItem = failedItems[currentIndex];
 
     // Ghost Mode State
     const [ghostInputs, setGhostInputs] = useState<Record<number, string>>({});
@@ -195,8 +196,6 @@ export default function ReinforcementScreen() {
             correctIndex
         });
     }, [currentIndex, failedItems]);
-
-    const currentItem = failedItems[currentIndex];
 
     const handleSuccess = async () => {
         if (!currentItem) return;

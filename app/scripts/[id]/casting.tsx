@@ -1264,7 +1264,6 @@ export default function CastingModeScreen() {
     if (!cameraRef.current) return;
 
     try {
-    try {
       // Usar el valor que el usuario seleccionó en el modal
       const userSelectedHeadphones = hasHeadphones ?? false;
 
