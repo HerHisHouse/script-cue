@@ -52,37 +52,53 @@ class AudioEchoCancellationModule: NSObject {
     }
   }
   
-  @objc func isHeadphonesConnected(_ callback: @escaping ([Any]) -> Void) {
+  @objc func isHeadphonesConnected(_ resolve: @escaping RCTPromiseResolveBlock,
+                                   rejecter reject: RCTPromiseRejectBlock) {
     let session = AVAudioSession.sharedInstance()
     
-    // Activar la sesión con permisos Bluetooth ANTES de comprobar la ruta.
-    // Si no hacemos esto, currentRoute puede no mostrar los auriculares Bluetooth 
-    // porque iOS no ha enrutado el audio todavía.
     do {
+      // Activar sesión con soporte Bluetooth ANTES de leer la ruta
       try session.setCategory(
         .playAndRecord,
         mode: .default,
-        options: [.allowBluetooth, .allowBluetoothA2DP, .defaultToSpeaker]
+        options: [
+          .allowBluetooth,
+          .allowBluetoothA2DP,
+          .defaultToSpeaker
+        ]
       )
       try session.setActive(true)
     } catch {
-      print("[AEC] Error activando sesión para detectar auriculares: \(error)")
+      // Si falla la activación, asumir sin auriculares
+      resolve(false)
+      return
     }
     
-    let currentRoute = session.currentRoute
-    
-    let hasHeadphones = currentRoute.outputs.contains { output in
-      let portType = output.portType
-      return portType == .headphones ||
-             portType == .bluetoothA2DP ||
-             portType == .bluetoothHFP ||
-             portType == .bluetoothLE ||
-             portType == .usbAudio ||
-             portType == .headsetMic
+    // Esperar 300ms para que iOS actualice la ruta Bluetooth
+    DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+      let currentRoute = session.currentRoute
+      
+      let hasHeadphones = currentRoute.outputs.contains { output in
+        let portType = output.portType
+        return portType == .headphones ||
+               portType == .bluetoothA2DP ||
+               portType == .bluetoothHFP ||
+               portType == .bluetoothLE ||
+               portType == .airPlay ||
+               portType == .usbAudio ||
+               portType == .headsetMic
+      }
+      
+      // También verificar las entradas (micrófonos Bluetooth)
+      let hasBluetoothInput = currentRoute.inputs.contains { input in
+        let portType = input.portType
+        return portType == .bluetoothHFP ||
+               portType == .bluetoothLE ||
+               portType == .headsetMic
+      }
+      
+      resolve(hasHeadphones || hasBluetoothInput)
     }
-    
-    print("[AEC] Auriculares conectados: \(hasHeadphones)")
-    callback([hasHeadphones])
   }
   
   @objc static func requiresMainQueueSetup() -> Bool {

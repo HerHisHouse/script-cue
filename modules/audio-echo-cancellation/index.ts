@@ -26,19 +26,21 @@ export function deactivateAEC(): void {
   }
 }
 
-export function detectHeadphones(): Promise<boolean> {
-  return new Promise((resolve) => {
-    if (Platform.OS === 'ios') {
-      if (AudioEchoCancellationModule?.isHeadphonesConnected) {
-        AudioEchoCancellationModule.isHeadphonesConnected((result: boolean) => {
-          resolve(result);
-        });
-      } else {
-        resolve(false);
+export async function detectHeadphones(): Promise<boolean> {
+  if (Platform.OS === 'ios') {
+    if (AudioEchoCancellationModule?.isHeadphonesConnected) {
+      try {
+        const result = await AudioEchoCancellationModule.isHeadphonesConnected();
+        return !!result;
+      } catch (e) {
+        console.warn('[AEC] Error detectando auriculares:', e);
+        return false;
       }
     } else {
-      // Android: asumir sin auriculares (AEC de hardware siempre activo en MODE_IN_COMMUNICATION)
-      resolve(false);
+      return false;
     }
-  });
+  } else {
+    // Android: asumir sin auriculares (AEC de hardware siempre activo en MODE_IN_COMMUNICATION)
+    return false;
+  }
 }
