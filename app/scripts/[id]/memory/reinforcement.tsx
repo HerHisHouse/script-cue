@@ -22,7 +22,7 @@ import { Audio } from 'expo-av';
 import * as Speech from 'expo-speech';
 import { transcribeAudio } from '@/services/transcription';
 import { rf, rp } from '@/utils/responsive';
-import { calculateSimilarity } from '@/utils/stringUtils';
+import { calculateSimilarity, stripStageDirections } from '@/utils/stringUtils';
 
 interface FailedLineWithData extends FailedLine {
     line: DialogueLine;
@@ -131,7 +131,7 @@ export default function ReinforcementScreen() {
 
         const line = currentItem.line;
         if (!line) return; // Guard for null line
-        const words = line.cleanText.split(/\s+/);
+        const words = stripStageDirections(line.cleanText).split(/\s+/);
         const countToHide = Math.max(1, Math.floor(words.length * 0.5));
         const hiddenIndices = new Set<number>();
         const availableIndices = Array.from({ length: words.length }, (_, i) => i);
@@ -162,7 +162,7 @@ export default function ReinforcementScreen() {
             setQuizQuestion(null);
             return;
         }
-        const words = line.cleanText.split(/\s+/);
+        const words = stripStageDirections(line.cleanText).split(/\s+/);
 
         const stopWords = ['el', 'la', 'los', 'las', 'un', 'una', 'de', 'del', 'en', 'y', 'o', 'a', 'con', 'por', 'para', 'que', 'es', 'no', 'se', 'me', 'te', 'lo', 'al'];
         const candidateIndices = words
@@ -243,7 +243,7 @@ export default function ReinforcementScreen() {
     // ===== GHOST MODE LOGIC =====
     const renderGhostMode = () => {
         const line = currentItem.line;
-        const words = line.cleanText.split(/\s+/);
+        const words = stripStageDirections(line.cleanText).split(/\s+/);
 
         const normalize = (str: string) => {
             if (!str) return "";
@@ -420,8 +420,8 @@ export default function ReinforcementScreen() {
             const text = await transcribeAudio(uri);
             setEchoTranscript(text);
 
-            const sim = calculateSimilarity(text, currentItem.line.text);
-            const isMatch = sim >= 0.99;
+            const sim = calculateSimilarity(text, stripStageDirections(currentItem.line.text));
+            const isMatch = sim >= 0.85;
 
             setEchoCorrect(isMatch);
             setEchoPhase('feedback');
@@ -456,7 +456,7 @@ export default function ReinforcementScreen() {
                         </View>
                     ) : (
                         <Text style={[styles.text, { color: colors.text }]}>
-                            {line.text}
+                            {stripStageDirections(line.text)}
                         </Text>
                     )}
 

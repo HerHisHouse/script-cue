@@ -24,7 +24,7 @@ import { getIntroPreferences, setIntroPreference } from '@/utils/introPreference
 import { getSettings } from '@/utils/appSettings';
 import { rf, rp } from '@/utils/responsive';
 import { supabase } from '@/utils/supabase';
-import { calculateSimilarity } from '@/utils/stringUtils';
+import { calculateSimilarity, stripStageDirections } from '@/utils/stringUtils';
 import { generateAndCacheAudio } from '@/utils/ttsCache';
 import { setAudioModeForPlayback, enableRecordingMode } from '@/utils/audioMode';
 type Phase = 'read' | 'speak' | 'feedback' | 'ai-speaking';
@@ -365,8 +365,8 @@ export default function EchoModeScreen() {
                 return;
             }
 
-            const sim = calculateSimilarity(text, currentLine.text);
-            const isMatch = sim >= 0.99;
+            const sim = calculateSimilarity(text, stripStageDirections(currentLine.text));
+            const isMatch = sim >= 0.85;
 
             if (isMatch) {
                 setFeedbackStatus('success');
@@ -543,7 +543,7 @@ export default function EchoModeScreen() {
                         ) : phase === 'ai-speaking' ? (
                             <>
                                 <Text style={[styles.dialogueText, { color: colors.text }]}>
-                                    {currentLine.text}
+                                    {stripStageDirections(currentLine.text)}
                                 </Text>
                                 <View style={styles.speakingContainer}>
                                     <Volume2 size={24} color={colors.primary} />
@@ -554,7 +554,7 @@ export default function EchoModeScreen() {
                             </>
                         ) : (
                             <Text style={[styles.dialogueText, { color: colors.text }]}>
-                                {currentLine.text}
+                                {stripStageDirections(currentLine.text)}
                             </Text>
                         )}
 

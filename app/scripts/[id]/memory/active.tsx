@@ -16,6 +16,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/utils/supabase';
 import { DialogueLine } from '@/utils/dialogueParser';
 import { loadDialogueLines } from '@/utils/loadDialogueLines';
+import { stripStageDirections } from '@/utils/stringUtils';
 import {
   ArrowLeft,
   ChevronLeft,
@@ -338,7 +339,7 @@ export default function MemoryModeScreen() {
                   {currentLine.characterName}
                 </Text>
                 <Text style={[styles.dialogueText, { color: colors.text }]}>
-                  {currentLine.text}
+                  {stripStageDirections(currentLine.text)}
                 </Text>
                 <TouchableOpacity
                   style={[styles.ttsButton, { backgroundColor: colors.input }]}
@@ -358,7 +359,7 @@ export default function MemoryModeScreen() {
                   <Text style={[styles.contextLabel, { color: colors.textSecondary }]}>Anterior:</Text>
                   <Text style={[styles.contextText, { color: colors.textSecondary }]}>
                     <Text style={{ fontWeight: 'bold' }}>{dialogueLines[currentIndex - 1].characterName}: </Text>
-                    {dialogueLines[currentIndex - 1].text}
+                    {stripStageDirections(dialogueLines[currentIndex - 1].text)}
                   </Text>
                 </View>
               )
@@ -384,7 +385,7 @@ export default function MemoryModeScreen() {
 
                 {isUserLineVisible ? (
                   <Text style={[styles.dialogueText, { color: colors.text }]}>
-                    {currentLine.text}
+                    {stripStageDirections(currentLine.text)}
                   </Text>
                 ) : (
                   <View style={styles.hiddenContent}>

@@ -14,3 +14,8 @@ export function calculateSimilarity(s1: string, s2: string): number {
   const intersection = words1.filter(w => words2.includes(w));
   return intersection.length / Math.max(words1.length, words2.length);
 }
+
+export function stripStageDirections(text: string): string {
+  if (!text) return text;
+  return text.replace(/\[.*?\]/g, '').replace(/\(.*?\)/g, '').trim();
+}
