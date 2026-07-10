@@ -25,7 +25,8 @@ import { getSettings } from '@/utils/appSettings';
 import { rf, rp } from '@/utils/responsive';
 import { supabase } from '@/utils/supabase';
 import { calculateSimilarity } from '@/utils/stringUtils';
-
+import { generateAndCacheAudio } from '@/utils/ttsCache';
+import { setAudioModeForPlayback, enableRecordingMode } from '@/utils/audioMode';
 type Phase = 'read' | 'speak' | 'feedback' | 'ai-speaking';
 
 export default function EchoModeScreen() {

@@ -61,7 +61,9 @@ class AudioEchoCancellationModule: NSObject {
       return portType == .headphones ||
              portType == .bluetoothA2DP ||
              portType == .bluetoothHFP ||
-             portType == .bluetoothLE
+             portType == .bluetoothLE ||
+             portType == .usbAudio ||
+             portType == .headsetMic
     }
     
     print("[AEC] Auriculares conectados: \(hasHeadphones)")
