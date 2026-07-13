@@ -39,7 +39,7 @@ shadowColor: '#683a79',
 
 ---
 
-### **3. Botón "Importar Guión"**
+### **3. Botón "Importar Guion"**
 **Archivo**: `/app/import-script.tsx`
 **Líneas**: 1323-1324, 1346, 1354, 1397
 
@@ -137,7 +137,7 @@ Abrir cada archivo y cambiar las líneas específicas mencionadas arriba.
 Después de aplicar estos cambios:
 - ✅ Botón "+" morado
 - ✅ Botones de modos morados
-- ✅ Botón "Importar guión" morado
+- ✅ Botón "Importar guion" morado
 - ✅ Toda la app con acento morado consistente
 
 ---

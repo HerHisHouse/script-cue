@@ -271,16 +271,16 @@ export default function IndexScreen() {
     if (!user || duplicateLoading) return;
     setDuplicateLoading(true);
     try {
-      // 1. Obtener el guión original
+      // 1. Obtener el guion original
       const { data: original, error: fetchError } = await supabase
         .from('scripts')
         .select('*')
         .eq('id', scriptId)
         .eq('user_id', user.id)
         .single();
-      if (fetchError || !original) throw fetchError || new Error('Guión no encontrado');
+      if (fetchError || !original) throw fetchError || new Error('Guion no encontrado');
 
-      // 2. Insertar copia del guión
+      // 2. Insertar copia del guion
       const { id: _id, created_at: _ca, updated_at: _ua, last_opened_at: _loa, ...scriptData } = original as any;
       const { data: newScript, error: insertError } = await supabase
         .from('scripts')
@@ -373,12 +373,12 @@ export default function IndexScreen() {
         }
       }
 
-      logger.log('[Duplicar] Guión duplicado con éxito:', newScriptId);
+      logger.log('[Duplicar] Guion duplicado con éxito:', newScriptId);
       Alert.alert('✓ Duplicado', `"${original.title || 'Sin título'} (copia)" ha sido creado.`);
       await loadScripts();
     } catch (e: any) {
       logger.error('[Duplicar] Error:', e?.message || e);
-      Alert.alert('Error', 'No se pudo duplicar el guión. Inténtalo de nuevo.');
+      Alert.alert('Error', 'No se pudo duplicar el guion. Inténtalo de nuevo.');
     } finally {
       setDuplicateLoading(false);
     }

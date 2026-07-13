@@ -5,7 +5,7 @@ Se ha implementado un sistema avanzado de detección y filtrado de diálogos que
 
 ## 🎯 Objetivo Principal
 - **Modo Estudio**: Mostrar únicamente diálogos de personajes
-- **Editar Guión**: Mostrar análisis completo con código de colores
+- **Editar Guion**: Mostrar análisis completo con código de colores
 - **Precisión**: Eliminar falsos positivos (acotaciones detectadas como diálogo)
 
 ## 🔧 Implementación Técnica

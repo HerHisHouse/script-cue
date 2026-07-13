@@ -1594,7 +1594,7 @@ export default function StudioV2Screen() {
             try {
                 const escapeRegex = (str: string) => str.replace(/[/\-\\^$*+?.()|[\]{}]/g, '\\$&');
 
-                // Obtener información del guión y HTML
+                // Obtener información del guion y HTML
                 const { data: scriptInfo } = await supabase
                     .from('scripts')
                     .select('id, original_script_id, script_html')
@@ -1935,7 +1935,7 @@ export default function StudioV2Screen() {
                 // Función auxiliar para escapar caracteres especiales en Regex
                 const escapeRegex = (str: string) => str.replace(/[/\-\\^$*+?.()|[\]{}]/g, '\\$&');
 
-                // 1. Obtener información del guión y el HTML actual
+                // 1. Obtener información del guion y el HTML actual
                 const { data: scriptInfo } = await supabase
                     .from('scripts')
                     .select('id, original_script_id, script_html')
@@ -2027,7 +2027,7 @@ export default function StudioV2Screen() {
                             
                             const updatedHtml = currentHtml.slice(0, insertionPoint) + newLineHtml + currentHtml.slice(insertionPoint);
                             
-                            // 4. Guardar el HTML actualizado en el guión fuente
+                            // 4. Guardar el HTML actualizado en el guion fuente
                             await supabase
                                 .from('scripts')
                                 .update({ script_html: updatedHtml })

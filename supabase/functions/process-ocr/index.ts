@@ -57,7 +57,7 @@ Deno.serve(async (req: Request) => {
                 content: [
                   {
                     type: 'text',
-                    text: 'Extrae TODO el texto de esta imagen de un guión teatral o cinematográfico. Mantén el formato original, incluyendo nombres de personajes, diálogos, acotaciones y cualquier otro texto. Devuelve SOLO el texto extraído, sin comentarios adicionales.',
+                    text: 'Extrae TODO el texto de esta imagen de un guion teatral o cinematográfico. Mantén el formato original, incluyendo nombres de personajes, diálogos, acotaciones y cualquier otro texto. Devuelve SOLO el texto extraído, sin comentarios adicionales.',
                   },
                   {
                     type: 'image_url',

@@ -130,7 +130,7 @@ secondaryControlsRow: {
 3. El botón "+" en "Mis guiones" ahora tiene el mismo tamaño que en "Mis proyectos"
 
 ### 2. **Modo Casting Centrado**
-1. Abre un guión
+1. Abre un guion
 2. Entra en Modo Casting
 3. Observa que:
    - Los nombres de personajes están centrados

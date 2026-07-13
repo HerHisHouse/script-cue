@@ -142,7 +142,7 @@ All child tables inherit the security model through foreign key relationships.
 ### 1. Confirmation Dialog
 Before deletion, users see:
 ```
-Title: "Eliminar Guión"
+Title: "Eliminar Guion"
 Message: "¿Estás seguro de que deseas eliminar "[Script Title]"?
           Esta acción no se puede deshacer."
 Actions: [Cancel] [Eliminar]

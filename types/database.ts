@@ -27,10 +27,10 @@ export interface Script {
   pdf_path: string | null; // <-- CORREGIDO (antes pdf_url)
   status: ScriptStatus;
   project_id?: string | null; // <-- AÑADIDO
-  original_script_id?: string | null; // <-- AÑADIDO: Referencia al guión original si es una copia
+  original_script_id?: string | null; // <-- AÑADIDO: Referencia al guion original si es una copia
   created_at?: string; // Opcional
   updated_at?: string; // Última modificación
-  last_opened_at?: string | null; // Última vez que se abrió el guión
+  last_opened_at?: string | null; // Última vez que se abrió el guion
 }
 
 // ** PROJECT NUEVO **

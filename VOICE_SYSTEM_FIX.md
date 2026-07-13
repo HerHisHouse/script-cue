@@ -66,7 +66,7 @@ voice_provider: 'openai' | 'elevenlabs' | 'system' | null;
 
 ## 🔄 Flujo Actualizado
 
-### **Al importar un guión:**
+### **Al importar un guion:**
 1. Usuario selecciona **Operador de voces** (OpenAI/ElevenLabs/System)
 2. Usuario selecciona **Voz del personaje** (muestra solo voces del operador)
 3. Se guarda en BD: `voice_id` + `voice_provider`
@@ -91,7 +91,7 @@ voice_provider: 'openai' | 'elevenlabs' | 'system' | null;
 
 ## 🧪 Testing
 
-1. **Importar nuevo guión**
+1. **Importar nuevo guion**
 2. **Configurar personaje con voz de OpenAI** (ej: "Nova")
 3. **Abrir Modo Estudio** → Verificar que suena "Nova"
 4. **Cambiar a ElevenLabs** y seleccionar otra voz

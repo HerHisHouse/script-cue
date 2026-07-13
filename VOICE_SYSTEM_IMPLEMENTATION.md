@@ -103,7 +103,7 @@ Cada voz tiene un botón de altavoz para escuchar una muestra:
 
 ## 🧪 Testing
 
-1. Importar nuevo guión
+1. Importar nuevo guion
 2. Seleccionar "Operador de voces" → OpenAI
 3. Tocar "Seleccionar voz" 
 4. Verificar que aparecen 6 voces con icono de altavoz

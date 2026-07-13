@@ -143,7 +143,7 @@ npx expo-optimize
 Para una app de guiones, te recomiendo:
 
 ### Opción 1: Icono Minimalista
-- **Símbolo**: Un micrófono + texto (guión)
+- **Símbolo**: Un micrófono + texto (guion)
 - **Colores**: 
   - Primario: Azul (#3B82F6) o Morado (#8B5CF6)
   - Fondo: Blanco o degradado suave
@@ -237,7 +237,7 @@ Puedo crear un icono personalizado para Script Cue usando IA. Solo dime:
 
 1. **Estilo**: ¿Minimalista, moderno, profesional, creativo?
 2. **Colores**: ¿Qué colores prefieres? (azul, morado, verde, etc.)
-3. **Elementos**: ¿Qué debe incluir? (micrófono, texto, guión, etc.)
+3. **Elementos**: ¿Qué debe incluir? (micrófono, texto, guion, etc.)
 4. **Forma**: ¿Circular, cuadrado, con bordes redondeados?
 
 ---

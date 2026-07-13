@@ -7,7 +7,7 @@ Script Cue es una aplicación móvil y web que permite a actores practicar sus g
 ### 1. Importación de Guiones PDF
 - Sube guiones en formato PDF desde tu dispositivo
 - Detección automática de personajes mediante análisis de texto
-- Soporte para formato de guión estándar (nombres en MAYÚSCULAS)
+- Soporte para formato de guion estándar (nombres en MAYÚSCULAS)
 
 ### 2. Detección Automática de Personajes
 - Identifica personajes automáticamente del texto
@@ -61,15 +61,15 @@ project/
 │   │   ├── recordings.tsx       # Pantalla de grabaciones
 │   │   └── settings.tsx         # Pantalla de ajustes
 │   ├── scripts/[id]/            # Rutas dinámicas de guiones
-│   │   ├── index.tsx            # Detalle del guión
+│   │   ├── index.tsx            # Detalle del guion
 │   │   ├── characters.tsx       # Selección de personaje
 │   │   ├── studio.tsx           # Modo estudio
 │   │   └── car.tsx              # Modo auto
 │   ├── auth.tsx                 # Pantalla de autenticación
-│   ├── import-script.tsx        # Importar guión
+│   ├── import-script.tsx        # Importar guion
 │   └── _layout.tsx              # Layout raíz
 ├── components/                   # Componentes reutilizables
-│   ├── ScriptCard.tsx           # Tarjeta de guión
+│   ├── ScriptCard.tsx           # Tarjeta de guion
 │   ├── CharacterItem.tsx        # Item de personaje
 │   ├── DialogueLine.tsx         # Línea de diálogo
 │   └── RecordingControls.tsx   # Controles de grabación
@@ -95,7 +95,7 @@ project/
 1. **profiles** - Perfiles de usuario
 2. **scripts** - Guiones importados
 3. **characters** - Personajes detectados en guiones
-4. **scenes** - Escenas del guión
+4. **scenes** - Escenas del guion
 5. **dialogues** - Diálogos individuales
 6. **practice_sessions** - Sesiones de práctica
 7. **recordings** - Grabaciones de audio
@@ -188,7 +188,7 @@ npm run dev
 ## Flujo de Uso
 
 1. **Registro/Login** - El usuario se autentica
-2. **Importar Guión** - Sube un PDF y el sistema procesa
+2. **Importar Guion** - Sube un PDF y el sistema procesa
 3. **Detección de Personajes** - El sistema detecta personajes automáticamente
 4. **Seleccionar Personaje** - El usuario elige su personaje
 5. **Modo Estudio** - Práctica con respuestas TTS de IA
@@ -238,7 +238,7 @@ El parser utiliza las siguientes reglas:
 
 2. **Mejorar Parser PDF**:
    - Usar librería PDF más robusta
-   - Manejar formatos de guión variados
+   - Manejar formatos de guion variados
    - Detección de acotaciones escénicas
 
 3. **Voice Activity Detection**:

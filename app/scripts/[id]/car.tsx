@@ -280,7 +280,7 @@ export default function CarModeScreen() {
         // so that it can access the latest component methods via refs.
       } catch (e) {
         console.error('[Car Mode] Error loading dialogue:', e);
-        Alert.alert('Error', 'No se pudo cargar el guión');
+        Alert.alert('Error', 'No se pudo cargar el guion');
       } finally {
         setLoading(false);
       }
@@ -568,7 +568,7 @@ export default function CarModeScreen() {
       if (loopEnabled) {
         setCurrentIndex(0); // Loop
       } else {
-        setStatusText('Fin del guión');
+        setStatusText('Fin del guion');
         setPhase('idle');
         setIsActive(false);
       }

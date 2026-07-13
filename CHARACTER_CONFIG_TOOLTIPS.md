@@ -16,7 +16,7 @@ Se han agregado tooltips informativos con el icono **ℹ️** en los campos clav
 ```
 Nombre del personaje
 
-Escribe el nombre exactamente como aparece en el guión.
+Escribe el nombre exactamente como aparece en el guion.
 
 • Si lleva tildes, escríbelas
 • Si lleva comillas, inclúyelas
@@ -116,7 +116,7 @@ infoButton: {
 
 ## 🧪 Testing
 
-1. **Abrir importar guión**
+1. **Abrir importar guion**
 2. **Configurar personajes**
 3. **Verificar** que aparece el icono ℹ️ junto a "Nombre"
 4. **Tocar el icono** → Debe mostrar el tooltip

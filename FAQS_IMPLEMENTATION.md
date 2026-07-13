@@ -16,7 +16,7 @@ Pantalla completa de preguntas frecuentes con:
 
 ### **1. General (2 preguntas)**
 - ¿Qué es Script Cue?
-- ¿Cómo importo un guión?
+- ¿Cómo importo un guion?
 
 ### **2. Modos de Estudio (4 preguntas)**
 - ¿Qué es el Modo Estudio?

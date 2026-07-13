@@ -162,7 +162,7 @@ eas build --platform android --profile preview
 ## 🧪 Cómo Probar
 
 1. **Instalar el nuevo APK** en tu dispositivo Android
-2. **Abrir la app** → "Importar Guión"
+2. **Abrir la app** → "Importar Guion"
 3. **Seleccionar un PDF** desde tu dispositivo
 4. **Configurar personajes** (nombres, voces, etc.)
 5. **Pulsar "Importar guion"**
@@ -171,7 +171,7 @@ eas build --platform android --profile preview
 - Barra de progreso se muestra
 - Mensaje: "Importando el guion..."
 - Progreso aumenta hasta 100%
-- Redirección automática a la pantalla del guión
+- Redirección automática a la pantalla del guion
 - **NO** debe aparecer "Network request failed"
 
 ### ❌ Si Sigue Fallando
@@ -210,7 +210,7 @@ Ver sección "Si Sigue Fallando" en `ANDROID_NETWORK_FIX.md`
 2. **Esperar**: El build tarda ~10-15 minutos
 3. **Descargar**: El APK desde el link de EAS
 4. **Instalar**: En tu dispositivo Android
-5. **Probar**: Importar un guión
+5. **Probar**: Importar un guion
 
 ---
 

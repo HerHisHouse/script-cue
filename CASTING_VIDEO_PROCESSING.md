@@ -67,8 +67,8 @@ services:
 
 ### Paso 4: Probar el Flujo Completo
 
-1. **Genera TTS para el guión** (si no lo has hecho):
-   - Abre el guión en la app
+1. **Genera TTS para el guion** (si no lo has hecho):
+   - Abre el guion en la app
    - Ve a Configuración → Generar TTS
    - Espera a que se generen todos los audios
 

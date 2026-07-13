@@ -2,7 +2,7 @@
 
 ## Problema Resuelto
 
-Cuando se copiaba un guión a un proyecto, se creaba una nueva entrada en la base de datos pero se perdía toda la configuración:
+Cuando se copiaba un guion a un proyecto, se creaba una nueva entrada en la base de datos pero se perdía toda la configuración:
 - Personajes
 - Líneas de diálogo
 - Tarjetas de estudio
@@ -10,11 +10,11 @@ Cuando se copiaba un guión a un proyecto, se creaba una nueva entrada en la bas
 
 ## Solución Implementada
 
-Se ha agregado un campo `original_script_id` a la tabla `scripts` que mantiene una referencia al guión original. Cuando un guión es una copia:
+Se ha agregado un campo `original_script_id` a la tabla `scripts` que mantiene una referencia al guion original. Cuando un guion es una copia:
 
-1. El campo `original_script_id` apunta al guión original
-2. Al cargar el guión, se detecta automáticamente que es una copia
-3. Se cargan los personajes y líneas del guión original
+1. El campo `original_script_id` apunta al guion original
+2. Al cargar el guion, se detecta automáticamente que es una copia
+3. Se cargan los personajes y líneas del guion original
 4. La configuración se mantiene intacta
 
 ## Pasos para Aplicar la Actualización
@@ -47,11 +47,11 @@ Deberías ver:
 
 1. Abre la app
 2. Ve a la pestaña "Guiones"
-3. Selecciona un guión que ya tenga personajes configurados
-4. Usa "Enviar a..." para copiar el guión a un proyecto
+3. Selecciona un guion que ya tenga personajes configurados
+4. Usa "Enviar a..." para copiar el guion a un proyecto
 5. Ve a la pestaña "Proyectos"
-6. Abre la carpeta donde copiaste el guión
-7. Abre el guión copiado
+6. Abre la carpeta donde copiaste el guion
+7. Abre el guion copiado
 8. Verifica que:
    - La pantalla de resumen muestra los personajes correctamente
    - Al entrar al modo estudio, aparecen las tarjetas de diálogo
@@ -68,16 +68,16 @@ Deberías ver:
    - Modificada función `performSendScript` para guardar `original_script_id` al copiar
 
 3. **utils/loadDialogueLines.ts**
-   - Modificada para detectar si un guión es una copia
-   - Carga las líneas del guión original si `original_script_id` existe
+   - Modificada para detectar si un guion es una copia
+   - Carga las líneas del guion original si `original_script_id` existe
 
 4. **app/scripts/[id]/index.tsx**
-   - Modificada función `loadData` para cargar personajes del guión original si es una copia
+   - Modificada función `loadData` para cargar personajes del guion original si es una copia
 
 ## Notas Importantes
 
 - **Guiones copiados antes de esta actualización**: No tendrán `original_script_id` y seguirán mostrándose vacíos. Deberás copiarlos nuevamente.
-- **Eliminación de guiones originales**: Si se elimina un guión original, el campo `original_script_id` se pondrá en NULL automáticamente (ON DELETE SET NULL), pero las copias seguirán existiendo sin vinculación.
+- **Eliminación de guiones originales**: Si se elimina un guion original, el campo `original_script_id` se pondrá en NULL automáticamente (ON DELETE SET NULL), pero las copias seguirán existiendo sin vinculación.
 - **Rendimiento**: Se ha creado un índice en `original_script_id` para optimizar las consultas.
 
 ## Compatibilidad

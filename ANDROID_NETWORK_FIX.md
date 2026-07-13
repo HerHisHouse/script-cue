@@ -71,7 +71,7 @@ cd android
 Después de instalar el nuevo APK:
 
 1. **Abrir la app en Android**
-2. **Ir a "Importar Guión"**
+2. **Ir a "Importar Guion"**
 3. **Seleccionar un PDF**
 4. **Configurar personajes**
 5. **Pulsar "Importar guion"**

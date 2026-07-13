@@ -18,7 +18,7 @@ La función `process-ocr` ahora utiliza **OpenAI GPT-4o Vision** para extraer te
 ### 2. Flujo Completo
 
 ```
-1. Usuario captura fotos del guión
+1. Usuario captura fotos del guion
    ↓
 2. Imágenes se suben a Supabase Storage
    ↓
@@ -55,10 +55,10 @@ Debe estar configurada en Supabase Dashboard:
 
 **OpenAI Vision (gpt-4o):**
 - ~$0.01 por imagen (detail: high)
-- Guión de 10 páginas: ~$0.10
+- Guion de 10 páginas: ~$0.10
 
 **Parsing (gpt-4o-mini):**
-- ~$0.001 por guión promedio
+- ~$0.001 por guion promedio
 
 ### 6. Limitaciones
 
@@ -77,11 +77,11 @@ Debe estar configurada en Supabase Dashboard:
 ## Testing
 
 Para probar:
-1. Abrir app → Escanear Guión
+1. Abrir app → Escanear Guion
 2. Permitir acceso a cámara
-3. Capturar 1-3 páginas de un guión
+3. Capturar 1-3 páginas de un guion
 4. Ingresar título
-5. Presionar "Procesar Guión"
+5. Presionar "Procesar Guion"
 6. Esperar ~10-30 segundos (depende del número de páginas)
 7. Verificar que se redirige a configuración de personajes
 

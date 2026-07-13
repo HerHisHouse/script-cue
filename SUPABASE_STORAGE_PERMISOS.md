@@ -103,7 +103,7 @@ WITH CHECK expression: (dejar vacío)
 ## 🧪 Probar Después de Configurar
 
 1. **Recargar la app** en Android (agitar → Reload)
-2. **Intentar importar un guión** pequeño primero (< 2MB)
+2. **Intentar importar un guion** pequeño primero (< 2MB)
 3. Si funciona, probar con uno más grande
 
 ## 📊 Diagnóstico Adicional

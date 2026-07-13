@@ -292,9 +292,9 @@ export default function ScriptDetailScreen() {
       />
 
       <ScrollView style={styles.content} contentContainerStyle={styles.contentContainer}>
-        {/* Módulo unificado de información del guión */}
+        {/* Módulo unificado de información del guion */}
         <View style={[styles.summaryCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-          {/* Título del guión */}
+          {/* Título del guion */}
           <View style={styles.summaryTopRow}>
             <View style={[styles.summaryBadgeLarge, { backgroundColor: colors.input }]}>
               <Clapperboard size={22} color={colors.primary} />

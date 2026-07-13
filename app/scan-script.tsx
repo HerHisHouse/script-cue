@@ -66,7 +66,7 @@ export default function ScanScriptScreen() {
           <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
             <ArrowLeft size={24} color={colors.text} />
           </TouchableOpacity>
-          <Text style={[styles.title, { color: colors.text }]}>Escanear Guión</Text>
+          <Text style={[styles.title, { color: colors.text }]}>Escanear Guion</Text>
           <View style={{ width: 40 }} />
         </View>
 
@@ -150,7 +150,7 @@ export default function ScanScriptScreen() {
     }
 
     if (!title.trim()) {
-      Alert.alert('Error', 'Ingresa un título para el guión');
+      Alert.alert('Error', 'Ingresa un título para el guion');
       return;
     }
 
@@ -231,7 +231,7 @@ export default function ScanScriptScreen() {
 
       const { text } = await response.json();
 
-      setProcessingStep('Creando guión...');
+      setProcessingStep('Creando guion...');
 
       const { data: scriptData, error: scriptError } = await supabase
         .from('scripts')
@@ -362,18 +362,18 @@ export default function ScanScriptScreen() {
         <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
           <ArrowLeft size={24} color={colors.text} />
         </TouchableOpacity>
-        <Text style={[styles.title, { color: colors.text }]}>Escanear Guión</Text>
+        <Text style={[styles.title, { color: colors.text }]}>Escanear Guion</Text>
         <View style={{ width: 40 }} />
       </View>
 
       <ScrollView style={styles.content}>
         <View style={styles.form}>
-          <Text style={[styles.label, { color: colors.text }]}>Título del Guión</Text>
+          <Text style={[styles.label, { color: colors.text }]}>Título del Guion</Text>
           <TextInput
             style={[styles.input, { backgroundColor: colors.input, color: colors.text, borderColor: colors.border }]}
             value={title}
             onChangeText={setTitle}
-            placeholder="Mi Guión"
+            placeholder="Mi Guion"
             placeholderTextColor={colors.placeholder}
           />
 
@@ -450,7 +450,7 @@ export default function ScanScriptScreen() {
               ) : (
                 <>
                   <Check size={20} color="#FFFFFF" />
-                  <Text style={styles.processButtonText}>Procesar Guión</Text>
+                  <Text style={styles.processButtonText}>Procesar Guion</Text>
                 </>
               )}
             </TouchableOpacity>

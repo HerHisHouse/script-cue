@@ -65,7 +65,7 @@ eas build --platform android --profile preview
 ### Test 1: Importación Básica
 1. Abrir app → Tab "Mis guiones"
 2. Pulsar botón "+" (arriba a la derecha)
-3. Seleccionar "Importar Guión"
+3. Seleccionar "Importar Guion"
 4. Seleccionar un PDF de tu dispositivo
 5. Configurar personajes
 6. Pulsar "Importar guion"
@@ -74,7 +74,7 @@ eas build --platform android --profile preview
 - Barra de progreso visible
 - Mensaje: "Importando el guion..."
 - Progreso aumenta gradualmente
-- Redirección a pantalla del guión
+- Redirección a pantalla del guion
 - **NO** aparece "Network request failed"
 
 **❌ Si falla**:
@@ -93,7 +93,7 @@ adb devices
 adb logcat | grep -i "upload\|supabase\|network"
 ```
 
-#### Intentar importar guión de nuevo
+#### Intentar importar guion de nuevo
 
 **✅ Logs esperados**:
 ```

@@ -245,7 +245,7 @@ export default function ImportScriptScreen() {
         
         setFile(asset);
         if (!title) {
-          const fallbackName = name || uri.split('/').pop() || 'Mi Guión';
+          const fallbackName = name || uri.split('/').pop() || 'Mi Guion';
           const fileName = fallbackName.replace(/\.pdf$/i, '').replace(/\.docx$/i, '');
           setTitle(fileName);
         }
@@ -311,7 +311,7 @@ export default function ImportScriptScreen() {
 
   async function handleUpload() {
     if (showConfigOnly && scriptId) {
-      // Guardar cambios sobre guión existente (sin importar PDF)
+      // Guardar cambios sobre guion existente (sin importar PDF)
       try {
         setUploading(true);
 
@@ -776,7 +776,7 @@ export default function ImportScriptScreen() {
       router.replace(`/import-script?scriptId=${scriptData.id}&openConfig=1`);
     } catch (error: any) {
       logger.error('Error uploading script:', error);
-      Alert.alert('Error', error.message || 'No se pudo cargar el guión');
+      Alert.alert('Error', error.message || 'No se pudo cargar el guion');
     } finally {
       clearInterval(progressInterval);
       if (mountedRef.current) setUploading(false);
@@ -802,13 +802,13 @@ export default function ImportScriptScreen() {
         <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
           <ArrowLeft size={24} color={colors.text} />
         </TouchableOpacity>
-        <Text style={[styles.title, { color: colors.text }]}>Importar Guión</Text>
+        <Text style={[styles.title, { color: colors.text }]}>Importar Guion</Text>
         <View style={{ width: 40 }} />
       </View>
 
       <ScrollView ref={scrollRef} style={styles.content}>
         <View style={styles.form}>
-          <Text style={[styles.label, { color: colors.text }]}>Título del Guión</Text>
+          <Text style={[styles.label, { color: colors.text }]}>Título del Guion</Text>
           <TextInput
             style={[styles.input, { backgroundColor: colors.input, color: colors.text, borderColor: colors.border }]}
             value={title}
@@ -849,7 +849,7 @@ export default function ImportScriptScreen() {
               >
                 <Camera size={24} color={colors.primary} />
                 <Text style={[styles.scanButtonText, { color: colors.primary }]}>
-                  Escanear Guión
+                  Escanear Guion
                 </Text>
               </TouchableOpacity>
             </>

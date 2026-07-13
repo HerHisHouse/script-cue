@@ -62,7 +62,7 @@ Cuando hay voces de diferentes categorías, aparecen separadores visuales:
 
 ## 🧪 Cómo Verificar
 
-1. **Abre la app** y ve a importar un guión
+1. **Abre la app** y ve a importar un guion
 2. **Selecciona "ElevenLabs"** en Operador de voces
 3. **Toca "Seleccionar voz"**
 4. **Verifica** que tus voces aparecen primero con la etiqueta "⭐ Mis Voces"

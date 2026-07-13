@@ -98,7 +98,7 @@ const SILENCE_DURATION = 1500; // ms (1.5 segundos)
 - Buscar en los logs: "🎵 Audio Merge Server running on port 10000"
 
 ### 2. Probar VAD
-1. Abrir un guión en Modo Casting
+1. Abrir un guion en Modo Casting
 2. Iniciar grabación (botón rojo)
 3. Esperar a que la IA hable
 4. Cuando sea tu turno, hablar claramente

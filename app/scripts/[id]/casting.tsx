@@ -482,7 +482,7 @@ export default function CastingModeScreen() {
       }
     } catch (e) {
       console.error('Error loading script:', e);
-      Alert.alert('Error', 'No se pudo cargar el guión');
+      Alert.alert('Error', 'No se pudo cargar el guion');
     } finally {
       setLoading(false);
     }
@@ -1758,7 +1758,7 @@ export default function CastingModeScreen() {
               <Text style={[styles.configTitle, { color: colors.text }]}>Configurar Escena</Text>
             </View>
             <TouchableOpacity
-              onPress={() => Alert.alert('Añadir acción', '"Añadir acción" sirve para configurar el tiempo que requieran las acciones por guión antes de decir una frase.')}
+              onPress={() => Alert.alert('Añadir acción', '"Añadir acción" sirve para configurar el tiempo que requieran las acciones por guion antes de decir una frase.')}
               style={{ width: rp(44), alignItems: 'center', justifyContent: 'center' }}
             >
               <Info color={colors.primary} size={rp(24)} />
