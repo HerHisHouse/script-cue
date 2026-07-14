@@ -303,3 +303,25 @@ function initFeaturesCarousel() {
     // Start initial autoplay
     startAutoPlay();
 }
+
+/**
+ * Toggle FAQ Category accordion
+ */
+function toggleFAQCategory(button) {
+    const category = button.parentElement;
+    const wasActive = category.classList.contains('active');
+
+    // Optional: Close all other categories (uncomment if you want only one open)
+    /*
+    document.querySelectorAll('.faq-category').forEach(cat => {
+        cat.classList.remove('active');
+    });
+    */
+
+    // Toggle current category
+    if (wasActive) {
+        category.classList.remove('active');
+    } else {
+        category.classList.add('active');
+    }
+}
