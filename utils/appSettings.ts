@@ -37,7 +37,7 @@ const DEFAULTS: AppSettings = {
 
   systemTtsRateAndroid: 1.0,
   systemTtsPitchAndroid: 1.0,
-  rotationEnabled: false,
+  rotationEnabled: true,
 };
 
 export async function getSettings(): Promise<AppSettings> {

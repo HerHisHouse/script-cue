@@ -153,6 +153,7 @@ export default function RecordingsScreen() {
   // URL resolved (signed Supabase URL or local file URI) for the current video being played
   const [videoPlayableUrl, setVideoPlayableUrl] = useState<string | null>(null);
   const [videoUrlLoading, setVideoUrlLoading] = useState(false);
+  const [isMediaLoading, setIsMediaLoading] = useState(false);
   const [playingId, setPlayingId] = useState<string | null>(null);
   const [sound, setSound] = useState<Audio.Sound | null>(null);
   const [playerVisible, setPlayerVisible] = useState(false);
@@ -936,6 +937,7 @@ export default function RecordingsScreen() {
     if (!recording) return;
 
     updateLastOpened(recording.id);
+    setIsMediaLoading(true);
 
     // Handle Video - Videos still use expo-av
     if (recording.type === 'video') {
@@ -979,6 +981,7 @@ export default function RecordingsScreen() {
         Alert.alert('Error', 'No se pudo cargar el vídeo.');
       } finally {
         setVideoUrlLoading(false);
+        setIsMediaLoading(false);
       }
       return;
     }
@@ -1021,6 +1024,7 @@ export default function RecordingsScreen() {
             url,
             title: rec.title || 'Grabación',
             artist: 'Script Cue',
+            artwork: require('../../assets/images/icon.png'),
           });
         } else {
           failedRecordings.push(rec);
@@ -1033,6 +1037,7 @@ export default function RecordingsScreen() {
 
       if (requestedRecordingFailed) {
         console.error('[Playback] The requested recording could not be loaded:', recording.id);
+        setIsMediaLoading(false);
         Alert.alert(
           'Audio no disponible',
           `No se pudo cargar el archivo "${recording.title || 'Sin título'}". Verifica tu conexión a internet e intenta de nuevo.`,
@@ -1052,6 +1057,7 @@ export default function RecordingsScreen() {
 
       if (tracks.length === 0) {
         console.error('[Playback] No valid audio tracks found');
+        setIsMediaLoading(false);
         Alert.alert('Error', 'No se encontraron archivos de audio válidos en la lista.');
         return;
       }
@@ -1096,11 +1102,13 @@ export default function RecordingsScreen() {
 
       console.log('[Playback] Started with TrackPlayer:', recording.title);
 
+      setIsMediaLoading(false);
       // Setup playback status polling for UI updates
       startTrackPlayerPolling(currentQueue);
 
     } catch (error) {
       console.error('Error playing audio with TrackPlayer:', error);
+      setIsMediaLoading(false);
       // Fallback to expo-av
       console.log('[Playback] Falling back to expo-av');
       await loadAndPlayWithExpoAv(index, currentQueue);
@@ -1303,6 +1311,7 @@ export default function RecordingsScreen() {
         const trackIndex = await TrackPlayer.getActiveTrackIndex();
 
         setIsPlaying(state.state === TrackPlayerState.Playing);
+        setIsMediaLoading(state.state === TrackPlayerState.Loading || state.state === TrackPlayerState.Buffering);
         setPositionMillis(progress.position * 1000);
         setDurationMillis(progress.duration * 1000);
 
@@ -1346,6 +1355,7 @@ export default function RecordingsScreen() {
     if (!recording) return;
 
     updateLastOpened(recording.id);
+    setIsMediaLoading(true);
 
     setPlayingId(recording.id);
 
@@ -1368,6 +1378,7 @@ export default function RecordingsScreen() {
       const url = await getPlayableUrlForRecording(recording);
       if (!url) {
         console.error('[Playback] No URL available for recording:', recording.id);
+        setIsMediaLoading(false);
         Alert.alert(
           'Audio no disponible',
           `No se pudo cargar el archivo "${recording.title || 'Sin título'}". Verifica tu conexión a internet e intenta de nuevo.`,
@@ -1418,10 +1429,14 @@ export default function RecordingsScreen() {
       }
 
       newSound.setOnPlaybackStatusUpdate((status) => {
-        if (!status.isLoaded) return;
+        if (!status.isLoaded) {
+          setIsMediaLoading(true);
+          return;
+        }
         setDurationMillis(status.durationMillis ?? 0);
         setPositionMillis(status.positionMillis ?? 0);
         setIsPlaying(Boolean(status.isPlaying));
+        setIsMediaLoading(Boolean(status.isBuffering));
 
         if (status.didJustFinish) {
           const currentLoop = loopModeRef.current;
@@ -1442,6 +1457,7 @@ export default function RecordingsScreen() {
       });
     } catch (error: any) {
       console.error('[Playback] Error playing audio with expo-av:', error);
+      setIsMediaLoading(false);
       Alert.alert(
         'Error de reproducción',
         `No se pudo reproducir "${recording.title || 'Sin título'}". ${error?.message || 'Error desconocido'}`,
@@ -3058,7 +3074,13 @@ export default function RecordingsScreen() {
                               onPress={(e) => { e.stopPropagation(); togglePlayPause(); }}
                               accessibilityLabel={isPlaying ? 'Pausar' : 'Reproducir'}
                             >
-                              {isPlaying ? <Pause size={32} color="#FFFFFF" /> : <Play size={32} color="#FFFFFF" />}
+                              {isMediaLoading ? (
+                                <ActivityIndicator size="small" color="#FFFFFF" />
+                              ) : isPlaying ? (
+                                <Pause size={32} color="#FFFFFF" />
+                              ) : (
+                                <Play size={32} color="#FFFFFF" />
+                              )}
                             </Pressable>
                             <Pressable
                               style={({ pressed }) => [styles.controlButton, { opacity: pressed ? 0.7 : 1 }]}

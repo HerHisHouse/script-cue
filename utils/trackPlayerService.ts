@@ -16,12 +16,14 @@ import TrackPlayer, {
   AppKilledPlaybackBehavior,
 } from 'react-native-track-player';
 
+const defaultArtwork = require('../assets/images/icon.png');
+
 export interface Track {
   id: string;
   url: string;
   title: string;
   artist: string;
-  artwork?: string;
+  artwork?: string | number;
   duration?: number;
 }
 
@@ -92,7 +94,7 @@ export async function loadTracks(tracks: Track[]): Promise<void> {
       url: track.url,
       title: track.title,
       artist: track.artist,
-      artwork: track.artwork || undefined,
+      artwork: track.artwork || defaultArtwork,
       duration: track.duration,
     })));
     console.log('[TrackPlayer] Tracks loaded:', tracks.length);
@@ -111,7 +113,7 @@ export async function addTrack(track: Track): Promise<void> {
       url: track.url,
       title: track.title,
       artist: track.artist,
-      artwork: track.artwork || undefined,
+      artwork: track.artwork || defaultArtwork,
       duration: track.duration,
     });
   } catch (error) {
@@ -406,6 +408,7 @@ export function recordingToTrack(recording: {
     url: recording.audio_url,
     title: recording.title || 'Grabación',
     artist: 'Script Cue',
+    artwork: defaultArtwork,
   };
 }
 

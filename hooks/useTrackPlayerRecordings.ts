@@ -178,6 +178,7 @@ export function useTrackPlayerRecordings(options?: UseTrackPlayerRecordingsOptio
             url,
             title: recording.title || 'Grabación',
             artist: 'Script Cue',
+            artwork: require('../../assets/images/icon.png'),
           });
         }
       }

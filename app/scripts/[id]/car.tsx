@@ -102,6 +102,7 @@ async function setupIosLockScreen(
       title: characterName,
       artist: scriptTitle || 'Script Cue',
       album: 'Modo Coche',
+      artwork: require('../../../assets/images/icon.png'),
     };
     if (queue.length === 0) {
       await TrackPlayer.add([track]);
@@ -473,6 +474,7 @@ export default function CarModeScreen() {
                   title: line.characterName,
                   artist: scriptTitle || 'Script Cue',
                   album: 'Modo Coche',
+                  artwork: require('../../../assets/images/icon.png'),
                 },
               ]);
               if (TrackPlayerRepeatMode) {
