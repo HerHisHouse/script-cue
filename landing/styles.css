@@ -888,6 +888,64 @@ section {
 /* =============================================
    FAQs Section
    ============================================= */
+
+/* FAQ Category Toggle */
+.faq-category {
+    background: rgba(168, 85, 247, 0.02);
+    border: 1px solid var(--border-color);
+    border-radius: 20px;
+    margin-bottom: 24px;
+    overflow: hidden;
+    transition: var(--transition-normal);
+}
+
+.faq-category:hover {
+    border-color: var(--border-color-hover);
+}
+
+.faq-category-toggle {
+    width: 100%;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    background: none;
+    border: none;
+    cursor: pointer;
+    padding: 24px 32px;
+    color: var(--text-primary);
+    text-align: left;
+}
+
+
+
+.faq-category-toggle .faq-icon {
+    width: 24px;
+    height: 24px;
+    transition: transform 0.3s ease;
+    color: var(--text-secondary);
+}
+
+.faq-category.active .faq-category-toggle .faq-icon {
+    transform: rotate(180deg);
+}
+
+.faq-category-content {
+    display: none;
+    padding: 0 32px 24px;
+}
+
+.faq-category.active .faq-category-content {
+    display: block;
+    animation: fadeIn 0.4s ease forwards;
+}
+
+.faq-category-content .faq-item {
+    margin-bottom: 12px;
+}
+.faq-category-content .faq-item:last-child {
+    margin-bottom: 0;
+}
+
 .faqs {
     background: var(--bg-secondary);
 }
@@ -896,14 +954,7 @@ section {
     margin-bottom: 40px;
 }
 
-.faq-category-title {
-    font-size: 0.9rem;
-    font-weight: 600;
-    text-transform: uppercase;
-    letter-spacing: 0.5px;
-    color: var(--accent-primary);
-    margin-bottom: 16px;
-}
+
 
 .faq-item {
     background: var(--bg-card);
@@ -1567,4 +1618,9 @@ section {
 .pricing-btn {
     width: 100%;
     justify-content: center;
+}
+.faq-category-title {
+    font-size: 1.3rem;
+    font-weight: 600;
+    margin: 0 !important;
 }

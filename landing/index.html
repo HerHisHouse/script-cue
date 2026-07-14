@@ -1234,8 +1234,16 @@ input:checked + .slider:before {
             </div>
 
             <!-- General -->
-            <div class="faq-category">
-                <h3 class="faq-category-title">General</h3>
+            <div class="faq-category active">
+                
+                <button class="faq-category-toggle" onclick="toggleFAQCategory(this)">
+                    <h3 class="faq-category-title">General</h3>
+                    <svg class="faq-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <polyline points="6 9 12 15 18 9"></polyline>
+                    </svg>
+                </button>
+                <div class="faq-category-content">
+
                 <div class="faq-item">
                     <button class="faq-question" onclick="toggleFAQ(this)">
                         <span>¿Qué es ScriptCue?</span>
@@ -1264,11 +1272,20 @@ input:checked + .slider:before {
                             imágenes desde la galería de tu terminal. La app convertirá el texto automáticamente.</p>
                     </div>
                 </div>
+                            </div>
             </div>
 
             <!-- Modos de Estudio -->
             <div class="faq-category">
-                <h3 class="faq-category-title">Modos de Estudio</h3>
+                
+                <button class="faq-category-toggle" onclick="toggleFAQCategory(this)">
+                    <h3 class="faq-category-title">Modos de Estudio</h3>
+                    <svg class="faq-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <polyline points="6 9 12 15 18 9"></polyline>
+                    </svg>
+                </button>
+                <div class="faq-category-content">
+
                 <div class="faq-item">
                     <button class="faq-question" onclick="toggleFAQ(this)">
                         <span>¿Qué es el Modo Estudio?</span>
@@ -1390,11 +1407,20 @@ input:checked + .slider:before {
                         </ul>
                     </div>
                 </div>
+                            </div>
             </div>
 
             <!-- Grabaciones -->
             <div class="faq-category">
-                <h3 class="faq-category-title">Grabaciones</h3>
+                
+                <button class="faq-category-toggle" onclick="toggleFAQCategory(this)">
+                    <h3 class="faq-category-title">Grabaciones</h3>
+                    <svg class="faq-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <polyline points="6 9 12 15 18 9"></polyline>
+                    </svg>
+                </button>
+                <div class="faq-category-content">
+
                 <div class="faq-item">
                     <button class="faq-question" onclick="toggleFAQ(this)">
                         <span>¿Dónde se guardan mis grabaciones?</span>
@@ -1438,11 +1464,20 @@ input:checked + .slider:before {
                         </ul>
                     </div>
                 </div>
+                            </div>
             </div>
 
             <!-- Proyectos -->
             <div class="faq-category">
-                <h3 class="faq-category-title">Proyectos</h3>
+                
+                <button class="faq-category-toggle" onclick="toggleFAQCategory(this)">
+                    <h3 class="faq-category-title">Proyectos</h3>
+                    <svg class="faq-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <polyline points="6 9 12 15 18 9"></polyline>
+                    </svg>
+                </button>
+                <div class="faq-category-content">
+
                 <div class="faq-item">
                     <button class="faq-question" onclick="toggleFAQ(this)">
                         <span>¿Qué son los proyectos?</span>
@@ -1463,11 +1498,44 @@ input:checked + .slider:before {
                             en su ubicación original.</p>
                     </div>
                 </div>
+                            </div>
+            </div>
+
+            
+            <!-- Planes -->
+            <div class="faq-category">
+                <button class="faq-category-toggle" onclick="toggleFAQCategory(this)">
+                    <h3 class="faq-category-title">Planes</h3>
+                    <svg class="faq-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <polyline points="6 9 12 15 18 9"></polyline>
+                    </svg>
+                </button>
+                <div class="faq-category-content">
+                    <div class="faq-item">
+                        <button class="faq-question" onclick="toggleFAQ(this)">
+                            <span>¿Qué diferencias hay entre los planes?</span>
+                            <svg class="faq-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <polyline points="6 9 12 15 18 9"></polyline>
+                            </svg>
+                        </button>
+                        <div class="faq-answer">
+                            <p>El Plan Gratuito incluye hasta 3 guiones, el Estudiante hasta 20 y voces con calidad de estudio, y el Profesional hasta 50 guiones y voces con emociones y matices.</p>
+                        </div>
+                    </div>
+                </div>
             </div>
 
             <!-- Configuración -->
             <div class="faq-category">
-                <h3 class="faq-category-title">Configuración</h3>
+                
+                <button class="faq-category-toggle" onclick="toggleFAQCategory(this)">
+                    <h3 class="faq-category-title">Configuración</h3>
+                    <svg class="faq-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <polyline points="6 9 12 15 18 9"></polyline>
+                    </svg>
+                </button>
+                <div class="faq-category-content">
+
                 <div class="faq-item">
                     <button class="faq-question" onclick="toggleFAQ(this)">
                         <span>¿Cómo cambio las voces de la IA?</span>
@@ -1486,6 +1554,7 @@ input:checked + .slider:before {
                         <p><strong>Asignar voces a personajes:</strong> Puedes asignar voces específicas de diferentes proveedores a cada personaje de un mismo guion.</p>
                     </div>
                 </div>
+                            </div>
             </div>
 
             <!-- Contact Card -->
