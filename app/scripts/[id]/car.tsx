@@ -37,7 +37,7 @@ import {
   getElevenLabsVoices,
   playVoicePreview,
   stopVoicePreview,
-  AZURE_VOICES,
+  getAzureVoices,
 } from '@/utils/voiceService';
 
 import { Stack } from 'expo-router';
@@ -162,6 +162,7 @@ export default function CarModeScreen() {
   // Voice data
   const [availableVoices, setAvailableVoices] = useState<Speech.Voice[]>([]);
   const [elevenLabsVoices, setElevenLabsVoices] = useState<VoiceOption[]>([]);
+  const [azureVoices, setAzureVoices] = useState<VoiceOption[]>([]);
   const [loadingVoices, setLoadingVoices] = useState(false);
   const [playingVoiceId, setPlayingVoiceId] = useState<string | null>(null);
 
@@ -296,6 +297,7 @@ export default function CarModeScreen() {
 
     // Load ElevenLabs voices
     loadElevenLabsVoices();
+    loadAzureVoices();
 
     return () => {
       deactivateKeepAwake();
@@ -332,6 +334,15 @@ export default function CarModeScreen() {
       console.error('Error loading ElevenLabs voices:', error);
     } finally {
       setLoadingVoices(false);
+    }
+  };
+
+  const loadAzureVoices = async () => {
+    try {
+      const voices = await getAzureVoices();
+      setAzureVoices(voices);
+    } catch (error) {
+      console.error('Error loading Azure voices:', error);
     }
   };
 
@@ -777,18 +788,18 @@ export default function CarModeScreen() {
     );
   };
 
-  const getVoicesForProvider = (provider: VoiceProviderType) => {
+  const getVoicesForProvider = (provider: VoiceProviderType): { id: string; name: string | null }[] => {
     switch (provider) {
       case 'openai':
-        return OPENAI_VOICES.map(v => ({ id: v.id, name: v.name }));
+        return OPENAI_VOICES.map((v: VoiceOption) => ({ id: v.id, name: v.name }));
       case 'elevenlabs':
-        return elevenLabsVoices.map(v => ({ id: v.id, name: v.name }));
+        return elevenLabsVoices.map((v: VoiceOption) => ({ id: v.id, name: v.name }));
       case 'azure':
-        return AZURE_VOICES.map(v => ({ id: v.id, name: v.name }));
+        return azureVoices.map((v: VoiceOption) => ({ id: v.id, name: v.name }));
       case 'system':
         return availableVoices
-          .filter(v => v.language.startsWith('es'))
-          .map(v => ({ id: v.identifier, name: v.name }));
+          .filter((v: Speech.Voice) => v.language.startsWith('es'))
+          .map((v: Speech.Voice) => ({ id: v.identifier, name: v.name }));
       default:
         return [];
     }
@@ -797,7 +808,7 @@ export default function CarModeScreen() {
   const getVoiceName = (provider: VoiceProviderType, voiceId: string | null) => {
     if (!voiceId) return 'Voz por defecto';
     const voices = getVoicesForProvider(provider);
-    const voice = voices.find(v => v.id === voiceId);
+    const voice = voices.find((v: { id: string; name: string | null }) => v.id === voiceId);
     return voice?.name || 'Voz por defecto';
   };
 
@@ -841,7 +852,7 @@ export default function CarModeScreen() {
           setTimeout(() => setPlayingVoiceId(null), 5000);
         }
       } else if (provider === 'azure') {
-        const voice = AZURE_VOICES.find(v => v.id === voiceId);
+        const voice = azureVoices.find((v: VoiceOption) => v.id === voiceId);
         if (voice) {
           await playVoicePreview(voice);
           setTimeout(() => setPlayingVoiceId(null), 5000);
@@ -1432,7 +1443,7 @@ export default function CarModeScreen() {
                       </View>
                     ) : (
                       <ScrollView style={{ maxHeight: 250 }} nestedScrollEnabled>
-                        {getVoicesForProvider(config.provider).map(voice => (
+                        {getVoicesForProvider(config.provider).map((voice: { id: string; name: string | null }) => (
                           <TouchableOpacity
                             key={voice.id}
                             style={[
