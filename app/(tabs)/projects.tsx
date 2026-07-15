@@ -684,7 +684,9 @@ export default function ProjectsScreen() {
           onPress={() => {
             const item = optionsModal.item;
             setOptionsModal({ visible: false, item: null });
-            if (item) setSendToModal({ visible: true, item });
+            setTimeout(() => {
+              if (item) setSendToModal({ visible: true, item });
+            }, 300);
           }}
         />
 
@@ -693,16 +695,18 @@ export default function ProjectsScreen() {
           Icon={Edit3}
           onPress={() => {
             const item = optionsModal.item;
-            if (item) {
-              const currentName = item.type === 'folder'
-                ? (item.data as Project).name
-                : item.type === 'script'
-                  ? (item.data as Script).title
-                  : (item.data as Recording).title || 'Grabación';
-
-              setRenameModal({ visible: true, item, newName: currentName });
-            }
             setOptionsModal({ visible: false, item: null });
+            setTimeout(() => {
+              if (item) {
+                const currentName = item.type === 'folder'
+                  ? (item.data as Project).name
+                  : item.type === 'script'
+                    ? (item.data as Script).title
+                    : (item.data as Recording).title || 'Grabación';
+
+                setRenameModal({ visible: true, item, newName: currentName });
+              }
+            }, 300);
           }}
         />
 
@@ -714,7 +718,10 @@ export default function ProjectsScreen() {
           isDestructive
           onPress={() => {
             const item = optionsModal.item;
-            if (item) handleDelete(item);
+            setOptionsModal({ visible: false, item: null });
+            setTimeout(() => {
+              if (item) handleDelete(item);
+            }, 300);
           }}
         />
       </BottomSheetMenu>

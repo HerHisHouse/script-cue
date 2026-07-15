@@ -891,35 +891,54 @@ app.post('/analyze-recording', async (req, res) => {
     try {
         await fs.promises.mkdir(tempDir, { recursive: true });
         console.log(`[Coach] Analyzing recording: ${recordingPath}`);
-        console.log('[Coach] Attempting to download from Supabase...');
-        console.log('[Coach] Bucket: recordings');
-        console.log('[Coach] Path:', recordingPath);
 
-        // 1. Download file from Supabase
-        const { data, error } = await supabase.storage
-            .from('recordings')
-            .download(recordingPath);
+        let buffer;
+        const originalExt = recordingPath.includes('?') 
+            ? path.extname(recordingPath.split('?')[0]) 
+            : path.extname(recordingPath);
 
-        console.log('[Coach] Download response received');
-        console.log('[Coach] Has data:', !!data);
-        console.log('[Coach] Has error:', !!error);
+        if (recordingPath.startsWith('http://') || recordingPath.startsWith('https://')) {
+            console.log('[Coach] Path is a public URL. Fetching directly...');
+            const response = await fetch(recordingPath);
+            if (!response.ok) {
+                throw new Error(`Download failed: HTTP ${response.status} ${response.statusText}`);
+            }
+            const arrayBuffer = await response.arrayBuffer();
+            buffer = Buffer.from(arrayBuffer);
+            console.log('[Coach] Fetch successful, data size:', buffer.length);
+        } else if (recordingPath.startsWith('file://') || recordingPath.startsWith('/')) {
+            throw new Error("El archivo es local y no está en la nube. No se puede analizar en este dispositivo.");
+        } else {
+            console.log('[Coach] Attempting to download from Supabase...');
+            console.log('[Coach] Bucket: recordings');
+            console.log('[Coach] Path:', recordingPath);
 
-        if (error) {
-            console.error('[Coach] Supabase download error details:', JSON.stringify(error, null, 2));
-            throw new Error(`Download failed: ${error.message || JSON.stringify(error)}`);
+            // 1. Download file from Supabase
+            const { data, error } = await supabase.storage
+                .from('recordings')
+                .download(recordingPath);
+
+            console.log('[Coach] Download response received');
+            console.log('[Coach] Has data:', !!data);
+            console.log('[Coach] Has error:', !!error);
+
+            if (error) {
+                console.error('[Coach] Supabase download error details:', JSON.stringify(error, null, 2));
+                throw new Error(`Download failed: ${error.message || JSON.stringify(error)}`);
+            }
+
+            if (!data) {
+                console.error('[Coach] No data returned from Supabase (but no error either)');
+                throw new Error('Download failed: No data returned from Supabase');
+            }
+
+            console.log('[Coach] Download successful, data size:', data.size);
+            const arrayBuffer = await data.arrayBuffer();
+            buffer = Buffer.from(arrayBuffer);
         }
 
-        if (!data) {
-            console.error('[Coach] No data returned from Supabase (but no error either)');
-            throw new Error('Download failed: No data returned from Supabase');
-        }
-
-        console.log('[Coach] Download successful, data size:', data.size);
-
-        const originalExt = path.extname(recordingPath);
-        const localInputPath = path.join(tempDir, `input${originalExt}`);
-        const buffer = await data.arrayBuffer();
-        await fs.promises.writeFile(localInputPath, Buffer.from(buffer));
+        const localInputPath = path.join(tempDir, `input${originalExt || '.mp4'}`);
+        await fs.promises.writeFile(localInputPath, buffer);
 
         // 2. Extract/Convert Audio for OpenAI
         // OpenAI supports mp3, mp4, mpeg, mpa, m4a, ogg, wav, webm.
