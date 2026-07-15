@@ -39,6 +39,8 @@ interface VoiceSelectorProps {
     systemLanguage?: string;
     selectedVoiceName?: string;
     buttonStyle?: object;
+    labelStyle?: object;
+    valueStyle?: object;
 }
 
 export function VoiceSelector({
@@ -49,6 +51,8 @@ export function VoiceSelector({
     systemLanguage = 'es-ES',
     selectedVoiceName,
     buttonStyle,
+    labelStyle,
+    valueStyle,
 }: VoiceSelectorProps) {
     const { colors } = useTheme();
     const [modalVisible, setModalVisible] = useState(false);
@@ -436,8 +440,8 @@ export function VoiceSelector({
                 disabled={disabled}
             >
                 <View style={styles.selectorContent}>
-                    <Text style={[styles.selectorLabel, { color: colors.textSecondary }]}>Voz del personaje</Text>
-                    <Text style={[styles.selectorValue, { color: colors.text }]}>{getSelectedVoiceName()}</Text>
+                    <Text style={[styles.selectorLabel, { color: colors.textSecondary }, labelStyle]}>Voz del personaje</Text>
+                    <Text style={[styles.selectorValue, { color: colors.text }, valueStyle]}>{getSelectedVoiceName()}</Text>
                 </View>
                 <ChevronDown size={20} color={colors.textSecondary} />
             </TouchableOpacity>

@@ -1298,17 +1298,33 @@ export default function CarModeScreen() {
         </View>
 
         {/* Lista de personajes — más limpia */}
-        <Text style={{
-          color: 'rgba(255,255,255,0.4)',
-          fontSize: 11,
-          fontWeight: '700',
-          letterSpacing: 1.2,
-          textTransform: 'uppercase',
+        <View style={{
+          flexDirection: 'row',
+          alignItems: 'center',
           paddingHorizontal: 20,
           marginBottom: 12,
         }}>
-          Configurar voces
-        </Text>
+          <Text style={{
+            color: 'rgba(255,255,255,0.4)',
+            fontSize: 11,
+            fontWeight: '700',
+            letterSpacing: 1.2,
+            textTransform: 'uppercase',
+          }}>
+            Configurar voces
+          </Text>
+          <TouchableOpacity
+            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+            onPress={() => Alert.alert(
+              'Proveedores de voz',
+              PROVIDER_INFO_MESSAGE,
+              [{ text: 'Entendido', style: 'default' }]
+            )}
+            style={{ marginLeft: 8 }}
+          >
+            <Info size={14} color="rgba(255,255,255,0.4)" />
+          </TouchableOpacity>
+        </View>
 
         <ScrollView style={{ flex: 1 }}>
           {characterVoiceConfigs.map((config, index) => {
@@ -1401,6 +1417,8 @@ export default function CarModeScreen() {
                   selectedVoiceId={config.voiceId || undefined}
                   selectedVoiceName={getVoiceName(config.provider, config.voiceId)}
                   buttonStyle={{ backgroundColor: 'rgba(255,255,255,0.08)', borderColor: 'rgba(255,255,255,0.1)' }}
+                  labelStyle={{ color: 'rgba(255,255,255,0.5)' }}
+                  valueStyle={{ color: 'rgba(255,255,255,0.9)' }}
                   onVoiceSelect={(voiceId) => {
                     updateCharacterVoice(config.characterName, config.provider, voiceId);
                   }}
