@@ -317,7 +317,7 @@ export default function CarModeScreen() {
         trackPlayerCleanupRef.current();
         trackPlayerCleanupRef.current = null;
       }
-      if (Platform.OS === 'android' && TrackPlayer) {
+      if (TrackPlayer) {
         TrackPlayer.reset().catch(() => {});
       }
     };
@@ -1208,6 +1208,13 @@ export default function CarModeScreen() {
     </View>
   );
 
+  const handleExit = async () => {
+    if (TrackPlayer) {
+      await TrackPlayer.reset().catch(() => {});
+    }
+    router.back();
+  };
+
   // Configuration Screen
   if (showConfig) {
     return (
@@ -1224,7 +1231,7 @@ export default function CarModeScreen() {
         }}>
           {/* Botón salir estilo iOS — pill rojo */}
           <TouchableOpacity
-            onPress={() => router.back()}
+            onPress={handleExit}
             style={{
               flexDirection: 'row',
               alignItems: 'center',

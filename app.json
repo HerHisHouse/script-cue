@@ -33,7 +33,7 @@
         }
       },
       "bundleIdentifier": "es.scriptcue.app",
-      "buildNumber": "7"
+      "buildNumber": "8"
     },
     "web": {
       "bundler": "metro",
@@ -74,7 +74,7 @@
         "READ_MEDIA_VIDEO",
         "READ_MEDIA_AUDIO"
       ],
-      "versionCode": 3
+      "versionCode": 4
     },
     "extra": {
       "router": {},

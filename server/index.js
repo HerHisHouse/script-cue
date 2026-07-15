@@ -47,6 +47,7 @@ app.get('/health', (req, res) => {
 // Merge endpoint
 app.post('/merge', async (req, res) => {
     const { segments, userId, scriptId } = req.body;
+    const pauseDuration = parseFloat(req.body.pauseDuration) || 1.5;
 
     if (!segments || !Array.isArray(segments) || segments.length === 0) {
         return res.status(400).json({ error: 'Invalid segments array' });
@@ -95,21 +96,47 @@ app.post('/merge', async (req, res) => {
 
 
 
+        // Generar un archivo de silencio
+        const silencePath = path.join(tempDir, 'silence.mp3');
+        await new Promise((resolve, reject) => {
+            ffmpeg()
+                .input('anullsrc=r=44100:cl=mono')
+                .inputOptions(['-f', 'lavfi'])
+                .outputOptions([
+                    '-t', String(pauseDuration),
+                    '-acodec', 'mp3',
+                    '-b:a', '128k',
+                    '-ar', '44100',
+                    '-ac', '1'
+                ])
+                .output(silencePath)
+                .on('end', resolve)
+                .on('error', reject)
+                .run();
+        });
+
+        const audioFilesWithSilence = [];
+        for (let i = 0; i < downloadedFiles.length; i++) {
+            audioFilesWithSilence.push(downloadedFiles[i]);
+            if (i < downloadedFiles.length - 1) {
+                audioFilesWithSilence.push(silencePath); // silencio entre líneas
+            }
+        }
+
         // Run FFmpeg with concat filter (more robust for mixed formats)
         await new Promise((resolve, reject) => {
             const command = ffmpeg();
 
             // Add all inputs
-            downloadedFiles.forEach(file => {
+            audioFilesWithSilence.forEach(file => {
                 command.input(file);
             });
 
             // Construct complex filter for concatenation
-            // [0:a][1:a][2:a]concat=n=3:v=0:a=1[outa]
-            const inputLabels = downloadedFiles.map((_, i) => `[${i}:a]`).join('');
+            const inputLabels = audioFilesWithSilence.map((_, i) => `[${i}:a]`).join('');
 
             command
-                .complexFilter(`${inputLabels}concat=n=${downloadedFiles.length}:v=0:a=1[outa]`)
+                .complexFilter(`${inputLabels}concat=n=${audioFilesWithSilence.length}:v=0:a=1[outa]`)
                 .map('[outa]')
                 .audioCodec('aac')
                 .audioBitrate('128k')
