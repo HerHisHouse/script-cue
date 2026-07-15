@@ -12,9 +12,11 @@ import { logger } from '@/utils/logger';
 import { getSettings, setSettings, AppSettings } from '@/utils/appSettings';
 import * as Speech from 'expo-speech';
 import { rf, rp } from '@/utils/responsive';
+import { Audio } from 'expo-av';
 import { clearScriptCache, preGenerateScriptAudio } from '@/utils/ttsCache';
+import { OPENAI_VOICES, VOICE_PROVIDERS_CONFIG, PROVIDER_INFO_MESSAGE } from '@/utils/voiceService';
 import { VoiceSelector } from '@/components/VoiceSelector';
-import { VoiceOption, VoiceProvider, OPENAI_VOICES, getDefaultVoiceForGender } from '@/utils/voiceService';
+import { VoiceOption, VoiceProvider, getDefaultVoiceForGender } from '@/utils/voiceService';
 import { BETA_LIMITS, isUserBetaLimited } from '@/constants/betaLimits';
 
 // Tipo extendido para incluir propiedades dinámicas de configuración de personajes
@@ -416,9 +418,9 @@ export default function ImportScriptScreen() {
           Alert.alert('Guardado', 'Los personajes han sido configurados.');
           router.replace(`/scripts/${scriptId}/review`);
         }
-      } catch (error: any) {
-        logger.error('Error updating characters:', error);
-        Alert.alert('Error', error.message || 'No se pudieron actualizar los personajes');
+      } catch (err: any) {
+        logger.error('Error updating characters:', err);
+        Alert.alert('Error', err.message || 'No se pudieron actualizar los personajes');
       } finally {
         if (mountedRef.current) setUploading(false);
       }
@@ -930,8 +932,8 @@ export default function ImportScriptScreen() {
                         <Text style={[styles.label, { color: colors.text, marginTop: 0, marginBottom: 0 }]}>Proveedor de voz</Text>
                         <TouchableOpacity
                           onPress={() => Alert.alert(
-                            'Proveedor de Voz',
-                            'Selecciona qué motor de inteligencia artificial leerá las líneas de este personaje.\n\nOpenAI y ElevenLabs suenan muy humanos. Sistema es la voz robótica por defecto del dispositivo.',
+                            'Proveedores de voz',
+                            PROVIDER_INFO_MESSAGE,
                             [{ text: 'Entendido', style: 'default' }]
                           )}
                           style={styles.infoButton}
@@ -945,13 +947,14 @@ export default function ImportScriptScreen() {
                         onPress={() => setOpenOperatorIndex(openOperatorIndex === index ? null : index)}
                       >
                         <Text style={[styles.pickerText, { color: colors.text }]}>
-                          {char.provider === 'openai' ? 'OpenAI' : char.provider === 'elevenlabs' ? 'ElevenLabs' : char.provider === 'azure' ? 'Microsoft Azure' : 'Voz del sistema'}
+                          {VOICE_PROVIDERS_CONFIG.find(p => p.value === (char.provider || 'system'))?.label ?? '🔈 Básica'}
                         </Text>
                         <ChevronDown size={20} color={colors.textSecondary} />
                       </TouchableOpacity>
                       {openOperatorIndex === index && (
                         <View style={[styles.pickerOptions, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-                          {(['system', 'openai', 'azure', 'elevenlabs'] as const).map((prov) => {
+                          {VOICE_PROVIDERS_CONFIG.map((provConfig) => {
+                            const prov = provConfig.value;
                             const isSelected = (char.provider || 'system') === prov;
                             return (
                               <TouchableOpacity
@@ -960,7 +963,7 @@ export default function ImportScriptScreen() {
                                 onPress={() => {
                                   // Al cambiar de provider, limpiar la voz seleccionada
                                   updateCharacter(index, {
-                                    provider: prov,
+                                    provider: prov as any,
                                     voiceId: prov === 'azure' ? 'es-ES-AlvaroNeural' : undefined,
                                     voiceProvider: prov === 'system' ? undefined : prov as any,
                                     systemVoiceId: undefined,
@@ -972,13 +975,10 @@ export default function ImportScriptScreen() {
                                   styles.pickerOptionText,
                                   isSelected ? styles.pickerOptionTextSelected : { color: colors.textSecondary }
                                 ]}>
-                                  {prov === 'system'
-                                    ? 'Sistema (Gratis)'
-                                    : prov === 'openai'
-                                      ? 'OpenAI (Premium)'
-                                      : prov === 'azure'
-                                        ? 'Azure (Premium)'
-                                        : 'ElevenLabs (Premium)'}
+                                  {provConfig.label}
+                                </Text>
+                                <Text style={{ color: colors.textSecondary, fontSize: 12, marginTop: 2 }}>
+                                  {provConfig.subtitle}
                                 </Text>
                               </TouchableOpacity>
                             );

@@ -38,6 +38,8 @@ import {
   playVoicePreview,
   stopVoicePreview,
   getAzureVoices,
+  VOICE_PROVIDERS_CONFIG,
+  PROVIDER_INFO_MESSAGE
 } from '@/utils/voiceService';
 
 import { Stack } from 'expo-router';
@@ -1364,55 +1366,32 @@ export default function CarModeScreen() {
                 }}
               >
                 <Text style={{ color: 'rgba(255,255,255,0.7)', fontSize: 15 }}>
-                  {getProviderEmoji(config.provider)} {config.provider === 'system' ? 'Sistema (Gratis)' : config.provider === 'openai' ? 'OpenAI (Premium)' : config.provider === 'azure' ? 'Azure (Premium)' : 'ElevenLabs (Premium)'}
+                  {VOICE_PROVIDERS_CONFIG.find(p => p.value === config.provider)?.label ?? '🔈 Básica'}
                 </Text>
                 <ChevronRight size={16} color="rgba(255,255,255,0.3)" />
               </TouchableOpacity>
               
               {expandedCharacter === config.characterName && (
                   <ScrollView style={styles.dropdownList} nestedScrollEnabled={true}>
-                    <TouchableOpacity
-                      style={[styles.dropdownItem, config.provider === 'system' && styles.dropdownItemSelected]}
-                      onPress={() => {
-                        const spanishVoice = availableVoices.find(v => v.language.startsWith('es'));
-                        updateCharacterVoice(config.characterName, 'system', spanishVoice?.identifier || '');
-                        setExpandedCharacter(null);
-                      }}
-                    >
-                      <Text style={styles.dropdownItemText}>📱 Sistema (Gratis)</Text>
-                      <Text style={styles.providerDescription}>Voces integradas del dispositivo</Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity
-                      style={[styles.dropdownItem, config.provider === 'openai' && styles.dropdownItemSelected]}
-                      onPress={() => {
-                        updateCharacterVoice(config.characterName, 'openai', 'nova');
-                        setExpandedCharacter(null);
-                      }}
-                    >
-                      <Text style={styles.dropdownItemText}>🤖 OpenAI (Premium)</Text>
-                      <Text style={styles.providerDescription}>Voces de alta calidad</Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity
-                      style={[styles.dropdownItem, config.provider === 'azure' && styles.dropdownItemSelected]}
-                      onPress={() => {
-                        updateCharacterVoice(config.characterName, 'azure', 'es-ES-AlvaroNeural');
-                        setExpandedCharacter(null);
-                      }}
-                    >
-                      <Text style={styles.dropdownItemText}>🌐 Azure (Premium)</Text>
-                      <Text style={styles.providerDescription}>Voces realistas de Microsoft Azure</Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity
-                      style={[styles.dropdownItem, config.provider === 'elevenlabs' && styles.dropdownItemSelected]}
-                      onPress={() => {
-                        const defaultEL = elevenLabsVoices[0]?.id || '';
-                        updateCharacterVoice(config.characterName, 'elevenlabs', defaultEL);
-                        setExpandedCharacter(null);
-                      }}
-                    >
-                      <Text style={styles.dropdownItemText}>🎭 ElevenLabs (Premium)</Text>
-                      <Text style={styles.providerDescription}>Voces ultra realistas</Text>
-                    </TouchableOpacity>
+                    {VOICE_PROVIDERS_CONFIG.map(provider => (
+                      <TouchableOpacity
+                        key={provider.value}
+                        style={[styles.dropdownItem, config.provider === provider.value && styles.dropdownItemSelected]}
+                        onPress={() => {
+                          let defaultVoice = '';
+                          if (provider.value === 'system') defaultVoice = availableVoices.find(v => v.language.startsWith('es'))?.identifier || '';
+                          else if (provider.value === 'openai') defaultVoice = 'nova';
+                          else if (provider.value === 'azure') defaultVoice = 'es-ES-AlvaroNeural';
+                          else if (provider.value === 'elevenlabs') defaultVoice = elevenLabsVoices[0]?.id || '';
+                          
+                          updateCharacterVoice(config.characterName, provider.value as any, defaultVoice);
+                          setExpandedCharacter(null);
+                        }}
+                      >
+                        <Text style={styles.dropdownItemText}>{provider.label}</Text>
+                        <Text style={styles.providerDescription}>{provider.subtitle}</Text>
+                      </TouchableOpacity>
+                    ))}
                   </ScrollView>
                 )}
 

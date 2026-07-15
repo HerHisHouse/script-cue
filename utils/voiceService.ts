@@ -9,6 +9,41 @@ import { generateElevenLabsAudio } from './elevenLabsClient';
 
 export type VoiceProvider = 'openai' | 'elevenlabs' | 'azure' | 'system';
 
+export const VOICE_PROVIDERS_CONFIG = [
+  { 
+    value: 'system',
+    label: '🔈 Básica',
+    subtitle: 'Voz del sistema'
+  },
+  { 
+    value: 'azure',
+    label: '🎙️ Natural',
+    subtitle: 'Voz de estudio'
+  },
+  { 
+    value: 'openai',
+    label: '⭐ Premium',
+    subtitle: 'Mayor calidad'
+  },
+  { 
+    value: 'elevenlabs',
+    label: '🎭 Expresiva',
+    subtitle: 'Con emociones configurables'
+  },
+];
+
+export const PROVIDER_INFO_MESSAGE = 
+  'Selecciona qué IA leerá las líneas de este personaje:\n\n' +
+  '🔈 Básica (Sistema)\n' +
+  'Incluida en todos los planes. Funciona sin conexión.\n\n' +
+  '🎙️ Natural (Azure)\n' +
+  'Voz clara y fluida. Plan Estudiante o superior.\n\n' +
+  '⭐ Premium (OpenAI)\n' +
+  'Alta calidad y naturalidad. Plan Estudiante o superior.\n\n' +
+  '🎭 Expresiva (ElevenLabs)\n' +
+  'La más realista. Transmite emociones. Solo Plan Profesional.';
+
+
 export interface VoiceOption {
   id: string;
   name: string;
