@@ -1416,11 +1416,12 @@ export default function CarModeScreen() {
                   </ScrollView>
                 )}
 
-              {/* Selector voz */}
               <View style={{ paddingTop: 10 }}>
                 <VoiceSelector
                   provider={config.provider as any}
                   selectedVoiceId={config.voiceId || undefined}
+                  selectedVoiceName={getVoiceName(config.provider, config.voiceId)}
+                  buttonStyle={{ backgroundColor: 'rgba(255,255,255,0.08)', borderColor: 'rgba(255,255,255,0.1)' }}
                   onVoiceSelect={(voiceId) => {
                     updateCharacterVoice(config.characterName, config.provider, voiceId);
                   }}

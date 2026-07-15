@@ -37,6 +37,8 @@ interface VoiceSelectorProps {
     onVoiceSelect: (voiceId: string, provider: 'openai' | 'elevenlabs' | 'azure' | 'system') => void;
     disabled?: boolean;
     systemLanguage?: string;
+    selectedVoiceName?: string;
+    buttonStyle?: object;
 }
 
 export function VoiceSelector({
@@ -45,6 +47,8 @@ export function VoiceSelector({
     onVoiceSelect,
     disabled = false,
     systemLanguage = 'es-ES',
+    selectedVoiceName,
+    buttonStyle,
 }: VoiceSelectorProps) {
     const { colors } = useTheme();
     const [modalVisible, setModalVisible] = useState(false);
@@ -171,10 +175,15 @@ export function VoiceSelector({
 
     const getSelectedVoiceName = (): string => {
         if (!selectedVoiceId) return 'Seleccionar voz';
+        
+        let foundName;
         if (provider === 'system') {
-            return systemVoices.find(v => v.id === selectedVoiceId)?.name || selectedVoiceId;
+            foundName = systemVoices.find(v => v.id === selectedVoiceId)?.name;
+        } else {
+            foundName = voices.find(v => v.id === selectedVoiceId)?.name;
         }
-        return voices.find(v => v.id === selectedVoiceId)?.name || selectedVoiceId;
+        
+        return foundName || selectedVoiceName || selectedVoiceId;
     };
 
     const getLanguageName = (code: string) => {
@@ -420,6 +429,7 @@ export function VoiceSelector({
                 style={[
                     styles.selectorButton,
                     { backgroundColor: colors.input, borderColor: colors.border },
+                    buttonStyle,
                     disabled && { opacity: 0.5 },
                 ]}
                 onPress={() => !disabled && setModalVisible(true)}
