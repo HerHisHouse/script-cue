@@ -47,6 +47,7 @@ import { getSettings } from '@/utils/appSettings';
 import { BottomSheetMenu } from '@/components/BottomSheetMenu';
 import { BottomSheetToggle } from '@/components/BottomSheetToggle';
 import { BottomSheetOption } from '@/components/BottomSheetOption';
+import { VoiceSelector } from '@/components/VoiceSelector';
 
 // TrackPlayer for lock screen controls - Optional (only works in native builds)
 let TrackPlayer: any = null;
@@ -1416,64 +1417,15 @@ export default function CarModeScreen() {
                 )}
 
               {/* Selector voz */}
-              <TouchableOpacity 
-                style={{
-                  flexDirection: 'row',
-                  alignItems: 'center',
-                  justifyContent: 'space-between',
-                  paddingVertical: 10,
-                }}
-                onPress={() => {
-                  setShowVoiceDropdown(showVoiceDropdown === config.characterName ? null : config.characterName);
-                  setExpandedCharacter(null);
-                }}
-              >
-                <Text style={{ color: 'rgba(255,255,255,0.7)', fontSize: 15 }}>
-                  {getVoiceName(config.provider, config.voiceId)}
-                </Text>
-                <ChevronRight size={16} color="rgba(255,255,255,0.3)" />
-              </TouchableOpacity>
-
-              {showVoiceDropdown === config.characterName && (
-                  <View style={styles.dropdownListLarge}>
-                    {loadingVoices && config.provider === 'elevenlabs' ? (
-                      <View style={styles.loadingContainer}>
-                        <ActivityIndicator size="small" color="#3B82F6" />
-                        <Text style={styles.loadingText}>Cargando voces...</Text>
-                      </View>
-                    ) : (
-                      <ScrollView style={{ maxHeight: 250 }} nestedScrollEnabled>
-                        {getVoicesForProvider(config.provider).map((voice: { id: string; name: string | null }) => (
-                          <TouchableOpacity
-                            key={voice.id}
-                            style={[
-                              styles.voiceItem,
-                              voice.id === config.voiceId && styles.voiceItemSelected
-                            ]}
-                            onPress={() => {
-                              updateCharacterVoice(config.characterName, config.provider, voice.id);
-                              setShowVoiceDropdown(null);
-                            }}
-                          >
-                            <Text style={styles.voiceName}>{voice.name}</Text>
-                            <TouchableOpacity
-                              style={styles.previewBtn}
-                              onPress={(e) => {
-                                e.stopPropagation();
-                                handlePreview(config.provider, voice.id);
-                              }}
-                            >
-                              <Volume2
-                                size={18}
-                                color={playingVoiceId === voice.id ? '#3B82F6' : '#AAA'}
-                              />
-                            </TouchableOpacity>
-                          </TouchableOpacity>
-                        ))}
-                      </ScrollView>
-                    )}
-                  </View>
-                )}
+              <View style={{ paddingTop: 10 }}>
+                <VoiceSelector
+                  provider={config.provider as any}
+                  selectedVoiceId={config.voiceId || undefined}
+                  onVoiceSelect={(voiceId) => {
+                    updateCharacterVoice(config.characterName, config.provider, voiceId);
+                  }}
+                />
+              </View>
                 </View>
               )}
             </View>
