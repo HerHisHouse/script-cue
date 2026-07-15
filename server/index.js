@@ -96,47 +96,35 @@ app.post('/merge', async (req, res) => {
 
 
 
-        // Generar un archivo de silencio
-        const silencePath = path.join(tempDir, 'silence.mp3');
-        await new Promise((resolve, reject) => {
-            ffmpeg()
-                .input('anullsrc=r=44100:cl=mono')
-                .inputOptions(['-f', 'lavfi'])
-                .outputOptions([
-                    '-t', String(pauseDuration),
-                    '-acodec', 'mp3',
-                    '-b:a', '128k',
-                    '-ar', '44100',
-                    '-ac', '1'
-                ])
-                .output(silencePath)
-                .on('end', resolve)
-                .on('error', reject)
-                .run();
-        });
-
-        const audioFilesWithSilence = [];
-        for (let i = 0; i < downloadedFiles.length; i++) {
-            audioFilesWithSilence.push(downloadedFiles[i]);
-            if (i < downloadedFiles.length - 1) {
-                audioFilesWithSilence.push(silencePath); // silencio entre líneas
-            }
-        }
-
-        // Run FFmpeg with concat filter (more robust for mixed formats)
+        // Run FFmpeg with concat filter
         await new Promise((resolve, reject) => {
             const command = ffmpeg();
 
             // Add all inputs
-            audioFilesWithSilence.forEach(file => {
+            downloadedFiles.forEach(file => {
                 command.input(file);
             });
 
-            // Construct complex filter for concatenation
-            const inputLabels = audioFilesWithSilence.map((_, i) => `[${i}:a]`).join('');
+            // Construct complex filter for concatenation with silence
+            const filterParts = [];
+            for (let i = 0; i < downloadedFiles.length; i++) {
+                if (i < downloadedFiles.length - 1 && pauseDuration > 0) {
+                    filterParts.push(`[${i}:a]apad=pad_dur=${pauseDuration}[padded${i}];`);
+                }
+            }
+
+            const concatInputs = downloadedFiles.map((_, i) => {
+                if (i < downloadedFiles.length - 1 && pauseDuration > 0) {
+                    return `[padded${i}]`;
+                } else {
+                    return `[${i}:a]`;
+                }
+            }).join('');
+
+            const complexFilterStr = `${filterParts.join('')}${concatInputs}concat=n=${downloadedFiles.length}:v=0:a=1[outa]`;
 
             command
-                .complexFilter(`${inputLabels}concat=n=${audioFilesWithSilence.length}:v=0:a=1[outa]`)
+                .complexFilter(complexFilterStr)
                 .map('[outa]')
                 .audioCodec('aac')
                 .audioBitrate('128k')
