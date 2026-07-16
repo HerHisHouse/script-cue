@@ -331,8 +331,8 @@ export default function CoachModeScreen() {
       console.log('[Escena] Enviando personaje:', selectedCharacterName);
       console.log('[DEBUG] Request body:', JSON.stringify(requestBody, null, 2));
 
-      const response = await fetch(`${renderUrl}/analyze-recording`
-        if (user) trackEvent(user.id, 'mode_opened', 'scene', { script_id: id, recording_id: selectedRecording?.id });, {
+      if (user) trackEvent(user.id, 'mode_opened', 'scene', { script_id: id, recording_id: selectedRecording?.id });
+      const response = await fetch(`${renderUrl}/analyze-recording`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json'
