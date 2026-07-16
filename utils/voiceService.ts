@@ -112,9 +112,11 @@ export const OPENAI_VOICES: VoiceOption[] = [
 // ============================================
 
 let cachedAzureVoices: VoiceOption[] | null = null;
+let azureVoicesPromise: Promise<VoiceOption[]> | null = null;
 
 export async function getAzureVoices(forceRefresh = false): Promise<VoiceOption[]> {
   if (cachedAzureVoices && !forceRefresh) return cachedAzureVoices;
+  if (azureVoicesPromise && !forceRefresh) return azureVoicesPromise;
 
   const renderUrl = process.env.EXPO_PUBLIC_RENDER_SERVER_URL;
   if (!renderUrl) {
@@ -122,17 +124,23 @@ export async function getAzureVoices(forceRefresh = false): Promise<VoiceOption[
     return [];
   }
 
-  try {
-    const response = await fetch(`${renderUrl}/api/azure/voices`);
-    if (!response.ok) throw new Error(`Azure Voices API error: ${response.status}`);
-    
-    const voices = await response.json();
-    cachedAzureVoices = voices;
-    return voices;
-  } catch (error) {
-    console.error('Error fetching Azure voices:', error);
-    return [];
-  }
+  azureVoicesPromise = (async () => {
+    try {
+      const response = await fetch(`${renderUrl}/api/azure/voices`);
+      if (!response.ok) throw new Error(`Azure Voices API error: ${response.status}`);
+      
+      const voices = await response.json();
+      cachedAzureVoices = voices;
+      return voices;
+    } catch (error) {
+      console.error('Error fetching Azure voices:', error);
+      return [];
+    } finally {
+      azureVoicesPromise = null;
+    }
+  })();
+  
+  return azureVoicesPromise;
 }
 
 export function clearAzureCache(): void {
@@ -144,6 +152,7 @@ export function clearAzureCache(): void {
 // ============================================
 
 let cachedElevenLabsVoices: VoiceOption[] | null = null;
+let elevenLabsVoicesPromise: Promise<VoiceOption[]> | null = null;
 
 /**
  * Obtiene las voces disponibles de ElevenLabs
@@ -153,6 +162,9 @@ export async function getElevenLabsVoices(forceRefresh = false): Promise<VoiceOp
   if (cachedElevenLabsVoices && !forceRefresh) {
     return cachedElevenLabsVoices;
   }
+  if (elevenLabsVoicesPromise && !forceRefresh) {
+    return elevenLabsVoicesPromise;
+  }
 
   const apiKey = process.env.EXPO_PUBLIC_ELEVENLABS_API_KEY;
   if (!apiKey) {
@@ -160,96 +172,102 @@ export async function getElevenLabsVoices(forceRefresh = false): Promise<VoiceOp
     return [];
   }
 
-  try {
-    const collectionId = process.env.EXPO_PUBLIC_ELEVENLABS_COLLECTION_ID || 'Cy4MgTzrGqXsWuRKrXaQ';
-    let response = await fetch(`https://api.elevenlabs.io/v1/voices?collection_id=${collectionId}`, {
-      headers: {
-        'xi-api-key': apiKey,
-      },
-    });
-
-    if (!response.ok) {
-      console.warn(`ElevenLabs collection fetch failed: ${response.status}. Falling back to all voices.`);
-      response = await fetch('https://api.elevenlabs.io/v1/voices', {
+  elevenLabsVoicesPromise = (async () => {
+    try {
+      const collectionId = process.env.EXPO_PUBLIC_ELEVENLABS_COLLECTION_ID || 'Cy4MgTzrGqXsWuRKrXaQ';
+      let response = await fetch(`https://api.elevenlabs.io/v1/voices?collection_id=${collectionId}`, {
         headers: {
           'xi-api-key': apiKey,
         },
       });
-    }
 
-    if (!response.ok) {
-      throw new Error(`ElevenLabs API error: ${response.status}`);
-    }
-
-    let data = await response.json();
-
-    // El API de ElevenLabs ignora el parámetro collection_id en /v1/voices.
-    // Tenemos que filtrar manualmente por collection_ids si existe.
-    if (data.voices && collectionId) {
-      const filteredVoices = data.voices.filter((v: any) => 
-        v.collection_ids && v.collection_ids.includes(collectionId)
-      );
-      
-      if (filteredVoices.length > 0) {
-        data.voices = filteredVoices;
-      } else {
-        console.warn('Ninguna voz coincidió con el collectionId. Mostrando todas.');
+      if (!response.ok) {
+        console.warn(`ElevenLabs collection fetch failed: ${response.status}. Falling back to all voices.`);
+        response = await fetch('https://api.elevenlabs.io/v1/voices', {
+          headers: {
+            'xi-api-key': apiKey,
+          },
+        });
       }
-    }
-    
-    const voices: VoiceOption[] = data.voices.map((voice: any) => {
-      let lang = voice.labels?.language || 'en';
-      let ctry = voice.labels?.accent || 'US';
-      
-      // Basic normalization based on accent if language is missing
-      if (voice.labels?.accent && !voice.labels?.language) {
-        const accent = voice.labels.accent.toLowerCase();
-        if (accent.includes('spanish') || accent.includes('mexican') || accent.includes('peninsular')) {
-          lang = 'es';
-          ctry = accent.includes('mexican') ? 'MX' : accent.includes('peninsular') ? 'ES' : 'US';
+
+      if (!response.ok) {
+        throw new Error(`ElevenLabs API error: ${response.status}`);
+      }
+
+      let data = await response.json();
+
+      // El API de ElevenLabs ignora el parámetro collection_id en /v1/voices.
+      // Tenemos que filtrar manualmente por collection_ids si existe.
+      if (data.voices && collectionId) {
+        const filteredVoices = data.voices.filter((v: any) => 
+          v.collection_ids && v.collection_ids.includes(collectionId)
+        );
+        
+        if (filteredVoices.length > 0) {
+          data.voices = filteredVoices;
+        } else {
+          console.warn('Ninguna voz coincidió con el collectionId. Mostrando todas.');
         }
       }
+      
+      const voices: VoiceOption[] = data.voices.map((voice: any) => {
+        let lang = voice.labels?.language || 'en';
+        let ctry = voice.labels?.accent || 'US';
+        
+        // Basic normalization based on accent if language is missing
+        if (voice.labels?.accent && !voice.labels?.language) {
+          const accent = voice.labels.accent.toLowerCase();
+          if (accent.includes('spanish') || accent.includes('mexican') || accent.includes('peninsular')) {
+            lang = 'es';
+            ctry = accent.includes('mexican') ? 'MX' : accent.includes('peninsular') ? 'ES' : 'US';
+          }
+        }
 
-      return {
-        id: voice.voice_id,
-        name: voice.name,
-        provider: 'elevenlabs' as VoiceProvider,
-        description: voice.labels?.description || voice.labels?.accent || '',
-        previewUrl: voice.preview_url,
-        gender: voice.labels?.gender?.toLowerCase() || 'neutral',
-        accent: voice.labels?.accent,
-        language: lang,
-        country: ctry,
-        category: voice.category || 'generated',
-        labels: voice.labels,
-      };
-    });
+        return {
+          id: voice.voice_id,
+          name: voice.name,
+          provider: 'elevenlabs' as VoiceProvider,
+          description: voice.labels?.description || voice.labels?.accent || '',
+          previewUrl: voice.preview_url,
+          gender: voice.labels?.gender?.toLowerCase() || 'neutral',
+          accent: voice.labels?.accent,
+          language: lang,
+          country: ctry,
+          category: voice.category || 'generated',
+          labels: voice.labels,
+        };
+      });
 
-    // Separar voces en categorías
-    // - Mis voces: TODAS las que NO sean 'premade' (voces públicas)
-    // - Voces públicas: Solo las 'premade'
-    const myVoices = voices.filter((voice: any) => 
-      voice.category !== 'premade'
-    );
-    const publicVoices = voices.filter((voice: any) => 
-      voice.category === 'premade'
-    );
+      // Separar voces en categorías
+      // - Mis voces: TODAS las que NO sean 'premade' (voces públicas)
+      // - Voces públicas: Solo las 'premade'
+      const myVoices = voices.filter((voice: any) => 
+        voice.category !== 'premade'
+      );
+      const publicVoices = voices.filter((voice: any) => 
+        voice.category === 'premade'
+      );
 
-    // Ordenar alfabéticamente dentro de cada categoría
-    myVoices.sort((a, b) => a.name.localeCompare(b.name));
-    publicVoices.sort((a, b) => a.name.localeCompare(b.name));
-    
-    // Combinar: primero tus voces personalizadas, luego las públicas
-    const allVoices = [...myVoices, ...publicVoices];
-    
-    console.log(`[ElevenLabs] Loaded ${allVoices.length} voices: ${myVoices.length} personal, ${publicVoices.length} public`);
-    
-    cachedElevenLabsVoices = allVoices;
-    return allVoices;
-  } catch (error) {
-    console.error('Error fetching ElevenLabs voices:', error);
-    return [];
-  }
+      // Ordenar alfabéticamente dentro de cada categoría
+      myVoices.sort((a, b) => a.name.localeCompare(b.name));
+      publicVoices.sort((a, b) => a.name.localeCompare(b.name));
+      
+      // Combinar: primero tus voces personalizadas, luego las públicas
+      const allVoices = [...myVoices, ...publicVoices];
+      
+      console.log(`[ElevenLabs] Loaded ${allVoices.length} voices: ${myVoices.length} personal, ${publicVoices.length} public`);
+      
+      cachedElevenLabsVoices = allVoices;
+      return allVoices;
+    } catch (error) {
+      console.error('Error fetching ElevenLabs voices:', error);
+      return [];
+    } finally {
+      elevenLabsVoicesPromise = null;
+    }
+  })();
+
+  return elevenLabsVoicesPromise;
 }
 
 /**

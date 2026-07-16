@@ -37,7 +37,7 @@ Deno.serve(async (req: Request) => {
 
     const defaultProvider = (Deno.env.get("TTS_PROVIDER") || "google").toLowerCase();
     const openaiApiKey = Deno.env.get("OPENAI_API_KEY") || "";
-    const openaiModel = (Deno.env.get("OPENAI_TTS_MODEL") || "tts-1");
+    const openaiModel = (Deno.env.get("OPENAI_TTS_MODEL") || "tts-1-hd");
     const elevenApiKey = Deno.env.get("ELEVENLABS_API_KEY") || "";
     const ttsBucket = Deno.env.get("TTS_BUCKET") || "tts";
     const maxPerMinute = Number(Deno.env.get("TTS_MAX_REQUESTS_PER_MIN")) || 60;
@@ -264,7 +264,7 @@ async function generateSpeechWithOpenAI(
   if (!res.ok) {
     const body = await res.text();
     // Fallback: try legacy/newer model if provided model fails
-    const fallbackModel = model === "tts-1" ? "gpt-4o-mini-tts" : "tts-1";
+    const fallbackModel = model === "tts-1-hd" ? "tts-1" : "tts-1";
     const res2 = await fetch("https://api.openai.com/v1/audio/speech", {
       method: "POST",
       headers: { "Authorization": `Bearer ${apiKey}`, "Content-Type": "application/json" },

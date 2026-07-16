@@ -132,7 +132,7 @@ export function VoiceSelector({
 
         try {
             if (provider === 'system') {
-                await Speech.speak('Hola, esta es mi voz. ¿Qué te parece?', {
+                await Speech.speak('Hola, esta es una muestra de mi voz en Scriptquiu. Espero que te guste.', {
                     voice: voiceId,
                     language: systemLanguage,
                     onDone: () => setPlayingVoiceId(null),
@@ -177,9 +177,14 @@ export function VoiceSelector({
         }
     };
 
-    const getSelectedVoiceName = (): string => {
-        if (!selectedVoiceId) return 'Seleccionar voz';
-        
+    const [resolvedVoiceName, setResolvedVoiceName] = useState<string | null>(null);
+
+    useEffect(() => {
+        if (!selectedVoiceId) {
+            setResolvedVoiceName(null);
+            return;
+        }
+
         let foundName;
         if (provider === 'system') {
             foundName = systemVoices.find(v => v.id === selectedVoiceId)?.name;
@@ -187,7 +192,50 @@ export function VoiceSelector({
             foundName = voices.find(v => v.id === selectedVoiceId)?.name;
         }
         
-        return foundName || selectedVoiceName || selectedVoiceId;
+        if (foundName) {
+            setResolvedVoiceName(foundName);
+            return;
+        }
+
+        let isMounted = true;
+        const fetchName = async () => {
+            try {
+                let name = null;
+                if (provider === 'system') {
+                    const sysVoices = await Speech.getAvailableVoicesAsync();
+                    const v = sysVoices.find(v => v.identifier === selectedVoiceId);
+                    if (v) name = v.name || v.identifier;
+                } else if (provider === 'openai') {
+                    const v = OPENAI_VOICES.find(v => v.id === selectedVoiceId);
+                    if (v) name = v.name;
+                } else if (provider === 'azure') {
+                    const data = await getAzureVoices();
+                    const v = data.find(v => v.id === selectedVoiceId);
+                    if (v) name = v.name;
+                } else if (provider === 'elevenlabs') {
+                    const data = await getElevenLabsVoices();
+                    const v = data.find(v => v.id === selectedVoiceId);
+                    if (v) name = v.name;
+                }
+                
+                if (isMounted && name) {
+                    setResolvedVoiceName(name);
+                }
+            } catch (err) {
+                console.error("Error fetching voice name", err);
+            }
+        };
+
+        fetchName();
+
+        return () => {
+            isMounted = false;
+        };
+    }, [selectedVoiceId, provider, voices, systemVoices]);
+
+    const getSelectedVoiceName = (): string => {
+        if (!selectedVoiceId) return 'Seleccionar voz';
+        return resolvedVoiceName || selectedVoiceName || selectedVoiceId;
     };
 
     const getLanguageName = (code: string) => {

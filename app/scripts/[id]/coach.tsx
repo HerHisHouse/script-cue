@@ -676,15 +676,29 @@ export default function CoachModeScreen() {
       case 'comparacion':
         const comp = analysis.comparacion;
         
-        // Detección robusta: hay historial solo si exploracion es
-        // un string no vacío y no es la cadena "null"
+        // Función para detectar si la IA devolvió el texto de instrucción (placeholder) o frases genéricas de 'no hay toma'
+        const isPlaceholder = (str: string) => {
+            if (!str) return true;
+            const s = str.toLowerCase();
+            return s.includes('caminos nuevos') || 
+                   s.includes('qué caminos nuevos') ||
+                   s.includes('que caminos nuevos') ||
+                   s.includes('no hay toma') ||
+                   s.includes('sin toma') ||
+                   s.includes('no aplica') ||
+                   s.includes('no hay información') ||
+                   s.includes('no aplicable') ||
+                   s === 'n/a' ||
+                   s === 'null';
+        };
+
+        // Detección robusta: hay historial solo si exploracion es válido
         const hasHistory = comp && 
           comp.exploracion !== null && 
           comp.exploracion !== undefined && 
-          comp.exploracion !== 'null' &&
-          comp.exploracion !== '' &&
           typeof comp.exploracion === 'string' &&
-          comp.exploracion.trim().length > 0;
+          comp.exploracion.trim().length > 0 &&
+          !isPlaceholder(comp.exploracion);
 
         // Descubrimientos siempre se muestra aunque sea primer análisis
         const descubrimientos = comp?.descubrimientos && 

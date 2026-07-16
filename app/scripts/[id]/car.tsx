@@ -836,7 +836,7 @@ export default function CarModeScreen() {
 
     try {
       if (provider === 'system') {
-        await Speech.speak('Hola, esta es mi voz. ¿Qué te parece?', {
+        await Speech.speak('Hola, esta es una muestra de mi voz en Scriptquiu. Espero que te guste.', {
           voice: voiceId,
           language: 'es-ES',
           onDone: () => setPlayingVoiceId(null),

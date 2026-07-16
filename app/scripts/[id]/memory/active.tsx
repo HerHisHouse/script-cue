@@ -38,6 +38,22 @@ import { Audio } from 'expo-av';
 import { getIntroPreferences, setIntroPreference } from '@/utils/introPreferences';
 import { rf, rp } from '@/utils/responsive';
 
+function toFirstLetterHint(text: string): string {
+  return text
+    .split(' ')
+    .map(word => {
+      if (word.length === 0) return '';
+      const match = word.match(
+        /^([^a-zA-ZáéíóúÁÉÍÓÚüÜñÑ]*)([a-zA-ZáéíóúÁÉÍÓÚüÜñÑ\d]+)([^a-zA-ZáéíóúÁÉÍÓÚüÜñÑ\d]*)$/
+      );
+      if (!match) return word;
+      const [, before, core, after] = match;
+      const hint = core[0] + '_'.repeat(core.length - 1);
+      return before + hint + after;
+    })
+    .join(' ');
+}
+
 export default function MemoryModeScreen() {
   const router = useRouter();
   const { id } = useLocalSearchParams();
@@ -55,7 +71,7 @@ export default function MemoryModeScreen() {
   const [gameStarted, setGameStarted] = useState(false);
   const [dontShowAgain, setDontShowAgain] = useState(false);
   const [currentIndex, setCurrentIndex] = useState(0);
-  const [isUserLineVisible, setIsUserLineVisible] = useState(false);
+  const [revealState, setRevealState] = useState<Record<number, 0 | 1 | 2>>({});
   const [isPlaying, setIsPlaying] = useState(false);
 
   // Refs
@@ -129,19 +145,20 @@ export default function MemoryModeScreen() {
   const goToNext = useCallback(() => {
     if (currentIndex < dialogueLines.length - 1) {
       setCurrentIndex(prev => prev + 1);
-      setIsUserLineVisible(false); // Reset visibility for next line
     }
   }, [currentIndex, dialogueLines.length]);
 
   const goToPrev = useCallback(() => {
     if (currentIndex > 0) {
       setCurrentIndex(prev => prev - 1);
-      setIsUserLineVisible(false);
     }
   }, [currentIndex]);
 
-  const toggleVisibility = () => {
-    setIsUserLineVisible(prev => !prev);
+  const handleCardTap = () => {
+    setRevealState(prev => ({
+      ...prev,
+      [currentIndex]: Math.min((prev[currentIndex] ?? 0) + 1, 2) as 0 | 1 | 2
+    }));
   };
 
   // TTS Logic with Cache
@@ -300,7 +317,7 @@ export default function MemoryModeScreen() {
 
   const handleRestart = () => {
     setCurrentIndex(0);
-    setIsUserLineVisible(false);
+    setRevealState({});
   };
 
   const handleFinish = () => {
@@ -369,13 +386,13 @@ export default function MemoryModeScreen() {
             {isUserTurn && (
               <TouchableOpacity
                 activeOpacity={0.9}
-                onPress={toggleVisibility}
+                onPress={handleCardTap}
                 style={[
                   styles.userCard,
                   {
-                    backgroundColor: isUserLineVisible ? colors.surface : '#1F2937', // Darker for hidden state
-                    borderColor: isUserLineVisible ? colors.primary : colors.border,
-                    borderWidth: isUserLineVisible ? 2 : 1
+                    backgroundColor: (revealState[currentIndex] ?? 0) > 0 ? colors.surface : '#1F2937', // Darker for hidden state
+                    borderColor: (revealState[currentIndex] ?? 0) === 2 ? colors.primary : colors.border,
+                    borderWidth: (revealState[currentIndex] ?? 0) > 0 ? 2 : 1
                   }
                 ]}
               >
@@ -383,18 +400,37 @@ export default function MemoryModeScreen() {
                   TÚ ({currentLine.characterName})
                 </Text>
 
-                {isUserLineVisible ? (
-                  <Text style={[styles.dialogueText, { color: colors.text }]}>
-                    {stripStageDirections(currentLine.text)}
-                  </Text>
-                ) : (
+                {(revealState[currentIndex] ?? 0) === 0 && (
                   <View style={styles.hiddenContent}>
                     <EyeOff size={32} color={colors.textSecondary} />
                     <Text style={[styles.hiddenText, { color: colors.textSecondary }]}>
-                      Toca para mostrar tu línea
+                      Toca para ver una pista
                     </Text>
                   </View>
                 )}
+
+                {(revealState[currentIndex] ?? 0) === 1 && (
+                  <View style={styles.hiddenContent}>
+                    <Text style={[styles.dialogueText, { color: colors.text, opacity: 0.7 }]}>
+                      {toFirstLetterHint(stripStageDirections(currentLine.text))}
+                    </Text>
+                    <Text style={[styles.hiddenText, { color: colors.textSecondary, marginTop: 12 }]}>
+                      Toca para revelar
+                    </Text>
+                  </View>
+                )}
+
+                {(revealState[currentIndex] ?? 0) === 2 && (
+                  <Text style={[styles.dialogueText, { color: colors.text }]}>
+                    {stripStageDirections(currentLine.text)}
+                  </Text>
+                )}
+
+                <View style={styles.dotsContainer}>
+                  <View style={[styles.dot, (revealState[currentIndex] ?? 0) >= 0 ? styles.dotActive : null]} />
+                  <View style={[styles.dot, (revealState[currentIndex] ?? 0) >= 1 ? styles.dotActive : null]} />
+                  <View style={[styles.dot, (revealState[currentIndex] ?? 0) >= 2 ? styles.dotActive : null]} />
+                </View>
               </TouchableOpacity>
             )}
 
@@ -604,6 +640,21 @@ const styles = StyleSheet.create({
   hiddenText: {
     fontSize: rf(16),
     fontWeight: '500',
+  },
+  dotsContainer: {
+    flexDirection: 'row',
+    gap: 8,
+    marginTop: 24,
+    justifyContent: 'center',
+  },
+  dot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: '#4B5563', // gray-600
+  },
+  dotActive: {
+    backgroundColor: '#4ADE80', // green-400
   },
   ttsButton: {
     flexDirection: 'row',
