@@ -29,7 +29,7 @@ const GAMES = [
     {
         id: 'active',
         title: 'Memorización Activa',
-        description: 'Lectura y ocultación manual. Práctica libre.',
+        description: '3 niveles de ocultación: oculto, iniciales y texto completo.',
         icon: Brain,
         color: '#3B82F6', // Blue
         route: '/active'

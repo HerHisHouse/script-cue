@@ -770,12 +770,17 @@ export default function CoachModeScreen() {
                                 <Repeat size={16} color={comparingWith === r.id ? colors.primary : colors.textSecondary} />
                             )}
                             <View style={{ flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
-                              <Text style={[
-                                  styles.comparisonOptionText, 
-                                  { color: comparingWith === r.id ? colors.primary : colors.text, marginLeft: 8 }
-                              ]}>
-                                {new Date(r.created_at).toLocaleDateString()} - {new Date(r.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                              </Text>
+                              <View style={{ flex: 1, marginLeft: 8 }}>
+                                <Text style={[
+                                    styles.comparisonOptionText, 
+                                    { color: comparingWith === r.id ? colors.primary : colors.text }
+                                ]}>
+                                  {r.title || (r.type === 'video' ? 'Grabación de Vídeo' : 'Grabación de Audio')}
+                                </Text>
+                                <Text style={{ fontSize: 12, color: colors.textSecondary, marginTop: 2 }}>
+                                  {r.type === 'video' ? 'Vídeo' : 'Audio'} • {r.duration_seconds ? `${Math.round(r.duration_seconds)}s` : '--s'}
+                                </Text>
+                              </View>
                               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
                                 {comparingWith === r.id && <Sparkles size={14} color={colors.primary} />}
                                 

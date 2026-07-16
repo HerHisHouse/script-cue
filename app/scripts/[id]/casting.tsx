@@ -2718,64 +2718,66 @@ export default function CastingModeScreen() {
             </View>
 
             {/* Sección auriculares */}
-            <View style={{ marginTop: rp(24) }}>
-              <Text style={[styles.qualitySectionTitle, { marginBottom: rp(4) }]}>
-                🎧 ¿Usarás auriculares?
-              </Text>
-              <Text style={styles.qualitySectionSubtitle}>
-                Afecta a la calidad del audio mezclado
-              </Text>
+            {castingMode === 'script_config' && (
+              <View style={{ marginTop: rp(24) }}>
+                <Text style={[styles.qualitySectionTitle, { marginBottom: rp(4) }]}>
+                  🎧 ¿Usarás auriculares?
+                </Text>
+                <Text style={styles.qualitySectionSubtitle}>
+                  Afecta a la calidad del audio mezclado
+                </Text>
 
-              <View style={{ flexDirection: 'row', gap: rp(10), marginTop: rp(12) }}>
-                
-                <TouchableOpacity
-                  style={[
-                    styles.qualityOption,
-                    { flex: 1, flexDirection: 'column', alignItems: 'center' },
-                    hasHeadphones === true && styles.qualityOptionSelected,
-                  ]}
-                  onPress={() => setHasHeadphones(true)}
-                >
-                  <Text style={{ fontSize: rf(28), marginBottom: rp(8) }}>🎧</Text>
-                  <Text style={[
-                    styles.qualityOptionLabel,
-                    hasHeadphones === true && styles.qualityOptionLabelSelected
-                  ]}>
-                    Sí
-                  </Text>
-                  <Text style={styles.qualityOptionDesc}>
-                    Ambas voces suenan a la vez
-                  </Text>
-                  {hasHeadphones === true && (
-                    <Text style={{ color: '#a78bfa', fontSize: rf(16), marginTop: rp(4) }}>✓</Text>
-                  )}
-                </TouchableOpacity>
+                <View style={{ flexDirection: 'row', gap: rp(10), marginTop: rp(12) }}>
+                  
+                  <TouchableOpacity
+                    style={[
+                      styles.qualityOption,
+                      { flex: 1, flexDirection: 'column', alignItems: 'center' },
+                      hasHeadphones === true && styles.qualityOptionSelected,
+                    ]}
+                    onPress={() => setHasHeadphones(true)}
+                  >
+                    <Text style={{ fontSize: rf(28), marginBottom: rp(8) }}>🎧</Text>
+                    <Text style={[
+                      styles.qualityOptionLabel,
+                      hasHeadphones === true && styles.qualityOptionLabelSelected
+                    ]}>
+                      Sí
+                    </Text>
+                    <Text style={styles.qualityOptionDesc}>
+                      Ambas voces suenan a la vez
+                    </Text>
+                    {hasHeadphones === true && (
+                      <Text style={{ color: '#a78bfa', fontSize: rf(16), marginTop: rp(4) }}>✓</Text>
+                    )}
+                  </TouchableOpacity>
 
-                <TouchableOpacity
-                  style={[
-                    styles.qualityOption,
-                    { flex: 1, flexDirection: 'column', alignItems: 'center' },
-                    hasHeadphones === false && styles.qualityOptionSelected,
-                  ]}
-                  onPress={() => setHasHeadphones(false)}
-                >
-                  <Text style={{ fontSize: rf(28), marginBottom: rp(8) }}>📱</Text>
-                  <Text style={[
-                    styles.qualityOptionLabel,
-                    hasHeadphones === false && styles.qualityOptionLabelSelected
-                  ]}>
-                    No
-                  </Text>
-                  <Text style={styles.qualityOptionDesc}>
-                    Se silencia el eco automáticamente
-                  </Text>
-                  {hasHeadphones === false && (
-                    <Text style={{ color: '#a78bfa', fontSize: rf(16), marginTop: rp(4) }}>✓</Text>
-                  )}
-                </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[
+                      styles.qualityOption,
+                      { flex: 1, flexDirection: 'column', alignItems: 'center' },
+                      hasHeadphones === false && styles.qualityOptionSelected,
+                    ]}
+                    onPress={() => setHasHeadphones(false)}
+                  >
+                    <Text style={{ fontSize: rf(28), marginBottom: rp(8) }}>📱</Text>
+                    <Text style={[
+                      styles.qualityOptionLabel,
+                      hasHeadphones === false && styles.qualityOptionLabelSelected
+                    ]}>
+                      No
+                    </Text>
+                    <Text style={styles.qualityOptionDesc}>
+                      Se silencia el eco automáticamente
+                    </Text>
+                    {hasHeadphones === false && (
+                      <Text style={{ color: '#a78bfa', fontSize: rf(16), marginTop: rp(4) }}>✓</Text>
+                    )}
+                  </TouchableOpacity>
 
+                </View>
               </View>
-            </View>
+            )}
 
             <TouchableOpacity
               style={{
