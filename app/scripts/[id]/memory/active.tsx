@@ -48,7 +48,14 @@ function toFirstLetterHint(text: string): string {
       );
       if (!match) return word;
       const [, before, core, after] = match;
-      const hint = core[0] + '_'.repeat(core.length - 1);
+      
+      let initialLen = 1;
+      const lowerCore = core.toLowerCase();
+      if (lowerCore.startsWith('ch') || lowerCore.startsWith('ll')) {
+        initialLen = 2;
+      }
+      
+      const hint = core.substring(0, initialLen) + '_'.repeat(Math.max(0, core.length - initialLen));
       return before + hint + after;
     })
     .join(' ');
@@ -157,7 +164,7 @@ export default function MemoryModeScreen() {
   const handleCardTap = () => {
     setRevealState(prev => ({
       ...prev,
-      [currentIndex]: Math.min((prev[currentIndex] ?? 0) + 1, 2) as 0 | 1 | 2
+      [currentIndex]: (((prev[currentIndex] ?? 0) + 1) % 3) as 0 | 1 | 2
     }));
   };
 
@@ -276,6 +283,8 @@ export default function MemoryModeScreen() {
         <View style={[styles.content, styles.center]}>
           <Text style={[styles.instructions, { color: colors.text }]}>
             Practica tu guion revelando y ocultando tus líneas.
+            {' \n\n'}
+            Con un toque verás las primeras letras de cada palabra. Con dos toques se mostrará el texto completo. Con un tercer toque se volverá a ocultar.
             {' \n\n'}
             Las líneas de la IA se reproducirán automáticamente.
             {' \n\n'}
