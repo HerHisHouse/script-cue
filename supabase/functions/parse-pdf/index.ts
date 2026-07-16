@@ -187,6 +187,17 @@ Deno.serve(async (req)=>{
     
               const openaiData = await openaiResponse.json();
               const htmlContent = openaiData.choices[0]?.message?.content || "";
+              
+              try {
+                  const { logApiUsage } = await import('../_shared/api_usage.ts');
+                  await logApiUsage({
+                      userId: null,
+                      provider: 'openai_analysis',
+                      tokens: openaiData.usage?.total_tokens || 0,
+                      scriptId: scriptId,
+                      mode: 'parse-pdf-html'
+                  });
+              } catch (e) { console.warn('Failed to log usage:', e); }
     
               if (!htmlContent) {
                 throw new Error("OpenAI returned empty HTML content");
@@ -438,6 +449,16 @@ async function parseScreenplayWithOpenAI(text: string) {
 
     const data = await response.json();
     const content = data.choices[0]?.message?.content;
+
+    try {
+        const { logApiUsage } = await import('../_shared/api_usage.ts');
+        await logApiUsage({
+            userId: null,
+            provider: 'openai_analysis',
+            tokens: data.usage?.total_tokens || 0,
+            mode: 'parse-pdf-structured'
+        });
+    } catch (e) { console.warn('Failed to log usage:', e); }
     
     if (!content) {
         console.error('❌ Empty content from OpenAI');

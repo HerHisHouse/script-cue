@@ -265,6 +265,16 @@ async function generateSpeechWithOpenAI(
     const body = await res.text();
     // Fallback: try legacy/newer model if provided model fails
     const fallbackModel = model === "tts-1-hd" ? "tts-1" : "tts-1";
+    try {
+      const { logApiUsage } = await import('../_shared/api_usage.ts');
+      await logApiUsage({
+          userId: null,
+          provider: 'openai_tts',
+          characters: text.length,
+          mode: 'generate-speech'
+      });
+    } catch (e) { console.warn('Failed to log usage:', e); }
+
     const res2 = await fetch("https://api.openai.com/v1/audio/speech", {
       method: "POST",
       headers: { "Authorization": `Bearer ${apiKey}`, "Content-Type": "application/json" },
