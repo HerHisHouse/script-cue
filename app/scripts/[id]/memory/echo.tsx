@@ -27,6 +27,7 @@ import { supabase } from '@/utils/supabase';
 import { calculateSimilarity, stripStageDirections } from '@/utils/stringUtils';
 import { generateAndCacheAudio } from '@/utils/ttsCache';
 import { setAudioModeForPlayback, enableRecordingMode } from '@/utils/audioMode';
+import { trackEvent } from '@/utils/analytics';
 type Phase = 'read' | 'speak' | 'feedback' | 'ai-speaking';
 
 export default function EchoModeScreen() {
@@ -34,6 +35,10 @@ export default function EchoModeScreen() {
     const { id } = useLocalSearchParams();
     const { colors } = useTheme();
     const { user } = useAuth();
+  useEffect(() => {
+    if (user && id) trackEvent(user.id, 'game_started', 'memory', { script_id: id, game_type: 'echo' });
+  }, [user, id]);
+
 
     // Data
     const [loading, setLoading] = useState(true);

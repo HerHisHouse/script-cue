@@ -17,6 +17,7 @@ import { ArrowLeft, Check, X, Heart, Trophy, Brain, AlertTriangle, Info } from '
 import { saveScore } from '@/utils/gamification';
 import { rf, rp } from '@/utils/responsive';
 import { loadDialogueLines } from '@/utils/loadDialogueLines';
+import { trackEvent } from '@/utils/analytics';
 
 interface Question {
     question: string;
@@ -31,6 +32,10 @@ export default function QuizModeScreen() {
     const scriptId = id as string;
     const { colors } = useTheme();
     const { user } = useAuth();
+  useEffect(() => {
+    if (user && id) trackEvent(user.id, 'game_started', 'memory', { script_id: id, game_type: 'scene_order' });
+  }, [user, id]);
+
 
     // Game State
     const [loading, setLoading] = useState(true);

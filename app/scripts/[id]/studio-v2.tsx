@@ -69,6 +69,7 @@ import { invalidateCacheForLine, generateAndCacheAudio } from '@/utils/ttsCache'
 import DraggableFlatList, { ScaleDecorator, RenderItemParams, ShadowDecorator, OpacityDecorator, useOnCellActiveAnimation } from 'react-native-draggable-flatlist';
 import * as Haptics from 'expo-haptics';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
+import { trackEvent } from '@/utils/analytics';
 
 export default function StudioV2Screen() {
     const router = useRouter();
@@ -517,6 +518,7 @@ export default function StudioV2Screen() {
                 // Load character-specific voice settings
                 const extendedSettings = settings as any;
                 const scriptVoices = extendedSettings?.characterVoicesByScript?.[String(id)] || {};
+                if (user) trackEvent(user.id, 'mode_opened', 'studio', { script_id: id });
                 setCharacterVoices(scriptVoices);
                 console.log('[Studio] Loaded character voices:', scriptVoices);
             } catch { }
@@ -898,6 +900,7 @@ export default function StudioV2Screen() {
     // removed calculateSimilarity
 
     async function finishLine(hasAudio: boolean) {
+        if (user) trackEvent(user.id, 'line_completed', 'studio', { script_id: id, line_index: currentIndex });
         if (processingRef.current) return;
         processingRef.current = true;
 

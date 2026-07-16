@@ -22,6 +22,7 @@ import { useTheme } from '@/contexts/ThemeContext';
 import { supabase } from '@/utils/supabase';
 import { rf, rp } from '@/utils/responsive';
 import { BETA_LIMITS, isUserBetaLimited } from '@/constants/betaLimits';
+import { trackEvent } from '@/utils/analytics';
 
 interface CapturedImage {
   uri: string;

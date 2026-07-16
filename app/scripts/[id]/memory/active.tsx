@@ -37,6 +37,7 @@ import * as Crypto from 'expo-crypto';
 import { Audio } from 'expo-av';
 import { getIntroPreferences, setIntroPreference } from '@/utils/introPreferences';
 import { rf, rp } from '@/utils/responsive';
+import { trackEvent } from '@/utils/analytics';
 
 function toFirstLetterHint(text: string): string {
   return text
@@ -71,6 +72,10 @@ export default function MemoryModeScreen() {
   const { id } = useLocalSearchParams();
   const { colors } = useTheme();
   const { user } = useAuth();
+  useEffect(() => {
+    if (user && id) trackEvent(user.id, 'game_started', 'memory', { script_id: id, game_type: 'active_memorization' });
+  }, [user, id]);
+
 
   // Data State
   const [loading, setLoading] = useState(true);
@@ -335,6 +340,7 @@ export default function MemoryModeScreen() {
   };
 
   const handleFinish = () => {
+        if (user) trackEvent(user.id, 'game_completed', 'memory', { script_id: id, game_type: 'active_memorization' });
     router.back();
   };
 

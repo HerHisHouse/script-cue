@@ -51,6 +51,7 @@ import { getSettings } from '@/utils/appSettings';
 import { getIntroPreferences, setIntroPreference } from '@/utils/introPreferences';
 import { setAudioModeForPlayback } from '@/utils/audioMode';
 import { rf, rp } from '@/utils/responsive';
+import { trackEvent } from '@/utils/analytics';
 
 const COACH_DISCLAIMER_KEY = '@coach_disclaimer_shown';
 
@@ -330,7 +331,8 @@ export default function CoachModeScreen() {
       console.log('[Escena] Enviando personaje:', selectedCharacterName);
       console.log('[DEBUG] Request body:', JSON.stringify(requestBody, null, 2));
 
-      const response = await fetch(`${renderUrl}/analyze-recording`, {
+      const response = await fetch(`${renderUrl}/analyze-recording`
+        if (user) trackEvent(user.id, 'mode_opened', 'scene', { script_id: id, recording_id: selectedRecording?.id });, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json'
@@ -390,6 +392,7 @@ export default function CoachModeScreen() {
 
         // PERSISTENCE locally in state for icons
         setAnalyzedIds(prev => new Set(prev).add(selectedRecording.id));
+        if (user) trackEvent(user.id, 'analysis_completed', 'scene', { script_id: id });
         
         // Clean comparison state
         setComparingWith(null);

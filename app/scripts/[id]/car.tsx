@@ -50,6 +50,7 @@ import { BottomSheetMenu } from '@/components/BottomSheetMenu';
 import { BottomSheetToggle } from '@/components/BottomSheetToggle';
 import { BottomSheetOption } from '@/components/BottomSheetOption';
 import { VoiceSelector } from '@/components/VoiceSelector';
+import { trackEvent } from '@/utils/analytics';
 
 // TrackPlayer for lock screen controls - Optional (only works in native builds)
 let TrackPlayer: any = null;

@@ -18,6 +18,7 @@ import { OPENAI_VOICES, VOICE_PROVIDERS_CONFIG, PROVIDER_INFO_MESSAGE } from '@/
 import { VoiceSelector } from '@/components/VoiceSelector';
 import { VoiceOption, VoiceProvider, getDefaultVoiceForGender } from '@/utils/voiceService';
 import { BETA_LIMITS, isUserBetaLimited } from '@/constants/betaLimits';
+import { trackEvent } from '@/utils/analytics';
 
 // Tipo extendido para incluir propiedades dinámicas de configuración de personajes
 type ExtendedAppSettings = {

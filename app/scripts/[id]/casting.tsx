@@ -56,6 +56,7 @@ import {
   generateActionId
 } from '@/utils/sceneConfig';
 import { activateAEC, deactivateAEC } from '@/modules/audio-echo-cancellation';
+import { trackEvent } from '@/utils/analytics';
 
 type SceneItem = ParsedScript['scenes'][0];
 
@@ -1261,6 +1262,7 @@ export default function CastingModeScreen() {
   }
 
   async function startRecording() {
+    if (user) trackEvent(user.id, 'mode_opened', 'casting', { script_id: id, quality: videoQuality, has_headphones: hasHeadphones });
     if (!cameraRef.current) return;
 
     try {
@@ -1497,6 +1499,7 @@ export default function CastingModeScreen() {
   }
 
   async function handleRecordingFinished(uri: string, _hasHeadphonesArg: boolean = false) {
+    if (user) trackEvent(user.id, 'recording_saved', 'casting', { script_id: id, duration_seconds: recordingTimeRef.current });
     if ((cameraRef.current as any)?._cancelRecording) {
       (cameraRef.current as any)._cancelRecording = false;
       return;

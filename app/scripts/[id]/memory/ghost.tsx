@@ -26,6 +26,7 @@ import { saveScore, addFailedLine } from '@/utils/gamification';
 import { getIntroPreferences, setIntroPreference } from '@/utils/introPreferences';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { rf, rp } from '@/utils/responsive';
+import { trackEvent } from '@/utils/analytics';
 
 const LEVELS = [
     { percent: 0.10, bonus: 5, label: "NIVEL 1" },
@@ -39,6 +40,10 @@ export default function GhostModeScreen() {
     const { id } = useLocalSearchParams();
     const { colors } = useTheme();
     const { user } = useAuth();
+  useEffect(() => {
+    if (user && id) trackEvent(user.id, 'game_started', 'memory', { script_id: id, game_type: 'ghost_text' });
+  }, [user, id]);
+
 
     // Data
     const [loading, setLoading] = useState(true);
