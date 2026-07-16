@@ -900,8 +900,8 @@ export default function StudioV2Screen() {
     // removed calculateSimilarity
 
     async function finishLine(hasAudio: boolean) {
-        if (user) trackEvent(user.id, 'line_completed', 'studio', { script_id: id, line_index: currentIndex });
         if (processingRef.current) return;
+        if (user) trackEvent(user.id, 'line_completed', 'studio', { script_id: id, line_index: currentIndex });
         processingRef.current = true;
 
         const uri = recordingRef.current?.getURI();
