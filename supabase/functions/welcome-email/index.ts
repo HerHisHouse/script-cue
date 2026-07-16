@@ -243,39 +243,25 @@ const WELCOME_HTML = `<!DOCTYPE html>
 serve(async (req) => {
   try {
     const payload = await req.json();
-    
-    // LOG TEMPORAL para ver la estructura real
-    console.log('PAYLOAD COMPLETO:', JSON.stringify(payload, null, 2));
-    
     const user = payload.record;
-    console.log('USER:', JSON.stringify(user, null, 2));
-    console.log('APP METADATA:', JSON.stringify(user?.app_metadata, null, 2));
-    console.log('RAW APP META:', JSON.stringify(user?.raw_app_meta_data, null, 2));
-    console.log('PROVIDER app_metadata:', user?.app_metadata?.provider);
-    console.log('PROVIDER raw:', user?.raw_app_meta_data?.provider);
 
     if (!user) {
       return new Response('No user data', { status: 400 });
     }
 
-    // Comprobar AMBAS posibles rutas del provider
-    const provider = user.app_metadata?.provider || 
-                     user.raw_app_meta_data?.provider ||
+    const provider = user.raw_app_meta_data?.provider ||
                      user.identities?.[0]?.provider;
-                     
-    console.log('PROVIDER DETECTADO:', provider);
-
     const isGoogleUser = provider === 'google';
     
     if (!isGoogleUser) {
-      console.log('No es Google. Provider encontrado:', provider);
+      console.log('No es usuario de Google, saltando. Provider encontrado:', provider);
       return new Response('Not a Google user', { status: 200 });
     }
 
     const userEmail = user.email;
-    const userName = user.user_metadata?.full_name || 
-                     user.user_metadata?.name || 
-                     'actor';
+    const userName = user.raw_user_meta_data?.full_name || 
+                     user.raw_user_meta_data?.name || 
+                     '';
 
     if (!userEmail) {
       return new Response('No email found', { status: 400 });
@@ -283,10 +269,14 @@ serve(async (req) => {
 
     console.log(`Enviando email de bienvenida a: ${userEmail}`);
 
+    const greeting = userName 
+      ? `¡Hola, ${userName.split(' ')[0]}! 👋`
+      : '¡Hola! 👋';
+
     // Personalizar el saludo con el nombre si está disponible
     const personalizedHtml = WELCOME_HTML.replace(
       '¡Hola! 👋',
-      `¡Hola, ${userName.split(' ')[0]}! 👋`
+      greeting
     );
 
     // Enviar email via Resend
