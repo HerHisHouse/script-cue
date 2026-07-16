@@ -242,23 +242,33 @@ const WELCOME_HTML = `<!DOCTYPE html>
 
 serve(async (req) => {
   try {
-    // Verificar que es una petición de Supabase
     const payload = await req.json();
     
-    // El webhook de Supabase envía el registro del usuario
-    const user = payload.record;
+    // LOG TEMPORAL para ver la estructura real
+    console.log('PAYLOAD COMPLETO:', JSON.stringify(payload, null, 2));
     
+    const user = payload.record;
+    console.log('USER:', JSON.stringify(user, null, 2));
+    console.log('APP METADATA:', JSON.stringify(user?.app_metadata, null, 2));
+    console.log('RAW APP META:', JSON.stringify(user?.raw_app_meta_data, null, 2));
+    console.log('PROVIDER app_metadata:', user?.app_metadata?.provider);
+    console.log('PROVIDER raw:', user?.raw_app_meta_data?.provider);
+
     if (!user) {
       return new Response('No user data', { status: 400 });
     }
 
-    // Solo enviar para usuarios de Google (OAuth)
-    // Los usuarios de email/contraseña ya reciben el email
-    // de confirmación de Supabase automáticamente
-    const isGoogleUser = user.app_metadata?.provider === 'google';
+    // Comprobar AMBAS posibles rutas del provider
+    const provider = user.app_metadata?.provider || 
+                     user.raw_app_meta_data?.provider ||
+                     user.identities?.[0]?.provider;
+                     
+    console.log('PROVIDER DETECTADO:', provider);
+
+    const isGoogleUser = provider === 'google';
     
     if (!isGoogleUser) {
-      console.log('Usuario no es de Google, saltando email de bienvenida');
+      console.log('No es Google. Provider encontrado:', provider);
       return new Response('Not a Google user', { status: 200 });
     }
 
