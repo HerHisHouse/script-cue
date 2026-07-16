@@ -36,6 +36,47 @@ const supabase = createClient(
     process.env.SUPABASE_URL,
     process.env.SUPABASE_SERVICE_KEY
 );
+// Costes aproximados por proveedor (en euros)
+const API_COSTS = {
+  openai_tts:        0.000015, // por carácter (0.015€/1000 chars)
+  openai_tts_hd:     0.000030, // por carácter (0.030€/1000 chars)
+  openai_analysis:   0.000005, // por token
+  openai_audio:      0.000100, // por segundo de audio procesado
+  elevenlabs:        0.000003, // por carácter (0.003€/1000 chars)
+  azure:             0.000004, // por carácter (0.004€/1000 chars)
+  system:            0,        // voces del sistema, gratis
+};
+
+async function logApiUsage({
+  userId,
+  provider,
+  characters = 0,
+  tokens = 0,
+  durationSeconds = 0,
+  scriptId = null,
+  mode = null,
+}) {
+  try {
+    const costPerUnit = API_COSTS[provider] || 0;
+    const units = characters || tokens || durationSeconds || 0;
+    const estimatedCost = units * costPerUnit;
+
+    await supabase.from('api_usage').insert({
+      user_id: userId,
+      provider,
+      characters_count: characters,
+      tokens_count: tokens,
+      duration_seconds: durationSeconds,
+      estimated_cost_eur: estimatedCost,
+      script_id: scriptId || null,
+      mode: mode || null,
+    });
+  } catch (e) {
+    // No bloquear el flujo principal si falla el log
+    console.warn('[Usage] Error registrando uso de API:', e.message);
+  }
+}
+
 
 console.log('🚀 Server starting - Version: AUDIO_NORM_V4 - Date:', new Date().toISOString());
 
@@ -648,6 +689,15 @@ async function processCastingInBackground(jobId, files, body) {
             }
         }
 
+                // Registrar el procesamiento del casting
+        await logApiUsage({
+          userId: body.userId,
+          provider: 'openai_audio',
+          durationSeconds: videoDuration || 0,
+          scriptId: body.scriptId || null,
+          mode: 'casting',
+        });
+
         console.log(`[Job ${jobId}] ✅ Proceso completo`);
 
     } finally {
@@ -1255,6 +1305,20 @@ Idioma: Español. Tono: constructivo, inspirador y exploratorio.`;
         const aiResult = await openAIResponse.json();
         console.log('[Coach] OpenAI full response:', JSON.stringify(aiResult, null, 2));
 
+        const totalTokens = aiResult.usage?.total_tokens || 0;
+        const audioDuration = aiResult.usage?.audio_tokens 
+          ? aiResult.usage.audio_tokens / 25  // ~25 tokens por segundo
+          : 0;
+
+        await logApiUsage({
+          userId: req.body.userId || userId,
+          provider: 'openai_analysis',
+          tokens: totalTokens,
+          durationSeconds: audioDuration,
+          scriptId: req.body.scriptId || null,
+          mode: 'scene',
+        });
+
         // For gpt-4o-audio-preview with audio modality, the text response is in audio.transcript
         let content = aiResult.choices?.[0]?.message?.content;
 
@@ -1643,6 +1707,14 @@ ${script_text}`;
         }
 
         const aiData = await openAIResponse.json();
+
+        await logApiUsage({
+          userId: req.body.userId || null,
+          provider: 'openai_analysis',
+          tokens: aiData.usage?.total_tokens || 0,
+          scriptId: script_id,
+          mode: 'quiz',
+        });
         let content = aiData.choices[0].message.content;
 
         // 5. Parsear respuesta de GPT-4o
@@ -1747,6 +1819,14 @@ app.post('/tts-azure', async (req, res) => {
     try {
         const audioBuffer = await generateAzureTTS({ text, voice });
 
+        await logApiUsage({
+          userId: req.body.userId,
+          provider: 'azure',
+          characters: text.length,
+          scriptId: req.body.scriptId || null,
+          mode: req.body.mode || 'studio',
+        });
+
         console.log(`[Azure TTS] ✅ Returning ${audioBuffer.length} bytes for voice ${voice}`);
 
         // Devolver MP3 binario — el cliente lo escribe en fichero temporal
@@ -1849,6 +1929,13 @@ app.get('/api/tts/preview/:provider/:voiceId', async (req, res) => {
         if (provider === 'azure') {
             const textToSpeak = "Hola, esta es una muestra de mi voz en Scriptquiu. Espero que te guste.";
             audioBuffer = await generateAzureTTS({ text: textToSpeak, voice: voiceId });
+
+            await logApiUsage({
+              userId: req.query.userId || req.body?.userId || null,
+              provider: 'azure',
+              characters: textToSpeak.length,
+              mode: 'preview',
+            });
         } else if (provider === 'elevenlabs') {
             const textToSpeak = "Hola, esta es una muestra de mi voz en Scriptquiu. Espero que te guste.";
             const elevenKey = (process.env.ELEVENLABS_API_KEY || process.env.EXPO_PUBLIC_ELEVENLABS_API_KEY || '').trim();
@@ -1866,6 +1953,13 @@ app.get('/api/tts/preview/:provider/:voiceId', async (req, res) => {
             if (!response.ok) throw new Error(`ElevenLabs error: ${response.statusText}`);
             const buffer = await response.arrayBuffer();
             audioBuffer = Buffer.from(buffer);
+
+            await logApiUsage({
+              userId: req.query.userId || req.body?.userId || null,
+              provider: 'elevenlabs',
+              characters: textToSpeak.length,
+              mode: 'preview',
+            });
         } else if (provider === 'openai') {
             const textToSpeak = "Hola, esta es una muestra de mi voz en Scriptquiu. Espero que te guste.";
             const openaiKey = (process.env.OPENAI_API_KEY || process.env.EXPO_PUBLIC_OPENAI_API_KEY || '').trim();
@@ -1884,6 +1978,13 @@ app.get('/api/tts/preview/:provider/:voiceId', async (req, res) => {
             if (!response.ok) throw new Error(`OpenAI error: ${response.statusText}`);
             const buffer = await response.arrayBuffer();
             audioBuffer = Buffer.from(buffer);
+
+            await logApiUsage({
+              userId: req.query.userId || req.body?.userId || null,
+              provider: 'openai_tts',
+              characters: textToSpeak.length,
+              mode: 'preview',
+            });
         } else {
             return res.status(400).json({ error: 'Provider not supported for previews' });
         }
@@ -1905,6 +2006,58 @@ app.get('/api/tts/preview/:provider/:voiceId', async (req, res) => {
         console.error(`[Preview] Error generating preview for ${provider}/${voiceId}:`, error);
         res.status(500).json({ error: error.message });
     }
+});
+
+// --- API USAGE SUMMARY ---
+app.get('/usage/summary', async (req, res) => {
+  const userId = req.query.userId;
+  if (!userId) return res.status(400).json({ error: 'userId required' });
+
+  try {
+    const startOfMonth = new Date();
+    startOfMonth.setDate(1);
+    startOfMonth.setHours(0, 0, 0, 0);
+
+    const { data, error } = await supabase
+      .from('api_usage')
+      .select('provider, characters_count, tokens_count, estimated_cost_eur')
+      .eq('user_id', userId)
+      .gte('created_at', startOfMonth.toISOString());
+
+    if (error) throw error;
+
+    // Agrupar por proveedor
+    const summary = data.reduce((acc, row) => {
+      if (!acc[row.provider]) {
+        acc[row.provider] = {
+          calls: 0,
+          characters: 0,
+          tokens: 0,
+          cost: 0,
+        };
+      }
+      acc[row.provider].calls += 1;
+      acc[row.provider].characters += row.characters_count;
+      acc[row.provider].tokens += row.tokens_count;
+      acc[row.provider].cost += row.estimated_cost_eur;
+      return acc;
+    }, {});
+
+    const totalCost = data.reduce(
+      (sum, row) => sum + row.estimated_cost_eur, 0
+    );
+
+    res.json({
+      success: true,
+      month: startOfMonth.toISOString(),
+      totalCostEur: totalCost.toFixed(4),
+      byProvider: summary,
+    });
+
+  } catch (e) {
+    console.error('[Usage] Error obteniendo resumen:', e);
+    res.status(500).json({ error: e.message });
+  }
 });
 
 app.listen(PORT, () => {
