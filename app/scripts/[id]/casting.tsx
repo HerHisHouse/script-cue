@@ -2781,16 +2781,16 @@ export default function CastingModeScreen() {
 
             <TouchableOpacity
               style={{
-                backgroundColor: (qualityApplied || videoQuality) && hasHeadphones !== null
+                backgroundColor: (qualityApplied || videoQuality) && (castingMode !== 'script_config' || hasHeadphones !== null)
                   ? '#10B981'
                   : '#444',
                 paddingVertical: rp(14),
                 borderRadius: rp(12),
                 alignItems: 'center',
                 marginTop: rp(24),
-                opacity: hasHeadphones !== null ? 1 : 0.5,
+                opacity: (castingMode !== 'script_config' || hasHeadphones !== null) ? 1 : 0.5,
               }}
-              disabled={hasHeadphones === null}
+              disabled={castingMode === 'script_config' && hasHeadphones === null}
               onPress={() => {
                 setShowQualityModal(false);
                 setQualityApplied(true);
