@@ -55,7 +55,12 @@ function toFirstLetterHint(text: string): string {
         initialLen = 2;
       }
       
-      const hint = core.substring(0, initialLen) + '_'.repeat(Math.max(0, core.length - initialLen));
+      const missingCount = Math.max(0, core.length - initialLen);
+      const underscores = missingCount > 0 
+        ? ' ' + Array(missingCount).fill('_').join(' ')
+        : '';
+        
+      const hint = core.substring(0, initialLen) + underscores;
       return before + hint + after;
     })
     .join(' ');
