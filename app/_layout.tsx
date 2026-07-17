@@ -39,7 +39,7 @@ function AppRoot() {
 
   useEffect(() => {
     if (!loading) {
-      const inAuthGroup = segments[0] === 'auth';
+      const inAuthGroup = segments[0] === 'auth' || segments[0] === 'forgot-password';
       const inLegalGroup = segments[0] === 'legal';
       if (!user && !inAuthGroup && !inLegalGroup) {
         router.replace('/auth');
@@ -145,6 +145,7 @@ function AppRoot() {
       >
         <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
         <Stack.Screen name="auth" options={{ headerShown: false }} />
+        <Stack.Screen name="forgot-password" options={{ headerShown: false }} />
         <Stack.Screen name="scan-script" options={{ headerShown: false }} />
         <Stack.Screen name="import-script" options={{ headerShown: false }} />
         <Stack.Screen name="scripts/[id]/index" options={{ headerShown: false }} />
