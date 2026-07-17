@@ -21,11 +21,6 @@ export const VOICE_PROVIDERS_CONFIG = [
     subtitle: 'Voz de estudio'
   },
   { 
-    value: 'openai',
-    label: '⭐ Premium',
-    subtitle: 'Mayor calidad'
-  },
-  { 
     value: 'elevenlabs',
     label: '🎭 Expresiva',
     subtitle: 'Con emociones configurables'
@@ -38,8 +33,6 @@ export const PROVIDER_INFO_MESSAGE =
   'Incluida en todos los planes. Funciona sin conexión.\n\n' +
   '🎙️ Natural (Azure)\n' +
   'Voz clara y fluida. Plan Estudiante o superior.\n\n' +
-  '⭐ Premium (OpenAI)\n' +
-  'Alta calidad y naturalidad. Plan Estudiante o superior.\n\n' +
   '🎭 Expresiva (ElevenLabs)\n' +
   'La más realista. Transmite emociones. Solo Plan Profesional.';
 

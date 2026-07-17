@@ -71,7 +71,7 @@ const faqs: FAQ[] = [
     {
         category: 'Configuración',
         question: '¿Cómo cambio las voces de la IA?',
-        answer: 'ScriptCue ofrece múltiples opciones de voces para la IA:\n\n• Voces del sistema: Voces por defecto de tu dispositivo (gratis)\n• Voces de Azure: Voces realistas de Microsoft Azure IA (Actualmente no son muy buenas en castellano)\n• Voces de OpenAI: Voces de calidad con entonación natural (premium)\n• Voces de ElevenLabs: Voces premium con mayor realismo y expresividad permite agregar emociones a las líneas agregando [] corchetes antes de la frase. (Premium)\n\nAsignar voces a personajes: Puedes asignar voces específicas de diferentes proveedores a cada personaje de un mismo guion.',
+        answer: 'ScriptCue ofrece múltiples opciones de voces para la IA:\n\n• Voces del sistema: Voces por defecto de tu dispositivo (gratis)\n• Voces de Azure: Voces claras y fluidas de estudio.\n• Voces de ElevenLabs: Voces premium con gran realismo y expresividad, permiten asignar emociones. (Plan Profesional)\n\nAsignar voces a personajes: Puedes asignar voces específicas de diferentes proveedores a cada personaje de un mismo guion.',
     },
 ];
 

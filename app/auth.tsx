@@ -312,6 +312,22 @@ export default function AuthScreen() {
               )}
             </View>
 
+            {!isSignUp && (
+              <TouchableOpacity
+                onPress={() => router.push('/forgot-password')}
+                style={{ alignSelf: 'flex-end', marginTop: rp(8), marginBottom: rp(16) }}
+              >
+                <Text style={{
+                  fontFamily: 'Inter',
+                  fontSize: rf(13),
+                  color: colors.primary,
+                  textDecorationLine: 'underline',
+                }}>
+                  ¿Olvidaste tu contraseña?
+                </Text>
+              </TouchableOpacity>
+            )}
+
             {isSignUp && (
               <View style={styles.inputContainer} accessible accessibilityLabel="Confirmar contraseña" accessibilityHint="Debe coincidir con la contraseña">
                 <Text style={[styles.label, { color: colors.textSecondary }]}>Confirmar Contraseña</Text>
