@@ -4,108 +4,174 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Restablecer Contraseña - ScriptCue</title>
-    <!-- Importar tipografía Inter -->
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+    <!-- Importar tipografías -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Ibarra+Real+Nova:wght@400;500&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/styles.css">
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <style>
         body {
-            font-family: 'Inter', sans-serif;
-            background-color: #F9FAFB;
+            background-color: var(--bg-primary, #0d1117);
+            color: var(--text-primary, #ffffff);
             display: flex;
             justify-content: center;
             align-items: center;
             height: 100vh;
             margin: 0;
-            color: #111827;
+            overflow: hidden;
+            position: relative;
         }
+        /* Fondo brillante de la landing */
+        .hero-bg {
+            position: absolute;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background: var(--gradient-glow, radial-gradient(ellipse at center, rgba(168, 85, 247, 0.15) 0%, transparent 70%));
+            opacity: 0.5;
+            pointer-events: none;
+            z-index: 0;
+        }
+        .hero-bg::before {
+            content: '';
+            position: absolute;
+            top: -50%; right: -20%;
+            width: 800px; height: 800px;
+            background: radial-gradient(circle, rgba(168, 85, 247, 0.15) 0%, transparent 60%);
+        }
+        
         .container {
-            background-color: #FFFFFF;
+            background-color: var(--bg-card, #1c2028);
             padding: 40px;
-            border-radius: 16px;
-            box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+            border-radius: 20px;
+            border: 1px solid var(--border-color, rgba(255, 255, 255, 0.1));
+            box-shadow: var(--shadow-lg, 0 8px 32px rgba(0, 0, 0, 0.4));
             width: 100%;
-            max-width: 400px;
+            max-width: 450px;
             text-align: center;
             box-sizing: border-box;
+            z-index: 1;
+            position: relative;
+            margin: 0 20px;
+        }
+        .logo-text {
+            font-size: 2rem;
+            margin-bottom: 24px;
+            font-family: 'Ibarra Real Nova', serif;
+            color: #ffffff;
         }
         h1 {
             font-size: 24px;
-            margin-bottom: 8px;
+            margin-bottom: 12px;
+            font-weight: 700;
         }
         p {
-            color: #6B7280;
+            color: var(--text-secondary, #a1a1aa);
             font-size: 15px;
             margin-bottom: 24px;
             line-height: 1.5;
         }
+        .input-group {
+            position: relative;
+            margin-bottom: 24px;
+        }
         input {
             width: 100%;
-            padding: 14px;
+            padding: 16px;
+            padding-right: 80px;
             border-radius: 12px;
-            border: 1px solid #E5E7EB;
+            border: 1px solid var(--border-color, rgba(255, 255, 255, 0.1));
             font-size: 15px;
-            margin-bottom: 20px;
             box-sizing: border-box;
-            background-color: #F9FAFB;
+            background-color: var(--bg-secondary, #161b22);
+            color: var(--text-primary, #ffffff);
+            transition: var(--transition-fast, 0.2s ease);
+            font-family: var(--font-family, 'Inter', sans-serif);
         }
         input:focus {
             outline: none;
-            border-color: #3B82F6;
+            border-color: var(--accent-primary, #a855f7);
+            box-shadow: 0 0 0 2px rgba(168, 85, 247, 0.2);
         }
-        button {
+        .toggle-pwd {
+            position: absolute;
+            right: 16px;
+            top: 50%;
+            transform: translateY(-50%);
+            background: none;
+            border: none;
+            color: var(--accent-primary, #a855f7);
+            font-weight: 600;
+            font-size: 14px;
+            cursor: pointer;
+            padding: 0;
+            font-family: var(--font-family, 'Inter', sans-serif);
+        }
+        .toggle-pwd:hover {
+            color: var(--accent-pink, #d946ef);
+        }
+        .btn {
             width: 100%;
             padding: 16px;
-            background-color: #3B82F6;
-            color: white;
+            background: var(--gradient-primary, linear-gradient(135deg, #a855f7, #d946ef));
+            color: var(--text-primary, #ffffff);
             border: none;
             border-radius: 12px;
             font-size: 16px;
             font-weight: 600;
             cursor: pointer;
-            transition: background-color 0.2s;
+            transition: var(--transition-normal, 0.3s ease);
+            font-family: var(--font-family, 'Inter', sans-serif);
         }
-        button:hover {
-            background-color: #2563EB;
+        .btn:hover {
+            transform: translateY(-2px);
+            box-shadow: var(--shadow-glow, 0 0 40px rgba(168, 85, 247, 0.3));
         }
-        button:disabled {
-            background-color: #9CA3AF;
+        .btn:disabled {
+            background: var(--bg-secondary, #161b22);
+            color: var(--text-muted, #71717a);
             cursor: not-allowed;
+            transform: none;
+            box-shadow: none;
         }
         .error {
             color: #EF4444;
             font-size: 14px;
             margin-bottom: 16px;
             display: none;
+            background: rgba(239, 68, 68, 0.1);
+            border: 1px solid rgba(239, 68, 68, 0.2);
+            padding: 12px;
+            border-radius: 8px;
         }
         .success {
             display: none;
         }
         .success-icon {
             font-size: 48px;
-            margin-bottom: 16px;
+            margin-bottom: 20px;
         }
         .form-content {
             display: block;
-        }
-        .logo {
-            width: 60px;
-            height: 60px;
-            margin-bottom: 16px;
         }
     </style>
 </head>
 <body>
 
+<div class="hero-bg"></div>
+
 <div class="container">
+    <div class="logo-text">ScriptCue</div>
+    
     <div id="form-content" class="form-content">
         <h1>Restablecer contraseña</h1>
-        <p>Introduce tu nueva contraseña para ScriptCue.</p>
+        <p>Introduce tu nueva contraseña para acceder a la app.</p>
         
         <div id="error-message" class="error"></div>
 
         <form id="reset-form">
-            <input type="password" id="password" placeholder="Nueva contraseña (mínimo 8 caracteres)" required minlength="8">
-            <button type="submit" id="submit-btn">Guardar contraseña</button>
+            <div class="input-group">
+                <input type="password" id="password" placeholder="Nueva contraseña (mín. 8 caracteres)" required minlength="8">
+                <button type="button" id="toggle-pwd" class="toggle-pwd">Mostrar</button>
+            </div>
+            <button type="submit" id="submit-btn" class="btn">Guardar contraseña</button>
         </form>
     </div>
 
@@ -113,19 +179,19 @@
         <div class="success-icon">✅</div>
         <h1>¡Contraseña actualizada!</h1>
         <p>Tu contraseña se ha cambiado correctamente. Ya puedes volver a la aplicación de ScriptCue e iniciar sesión.</p>
-        <button onclick="window.location.href='scriptcue://auth'">Abrir aplicación</button>
+        <button class="btn" onclick="window.location.href='scriptcue://auth'">Abrir aplicación</button>
     </div>
 </div>
 
 <script>
-    // Inicializar Supabase
+    // Configuración de Supabase
     const SUPABASE_URL = 'https://yucsroyorgebeuvcsmib.supabase.co';
     const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inl1Y3Nyb3lvcmdlYmV1dmNzbWliIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjIwODIxOTUsImV4cCI6MjA3NzY1ODE5NX0.1K6GTmaRZj3xAehUap7dT-FQ5YEpBAbQUYoxNcTVyW0';
     
-    // Supabase leerá automáticamente el hash de la URL para establecer la sesión
-    const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+    // IMPORTANTE: Evitamos crear una constante llamada "supabase" 
+    // porque choca con la global que importa el script del CDN.
+    const sbClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
-    // Comprobar si hay token en el hash
     const hash = window.location.hash;
     const isRecovery = hash.includes('type=recovery') || hash.includes('access_token=');
 
@@ -135,10 +201,21 @@
     const form = document.getElementById('reset-form');
     const submitBtn = document.getElementById('submit-btn');
     const passwordInput = document.getElementById('password');
+    const togglePwdBtn = document.getElementById('toggle-pwd');
+
+    // Funcionalidad de Mostrar/Ocultar contraseña
+    togglePwdBtn.addEventListener('click', () => {
+        if (passwordInput.type === 'password') {
+            passwordInput.type = 'text';
+            togglePwdBtn.textContent = 'Ocultar';
+        } else {
+            passwordInput.type = 'password';
+            togglePwdBtn.textContent = 'Mostrar';
+        }
+    });
 
     if (!isRecovery) {
-        // Permitimos continuar si ya hay una sesión activa, a veces Supabase limpia el hash rápido
-        supabase.auth.getSession().then(({ data }) => {
+        sbClient.auth.getSession().then(({ data }) => {
             if (!data.session) {
                 showError('Enlace de recuperación inválido o caducado. Vuelve a solicitar el cambio de contraseña desde la app.');
                 form.style.display = 'none';
@@ -160,7 +237,7 @@
         errorMessage.style.display = 'none';
 
         try {
-            const { data, error } = await supabase.auth.updateUser({
+            const { data, error } = await sbClient.auth.updateUser({
                 password: newPassword
             });
 
