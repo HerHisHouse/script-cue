@@ -119,6 +119,7 @@
             cursor: pointer;
             transition: var(--transition-normal, 0.3s ease);
             font-family: var(--font-family, 'Inter', sans-serif);
+            text-align: center;
         }
         .btn:hover {
             transform: translateY(-2px);
@@ -130,6 +131,14 @@
             cursor: not-allowed;
             transform: none;
             box-shadow: none;
+        }
+        .helper-text {
+            color: var(--text-secondary, #a1a1aa);
+            font-size: 13px;
+            text-align: left;
+            margin-top: -16px;
+            margin-bottom: 24px;
+            display: block;
         }
         .error {
             color: #EF4444;
@@ -168,9 +177,10 @@
 
         <form id="reset-form">
             <div class="input-group">
-                <input type="password" id="password" placeholder="Nueva contraseña (mín. 8 caracteres)" required minlength="8">
+                <input type="password" id="password" placeholder="Nueva contraseña" required minlength="8">
                 <button type="button" id="toggle-pwd" class="toggle-pwd">Mostrar</button>
             </div>
+            <span class="helper-text">Mínimo 8 caracteres.</span>
             <button type="submit" id="submit-btn" class="btn">Guardar contraseña</button>
         </form>
     </div>
@@ -179,7 +189,7 @@
         <div class="success-icon">✅</div>
         <h1>¡Contraseña actualizada!</h1>
         <p>Tu contraseña se ha cambiado correctamente. Ya puedes volver a la aplicación de ScriptCue e iniciar sesión.</p>
-        <button class="btn" onclick="window.location.href='scriptcue://auth'">Abrir aplicación</button>
+        <button class="btn" onclick="window.location.href='https://www.scriptcue.es'">Accede a la web</button>
     </div>
 </div>
 
