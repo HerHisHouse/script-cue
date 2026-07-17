@@ -1473,39 +1473,39 @@ function analyzeTextContext(text) {
  * rate: velocidad de habla   pitch: tono    volume: volumen
  */
 const emotionMap = {
-    'susurrando':   { volume: '-20dB', rate: '-10%', pitch: '-5%'  },
-    'susurra':      { volume: '-20dB', rate: '-10%', pitch: '-5%'  },
-    'gritando':     { volume: '+6dB',  rate: '+10%', pitch: '+15%' },
-    'grita':        { volume: '+6dB',  rate: '+10%', pitch: '+15%' },
-    'enfadado':     { volume: '+4dB',  rate: '+5%',  pitch: '+8%'  },
-    'enfadada':     { volume: '+4dB',  rate: '+5%',  pitch: '+8%'  },
-    'triste':       { volume: '-10dB', rate: '-15%', pitch: '-10%' },
-    'llorando':     { volume: '-10dB', rate: '-15%', pitch: '-10%' },
-    'alegre':       { volume: '0dB',   rate: '+5%',  pitch: '+5%'  },
-    'feliz':        { volume: '0dB',   rate: '+5%',  pitch: '+5%'  },
-    'nervioso':     { volume: '+2dB',  rate: '+20%', pitch: '+12%' },
-    'nerviosa':     { volume: '+2dB',  rate: '+20%', pitch: '+12%' },
-    'cansado':      { volume: '-15dB', rate: '-20%', pitch: '-8%'  },
-    'cansada':      { volume: '-15dB', rate: '-20%', pitch: '-8%'  },
-    'sorprendido':  { volume: '+5dB',  rate: '+10%', pitch: '+20%' },
-    'sorprendida':  { volume: '+5dB',  rate: '+10%', pitch: '+20%' },
-    'asustado':     { volume: '-5dB',  rate: '+15%', pitch: '+18%' },
-    'asustada':     { volume: '-5dB',  rate: '+15%', pitch: '+18%' },
-    'serio':        { volume: '0dB',   rate: '-5%',  pitch: '-3%'  },
-    'seria':        { volume: '0dB',   rate: '-5%',  pitch: '-3%'  },
-    'sarcástico':   { volume: '0dB',   rate: '+5%',  pitch: '+8%'  },
-    'sarcástica':   { volume: '0dB',   rate: '+5%',  pitch: '+8%'  },
-    'irónico':      { volume: '0dB',   rate: '+5%',  pitch: '+8%'  },
-    'dudoso':       { volume: '-10dB', rate: '-10%', pitch: '-5%'  },
-    'pensativo':    { volume: '-10dB', rate: '-15%', pitch: '-3%'  },
-    'pensativa':    { volume: '-10dB', rate: '-15%', pitch: '-3%'  },
+    'susurrando':   { volume: '-80%', rate: '-10%', pitch: '-5%'  },
+    'susurra':      { volume: '-80%', rate: '-10%', pitch: '-5%'  },
+    'gritando':     { volume: '+60%', rate: '+10%', pitch: '+15%' },
+    'grita':        { volume: '+60%', rate: '+10%', pitch: '+15%' },
+    'enfadado':     { volume: '+40%', rate: '+5%',  pitch: '+8%'  },
+    'enfadada':     { volume: '+40%', rate: '+5%',  pitch: '+8%'  },
+    'triste':       { volume: '-50%', rate: '-15%', pitch: '-10%' },
+    'llorando':     { volume: '-50%', rate: '-15%', pitch: '-10%' },
+    'alegre':       { volume: '0%',   rate: '+5%',  pitch: '+5%'  },
+    'feliz':        { volume: '0%',   rate: '+5%',  pitch: '+5%'  },
+    'nervioso':     { volume: '+20%', rate: '+20%', pitch: '+12%' },
+    'nerviosa':     { volume: '+20%', rate: '+20%', pitch: '+12%' },
+    'cansado':      { volume: '-60%', rate: '-20%', pitch: '-8%'  },
+    'cansada':      { volume: '-60%', rate: '-20%', pitch: '-8%'  },
+    'sorprendido':  { volume: '+50%', rate: '+10%', pitch: '+20%' },
+    'sorprendida':  { volume: '+50%', rate: '+10%', pitch: '+20%' },
+    'asustado':     { volume: '-25%', rate: '+15%', pitch: '+18%' },
+    'asustada':     { volume: '-25%', rate: '+15%', pitch: '+18%' },
+    'serio':        { volume: '0%',   rate: '-5%',  pitch: '-3%'  },
+    'seria':        { volume: '0%',   rate: '-5%',  pitch: '-3%'  },
+    'sarcástico':   { volume: '0%',   rate: '+5%',  pitch: '+8%'  },
+    'sarcástica':   { volume: '0%',   rate: '+5%',  pitch: '+8%'  },
+    'irónico':      { volume: '0%',   rate: '+5%',  pitch: '+8%'  },
+    'dudoso':       { volume: '-50%', rate: '-10%', pitch: '-5%'  },
+    'pensativo':    { volume: '-50%', rate: '-15%', pitch: '-3%'  },
+    'pensativa':    { volume: '-50%', rate: '-15%', pitch: '-3%'  },
 };
 
 /**
  * Genera audio TTS usando Azure Cognitive Services.
  * Devuelve el audio como Buffer (MP3).
  */
-async function generateAzureTTS({ text, voice }) {
+async function generateAzureTTS({ text, voice, ssmlConfig }) {
     // .trim() crítico: copiar/pegar keys en Render añade \n al final
     const azureKey = (process.env.AZURE_TTS_KEY || '').trim();
     const azureRegion = (process.env.AZURE_TTS_REGION || '').trim();
@@ -1522,7 +1522,7 @@ async function generateAzureTTS({ text, voice }) {
     // PASO 2: Parámetros base por puntuación
     let rate = '0%';
     let pitch = '0%';
-    let volume = '0dB';
+    let volume = '0%';
 
     if (context.hasQuestion) {
         pitch = '+8%';
@@ -1531,7 +1531,7 @@ async function generateAzureTTS({ text, voice }) {
     if (context.hasExclamation) {
         pitch  = '+12%';
         rate   = '+8%';
-        volume = '+3dB';
+        volume = '+30%';
     }
     if (context.hasEllipsis) {
         rate = '-10%';
@@ -1570,14 +1570,20 @@ async function generateAzureTTS({ text, voice }) {
     // PASO 5: Construir SSML
     const ssmlRate = rate === '0%' ? 'default' : rate;
     const ssmlPitch = pitch === '0%' ? 'default' : pitch;
-    const ssmlVolume = volume === '0dB' ? 'default' : volume;
+    const ssmlVolume = volume === '0%' ? 'default' : volume;
     const locale = voice.split('-').slice(0, 2).join('-'); // e.g. "es-ES", "es-MX"
 
-    const ssml = `<speak version="1.0" xmlns="http://www.w3.org/2001/10/synthesis" xml:lang="${locale}">
+    const expressAsOpen = ssmlConfig && ssmlConfig.style ? 
+        `<mstts:express-as style="${ssmlConfig.style}"${ssmlConfig.styledegree ? ` styledegree="${ssmlConfig.styledegree}"` : ''}>` : '';
+    const expressAsClose = ssmlConfig && ssmlConfig.style ? `</mstts:express-as>` : '';
+
+    const ssml = `<speak version="1.0" xmlns="http://www.w3.org/2001/10/synthesis" xmlns:mstts="https://www.w3.org/2001/mstts" xml:lang="${locale}">
   <voice name="${voice}">
-    <prosody rate="${ssmlRate}" pitch="${ssmlPitch}" volume="${ssmlVolume}">
-      ${finalText}
-    </prosody>
+    ${expressAsOpen}
+      <prosody rate="${ssmlRate}" pitch="${ssmlPitch}" volume="${ssmlVolume}">
+        ${finalText}
+      </prosody>
+    ${expressAsClose}
   </voice>
 </speak>`;
 
@@ -1597,7 +1603,9 @@ async function generateAzureTTS({ text, voice }) {
 
     if (!response.ok) {
         const errText = await response.text();
-        throw new Error(`Azure TTS API error: ${response.status} ${errText}`);
+        const error = new Error(`Azure TTS API error: ${response.status} ${errText}`);
+        error.status = response.status;
+        throw error;
     }
 
     // Azure devuelve el MP3 binario directamente
@@ -1808,7 +1816,7 @@ ${script_text}`;
 // Endpoint: generar Azure TTS y devolver MP3 binario directamente
 // (mismo patrón que OpenAI/ElevenLabs — el cliente lo guarda en fichero local)
 app.post('/tts-azure', async (req, res) => {
-    const { text, voice, userId } = req.body;
+    const { text, voice, userId, ssmlConfig } = req.body;
 
     if (!text || !voice || !userId) {
         return res.status(400).json({ error: 'Missing required fields: text, voice, userId' });
@@ -1817,7 +1825,7 @@ app.post('/tts-azure', async (req, res) => {
     console.log(`[Azure TTS] Generating audio for voice: ${voice}`);
 
     try {
-        const audioBuffer = await generateAzureTTS({ text, voice });
+        const audioBuffer = await generateAzureTTS({ text, voice, ssmlConfig });
 
         await logApiUsage({
           userId: req.body.userId,
@@ -1836,7 +1844,7 @@ app.post('/tts-azure', async (req, res) => {
 
     } catch (error) {
         console.error('[Azure TTS] Error:', error);
-        res.status(500).json({ error: error.message, fallback: 'system' });
+        res.status(error.status || 500).json({ error: error.message, fallback: 'system' });
     }
 });
 
