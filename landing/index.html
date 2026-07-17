@@ -23,6 +23,40 @@
     <meta name="twitter:title" content="ScriptCue - Tu réplica en escena con IA">
     <meta name="twitter:description" content="Practica cualquier guion con voces de inteligencia artificial, memoriza sin agobios y graba tu self-tape cuando lo necesites. Disponible en App Store y Google Play.">
 
+    <script>
+      // Detectar si Supabase redirigió con tokens en el hash
+      (function() {
+        const hash = window.location.hash;
+        
+        if (!hash) return;
+        
+        const params = new URLSearchParams(hash.substring(1));
+        const type = params.get('type');
+        const accessToken = params.get('access_token');
+        const error = params.get('error');
+        
+        // Si hay error (token expirado etc.), mostrar mensaje
+        if (error) {
+          const errorDesc = params.get('error_description') || 'enlace inválido';
+          window.location.href = '/cuenta-verificada?error=' + 
+            encodeURIComponent(errorDesc);
+          return;
+        }
+        
+        // Si es un signup exitoso, ir a cuenta-verificada
+        if (type === 'signup' && accessToken) {
+          window.location.href = '/cuenta-verificada?verified=true';
+          return;
+        }
+        
+        // Si es un reset de contraseña, ir a reset-password
+        if (type === 'recovery' && accessToken) {
+          window.location.href = '/reset-password#' + hash.substring(1);
+          return;
+        }
+      })();
+    </script>
+
     <title>ScriptCue - Tu réplica en escena con IA</title>
 
     <!-- Google Fonts -->
