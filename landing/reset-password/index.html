@@ -1,0 +1,187 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Restablecer Contraseña - ScriptCue</title>
+    <!-- Importar tipografía Inter -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #F9FAFB;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            margin: 0;
+            color: #111827;
+        }
+        .container {
+            background-color: #FFFFFF;
+            padding: 40px;
+            border-radius: 16px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+            width: 100%;
+            max-width: 400px;
+            text-align: center;
+            box-sizing: border-box;
+        }
+        h1 {
+            font-size: 24px;
+            margin-bottom: 8px;
+        }
+        p {
+            color: #6B7280;
+            font-size: 15px;
+            margin-bottom: 24px;
+            line-height: 1.5;
+        }
+        input {
+            width: 100%;
+            padding: 14px;
+            border-radius: 12px;
+            border: 1px solid #E5E7EB;
+            font-size: 15px;
+            margin-bottom: 20px;
+            box-sizing: border-box;
+            background-color: #F9FAFB;
+        }
+        input:focus {
+            outline: none;
+            border-color: #3B82F6;
+        }
+        button {
+            width: 100%;
+            padding: 16px;
+            background-color: #3B82F6;
+            color: white;
+            border: none;
+            border-radius: 12px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: background-color 0.2s;
+        }
+        button:hover {
+            background-color: #2563EB;
+        }
+        button:disabled {
+            background-color: #9CA3AF;
+            cursor: not-allowed;
+        }
+        .error {
+            color: #EF4444;
+            font-size: 14px;
+            margin-bottom: 16px;
+            display: none;
+        }
+        .success {
+            display: none;
+        }
+        .success-icon {
+            font-size: 48px;
+            margin-bottom: 16px;
+        }
+        .form-content {
+            display: block;
+        }
+        .logo {
+            width: 60px;
+            height: 60px;
+            margin-bottom: 16px;
+        }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <div id="form-content" class="form-content">
+        <h1>Restablecer contraseña</h1>
+        <p>Introduce tu nueva contraseña para ScriptCue.</p>
+        
+        <div id="error-message" class="error"></div>
+
+        <form id="reset-form">
+            <input type="password" id="password" placeholder="Nueva contraseña (mínimo 8 caracteres)" required minlength="8">
+            <button type="submit" id="submit-btn">Guardar contraseña</button>
+        </form>
+    </div>
+
+    <div id="success-content" class="success">
+        <div class="success-icon">✅</div>
+        <h1>¡Contraseña actualizada!</h1>
+        <p>Tu contraseña se ha cambiado correctamente. Ya puedes volver a la aplicación de ScriptCue e iniciar sesión.</p>
+        <button onclick="window.location.href='scriptcue://auth'">Abrir aplicación</button>
+    </div>
+</div>
+
+<script>
+    // Inicializar Supabase
+    const SUPABASE_URL = 'https://yucsroyorgebeuvcsmib.supabase.co';
+    const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inl1Y3Nyb3lvcmdlYmV1dmNzbWliIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjIwODIxOTUsImV4cCI6MjA3NzY1ODE5NX0.1K6GTmaRZj3xAehUap7dT-FQ5YEpBAbQUYoxNcTVyW0';
+    
+    // Supabase leerá automáticamente el hash de la URL para establecer la sesión
+    const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+    // Comprobar si hay token en el hash
+    const hash = window.location.hash;
+    const isRecovery = hash.includes('type=recovery') || hash.includes('access_token=');
+
+    const formContent = document.getElementById('form-content');
+    const successContent = document.getElementById('success-content');
+    const errorMessage = document.getElementById('error-message');
+    const form = document.getElementById('reset-form');
+    const submitBtn = document.getElementById('submit-btn');
+    const passwordInput = document.getElementById('password');
+
+    if (!isRecovery) {
+        // Permitimos continuar si ya hay una sesión activa, a veces Supabase limpia el hash rápido
+        supabase.auth.getSession().then(({ data }) => {
+            if (!data.session) {
+                showError('Enlace de recuperación inválido o caducado. Vuelve a solicitar el cambio de contraseña desde la app.');
+                form.style.display = 'none';
+            }
+        });
+    }
+
+    form.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        
+        const newPassword = passwordInput.value;
+        if (newPassword.length < 8) {
+            showError('La contraseña debe tener al menos 8 caracteres.');
+            return;
+        }
+
+        submitBtn.disabled = true;
+        submitBtn.textContent = 'Guardando...';
+        errorMessage.style.display = 'none';
+
+        try {
+            const { data, error } = await supabase.auth.updateUser({
+                password: newPassword
+            });
+
+            if (error) throw error;
+
+            formContent.style.display = 'none';
+            successContent.style.display = 'block';
+
+        } catch (error) {
+            console.error(error);
+            showError(error.message || 'Ocurrió un error al actualizar la contraseña.');
+            submitBtn.disabled = false;
+            submitBtn.textContent = 'Guardar contraseña';
+        }
+    });
+
+    function showError(msg) {
+        errorMessage.textContent = msg;
+        errorMessage.style.display = 'block';
+    }
+</script>
+
+</body>
+</html>
