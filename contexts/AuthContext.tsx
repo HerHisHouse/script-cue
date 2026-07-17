@@ -124,6 +124,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       email,
       password,
       options: {
+        emailRedirectTo: 'https://scriptcue.es/cuenta-verificada',
         data: {
           username,
           full_name: username, // Using username as full_name for now
