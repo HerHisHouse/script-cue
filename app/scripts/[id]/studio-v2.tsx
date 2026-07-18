@@ -636,15 +636,16 @@ export default function StudioV2Screen() {
                     const voices = await Speech.getAvailableVoicesAsync();
                     const selectedVoice = voices.find(v => v.identifier === systemVoiceId);
                     
-                    const wordCount = line.cleanText.split(' ').length;
-                    const estimatedMs = wordCount * 450; // ~130 palabras/min
-                    const preInitAt = Math.max(0, estimatedMs - 600);
-                    setTimeout(() => preInitMicrophone(), preInitAt);
-
                     Speech.speak(line.cleanText, {
                         language: selectedVoice?.language || 'es-ES',
                         voice: selectedVoice?.identifier,
-                        onDone: () => { setIsSpeaking(false); setTimeout(handleNext, 800); },
+                        onDone: () => { 
+                            preInitMicrophone();
+                            setTimeout(() => {
+                                setIsSpeaking(false); 
+                                setTimeout(handleNext, 800); 
+                            }, 150);
+                        },
                         onError: () => { setIsSpeaking(false); setTimeout(handleNext, 800); }
                     });
                     console.warn('[speakLine] System TTS used - no AI segment will be saved');
@@ -670,16 +671,14 @@ export default function StudioV2Screen() {
                     // Azure (or any provider) failed — fall back to system TTS silently
                     console.warn(`[Studio] No audio URI for ${line.characterName} (${provider}), falling back to system TTS`);
                     
-                    const wordCount = line.cleanText.split(' ').length;
-                    const estimatedMs = wordCount * 450;
-                    const preInitAt = Math.max(0, estimatedMs - 600);
-                    setTimeout(() => preInitMicrophone(), preInitAt);
-
                     Speech.speak(line.cleanText, {
                         language: 'es-ES',
                         onDone: () => {
-                            setIsSpeaking(false);
-                            setTimeout(handleNext, 800);
+                            preInitMicrophone();
+                            setTimeout(() => {
+                                setIsSpeaking(false);
+                                setTimeout(handleNext, 800);
+                            }, 150);
                         },
                         onError: () => {
                             setIsSpeaking(false);
@@ -739,43 +738,33 @@ export default function StudioV2Screen() {
                 sound.setOnPlaybackStatusUpdate((status) => {
                     if (!status.isLoaded) return;
 
-                    // Pre-inicializar el micro cuando queden ~600ms
-                    if (
-                        status.durationMillis &&
-                        status.positionMillis &&
-                        !preInitReadyRef.current &&
-                        !preInitRecordingRef.current &&
-                        (status.durationMillis - status.positionMillis) < 600
-                    ) {
-                        preInitMicrophone(); // fire and forget
-                    }
-
                     if (status.didJustFinish) {
-                        // Only proceed if this sequence is still valid
-                        if (mySequence === audioSequenceRef.current) {
-                            setIsSpeaking(false);
-                            setTimeout(handleNext, 800);
-                        } else {
-                            console.log('[speakLine] Ignoring didJustFinish for stale sequence');
-                        }
+                        preInitMicrophone(); // fire and forget
+                        setTimeout(() => {
+                            // Only proceed if this sequence is still valid
+                            if (mySequence === audioSequenceRef.current) {
+                                setIsSpeaking(false);
+                                setTimeout(handleNext, 800);
+                            } else {
+                                console.log('[speakLine] Ignoring didJustFinish for stale sequence');
+                            }
+                        }, 150);
                     }
                 });
             } catch (error) {
                 console.error('Error speaking line:', error);
                 
-                const wordCount = line.cleanText.split(' ').length;
-                const estimatedMs = wordCount * 450;
-                const preInitAt = Math.max(0, estimatedMs - 600);
-                setTimeout(() => preInitMicrophone(), preInitAt);
-
                 // Fallback to system TTS - use cleanText to avoid reading stage directions
                 Speech.speak(line.cleanText, {
                     language: 'es-ES',
                     onDone: () => {
-                        if (mySequence === audioSequenceRef.current) {
-                            setIsSpeaking(false);
-                            setTimeout(handleNext, 800);
-                        }
+                        preInitMicrophone();
+                        setTimeout(() => {
+                            if (mySequence === audioSequenceRef.current) {
+                                setIsSpeaking(false);
+                                setTimeout(handleNext, 800);
+                            }
+                        }, 150);
                     }
                 });
             }
@@ -813,14 +802,14 @@ export default function StudioV2Screen() {
 
         preInitInProgressRef.current = true;
         try {
-            console.log('[Studio] Pre-init micrófono...');
+            console.log('[Studio] Pre-init micrófono (post-audio)...');
 
             await Audio.requestPermissionsAsync();
             await enableRecordingMode();
 
             // En iOS esperar el tiempo necesario para el modo de audio
             if (Platform.OS === 'ios') {
-                await new Promise((resolve) => setTimeout(resolve, 200));
+                await new Promise((resolve) => setTimeout(resolve, 150));
             }
 
             const { recording } = await Audio.Recording.createAsync(
