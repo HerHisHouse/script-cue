@@ -839,6 +839,14 @@ export default function StudioV2Screen() {
 
             let recording: Audio.Recording;
 
+            // Wait if pre-init is currently in progress
+            if (preInitInProgressRef.current) {
+                console.log('[Studio] Waiting for pre-init to finish...');
+                while (preInitInProgressRef.current) {
+                    await new Promise(resolve => setTimeout(resolve, 50));
+                }
+            }
+
             if (preInitRecordingRef.current && preInitReadyRef.current) {
                 // ✅ Usar el micrófono ya inicializado — sin espera
                 console.log('[Studio] Usando micrófono pre-inicializado ✅');
