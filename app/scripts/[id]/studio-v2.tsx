@@ -901,6 +901,14 @@ export default function StudioV2Screen() {
             return;
         }
 
+        if (!literalMode) {
+            // Literal Mode OFF: Accept any speech and advance immediately without transcribing
+            console.log('[StudioV2] Literal Mode OFF - Skipping transcription and advancing');
+            processingRef.current = false;
+            handleNext();
+            return;
+        }
+
         setIsTranscribing(true);
 
         try {
@@ -911,30 +919,23 @@ export default function StudioV2Screen() {
             console.log('[StudioV2] Target:', targetLine?.text);
 
             if (spokenText && targetLine) {
-                // Only validate text if Literal Mode is active
-                if (literalMode) {
-                    const similarity = calculateSimilarity(spokenText, targetLine.text);
-                    const threshold = 0.75; // Lowered to 75% to allow more speech recognition tolerance
+                const similarity = calculateSimilarity(spokenText, targetLine.text);
+                const threshold = 0.75; // Lowered to 75% to allow more speech recognition tolerance
 
-                    if (similarity >= threshold) {
-                        // Success: advance
-                        handleNext();
-                    } else {
-                        // Mismatch: offer retry
-                        Alert.alert(
-                            'Error en el texto',
-                            `Dijiste: "${spokenText}"\nEsperaba: "${targetLine.text}"`,
-                            [
-                                { text: 'Reintentar', onPress: () => { processingRef.current = false; startListening(); } },
-                                { text: 'Saltar', onPress: () => { processingRef.current = false; handleNext(); } }
-                            ]
-                        );
-                        return; // Don't reset processingRef yet
-                    }
-                } else {
-                    // Literal Mode OFF: Accept any speech and advance
-                    console.log('[StudioV2] Literal Mode OFF - Accepting speech and advancing');
+                if (similarity >= threshold) {
+                    // Success: advance
                     handleNext();
+                } else {
+                    // Mismatch: offer retry
+                    Alert.alert(
+                        'Error en el texto',
+                        `Dijiste: "${spokenText}"\nEsperaba: "${targetLine.text}"`,
+                        [
+                            { text: 'Reintentar', onPress: () => { processingRef.current = false; startListening(); } },
+                            { text: 'Saltar', onPress: () => { processingRef.current = false; handleNext(); } }
+                        ]
+                    );
+                    return; // Don't reset processingRef yet
                 }
             }
         } catch (error) {
