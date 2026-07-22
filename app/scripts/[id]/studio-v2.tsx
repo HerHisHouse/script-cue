@@ -1029,7 +1029,7 @@ export default function StudioV2Screen() {
     // --- Navigation ---
 
     function handleNext() {
-        if (currentIndex < dialogueLines.length - 1) {
+        if (currentIndex < activeLines.length - 1) {
             setCurrentIndex(prev => prev + 1);
         } else if (loopEnabled) {
             setCurrentIndex(0);
@@ -1039,6 +1039,8 @@ export default function StudioV2Screen() {
             if (isRecording) {
                 // If session recording is active, stop it and trigger merge
                 stopSessionRecording();
+            } else {
+                Alert.alert('Fin de la escena', 'Has llegado al final de las tarjetas.');
             }
         }
     }
@@ -2897,15 +2899,15 @@ export default function StudioV2Screen() {
 
                             <TouchableOpacity
                                 onPress={handleNext}
-                                disabled={currentIndex === dialogueLines.length - 1 && !loopEnabled}
+                                disabled={currentIndex === activeLines.length - 1 && !loopEnabled}
                                 style={[
                                     styles.controlButton,
-                                    (currentIndex === dialogueLines.length - 1 && !loopEnabled) && styles.controlButtonDisabled
+                                    (currentIndex === activeLines.length - 1 && !loopEnabled) && styles.controlButtonDisabled
                                 ]}
                             >
                                 <SkipForward
                                     size={24}
-                                    color={(currentIndex === dialogueLines.length - 1 && !loopEnabled) ? colors.textSecondary : colors.text}
+                                    color={(currentIndex === activeLines.length - 1 && !loopEnabled) ? colors.textSecondary : colors.text}
                                 />
                             </TouchableOpacity>
 

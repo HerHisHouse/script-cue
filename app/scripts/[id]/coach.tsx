@@ -1135,7 +1135,7 @@ export default function CoachModeScreen() {
                 onPress={() => setActiveTab('feedback')}
               >
                 <Activity size={18} color={activeTab === 'feedback' ? colors.primary : colors.textSecondary} />
-                <Text style={[styles.tabText, { color: activeTab === 'feedback' ? colors.primary : colors.textSecondary }]}>Feedback</Text>
+                <Text style={[styles.tabText, { color: activeTab === 'feedback' ? colors.primary : colors.textSecondary }]}>Análisis</Text>
               </TouchableOpacity>
 
               <TouchableOpacity
