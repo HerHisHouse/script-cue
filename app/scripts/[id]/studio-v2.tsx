@@ -896,6 +896,33 @@ export default function StudioV2Screen() {
 
     // removed calculateSimilarity
 
+    const saveUserSegmentAndAdvance = (uri: string, index: number) => {
+        if (!isRecording && uri) {
+            try { FileSystem.deleteAsync(uri, { idempotent: true }); } catch { }
+        } else if (isRecording && uri) {
+            const userSegment = { uri, storagePath: '', type: 'user' as const, index };
+            segmentsRef.current.push(userSegment);
+            console.log('[User Segment] Added, index:', index);
+
+            uploadingSegmentsRef.current++;
+            (async () => {
+                try {
+                    const storagePath = await uploadUserSegment(uri, index);
+                    if (storagePath) {
+                        userSegment.storagePath = storagePath;
+                        console.log('[User Segment] Uploaded:', storagePath);
+                    }
+                } catch (err) {
+                    console.error('Error uploading user segment:', err);
+                } finally {
+                    uploadingSegmentsRef.current--;
+                }
+            })();
+        }
+        processingRef.current = false;
+        handleNext();
+    };
+
     async function finishLine(hasAudio: boolean) {
         if (processingRef.current) return;
         if (user) trackEvent(user.id, 'line_completed', 'studio', { script_id: id, line_index: currentIndex });
@@ -912,8 +939,7 @@ export default function StudioV2Screen() {
         if (!literalMode) {
             // Literal Mode OFF: Accept any speech and advance immediately without transcribing
             console.log('[StudioV2] Literal Mode OFF - Skipping transcription and advancing');
-            processingRef.current = false;
-            handleNext();
+            saveUserSegmentAndAdvance(uri, currentIndex);
             return;
         }
 
@@ -932,15 +958,27 @@ export default function StudioV2Screen() {
 
                 if (similarity >= threshold) {
                     // Success: advance
-                    handleNext();
+                    saveUserSegmentAndAdvance(uri, currentIndex);
                 } else {
                     // Mismatch: offer retry
                     Alert.alert(
                         'Error en el texto',
                         `Dijiste: "${spokenText}"\nEsperaba: "${targetLine.text}"`,
                         [
-                            { text: 'Reintentar', onPress: () => { processingRef.current = false; startListening(); } },
-                            { text: 'Saltar', onPress: () => { processingRef.current = false; handleNext(); } }
+                            { 
+                                text: 'Reintentar', 
+                                onPress: () => { 
+                                    try { FileSystem.deleteAsync(uri, { idempotent: true }); } catch { }
+                                    processingRef.current = false; 
+                                    startListening(); 
+                                } 
+                            },
+                            { 
+                                text: 'Saltar', 
+                                onPress: () => { 
+                                    saveUserSegmentAndAdvance(uri, currentIndex);
+                                } 
+                            }
                         ]
                     );
                     return; // Don't reset processingRef yet
@@ -949,38 +987,9 @@ export default function StudioV2Screen() {
         } catch (error) {
             console.error('[StudioV2] Transcription error:', error);
             Alert.alert('Error', 'No se pudo procesar el audio');
+            saveUserSegmentAndAdvance(uri, currentIndex);
         } finally {
             setIsTranscribing(false);
-            processingRef.current = false;
-            // Clean up temp file if not saved as a take (or if we want to clean up anyway after upload)
-            // Note: saveTake reads the file, so we should delete after saveTake or here.
-            // If saveTake is async and we await it, we can delete here.
-            // Clean up temp file if not saved as a take (or if we want to clean up anyway after upload)
-            // Note: In "Digital Stitching" mode, we KEEP the file in segmentsRef, so DO NOT delete it here if recording.
-            if (!isRecording && uri) {
-                try { await FileSystem.deleteAsync(uri, { idempotent: true }); } catch { }
-            } else if (isRecording && uri) {
-                // Add user segment to array IMMEDIATELY
-                const userSegment = { uri, storagePath: '', type: 'user' as const, index: currentIndex };
-                segmentsRef.current.push(userSegment);
-                console.log('[User Segment] Added, index:', currentIndex);
-
-                // Upload asynchronously
-                uploadingSegmentsRef.current++;
-                (async () => {
-                    try {
-                        const storagePath = await uploadUserSegment(uri, currentIndex);
-                        if (storagePath) {
-                            userSegment.storagePath = storagePath;
-                            console.log('[User Segment] Uploaded:', storagePath);
-                        }
-                    } catch (err) {
-                        console.error('Error uploading user segment:', err);
-                    } finally {
-                        uploadingSegmentsRef.current--;
-                    }
-                })();
-            }
         }
     }
 
