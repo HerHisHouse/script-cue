@@ -4,7 +4,7 @@ import {
   TextInput, Modal, ScrollView, ActivityIndicator,
   KeyboardAvoidingView, Platform, Pressable,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { Stack } from 'expo-router';
 import { useTheme } from '@/contexts/ThemeContext';
@@ -27,6 +27,7 @@ export default function ReviewScreen() {
   const { id, force } = useLocalSearchParams<{ id: string; force?: string }>();
   const { colors } = useTheme();
   const { user } = useAuth();
+  const insets = useSafeAreaInsets();
 
   const [lines, setLines] = useState<DialogueLine[]>([]);
   const [loading, setLoading] = useState(true);
@@ -453,7 +454,7 @@ export default function ReviewScreen() {
             style={{ flex: 1 }}
           >
             <Pressable style={s.modalOverlay} onPress={() => setEditModalVisible(false)}>
-              <Pressable onPress={e => e.stopPropagation()} style={[s.modalContent, { backgroundColor: colors.surface }]}>
+              <Pressable onPress={e => e.stopPropagation()} style={[s.modalContent, { backgroundColor: colors.surface, paddingBottom: Math.max(insets.bottom + rp(20), rp(40)) }]}>
                 <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: rp(12) }}>
                   <Text style={[s.modalTitle, { color: colors.text, marginBottom: 0 }]}>Editar línea</Text>
                   <TouchableOpacity onPress={() => setEditModalVisible(false)} style={{ padding: 4 }}>
@@ -529,7 +530,7 @@ export default function ReviewScreen() {
           onRequestClose={() => setEmotionModalVisible(false)}
         >
           <Pressable style={[s.modalOverlay, { backgroundColor: 'rgba(0,0,0,0.4)' }]} onPress={() => setEmotionModalVisible(false)}>
-            <View style={[s.modalContent, { backgroundColor: colors.surface, paddingHorizontal: 0, paddingBottom: rp(20) }]}>
+            <View style={[s.modalContent, { backgroundColor: colors.surface, paddingHorizontal: 0, paddingBottom: Math.max(insets.bottom + rp(20), rp(20)) }]}>
               <View style={{ paddingHorizontal: rp(20), paddingBottom: rp(12), borderBottomWidth: 1, borderBottomColor: colors.border }}>
                 <Text style={[s.modalTitle, { color: colors.text, marginBottom: 0 }]}>Dirección Interpretativa</Text>
               </View>
@@ -557,7 +558,7 @@ export default function ReviewScreen() {
         <Modal visible={showAddModal} transparent animationType="slide" onRequestClose={() => setShowAddModal(false)}>
           <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
             <Pressable style={s.modalOverlay} onPress={() => setShowAddModal(false)}>
-              <Pressable onPress={e => e.stopPropagation()} style={[s.modalContent, { backgroundColor: colors.surface }]}>
+              <Pressable onPress={e => e.stopPropagation()} style={[s.modalContent, { backgroundColor: colors.surface, paddingBottom: Math.max(insets.bottom + rp(20), rp(40)) }]}>
                 <Text style={[s.modalTitle, { color: colors.text }]}>Añadir línea</Text>
                 
                 <View style={{ flexDirection: 'row', marginBottom: rp(16), gap: 12 }}>
@@ -621,7 +622,7 @@ export default function ReviewScreen() {
           onRequestClose={() => setShowReviewInfo(false)}
         >
           <View style={s.modalOverlay}>
-            <View style={[s.modalContent, { backgroundColor: colors.surface }]}>
+            <View style={[s.modalContent, { backgroundColor: colors.surface, paddingBottom: Math.max(insets.bottom + rp(20), rp(40)) }]}>
               <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: rp(16), gap: 12 }}>
                 <Edit size={24} color={colors.primary} />
                 <Text style={[s.modalTitle, { color: colors.text, marginBottom: 0 }]}>Revisa el guion</Text>
@@ -670,7 +671,7 @@ export default function ReviewScreen() {
           onRequestClose={() => setShowAddLineInfo(false)}
         >
           <View style={s.modalOverlay}>
-            <View style={[s.modalContent, { backgroundColor: colors.surface }]}>
+            <View style={[s.modalContent, { backgroundColor: colors.surface, paddingBottom: Math.max(insets.bottom + rp(20), rp(40)) }]}>
               <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: rp(16), gap: 12 }}>
                 <Plus size={24} color={colors.primary} />
                 <Text style={[s.modalTitle, { color: colors.text, marginBottom: 0 }]}>Añadir línea o acción</Text>
@@ -745,7 +746,7 @@ const s = StyleSheet.create({
   progressTrack: { width: '100%', height: 6, borderRadius: 3, overflow: 'hidden' },
   progressFill: { height: '100%', borderRadius: 3 },
   modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' },
-  modalContent: { borderTopLeftRadius: 20, borderTopRightRadius: 20, padding: rp(24), paddingBottom: rp(40) },
+  modalContent: { borderTopLeftRadius: 20, borderTopRightRadius: 20, padding: rp(24) },
   modalTitle: { fontSize: rf(18), fontWeight: '700', marginBottom: rp(20) },
   modalLabel: { fontSize: rf(13), marginBottom: 8 },
   modalBtns: { flexDirection: 'row', gap: 12, marginTop: rp(16) },
