@@ -70,9 +70,9 @@ export default function TabLayout() {
           backgroundColor: colors.surface,
           borderTopWidth: 1,
           borderTopColor: colors.border,
-          // Altura ajustada para no reducir la viewarea en iOS y Android
-          height: Platform.OS === 'android' ? baseHeight + Math.max(bottomInset, 16) + 10 : baseHeight + bottomInset + 10,
-          paddingBottom: Platform.OS === 'android' ? Math.max(bottomInset, 16) + 4 : bottomInset + 4,
+          // Altura ajustada para no reducir la viewarea en iOS
+          height: Platform.OS === 'android' ? baseHeight + 10 : baseHeight + bottomInset + 10,
+          paddingBottom: Platform.OS === 'android' ? 4 : bottomInset + 4,
           paddingTop: rp(8),
         },
         tabBarItemStyle: {

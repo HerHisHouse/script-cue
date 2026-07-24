@@ -52,7 +52,7 @@ export function FixedFooter({ activeKey }: Props) {
   );
 
   return (
-    <View style={[styles.container, { backgroundColor: colors.surface, borderTopColor: colors.border, height: Platform.OS === 'android' ? baseHeight + Math.max(bottomInset, 16) + 10 : baseHeight + bottomInset + 10, paddingBottom: Platform.OS === 'android' ? Math.max(bottomInset, 16) + 4 : bottomInset + 4, paddingTop: rp(8) }]}>
+    <View style={[styles.container, { backgroundColor: colors.surface, borderTopColor: colors.border, height: Platform.OS === 'android' ? baseHeight + 10 : baseHeight + bottomInset + 10, paddingBottom: Platform.OS === 'android' ? 4 : bottomInset + 4, paddingTop: rp(8) }]}>
       <TouchableOpacity style={styles.item} activeOpacity={0.7} onPress={() => router.replace('/(tabs)')}>
         <TabIcon Icon={FileText} isActive={activeKey === 'index'} />
         <Text style={[styles.label, { color: activeKey === 'index' ? active : inactive }]}>Guiones</Text>
@@ -81,7 +81,7 @@ export function FixedFooterSpacer() {
   const insets = useSafeAreaInsets();
   const baseHeight = Platform.OS === 'ios' ? 49 : 56;
   const bottomInset = insets.bottom || 0;
-  const height = Platform.OS === 'android' ? baseHeight + Math.max(bottomInset, 16) + 10 : baseHeight + bottomInset + 10;
+  const height = Platform.OS === 'android' ? baseHeight + 10 : baseHeight + bottomInset + 10;
   return <View style={{ height }} />;
 }
 
