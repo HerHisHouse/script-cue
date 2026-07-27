@@ -303,7 +303,9 @@ export async function generateAndCacheAudio(
                 // Fallback explícito a ElevenLabs si falla
                 const elevenInput = buildProviderTTSInput('elevenlabs', lineWithDirection);
                 console.log(`[ElevenLabs Fallback] → Enviando a API: "${elevenInput as string}"`);
-                arrayBuffer = await generateElevenLabsAudio(elevenInput as string, voiceId || "21m00Tcm4TlvDq8ikWAM");
+                
+                // Usamos la voz por defecto de ElevenLabs para el fallback ya que voiceId pertenece a Hume
+                arrayBuffer = await generateElevenLabsAudio(elevenInput as string, "21m00Tcm4TlvDq8ikWAM");
                 provider = 'elevenlabs'; // Restauramos el provider original para el cacheado local y DB
             }
         } else if (provider === 'elevenlabs') {
