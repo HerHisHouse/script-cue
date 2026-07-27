@@ -1871,14 +1871,19 @@ app.get('/hume-voices', async (req, res) => {
     }
 });
 
-app.get('/test-kora', async (req, res) => {
+app.post('/test-hume-voice', async (req, res) => {
     try {
         const hume = new HumeClient({ apiKey: process.env.HUME_API_KEY || '' });
-        const response = await hume.tts.synthesizeJson({
-            utterances: [{ text: "Hola" }],
-            voice: { name: "Kora", provider: "HUME_AI" }
-        });
-        res.json({ success: true, response_keys: Object.keys(response), has_audio: !!response.generations?.[0]?.audio });
+        const requestBody = req.body;
+        console.log(`[Test Hume] Body:`, JSON.stringify(requestBody, null, 2));
+        const response = await hume.tts.synthesizeJson(requestBody);
+        const hasAudio = !!response.generations?.[0]?.audio;
+        // Don't send the audio back to save bandwidth, just the metadata
+        if (hasAudio) {
+            delete response.generations[0].audio;
+            response.generations[0].audio_length = 'EXISTS';
+        }
+        res.json({ success: true, response });
     } catch (e) {
         res.status(500).json({ error: e.message, stack: e.stack, ...e });
     }
@@ -1900,17 +1905,31 @@ app.post('/tts-hume', async (req, res) => {
         const hume = new HumeClient({ apiKey: humeApiKey });
         
         const voiceName = voiceId || 'Kora'; 
-        // Todas las voces proporcionadas (Kora, Tiana, Zane, Estela, Jhairo) son de la librería pública
-        const voiceConfig = { name: voiceName, provider: 'HUME_AI' };
+        // Determinar si voiceName es un UUID
+        const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(voiceName);
+        
+        const voiceConfig = isUUID 
+            ? { id: voiceName, provider: 'HUME_AI' } 
+            : { name: voiceName, provider: 'HUME_AI' };
 
         console.log(`[Hume TTS] Generating audio for voice: ${voiceName}, description: ${description}`);
+        console.log(`[Hume TTS] Sending voiceConfig:`, JSON.stringify(voiceConfig, null, 2));
 
-        const response = await hume.tts.synthesizeJson({
+        const requestBody = {
             utterances: [{
-                text
+                text,
+                description: description || undefined
             }],
             voice: voiceConfig
-        });
+        };
+        console.log(`[Hume TTS] Sending Request:`, JSON.stringify(requestBody, null, 2));
+
+        const response = await hume.tts.synthesizeJson(requestBody);
+        
+        console.log(`[Hume TTS] Raw Response Keys:`, Object.keys(response));
+        if (response.warnings && response.warnings.length > 0) {
+            console.log(`[Hume TTS] WARNINGS:`, JSON.stringify(response.warnings, null, 2));
+        }
 
         const audioBase64 = response.generations?.[0]?.audio;
         if (!audioBase64) {
@@ -2119,14 +2138,28 @@ app.get('/api/tts/preview/:provider/:voiceId', async (req, res) => {
 
             const hume = new HumeClient({ apiKey: humeApiKey });
             const voiceName = voiceId || 'Kora'; 
-            const voiceConfig = { name: voiceName, provider: 'HUME_AI' };
+            const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(voiceName);
+            const voiceConfig = isUUID 
+                ? { id: voiceName, provider: 'HUME_AI' } 
+                : { name: voiceName, provider: 'HUME_AI' };
 
-            const response = await hume.tts.synthesizeJson({
+            console.log(`[Hume Preview] Generating audio for voice: ${voiceName}`);
+            console.log(`[Hume Preview] Sending voiceConfig:`, JSON.stringify(voiceConfig, null, 2));
+
+            const requestBody = {
                 utterances: [{
-                    text: textToSpeak
+                    text: textToSpeak,
+                    description: "tono neutro, claro y conversacional"
                 }],
                 voice: voiceConfig
-            });
+            };
+            console.log(`[Hume Preview] Sending Request:`, JSON.stringify(requestBody, null, 2));
+
+            const response = await hume.tts.synthesizeJson(requestBody);
+            console.log(`[Hume Preview] Raw Response Keys:`, Object.keys(response));
+            if (response.warnings && response.warnings.length > 0) {
+                console.log(`[Hume Preview] WARNINGS:`, JSON.stringify(response.warnings, null, 2));
+            }
 
             const audioBase64 = response.generations?.[0]?.audio;
             if (!audioBase64) throw new Error('No audio in Hume response: ' + JSON.stringify(response));
