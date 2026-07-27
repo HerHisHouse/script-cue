@@ -1854,9 +1854,12 @@ const { HumeClient } = require('hume');
 
 app.get('/hume-voices', async (req, res) => {
     try {
-        const hume = new HumeClient({ apiKey: process.env.HUME_API_KEY || '' });
-        const voices = await hume.tts.voices.list();
-        res.json(voices);
+        const fetch = require('node-fetch');
+        const response = await fetch('https://api.hume.ai/v0/tts/voices', {
+            headers: { 'X-Hume-Api-Key': process.env.HUME_API_KEY || '' }
+        });
+        const data = await response.json();
+        res.json(data);
     } catch (e) {
         res.status(500).json({ error: e.message });
     }
