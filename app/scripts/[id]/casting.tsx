@@ -590,7 +590,7 @@ export default function CastingModeScreen() {
 
           if (provider === 'system') continue;
 
-          const effectiveProvider = (provider === 'google' ? 'openai' : provider) as 'openai' | 'elevenlabs';
+          const effectiveProvider = (provider === 'google' ? 'openai' : provider) as 'openai' | 'elevenlabs' | 'azure' | 'hume';
 
           // FIX: If provider is OpenAI but voiceId looks like a system voice (com.apple...), 
           // ignore it and use null (default OpenAI voice) to find the cached audio.
@@ -762,7 +762,7 @@ export default function CastingModeScreen() {
       // 4. Intentar obtener del cache en disco (Supabase Storage / FileSystem) o generar
       const text = line.cleanText || line.text;
 
-      const effectiveProvider = (provider === 'google' ? 'openai' : provider) as 'openai' | 'elevenlabs';
+      const effectiveProvider = (provider === 'google' ? 'openai' : provider) as 'openai' | 'elevenlabs' | 'azure' | 'hume';
       const effectiveVoiceId = voiceId;
 
       let audioUri = null;

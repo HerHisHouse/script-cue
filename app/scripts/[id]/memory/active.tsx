@@ -203,7 +203,7 @@ export default function MemoryModeScreen() {
         console.log(`[Memory Active] Using character voice: ${voiceId} (${effectiveProvider})`);
       }
 
-      const provider: 'openai' | 'elevenlabs' = effectiveProvider === 'system' ? 'openai' : effectiveProvider as 'openai' | 'elevenlabs';
+      const provider = effectiveProvider === 'system' ? 'openai' : effectiveProvider;
 
       let audioUri = null;
       if (user) {

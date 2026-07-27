@@ -451,7 +451,7 @@ export default function CarModeScreen() {
       });
     };
 
-    if (effectiveProvider === 'openai' || effectiveProvider === 'elevenlabs' || effectiveProvider === 'azure') {
+    if (effectiveProvider === 'openai' || effectiveProvider === 'elevenlabs' || effectiveProvider === 'azure' || effectiveProvider === 'hume') {
       try {
         if (mySequence !== sequenceRef.current) return;
 
@@ -855,6 +855,10 @@ export default function CarModeScreen() {
           await playVoicePreview(voice);
           setTimeout(() => setPlayingVoiceId(null), 5000);
         }
+      } else if (provider === 'hume') {
+        const voice = { id: voiceId, name: voiceId, provider: 'hume' } as any;
+        await playVoicePreview(voice);
+        setTimeout(() => setPlayingVoiceId(null), 5000);
       } else if (provider === 'azure') {
         const voice = azureVoices.find((v: VoiceOption) => v.id === voiceId);
         if (voice) {

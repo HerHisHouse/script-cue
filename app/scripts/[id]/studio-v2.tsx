@@ -652,7 +652,7 @@ export default function StudioV2Screen() {
                     return;
                 }
 
-                const provider: 'openai' | 'elevenlabs' | 'azure' = effectiveProvider as 'openai' | 'elevenlabs' | 'azure';
+                const provider = effectiveProvider;
 
                 // generateAndCacheAudio maneja internamente la caché y la emoción
                 // Pasamos line.voiceDirection para que el adapter aplique el prefijo correcto
