@@ -1889,6 +1889,30 @@ app.post('/test-hume-voice', async (req, res) => {
     }
 });
 
+app.post('/test-raw', async (req, res) => {
+    try {
+        const fetch = require('node-fetch');
+        const response = await fetch(req.body.url, {
+            method: req.body.method || 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-Hume-Api-Key': process.env.HUME_API_KEY || ''
+            },
+            body: JSON.stringify(req.body.payload)
+        });
+        const contentType = response.headers.get('content-type');
+        if (contentType && contentType.includes('application/json')) {
+            const data = await response.json();
+            res.json({ status: response.status, data });
+        } else {
+            const buf = await response.buffer();
+            res.json({ status: response.status, audio_length: buf.length });
+        }
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
 app.post('/tts-hume', async (req, res) => {
     const { text, description, voiceId, userId } = req.body;
     if (!text || !userId) {
