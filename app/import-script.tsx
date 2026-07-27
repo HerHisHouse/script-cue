@@ -51,8 +51,8 @@ interface CharacterConfig {
   gender: 'male' | 'female' | 'neutral'; // Mantenemos para compatibilidad
   color: string;
   voiceId?: string; // ID de la voz seleccionada
-  voiceProvider?: 'openai' | 'elevenlabs' | 'azure' | 'system'; // Incluye 'azure'
-  provider?: 'openai' | 'elevenlabs' | 'azure' | 'system';
+  voiceProvider?: 'openai' | 'elevenlabs' | 'azure' | 'hume' | 'system'; // Incluye 'azure'
+  provider?: 'openai' | 'elevenlabs' | 'azure' | 'hume' | 'system';
   systemVoiceId?: string;
 }
 
@@ -135,7 +135,7 @@ export default function ImportScriptScreen() {
                 gender: (c.voice_gender === 'female' ? 'female' : c.voice_gender === 'neutral' ? 'neutral' : 'male'),
                 color: c.color || CHARACTER_COLORS[idx % CHARACTER_COLORS.length].value,
                 voiceId: c.voice_id || undefined,
-                voiceProvider: (c.voice_provider as 'openai' | 'elevenlabs' | 'azure' | 'system') || undefined,
+                voiceProvider: (c.voice_provider as 'openai' | 'elevenlabs' | 'azure' | 'hume' | 'system') || undefined,
                 provider: c.is_user_character ? undefined : ((per.provider as any) || 'system'),
                 systemVoiceId: c.is_user_character ? undefined : (per.systemVoiceId || defaultSystemVoiceId || ''),
               };
@@ -375,14 +375,14 @@ export default function ImportScriptScreen() {
             logger.log('[Config] Regenerating audio with new voice settings...');
 
             // Preparar configuración de voces para regeneración
-            const characterVoices: Record<string, { provider: 'openai' | 'elevenlabs' | 'azure' | 'system'; voiceId?: string }> = {};
+            const characterVoices: Record<string, { provider: 'openai' | 'elevenlabs' | 'azure' | 'hume' | 'system'; voiceId?: string }> = {};
 
             for (const c of characters) {
               if (!c.isMyCharacter) {
                 const characterName = (c.name || '').toUpperCase();
-                const provider = (c.provider || 'system') as 'openai' | 'elevenlabs' | 'azure' | 'system';
+                const provider = (c.provider || 'system') as 'openai' | 'elevenlabs' | 'azure' | 'hume' | 'system';
 
-                const voiceConfig: { provider: 'openai' | 'elevenlabs' | 'azure' | 'system'; voiceId?: string } = {
+                const voiceConfig: { provider: 'openai' | 'elevenlabs' | 'azure' | 'hume' | 'system'; voiceId?: string } = {
                   provider,
                 };
 
@@ -992,7 +992,7 @@ export default function ImportScriptScreen() {
                       <Text style={[styles.label, { color: colors.text, marginTop: 12 }]}>Voz del personaje</Text>
                       <VoiceSelector
                         selectedVoiceId={char.voiceId || char.systemVoiceId}
-                        provider={(char.voiceProvider || char.provider || 'openai') as 'openai' | 'elevenlabs' | 'azure' | 'system'}
+                        provider={(char.voiceProvider || char.provider || 'openai') as 'openai' | 'elevenlabs' | 'azure' | 'hume' | 'system'}
                         onVoiceSelect={(voiceId, provider) => {
                           if (provider === 'system') {
                             updateCharacter(index, {
