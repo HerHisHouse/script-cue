@@ -1885,7 +1885,32 @@ app.post('/tts-hume', async (req, res) => {
             throw new Error('No audio in Hume response: ' + JSON.stringify(response));
         }
 
-        const audioBuffer = Buffer.from(audioBase64, 'base64');
+        let audioBuffer = Buffer.from(audioBase64, 'base64');
+        
+        // Estandarizar audio para evitar errores de reproducción en React Native (expo-av)
+        try {
+            audioBuffer = await new Promise((resolve, reject) => {
+                const { PassThrough } = require('stream');
+                const inputStream = new PassThrough();
+                inputStream.end(audioBuffer);
+
+                const chunks = [];
+                const outputStream = new PassThrough();
+                outputStream.on('data', chunk => chunks.push(chunk));
+                outputStream.on('end', () => resolve(Buffer.concat(chunks)));
+                outputStream.on('error', reject);
+
+                ffmpeg(inputStream)
+                    .audioCodec('libmp3lame')
+                    .audioFrequency(44100)
+                    .format('mp3')
+                    .on('error', err => reject(err))
+                    .pipe(outputStream);
+            });
+            console.log('[Hume TTS] 🔄 Audio standardized with ffmpeg');
+        } catch (ffmpegErr) {
+            console.error('[Hume TTS] Failed to standardize audio, sending raw:', ffmpegErr);
+        }
 
         await logApiUsage({
             userId: req.body.userId,
@@ -2072,7 +2097,33 @@ app.get('/api/tts/preview/:provider/:voiceId', async (req, res) => {
             const audioBase64 = response.generations?.[0]?.audio;
             if (!audioBase64) throw new Error('No audio in Hume response: ' + JSON.stringify(response));
 
-            audioBuffer = Buffer.from(audioBase64, 'base64');
+            let rawBuffer = Buffer.from(audioBase64, 'base64');
+            
+            // Estandarizar audio para evitar errores de reproducción en React Native (expo-av)
+            try {
+                audioBuffer = await new Promise((resolve, reject) => {
+                    const { PassThrough } = require('stream');
+                    const inputStream = new PassThrough();
+                    inputStream.end(rawBuffer);
+
+                    const chunks = [];
+                    const outputStream = new PassThrough();
+                    outputStream.on('data', chunk => chunks.push(chunk));
+                    outputStream.on('end', () => resolve(Buffer.concat(chunks)));
+                    outputStream.on('error', reject);
+
+                    ffmpeg(inputStream)
+                        .audioCodec('libmp3lame')
+                        .audioFrequency(44100)
+                        .format('mp3')
+                        .on('error', err => reject(err))
+                        .pipe(outputStream);
+                });
+                console.log('[Hume TTS Preview] 🔄 Audio standardized with ffmpeg');
+            } catch (ffmpegErr) {
+                console.error('[Hume TTS Preview] Failed to standardize audio, sending raw:', ffmpegErr);
+                audioBuffer = rawBuffer;
+            }
 
             await logApiUsage({
               userId: req.query.userId || req.body?.userId || null,
