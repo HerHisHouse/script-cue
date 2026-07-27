@@ -13,22 +13,17 @@ export const VOICE_PROVIDERS_CONFIG = [
   { 
     value: 'system',
     label: '🔈 Básica',
-    subtitle: 'Voz del sistema'
+    subtitle: 'Voces del sistema'
   },
-  { 
-    value: 'azure',
+  {
+    value: 'hume',
     label: '🎙️ Natural',
-    subtitle: 'Voz de estudio'
+    subtitle: 'Calidad de estudio'
   },
   { 
     value: 'elevenlabs',
     label: '🎭 Expresiva',
-    subtitle: 'Con emociones configurables'
-  },
-  {
-    value: 'hume',
-    label: '🌊 Emocional (Hume)',
-    subtitle: 'Dirección por lenguaje natural (Beta)'
+    subtitle: 'Voces hiperrealistas'
   }
 ];
 
@@ -36,12 +31,10 @@ export const PROVIDER_INFO_MESSAGE =
   'Selecciona qué IA leerá las líneas de este personaje:\n\n' +
   '🔈 Básica (Sistema)\n' +
   'Incluida en todos los planes. Funciona sin conexión.\n\n' +
-  '🎙️ Natural (Azure)\n' +
-  'Voz clara y fluida. Plan Estudiante o superior.\n\n' +
+  '🎙️ Natural (Hume)\n' +
+  'Voz clara y fluida con opciones expresivas.\n\n' +
   '🎭 Expresiva (ElevenLabs)\n' +
-  'La más realista. Transmite emociones. Solo Plan Profesional.\n\n' +
-  '🌊 Emocional (Hume - Beta)\n' +
-  'Generación guiada por prompts emocionales.';
+  'La más realista. Transmite emociones. Solo Plan Profesional.';
 
 
 export interface VoiceOption {

@@ -1042,7 +1042,13 @@ export default function ImportScriptScreen() {
                           style={[styles.pickerOptions, { backgroundColor: colors.surface, borderColor: colors.border, maxHeight: 180 }]}
                           nestedScrollEnabled={true}
                         >
-                          {CHARACTER_COLORS.map((colorOption) => {
+                          {CHARACTER_COLORS.filter(colorOption => {
+                            // Mostrar si es el color actual de este personaje
+                            if (char.color === colorOption.value) return true;
+                            // Ocultar si ya está asignado a otro personaje
+                            const isAssigned = characters.some(c => c.color === colorOption.value && c.id !== char.id);
+                            return !isAssigned;
+                          }).map((colorOption) => {
                             const isSelected = char.color === colorOption.value;
                             return (
                               <TouchableOpacity
