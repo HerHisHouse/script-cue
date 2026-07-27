@@ -1942,9 +1942,9 @@ app.post('/tts-hume', async (req, res) => {
         const requestBody = {
             utterances: [{
                 text,
-                description: description || undefined
-            }],
-            voice: voiceConfig
+                description: description || undefined,
+                voice: voiceConfig
+            }]
         };
         console.log(`[Hume TTS] Sending Request:`, JSON.stringify(requestBody, null, 2));
 
@@ -2173,9 +2173,9 @@ app.get('/api/tts/preview/:provider/:voiceId', async (req, res) => {
             const requestBody = {
                 utterances: [{
                     text: textToSpeak,
-                    description: "tono neutro, claro y conversacional"
-                }],
-                voice: voiceConfig
+                    description: undefined,
+                    voice: voiceConfig
+                }]
             };
             console.log(`[Hume Preview] Sending Request:`, JSON.stringify(requestBody, null, 2));
 
