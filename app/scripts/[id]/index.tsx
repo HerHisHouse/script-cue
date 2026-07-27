@@ -21,7 +21,7 @@ import { getSettings, setSettings } from '@/utils/appSettings';
 import * as Speech from 'expo-speech';
 import { FixedFooter, FixedFooterSpacer } from '@/components/FixedFooter';
 import { rf, rp } from '@/utils/responsive';
-import { OPENAI_VOICES, getElevenLabsVoices, getAzureVoices } from '@/utils/voiceService';
+import { OPENAI_VOICES, getElevenLabsVoices, getAzureVoices, HUME_VOICES } from '@/utils/voiceService';
 
 export default function ScriptDetailScreen() {
   const router = useRouter();
@@ -162,7 +162,8 @@ export default function ScriptDetailScreen() {
       
       const providerLabel = provider === 'system' ? 'Sistema' : 
                             provider === 'elevenlabs' ? 'ElevenLabs' : 
-                            provider === 'openai' ? 'OpenAI' : 'Azure';
+                            provider === 'openai' ? 'OpenAI' : 
+                            provider === 'hume' ? 'Hume' : 'Azure';
                             
       let voiceName = voiceId;
 
@@ -177,6 +178,9 @@ export default function ScriptDetailScreen() {
         if (v) voiceName = v.name;
       } else if (provider === 'azure') {
         const v = azureVoices.find(v => v.id === voiceId);
+        if (v) voiceName = v.name;
+      } else if (provider === 'hume') {
+        const v = HUME_VOICES.find(v => v.id === voiceId);
         if (v) voiceName = v.name;
       }
 
