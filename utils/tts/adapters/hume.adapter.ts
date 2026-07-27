@@ -2,15 +2,38 @@ import { TTSAdapter } from '../types';
 import { ScriptLineWithDirection } from '../../../types/voiceDirection';
 
 const HUME_EMOTION_DESCRIPTIONS: Record<string, string> = {
-  whispering: "susurrando muy bajo, tono confidencial",
-  shouting:   "gritando fuerte, tono agresivo",
-  crying:     "llorando, voz quebrada y angustiada",
-  laughing:   "riendo alegremente, tono divertido",
-  angry:      "furioso, tono cortante y enfadado",
-  excited:    "muy emocionado, tono agudo y enérgico",
-  sad:        "melancólico, tono apagado y muy triste",
-  fearful:    "asustado, voz temblorosa y llena de pánico",
-  tender:     "muy tierno, tono suave y afectuoso"
+  neutral: "neutral, natural",
+  whispering: "whispering, hushed",
+  shouting: "shouting, forceful",
+  crying: "tearful, breaking voice",
+  laughing: "laughing, amused",
+  angry: "furious, sharp tone",
+  excited: "excited, energetic",
+  sad: "melancholic, subdued",
+  fearful: "frightened, trembling",
+  tender: "tender, gentle",
+  sarcastic: "sarcastic, dry",
+  curious: "curious, inquisitive",
+  mischievous: "mischievous, playful",
+  sighing: "sighing, weary",
+  breathless: "breathless",
+  hesitant: "hesitant, stammering",
+  resigned: "resigned, defeated",
+  cheerful: "cheerful, warm",
+  deadpan: "deadpan, flat",
+  playful: "playful, teasing",
+  surprised: "startled, gasping",
+  nervous: "anxious, nervous",
+  clears_throat: "clearing throat, attention-getting",
+  desperate: "desperate, pleading",
+  threatening: "menacing, threatening",
+  pleading: "imploring, pleading",
+  proud: "proud, confident",
+  embarrassed: "flustered, embarrassed",
+  exhausted: "exhausted, drained",
+  jealous: "bitter, jealous",
+  hopeful: "hopeful, wistful",
+  confused: "confused, puzzled"
 };
 
 export interface HumeAdapterOutput {

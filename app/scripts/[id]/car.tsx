@@ -132,7 +132,7 @@ async function setupIosLockScreen(
 }
 
 type CarModePhase = 'idle' | 'playing_ai' | 'listening_user' | 'processing_command' | 'auto_advancing';
-type VoiceProviderType = 'openai' | 'elevenlabs' | 'azure' | 'system';
+type VoiceProviderType = 'openai' | 'elevenlabs' | 'azure' | 'system' | 'hume';
 
 interface CharacterVoiceConfig {
   characterName: string;

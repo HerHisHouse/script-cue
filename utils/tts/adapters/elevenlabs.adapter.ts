@@ -2,15 +2,37 @@ import { TTSAdapter } from '../types';
 import { ScriptLineWithDirection } from '../../../types/voiceDirection';
 
 const ELEVENLABS_PREFIXES: Record<string, string> = {
-  whispering: "[susurrando]",
-  shouting:   "[gritando]",
-  crying:     "[llorando]",
-  laughing:   "[riendo]",
-  angry:      "[enfadada]",
-  excited:    "[emocionada]",
-  sad:        "[triste]",
-  fearful:    "[asustada]",
-  tender:     "[tiernamente]"
+  whispering: "[whispering]",
+  shouting: "[shouting]",
+  crying: "[crying]",
+  laughing: "[laughing]",
+  angry: "[angry]",
+  excited: "[excited]",
+  sad: "[sad]",
+  fearful: "[fearful]",
+  tender: "[tender]",
+  sarcastic: "[sarcastic]",
+  curious: "[curious]",
+  mischievous: "[mischievously]",
+  sighing: "[sighs]",
+  breathless: "[exhales]",
+  hesitant: "[hesitates]",
+  resigned: "[resigned tone]",
+  cheerful: "[cheerfully]",
+  deadpan: "[deadpan]",
+  playful: "[playfully]",
+  surprised: "[gasps]",
+  nervous: "[gulps]",
+  clears_throat: "[clears throat]",
+  desperate: "[desperate]",
+  threatening: "[threatening]",
+  pleading: "[pleading]",
+  proud: "[proud]",
+  embarrassed: "[embarrassed]",
+  exhausted: "[exhausted]",
+  jealous: "[jealous]",
+  hopeful: "[hopeful]",
+  confused: "[confused]"
 };
 
 export class ElevenLabsAdapter implements TTSAdapter<string> {

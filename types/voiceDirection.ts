@@ -8,7 +8,29 @@ export type EmotionTag =
   | 'excited'
   | 'sad'
   | 'fearful'
-  | 'tender';
+  | 'tender'
+  | 'sarcastic'
+  | 'curious'
+  | 'mischievous'
+  | 'sighing'
+  | 'breathless'
+  | 'hesitant'
+  | 'resigned'
+  | 'cheerful'
+  | 'deadpan'
+  | 'playful'
+  | 'surprised'
+  | 'nervous'
+  | 'clears_throat'
+  | 'desperate'
+  | 'threatening'
+  | 'pleading'
+  | 'proud'
+  | 'embarrassed'
+  | 'exhausted'
+  | 'jealous'
+  | 'hopeful'
+  | 'confused';
 
 export type VoiceDirection = {
   emotion: EmotionTag;

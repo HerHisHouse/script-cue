@@ -113,6 +113,20 @@ export const OPENAI_VOICES: VoiceOption[] = [
 
 export const HUME_VOICES: VoiceOption[] = [
   {
+    id: 'b1d54472-b83c-47c3-a146-5285b1f95bf7',
+    name: 'La voz del mar',
+    provider: 'hume',
+    description: 'Voz en castellano',
+    gender: 'female',
+  },
+  {
+    id: 'e8dcf0c3-0edc-4360-9d72-acdafceff6d2',
+    name: 'El narrador urbano',
+    provider: 'hume',
+    description: 'Voz en castellano',
+    gender: 'male',
+  },
+  {
     id: 'Kora',
     name: 'Kora',
     provider: 'hume',

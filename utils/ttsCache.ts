@@ -202,7 +202,7 @@ export async function generateAndCacheAudio(
         const { cleanText, direction: detectedDirection } = detectEmotionFromLine(text);
         const finalDirection = savedDirection || detectedDirection;
         const emotion = finalDirection.emotion || 'neutral';
-        const provider = voiceConfig.provider;
+        let provider = voiceConfig.provider;
         const voiceId = voiceConfig.voiceId || null;
 
         const lineWithDirection = {

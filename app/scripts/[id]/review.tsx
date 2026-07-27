@@ -51,16 +51,37 @@ export default function ReviewScreen() {
   const [activeEmotionLineId, setActiveEmotionLineId] = useState<string | null>(null);
 
   const EMOTIONS = [
-    { label: 'Neutral', value: 'neutral' },
-    { label: 'Susurrando', value: 'whispering' },
-    { label: 'Gritando', value: 'shouting' },
-    { label: 'Llorando', value: 'crying' },
-    { label: 'Riendo', value: 'laughing' },
-    { label: 'Enfadado/a', value: 'angry' },
-    { label: 'Emocionado/a', value: 'excited' },
-    { label: 'Triste', value: 'sad' },
+    { label: 'Aclarando la garganta', value: 'clears_throat' },
+    { label: 'Agotado/a', value: 'exhausted' },
+    { label: 'Alegre', value: 'cheerful' },
+    { label: 'Amenazante', value: 'threatening' },
     { label: 'Asustado/a', value: 'fearful' },
-    { label: 'Tierno/a', value: 'tender' }
+    { label: 'Avergonzado/a', value: 'embarrassed' },
+    { label: 'Celoso/a', value: 'jealous' },
+    { label: 'Confundido/a', value: 'confused' },
+    { label: 'Curioso/a', value: 'curious' },
+    { label: 'Desesperado/a', value: 'desperate' },
+    { label: 'Dudando/Tartamudeando', value: 'hesitant' },
+    { label: 'Emocionado/a', value: 'excited' },
+    { label: 'Enfadado/a', value: 'angry' },
+    { label: 'Esperanzado/a', value: 'hopeful' },
+    { label: 'Gritando', value: 'shouting' },
+    { label: 'Juguetón/a', value: 'playful' },
+    { label: 'Llorando', value: 'crying' },
+    { label: 'Monótono/Plano', value: 'deadpan' },
+    { label: 'Nervioso/a', value: 'nervous' },
+    { label: 'Neutral', value: 'neutral' },
+    { label: 'Orgulloso/a', value: 'proud' },
+    { label: 'Resignado/a', value: 'resigned' },
+    { label: 'Riendo', value: 'laughing' },
+    { label: 'Sarcástico/a', value: 'sarcastic' },
+    { label: 'Sin aliento', value: 'breathless' },
+    { label: 'Sorprendido/a', value: 'surprised' },
+    { label: 'Suplicante', value: 'pleading' },
+    { label: 'Suspirando', value: 'sighing' },
+    { label: 'Susurrando', value: 'whispering' },
+    { label: 'Tierno/a', value: 'tender' },
+    { label: 'Travieso/a', value: 'mischievous' }
   ];
 
   const translateEmotion = (val: string) => EMOTIONS.find(e => e.value === val)?.label || 'Neutral';
@@ -341,6 +362,7 @@ export default function ReviewScreen() {
             const charColor = item.isAction ? colors.primary : (item.isUserCharacter ? '#10B981' : (item.color || colors.primary));
             const charData = characters.find(c => c.name.toLowerCase().trim() === item.characterName.toLowerCase().trim());
             const isElevenLabs = charData?.voice_provider === 'elevenlabs';
+            const isHume = charData?.voice_provider === 'hume';
             
             return (
               <ScaleDecorator activeScale={1.02}>
@@ -368,7 +390,7 @@ export default function ReviewScreen() {
                     </View>
                     <Text style={[s.dialogueText, { color: colors.text }]}>{item.text}</Text>
                     
-                    {!item.isAction && !item.isUserCharacter && isElevenLabs && (
+                    {!item.isAction && !item.isUserCharacter && (isElevenLabs || isHume) && (
                       <TouchableOpacity 
                         style={{ marginTop: rp(8), flexDirection: 'row', alignItems: 'center', alignSelf: 'flex-start' }}
                         onPress={() => {
