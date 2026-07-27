@@ -20,7 +20,7 @@ interface TTSCacheEntry {
 }
 
 interface VoiceConfig {
-    provider: 'openai' | 'elevenlabs' | 'azure' | 'system';
+    provider: 'openai' | 'elevenlabs' | 'azure' | 'system' | 'hume';
     voiceId?: string; // OpenAI voice, ElevenLabs voice ID, or Azure voice name
 }
 
@@ -265,6 +265,47 @@ export async function generateAndCacheAudio(
                 return null;
             }
             arrayBuffer = await response.arrayBuffer();
+        } else if (provider === 'hume') {
+            const renderUrl = process.env.EXPO_PUBLIC_RENDER_SERVER_URL;
+            if (!renderUrl) {
+                console.warn('[Hume TTS] RENDER_SERVER_URL not configured, falling back to ElevenLabs');
+                return null;
+            }
+            
+            // Usamos la voz seleccionada de Hume, o Kora por defecto
+            let humeVoiceName = voiceId || 'Kora';
+            
+            const humeBody = { 
+                text: (providerInput as any).text,
+                description: (providerInput as any).description,
+                voiceId: humeVoiceName, 
+                userId 
+            };
+            
+            console.log(`[Hume TTS] Enviando a Render /tts-hume...`, humeBody);
+            
+            try {
+                const response = await fetch(`${renderUrl}/tts-hume`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(humeBody),
+                });
+                
+                if (!response.ok) {
+                    const errText = await response.text();
+                    console.error(`[Hume TTS] Falló la API de Hume (Status ${response.status}):`, errText);
+                    throw new Error('Hume fallback'); // Disparamos el fallback
+                }
+                arrayBuffer = await response.arrayBuffer();
+            } catch (error) {
+                console.error('[Hume TTS] Excepción al llamar a Hume. Cayendo a ElevenLabs fallback...', error);
+                
+                // Fallback explícito a ElevenLabs si falla
+                const elevenInput = buildProviderTTSInput('elevenlabs', lineWithDirection);
+                console.log(`[ElevenLabs Fallback] → Enviando a API: "${elevenInput as string}"`);
+                arrayBuffer = await generateElevenLabsAudio(elevenInput as string, voiceId || "21m00Tcm4TlvDq8ikWAM");
+                provider = 'elevenlabs'; // Restauramos el provider original para el cacheado local y DB
+            }
         } else if (provider === 'elevenlabs') {
             console.log(`[ElevenLabs] → Enviando a API: "${providerInput as string}"`);
             arrayBuffer = await generateElevenLabsAudio(providerInput as string, voiceId || "21m00Tcm4TlvDq8ikWAM");

@@ -17,6 +17,7 @@ import {
     VoiceOption,
     VoiceProvider,
     OPENAI_VOICES,
+    HUME_VOICES,
     getElevenLabsVoices,
     playVoicePreview,
     stopVoicePreview,
@@ -33,8 +34,8 @@ interface SystemVoice {
 
 interface VoiceSelectorProps {
     selectedVoiceId?: string;
-    provider: 'openai' | 'elevenlabs' | 'azure' | 'system';
-    onVoiceSelect: (voiceId: string, provider: 'openai' | 'elevenlabs' | 'azure' | 'system') => void;
+    provider: 'openai' | 'elevenlabs' | 'azure' | 'system' | 'hume';
+    onVoiceSelect: (voiceId: string, provider: 'openai' | 'elevenlabs' | 'azure' | 'system' | 'hume') => void;
     disabled?: boolean;
     systemLanguage?: string;
     selectedVoiceName?: string;
@@ -96,6 +97,8 @@ export function VoiceSelector({
                 setVoices(data);
             } else if (provider === 'openai') {
                 setVoices(OPENAI_VOICES);
+            } else if (provider === 'hume') {
+                setVoices(HUME_VOICES);
             } else if (provider === 'system') {
                 const sysVoices = await Speech.getAvailableVoicesAsync();
                 const filtered = sysVoices
@@ -215,6 +218,9 @@ export function VoiceSelector({
                 } else if (provider === 'elevenlabs') {
                     const data = await getElevenLabsVoices();
                     const v = data.find(v => v.id === selectedVoiceId);
+                    if (v) name = v.name;
+                } else if (provider === 'hume') {
+                    const v = HUME_VOICES.find(v => v.id === selectedVoiceId);
                     if (v) name = v.name;
                 }
                 
@@ -347,6 +353,7 @@ export function VoiceSelector({
             case 'elevenlabs': return 'Voces de ElevenLabs';
             case 'azure': return 'Voces de Azure';
             case 'system': return 'Voces del Sistema';
+            case 'hume': return 'Voces de Hume';
         }
     };
 

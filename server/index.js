@@ -44,6 +44,7 @@ const API_COSTS = {
   openai_audio:      0.000100, // por segundo de audio procesado
   elevenlabs:        0.000003, // por carácter (0.003€/1000 chars)
   azure:             0.000004, // por carácter (0.004€/1000 chars)
+  hume:              0.000003, // (estimado)
   system:            0,        // voces del sistema, gratis
 };
 
@@ -1848,6 +1849,66 @@ app.post('/tts-azure', async (req, res) => {
     }
 });
 
+// Endpoint: pre-generar o generar audio con Hume AI (Octave 1)
+app.post('/tts-hume', async (req, res) => {
+    const { text, description, voiceId, userId } = req.body;
+    if (!text || !userId) {
+        return res.status(400).json({ error: 'Missing required fields: text, userId' });
+    }
+
+    try {
+        const { HumeClient } = require('hume');
+        const humeApiKey = process.env.HUME_API_KEY || '';
+        
+        if (!humeApiKey) {
+            throw new Error('HUME_API_KEY no configurada');
+        }
+
+        const hume = new HumeClient({ apiKey: humeApiKey });
+        
+        // Mapeo genérico temporal para testear 
+        const voiceName = voiceId || 'Kora'; 
+
+        console.log(`[Hume TTS] Generating audio for voice: ${voiceName}, description: ${description}`);
+
+        const response = await hume.tts.synthesizeJson({
+            utterances: [{
+                text,
+                description: description || undefined
+            }],
+            voice: { name: voiceName }
+            // Importante: No pasar version: "2" para que funcione description
+        });
+
+        const audioBase64 = response.generations?.[0]?.audio;
+        if (!audioBase64) {
+            throw new Error('No audio in Hume response: ' + JSON.stringify(response));
+        }
+
+        const audioBuffer = Buffer.from(audioBase64, 'base64');
+
+        await logApiUsage({
+            userId: req.body.userId,
+            provider: 'hume', 
+            characters: text.length,
+            scriptId: req.body.scriptId || null,
+            mode: req.body.mode || 'studio',
+        });
+
+        console.log(`[Hume TTS] ✅ Returning ${audioBuffer.length} bytes for voice ${voiceName}`);
+
+        res.set('Content-Type', 'audio/mpeg');
+        res.set('Content-Length', audioBuffer.length);
+        res.send(audioBuffer);
+
+    } catch (error) {
+        console.error('[Hume TTS] Error:', error);
+        // Devolver todo el stack o message
+        res.status(500).json({ error: error.message, details: error.toString() });
+    }
+});
+
+
 let azureVoicesCache = null;
 let azureVoicesCacheTime = 0;
 
@@ -1990,6 +2051,32 @@ app.get('/api/tts/preview/:provider/:voiceId', async (req, res) => {
             await logApiUsage({
               userId: req.query.userId || req.body?.userId || null,
               provider: 'openai_tts',
+              characters: textToSpeak.length,
+              mode: 'preview',
+            });
+        } else if (provider === 'hume') {
+            const textToSpeak = "Hola, esta es una muestra de mi voz en Scriptquiu. Espero que te guste.";
+            const { HumeClient } = require('hume');
+            const humeApiKey = process.env.HUME_API_KEY || '';
+            if (!humeApiKey) throw new Error('HUME_API_KEY no configurada');
+
+            const hume = new HumeClient({ apiKey: humeApiKey });
+            const response = await hume.tts.synthesizeJson({
+                utterances: [{
+                    text: textToSpeak,
+                    description: "tono neutro, claro y conversacional"
+                }],
+                voice: { name: voiceId }
+            });
+
+            const audioBase64 = response.generations?.[0]?.audio;
+            if (!audioBase64) throw new Error('No audio in Hume response: ' + JSON.stringify(response));
+
+            audioBuffer = Buffer.from(audioBase64, 'base64');
+
+            await logApiUsage({
+              userId: req.query.userId || req.body?.userId || null,
+              provider: 'hume',
               characters: textToSpeak.length,
               mode: 'preview',
             });

@@ -7,7 +7,7 @@ import { generateElevenLabsAudio } from './elevenLabsClient';
 // TIPOS
 // ============================================
 
-export type VoiceProvider = 'openai' | 'elevenlabs' | 'azure' | 'system';
+export type VoiceProvider = 'openai' | 'elevenlabs' | 'azure' | 'system' | 'hume';
 
 export const VOICE_PROVIDERS_CONFIG = [
   { 
@@ -25,6 +25,11 @@ export const VOICE_PROVIDERS_CONFIG = [
     label: '🎭 Expresiva',
     subtitle: 'Con emociones configurables'
   },
+  {
+    value: 'hume',
+    label: '🌊 Emocional (Hume)',
+    subtitle: 'Dirección por lenguaje natural (Beta)'
+  }
 ];
 
 export const PROVIDER_INFO_MESSAGE = 
@@ -34,7 +39,9 @@ export const PROVIDER_INFO_MESSAGE =
   '🎙️ Natural (Azure)\n' +
   'Voz clara y fluida. Plan Estudiante o superior.\n\n' +
   '🎭 Expresiva (ElevenLabs)\n' +
-  'La más realista. Transmite emociones. Solo Plan Profesional.';
+  'La más realista. Transmite emociones. Solo Plan Profesional.\n\n' +
+  '🌊 Emocional (Hume - Beta)\n' +
+  'Generación guiada por prompts emocionales.';
 
 
 export interface VoiceOption {
@@ -96,6 +103,34 @@ export const OPENAI_VOICES: VoiceOption[] = [
     name: 'Shimmer',
     provider: 'openai',
     description: 'Voz femenina suave y clara',
+    gender: 'female',
+  },
+];
+
+// ============================================
+// VOCES DE HUME (Lista estática de base)
+// ============================================
+
+export const HUME_VOICES: VoiceOption[] = [
+  {
+    id: 'Kora',
+    name: 'Kora',
+    provider: 'hume',
+    description: 'Voz femenina expresiva',
+    gender: 'female',
+  },
+  {
+    id: 'Zane',
+    name: 'Zane',
+    provider: 'hume',
+    description: 'Voz masculina conversacional',
+    gender: 'male',
+  },
+  {
+    id: 'Tiana',
+    name: 'Tiana',
+    provider: 'hume',
+    description: 'Voz femenina suave',
     gender: 'female',
   },
 ];
@@ -297,7 +332,7 @@ export async function playVoicePreview(voice: VoiceOption): Promise<void> {
     const sampleText = 'Hola, esta es una muestra de mi voz en Scriptquiu. Espero que te guste.';
     const tempPath = `${FileSystem.cacheDirectory}voice_preview_${Date.now()}.mp3`;
 
-    if (voice.provider === 'elevenlabs' || voice.provider === 'azure' || voice.provider === 'openai') {
+    if (voice.provider === 'elevenlabs' || voice.provider === 'azure' || voice.provider === 'openai' || voice.provider === 'hume') {
       const renderUrl = process.env.EXPO_PUBLIC_RENDER_SERVER_URL;
       if (!renderUrl) {
         throw new Error(`RENDER_SERVER_URL no configurado para preview de ${voice.provider}`);
@@ -393,6 +428,7 @@ export async function getAllVoices(forceRefresh = false): Promise<{
   openai: VoiceOption[];
   elevenlabs: VoiceOption[];
   azure: VoiceOption[];
+  hume: VoiceOption[];
 }> {
   const elevenLabsVoices = await getElevenLabsVoices(forceRefresh);
   const azureVoices = await getAzureVoices(forceRefresh);
@@ -401,6 +437,7 @@ export async function getAllVoices(forceRefresh = false): Promise<{
     openai: OPENAI_VOICES,
     elevenlabs: elevenLabsVoices,
     azure: azureVoices,
+    hume: HUME_VOICES,
   };
 }
 
@@ -421,6 +458,10 @@ export async function getVoiceById(voiceId: string): Promise<VoiceOption | null>
   const elevenLabsVoices = await getElevenLabsVoices();
   const elevenLabsVoice = elevenLabsVoices.find(v => v.id === voiceId);
   if (elevenLabsVoice) return elevenLabsVoice;
+
+  // Luego en Hume
+  const humeVoice = HUME_VOICES.find(v => v.id === voiceId);
+  if (humeVoice) return humeVoice;
 
   return null;
 }
