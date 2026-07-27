@@ -1850,6 +1850,18 @@ app.post('/tts-azure', async (req, res) => {
 });
 
 // Endpoint: pre-generar o generar audio con Hume AI (Octave 1)
+const { HumeClient } = require('hume');
+
+app.get('/hume-voices', async (req, res) => {
+    try {
+        const hume = new HumeClient({ apiKey: process.env.HUME_API_KEY || '' });
+        const voices = await hume.tts.voices.list();
+        res.json(voices);
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
 app.post('/tts-hume', async (req, res) => {
     const { text, description, voiceId, userId } = req.body;
     if (!text || !userId) {
@@ -1857,7 +1869,6 @@ app.post('/tts-hume', async (req, res) => {
     }
 
     try {
-        const { HumeClient } = require('hume');
         const humeApiKey = process.env.HUME_API_KEY || '';
         
         if (!humeApiKey) {
@@ -1866,12 +1877,9 @@ app.post('/tts-hume', async (req, res) => {
 
         const hume = new HumeClient({ apiKey: humeApiKey });
         
-        // Mapeo genérico temporal para testear 
         const voiceName = voiceId || 'Kora'; 
-        const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(voiceName);
-        const voiceConfig = isUuid 
-            ? { id: voiceName } 
-            : { name: voiceName, provider: 'HUME_AI' };
+        // Todas las voces proporcionadas (Kora, Tiana, Zane, Estela, Jhairo) son de la librería pública
+        const voiceConfig = { name: voiceName, provider: 'HUME_AI' };
 
         console.log(`[Hume TTS] Generating audio for voice: ${voiceName}, description: ${description}`);
 
@@ -2092,10 +2100,7 @@ app.get('/api/tts/preview/:provider/:voiceId', async (req, res) => {
             const hume = new HumeClient({ apiKey: humeApiKey });
 
             const voiceName = voiceId || 'Kora'; 
-            const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(voiceName);
-            const voiceConfig = isUuid 
-                ? { id: voiceName } 
-                : { name: voiceName, provider: 'HUME_AI' };
+            const voiceConfig = { name: voiceName, provider: 'HUME_AI' };
 
             const response = await hume.tts.synthesizeJson({
                 utterances: [{
