@@ -2118,14 +2118,12 @@ app.get('/api/tts/preview/:provider/:voiceId', async (req, res) => {
             if (!humeApiKey) throw new Error('HUME_API_KEY no configurada');
 
             const hume = new HumeClient({ apiKey: humeApiKey });
-
             const voiceName = voiceId || 'Kora'; 
             const voiceConfig = { name: voiceName, provider: 'HUME_AI' };
 
             const response = await hume.tts.synthesizeJson({
                 utterances: [{
-                    text: textToSpeak,
-                    description: "tono neutro, claro y conversacional"
+                    text: textToSpeak
                 }],
                 voice: voiceConfig
             });
