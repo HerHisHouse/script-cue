@@ -106,17 +106,17 @@ export const OPENAI_VOICES: VoiceOption[] = [
 
 export const HUME_VOICES: VoiceOption[] = [
   {
-    id: 'b1d54472-b83c-47c3-a146-5285b1f95bf7',
+    id: 'e8dcf0c3-0edc-4360-9d72-acdafceff6d2',
     name: 'Jhairo',
     provider: 'hume',
-    description: 'Voz en castellano',
+    description: 'Voz en castellano (El narrador urbano)',
     gender: 'male',
   },
   {
-    id: 'e8dcf0c3-0edc-4360-9d72-acdafceff6d2',
+    id: 'b1d54472-b83c-47c3-a146-5285b1f95bf7',
     name: 'Estela',
     provider: 'hume',
-    description: 'Voz en castellano',
+    description: 'Voz en castellano (La voz del mar)',
     gender: 'female',
   },
   {
@@ -127,15 +127,15 @@ export const HUME_VOICES: VoiceOption[] = [
     gender: 'female',
   },
   {
-    id: 'Zane',
-    name: 'Zane',
+    id: 'Colton Rivers',
+    name: 'Colton Rivers',
     provider: 'hume',
     description: 'Voz masculina conversacional',
     gender: 'male',
   },
   {
-    id: 'Tiana',
-    name: 'Tiana',
+    id: 'Imani Carter',
+    name: 'Imani Carter',
     provider: 'hume',
     description: 'Voz femenina suave',
     gender: 'female',
