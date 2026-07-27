@@ -1907,11 +1907,9 @@ app.post('/tts-hume', async (req, res) => {
 
         const response = await hume.tts.synthesizeJson({
             utterances: [{
-                text,
-                description: description || undefined
+                text
             }],
             voice: voiceConfig
-            // Importante: No pasar version: "2" para que funcione description
         });
 
         const audioBase64 = response.generations?.[0]?.audio;
