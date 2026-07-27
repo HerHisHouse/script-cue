@@ -1868,6 +1868,10 @@ app.post('/tts-hume', async (req, res) => {
         
         // Mapeo genérico temporal para testear 
         const voiceName = voiceId || 'Kora'; 
+        const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(voiceName);
+        const voiceConfig = isUuid 
+            ? { id: voiceName } 
+            : { name: voiceName, provider: 'HUME_AI' };
 
         console.log(`[Hume TTS] Generating audio for voice: ${voiceName}, description: ${description}`);
 
@@ -1876,7 +1880,7 @@ app.post('/tts-hume', async (req, res) => {
                 text,
                 description: description || undefined
             }],
-            voice: { name: voiceName }
+            voice: voiceConfig
             // Importante: No pasar version: "2" para que funcione description
         });
 
@@ -2086,12 +2090,19 @@ app.get('/api/tts/preview/:provider/:voiceId', async (req, res) => {
             if (!humeApiKey) throw new Error('HUME_API_KEY no configurada');
 
             const hume = new HumeClient({ apiKey: humeApiKey });
+
+            const voiceName = voiceId || 'Kora'; 
+            const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(voiceName);
+            const voiceConfig = isUuid 
+                ? { id: voiceName } 
+                : { name: voiceName, provider: 'HUME_AI' };
+
             const response = await hume.tts.synthesizeJson({
                 utterances: [{
                     text: textToSpeak,
                     description: "tono neutro, claro y conversacional"
                 }],
-                voice: { name: voiceId }
+                voice: voiceConfig
             });
 
             const audioBase64 = response.generations?.[0]?.audio;
