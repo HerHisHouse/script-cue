@@ -1855,10 +1855,11 @@ const { HumeClient } = require('hume');
 app.get('/hume-voices', async (req, res) => {
     try {
         const fetch = require('node-fetch');
-        const customRes = await fetch('https://api.hume.ai/v0/tts/voices?provider=CUSTOM_VOICE', {
+        const page = req.query.page || '0';
+        const customRes = await fetch('https://api.hume.ai/v0/tts/voices?provider=CUSTOM_VOICE&page_number=' + page, {
             headers: { 'X-Hume-Api-Key': process.env.HUME_API_KEY || '' }
         });
-        const humeRes = await fetch('https://api.hume.ai/v0/tts/voices?provider=HUME_AI', {
+        const humeRes = await fetch('https://api.hume.ai/v0/tts/voices?provider=HUME_AI&page_number=' + page, {
             headers: { 'X-Hume-Api-Key': process.env.HUME_API_KEY || '' }
         });
         res.json({
@@ -1867,6 +1868,19 @@ app.get('/hume-voices', async (req, res) => {
         });
     } catch (e) {
         res.status(500).json({ error: e.message });
+    }
+});
+
+app.get('/test-kora', async (req, res) => {
+    try {
+        const hume = new HumeClient({ apiKey: process.env.HUME_API_KEY || '' });
+        const response = await hume.tts.synthesizeJson({
+            utterances: [{ text: "Hola" }],
+            voice: { name: "Kora", provider: "HUME_AI" }
+        });
+        res.json({ success: true, response_keys: Object.keys(response), has_audio: !!response.generations?.[0]?.audio });
+    } catch (e) {
+        res.status(500).json({ error: e.message, stack: e.stack, ...e });
     }
 });
 
