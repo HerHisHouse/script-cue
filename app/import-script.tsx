@@ -716,9 +716,10 @@ export default function ImportScriptScreen() {
       }
 
       // ---------- START: Replace existing parse-pdf fetch block ---------- 
-      const functionUrl = `${process.env.EXPO_PUBLIC_SUPABASE_URL}/functions/v1/parse-pdf`;
+      const functionUrl = `${process.env.EXPO_PUBLIC_RENDER_SERVER_URL || 'https://script-cue-merge-server.onrender.com'}/api/parse-pdf`;
 
       try {
+
         // Ensure we have a user token (must be in scope) 
         if (!userToken) {
           console.error('No userToken available for parse-pdf request');

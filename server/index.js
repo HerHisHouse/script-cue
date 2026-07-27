@@ -2155,7 +2155,9 @@ app.get('/usage/summary', async (req, res) => {
   }
 });
 
+require('./parsePdfLogic').setupParsePdf(app, supabase);
+
 app.listen(PORT, () => {
-    console.log(`🎵 Audio Merge Server running on port ${PORT}`);
-    console.log(`📊 Health check: http://localhost:${PORT}/health`);
+    console.log(`🚀 Script Cue Server running on port ${PORT}`);
+    console.log(`🌍 Environment: ${process.env.NODE_ENV || 'development'}`);
 });
