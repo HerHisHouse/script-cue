@@ -779,6 +779,10 @@ section {
     line-height: 1.6;
 }
 
+.mode-description strong {
+    color: #ffffff;
+}
+
 /* Mode Card Variants */
 .mode-estudio .mode-icon {
     background: rgba(34, 197, 94, 0.15);
@@ -875,6 +879,10 @@ section {
     font-size: 0.95rem;
     color: var(--text-secondary);
     line-height: 1.6;
+}
+
+.step-description strong {
+    color: #ffffff;
 }
 
 .step-connector {
