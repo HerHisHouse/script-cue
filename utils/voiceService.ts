@@ -111,6 +111,8 @@ export const HUME_VOICES: VoiceOption[] = [
     provider: 'hume',
     description: 'Voz en castellano (El narrador urbano)',
     gender: 'male',
+    language: 'es',
+    country: 'ES',
   },
   {
     id: 'b1d54472-b83c-47c3-a146-5285b1f95bf7',
@@ -118,6 +120,8 @@ export const HUME_VOICES: VoiceOption[] = [
     provider: 'hume',
     description: 'Voz en castellano (La voz del mar)',
     gender: 'female',
+    language: 'es',
+    country: 'ES',
   },
   {
     id: 'Kora',
@@ -125,6 +129,8 @@ export const HUME_VOICES: VoiceOption[] = [
     provider: 'hume',
     description: 'Voz femenina expresiva',
     gender: 'female',
+    language: 'en',
+    country: 'US',
   },
   {
     id: 'Colton Rivers',
@@ -132,6 +138,8 @@ export const HUME_VOICES: VoiceOption[] = [
     provider: 'hume',
     description: 'Voz masculina conversacional',
     gender: 'male',
+    language: 'en',
+    country: 'US',
   },
   {
     id: 'Imani Carter',
@@ -139,6 +147,8 @@ export const HUME_VOICES: VoiceOption[] = [
     provider: 'hume',
     description: 'Voz femenina suave',
     gender: 'female',
+    language: 'en',
+    country: 'US',
   },
 ];
 
