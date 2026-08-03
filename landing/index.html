@@ -1107,6 +1107,7 @@ input:checked + .slider:before {
         <button
           id="community-submit"
           onclick="handleCommunitySubmit()"
+          disabled
           style="
             width: 100%;
             background: linear-gradient(135deg, #7c6af7 0%, #9b87f5 100%);
@@ -1269,6 +1270,24 @@ input:checked + .slider:before {
       btn.textContent = 'Avísame cuando esté disponible';
     }
   }
+
+  function checkCommunityFormValid() {
+    const email = document.getElementById('community-email').value.trim();
+    const ciudadSelect = document.getElementById('community-ciudad');
+    const ciudad = Array.from(ciudadSelect.selectedOptions).map(opt => opt.value).join(', ');
+    const btn = document.getElementById('community-submit');
+    
+    if (email && email.includes('@') && ciudad) {
+      btn.disabled = false;
+    } else {
+      btn.disabled = true;
+    }
+  }
+
+  document.addEventListener('DOMContentLoaded', () => {
+    document.getElementById('community-email').addEventListener('input', checkCommunityFormValid);
+    document.getElementById('community-ciudad').addEventListener('change', checkCommunityFormValid);
+  });
 </script>
 
     <div class="gradient-divider"></div>
