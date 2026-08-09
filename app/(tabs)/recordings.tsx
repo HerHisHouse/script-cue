@@ -3269,8 +3269,8 @@ export default function RecordingsScreen() {
           visible={renameModalVisible}
           transparent
           animationType="fade"
-          onRequestClose={() = supportedOrientations={['portrait', 'landscape', 'landscape-left', 'landscape-right']}> setRenameModalVisible(false)}
-        >
+          onRequestClose={() => setRenameModalVisible(false)}
+         supportedOrientations={['portrait', 'landscape', 'landscape-left', 'landscape-right']}>
           <View style={styles.modalOverlay}>
             <View style={[styles.modalContent, { backgroundColor: colors.surface }]}>
               <Text style={[styles.modalTitle, { color: colors.text }]}>Renombrar archivo</Text>
@@ -3315,8 +3315,8 @@ export default function RecordingsScreen() {
           visible={shareModalVisible}
           transparent
           animationType="fade"
-          onRequestClose={() = supportedOrientations={['portrait', 'landscape', 'landscape-left', 'landscape-right']}> setShareModalVisible(false)}
-        >
+          onRequestClose={() => setShareModalVisible(false)}
+         supportedOrientations={['portrait', 'landscape', 'landscape-left', 'landscape-right']}>
           <View style={styles.modalOverlay}>
             <View style={[styles.modalContent, { backgroundColor: colors.surface }]}>
               <Text style={[styles.modalTitle, { color: colors.text }]}>Compartir selección</Text>

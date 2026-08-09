@@ -2362,8 +2362,8 @@ export default function StudioV2Screen() {
                         visible={showHeadphoneAlert}
                         transparent={true}
                         animationType="fade"
-                        onRequestClose={() = supportedOrientations={['portrait', 'landscape', 'landscape-left', 'landscape-right']}> setShowHeadphoneAlert(false)}
-                    >
+                        onRequestClose={() => setShowHeadphoneAlert(false)}
+                     supportedOrientations={['portrait', 'landscape', 'landscape-left', 'landscape-right']}>
                         <View style={styles.modalOverlay}>
                             <View style={[styles.modalContent, { backgroundColor: colors.surface }]}>
                                 <View style={styles.modalHeader}>
@@ -2409,8 +2409,8 @@ export default function StudioV2Screen() {
                         visible={showStageDirectionsInfo}
                         transparent={true}
                         animationType="fade"
-                        onRequestClose={() = supportedOrientations={['portrait', 'landscape', 'landscape-left', 'landscape-right']}> setShowStageDirectionsInfo(false)}
-                    >
+                        onRequestClose={() => setShowStageDirectionsInfo(false)}
+                     supportedOrientations={['portrait', 'landscape', 'landscape-left', 'landscape-right']}>
                         <View style={styles.modalOverlay}>
                             <View style={[styles.modalContent, { backgroundColor: colors.surface }]}>
                                 <View style={styles.modalHeader}>
@@ -2455,8 +2455,8 @@ export default function StudioV2Screen() {
                         visible={showActionsInfo}
                         transparent={true}
                         animationType="fade"
-                        onRequestClose={() = supportedOrientations={['portrait', 'landscape', 'landscape-left', 'landscape-right']}> setShowActionsInfo(false)}
-                    >
+                        onRequestClose={() => setShowActionsInfo(false)}
+                     supportedOrientations={['portrait', 'landscape', 'landscape-left', 'landscape-right']}>
                         <View style={styles.modalOverlay}>
                             <View style={[styles.modalContent, { backgroundColor: colors.surface }]}>
                                 <View style={styles.modalHeader}>
@@ -2500,8 +2500,8 @@ export default function StudioV2Screen() {
                         visible={showReorderInfoModal}
                         transparent={true}
                         animationType="fade"
-                        onRequestClose={() = supportedOrientations={['portrait', 'landscape', 'landscape-left', 'landscape-right']}> setShowReorderInfoModal(false)}
-                    >
+                        onRequestClose={() => setShowReorderInfoModal(false)}
+                     supportedOrientations={['portrait', 'landscape', 'landscape-left', 'landscape-right']}>
                         <View style={styles.modalOverlay}>
                             <View style={[styles.modalContent, { backgroundColor: colors.surface }]}>
                                 <View style={styles.modalHeader}>

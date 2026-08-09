@@ -641,8 +641,8 @@ export default function ProjectsScreen() {
         visible={showNewFolderModal}
         transparent
         animationType="fade"
-        onRequestClose={() = supportedOrientations={['portrait', 'landscape', 'landscape-left', 'landscape-right']}> setShowNewFolderModal(false)}
-      >
+        onRequestClose={() => setShowNewFolderModal(false)}
+       supportedOrientations={['portrait', 'landscape', 'landscape-left', 'landscape-right']}>
         <View style={styles.modalOverlay}>
           <View style={[styles.modalContent, { backgroundColor: colors.surface }]}>
             <Text style={[styles.modalTitle, { color: colors.text }]}>Nueva Carpeta</Text>
@@ -739,8 +739,8 @@ export default function ProjectsScreen() {
         visible={renameModal.visible}
         transparent
         animationType="fade"
-        onRequestClose={() = supportedOrientations={['portrait', 'landscape', 'landscape-left', 'landscape-right']}> setRenameModal({ visible: false, item: null, newName: '' })}
-      >
+        onRequestClose={() => setRenameModal({ visible: false, item: null, newName: '' })}
+       supportedOrientations={['portrait', 'landscape', 'landscape-left', 'landscape-right']}>
         <View style={styles.modalOverlay}>
           <View style={[styles.modalContent, { backgroundColor: colors.surface }]}>
             <Text style={[styles.modalTitle, { color: colors.text }]}>Renombrar</Text>

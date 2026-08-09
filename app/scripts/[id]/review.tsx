@@ -469,8 +469,8 @@ export default function ReviewScreen() {
           visible={editModalVisible}
           transparent
           animationType="slide"
-          onRequestClose={() = supportedOrientations={['portrait', 'landscape', 'landscape-left', 'landscape-right']}> setEditModalVisible(false)}
-        >
+          onRequestClose={() => setEditModalVisible(false)}
+         supportedOrientations={['portrait', 'landscape', 'landscape-left', 'landscape-right']}>
           <KeyboardAvoidingView
             behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
             style={{ flex: 1 }}
@@ -549,8 +549,8 @@ export default function ReviewScreen() {
           visible={emotionModalVisible}
           transparent
           animationType="fade"
-          onRequestClose={() = supportedOrientations={['portrait', 'landscape', 'landscape-left', 'landscape-right']}> setEmotionModalVisible(false)}
-        >
+          onRequestClose={() => setEmotionModalVisible(false)}
+         supportedOrientations={['portrait', 'landscape', 'landscape-left', 'landscape-right']}>
           <Pressable style={[s.modalOverlay, { backgroundColor: 'rgba(0,0,0,0.4)' }]} onPress={() => setEmotionModalVisible(false)}>
             <View style={[s.modalContent, { backgroundColor: colors.surface, paddingHorizontal: 0, paddingBottom: Math.max(insets.bottom + rp(20), rp(20)) }]}>
               <View style={{ paddingHorizontal: rp(20), paddingBottom: rp(12), borderBottomWidth: 1, borderBottomColor: colors.border }}>
@@ -577,7 +577,7 @@ export default function ReviewScreen() {
         </Modal>
 
         {/* ── Add Line Modal ── */}
-        <Modal visible={showAddModal} transparent animationType="slide" onRequestClose={() = supportedOrientations={['portrait', 'landscape', 'landscape-left', 'landscape-right']}> setShowAddModal(false)}>
+        <Modal visible={showAddModal} transparent animationType="slide" onRequestClose={() => setShowAddModal(false)} supportedOrientations={['portrait', 'landscape', 'landscape-left', 'landscape-right']}>
           <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
             <Pressable style={s.modalOverlay} onPress={() => setShowAddModal(false)}>
               <Pressable onPress={e => e.stopPropagation()} style={[s.modalContent, { backgroundColor: colors.surface, paddingBottom: Math.max(insets.bottom + rp(20), rp(40)) }]}>
@@ -641,8 +641,8 @@ export default function ReviewScreen() {
           visible={showReviewInfo}
           transparent={true}
           animationType="fade"
-          onRequestClose={() = supportedOrientations={['portrait', 'landscape', 'landscape-left', 'landscape-right']}> setShowReviewInfo(false)}
-        >
+          onRequestClose={() => setShowReviewInfo(false)}
+         supportedOrientations={['portrait', 'landscape', 'landscape-left', 'landscape-right']}>
           <View style={s.modalOverlay}>
             <View style={[s.modalContent, { backgroundColor: colors.surface, paddingBottom: Math.max(insets.bottom + rp(20), rp(40)) }]}>
               <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: rp(16), gap: 12 }}>
@@ -690,8 +690,8 @@ export default function ReviewScreen() {
           visible={showAddLineInfo}
           transparent={true}
           animationType="fade"
-          onRequestClose={() = supportedOrientations={['portrait', 'landscape', 'landscape-left', 'landscape-right']}> setShowAddLineInfo(false)}
-        >
+          onRequestClose={() => setShowAddLineInfo(false)}
+         supportedOrientations={['portrait', 'landscape', 'landscape-left', 'landscape-right']}>
           <View style={s.modalOverlay}>
             <View style={[s.modalContent, { backgroundColor: colors.surface, paddingBottom: Math.max(insets.bottom + rp(20), rp(40)) }]}>
               <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: rp(16), gap: 12 }}>

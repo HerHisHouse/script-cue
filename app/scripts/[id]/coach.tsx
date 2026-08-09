@@ -912,8 +912,8 @@ export default function CoachModeScreen() {
           visible={showDisclaimer}
           transparent
           animationType="fade"
-          onRequestClose={() = supportedOrientations={['portrait', 'landscape', 'landscape-left', 'landscape-right']}> { }}
-        >
+          onRequestClose={() => { }}
+         supportedOrientations={['portrait', 'landscape', 'landscape-left', 'landscape-right']}>
           <View style={styles.modalOverlay}>
             <View style={[styles.modalContent, { backgroundColor: colors.surface }]}>
               <View style={styles.modalHeader}>
