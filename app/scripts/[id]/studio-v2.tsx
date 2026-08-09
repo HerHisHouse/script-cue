@@ -1195,6 +1195,18 @@ export default function StudioV2Screen() {
         stopPlaying();
         await stopRecording(); // Stop user recording if active
 
+        // Cleanup orphaned segments from storage before clearing
+        for (const segment of segmentsRef.current) {
+            if (segment.storagePath) {
+                try {
+                    await supabase.storage.from('recordings').remove([segment.storagePath]);
+                    console.log('[CancelSession] Deleted orphaned segment:', segment.storagePath);
+                } catch (e) {
+                    console.error('[CancelSession] Error deleting segment:', e);
+                }
+            }
+        }
+
         // Clear segments without saving
         segmentsRef.current = [];
         setIsRecording(false);
@@ -2100,7 +2112,7 @@ export default function StudioV2Screen() {
         return (
             <View style={[styles.container, styles.center, { backgroundColor: colors.background }]}>
                 <ActivityIndicator size="large" color={colors.primary} />
-                {isProcessing && <Text style={{ marginTop: 10, color: colors.text, textAlign: 'center', paddingHorizontal: 20 }}>Procesando audio. Estamos mezclado tu voz con la de la IA, dependiendo de si la escena es larga o de tu conexión puede tardar varios minutos.</Text>}
+                {isProcessing && <Text style={{ marginTop: 10, color: colors.text, textAlign: 'center', paddingHorizontal: 20 }}>Procesando audio. Estamos mezclando tu voz con la réplica, dependiendo de si la escena es larga o de tu conexión puede tardar varios minutos.</Text>}
             </View>
         );
     }
@@ -2350,7 +2362,7 @@ export default function StudioV2Screen() {
                         visible={showHeadphoneAlert}
                         transparent={true}
                         animationType="fade"
-                        onRequestClose={() => setShowHeadphoneAlert(false)}
+                        onRequestClose={() = supportedOrientations={['portrait', 'landscape', 'landscape-left', 'landscape-right']}> setShowHeadphoneAlert(false)}
                     >
                         <View style={styles.modalOverlay}>
                             <View style={[styles.modalContent, { backgroundColor: colors.surface }]}>
@@ -2397,7 +2409,7 @@ export default function StudioV2Screen() {
                         visible={showStageDirectionsInfo}
                         transparent={true}
                         animationType="fade"
-                        onRequestClose={() => setShowStageDirectionsInfo(false)}
+                        onRequestClose={() = supportedOrientations={['portrait', 'landscape', 'landscape-left', 'landscape-right']}> setShowStageDirectionsInfo(false)}
                     >
                         <View style={styles.modalOverlay}>
                             <View style={[styles.modalContent, { backgroundColor: colors.surface }]}>
@@ -2443,7 +2455,7 @@ export default function StudioV2Screen() {
                         visible={showActionsInfo}
                         transparent={true}
                         animationType="fade"
-                        onRequestClose={() => setShowActionsInfo(false)}
+                        onRequestClose={() = supportedOrientations={['portrait', 'landscape', 'landscape-left', 'landscape-right']}> setShowActionsInfo(false)}
                     >
                         <View style={styles.modalOverlay}>
                             <View style={[styles.modalContent, { backgroundColor: colors.surface }]}>
@@ -2488,7 +2500,7 @@ export default function StudioV2Screen() {
                         visible={showReorderInfoModal}
                         transparent={true}
                         animationType="fade"
-                        onRequestClose={() => setShowReorderInfoModal(false)}
+                        onRequestClose={() = supportedOrientations={['portrait', 'landscape', 'landscape-left', 'landscape-right']}> setShowReorderInfoModal(false)}
                     >
                         <View style={styles.modalOverlay}>
                             <View style={[styles.modalContent, { backgroundColor: colors.surface }]}>
@@ -2539,7 +2551,7 @@ export default function StudioV2Screen() {
                         transparent={true}
                         animationType="slide"
                         onRequestClose={closeAddLineModal}
-                    >
+                     supportedOrientations={['portrait', 'landscape', 'landscape-left', 'landscape-right']}>
                         <KeyboardAvoidingView
                             behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
                             style={{ flex: 1 }}
@@ -2738,7 +2750,7 @@ export default function StudioV2Screen() {
                                                 <View style={{ flex: 1, paddingVertical: rp(10), paddingRight: rp(8) }}>
                                                     <Text style={{ fontSize: rf(12), fontWeight: '700', color: charColor, marginBottom: 3 }} numberOfLines={1}>
                                                         {item.characterName}
-                                                        {item.isUserCharacter ? '  \u00b7 T\u00da' : '  \u00b7 IA'}
+                                                        {item.isUserCharacter ? '  · TÚ' : '  · SC'}
                                                     </Text>
                                                     <Text style={{ fontSize: rf(13), color: colors.textSecondary, lineHeight: rf(18) }} numberOfLines={2}>
                                                         {previewText}
@@ -2802,7 +2814,7 @@ export default function StudioV2Screen() {
                                             ) : (
                                                 <View style={styles.headerCenteredContent}>
                                                     <Text style={[styles.characterName, { color: colors.background }]}>{currentLine.isAction ? '⚡ ACCIÓN' : currentLine.characterName}</Text>
-                                                    {!currentLine.isAction && <View style={[styles.badge, { backgroundColor: 'rgba(0,0,0,0.2)' }]}><Text style={[styles.badgeText, { color: colors.background }]}>{currentLine.isUserCharacter ? 'TÚ' : 'IA'}</Text></View>}
+                                                    {!currentLine.isAction && <View style={[styles.badge, { backgroundColor: 'rgba(0,0,0,0.2)' }]}><Text style={[styles.badgeText, { color: colors.background }]}>{currentLine.isUserCharacter ? 'TÚ' : 'SC'}</Text></View>}
                                                 </View>
                                             )}
                                         </View>
@@ -2850,7 +2862,7 @@ export default function StudioV2Screen() {
                                         ]}>
                                             <View style={[styles.cardHeaderBanner, { backgroundColor: line.isAction ? colors.primary : (line.isUserCharacter ? '#10B981' : line.color || colors.primary) }]}>
                                                 <Text style={[styles.characterName, { color: colors.background }]}>{line.isAction ? '⚡ ACCIÓN' : line.characterName}</Text>
-                                                {!line.isAction && <View style={[styles.badge, { backgroundColor: 'rgba(0,0,0,0.2)' }]}><Text style={[styles.badgeText, { color: colors.background }]}>{line.isUserCharacter ? 'TÚ' : 'IA'}</Text></View>}
+                                                {!line.isAction && <View style={[styles.badge, { backgroundColor: 'rgba(0,0,0,0.2)' }]}><Text style={[styles.badgeText, { color: colors.background }]}>{line.isUserCharacter ? 'TÚ' : 'SC'}</Text></View>}
                                             </View>
                                             <View style={styles.cardContent}>
                                                 {!line.isAction && line.isUserCharacter && hideUserLines ? (

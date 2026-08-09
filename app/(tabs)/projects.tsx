@@ -641,7 +641,7 @@ export default function ProjectsScreen() {
         visible={showNewFolderModal}
         transparent
         animationType="fade"
-        onRequestClose={() => setShowNewFolderModal(false)}
+        onRequestClose={() = supportedOrientations={['portrait', 'landscape', 'landscape-left', 'landscape-right']}> setShowNewFolderModal(false)}
       >
         <View style={styles.modalOverlay}>
           <View style={[styles.modalContent, { backgroundColor: colors.surface }]}>
@@ -739,7 +739,7 @@ export default function ProjectsScreen() {
         visible={renameModal.visible}
         transparent
         animationType="fade"
-        onRequestClose={() => setRenameModal({ visible: false, item: null, newName: '' })}
+        onRequestClose={() = supportedOrientations={['portrait', 'landscape', 'landscape-left', 'landscape-right']}> setRenameModal({ visible: false, item: null, newName: '' })}
       >
         <View style={styles.modalOverlay}>
           <View style={[styles.modalContent, { backgroundColor: colors.surface }]}>

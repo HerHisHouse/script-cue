@@ -305,9 +305,8 @@ export default function CommunityScreen() {
             </View>
 
             <Text style={[styles.description, { color: colors.textSecondary }]}>
-              La IA está bien.{'\n'}
-              Una persona de verdad es otra cosa.{'\n\n'}
-              Estamos creando una comunidad donde actores y actrices podrán encontrarse, preparar castings juntos y ayudarse a crecer profesionalmente.
+              Hay ensayos que puedes hacer a solas. Y otros que merecen una réplica de verdad.{'\n\n'}
+              Estamos montando una comunidad para encontrarnos, preparar castings, montar grupos de ensayo y ayudarnos a crecer profesionalmente.
             </Text>
           </View>
 
@@ -394,7 +393,7 @@ export default function CommunityScreen() {
           </View>
 
           {/* City Selector Modal */}
-          <Modal visible={cityModalVisible} animationType="slide" presentationStyle="pageSheet" onRequestClose={() => setCityModalVisible(false)}>
+          <Modal visible={cityModalVisible} animationType="slide" presentationStyle="pageSheet" onRequestClose={() = supportedOrientations={['portrait', 'landscape', 'landscape-left', 'landscape-right']}> setCityModalVisible(false)}>
             <SafeAreaView style={{ flex: 1, backgroundColor: colors.background }}>
               <View style={{ padding: 16, borderBottomWidth: 1, borderBottomColor: colors.border, flexDirection: 'row', alignItems: 'center' }}>
                 <TextInput

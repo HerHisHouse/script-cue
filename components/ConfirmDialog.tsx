@@ -37,7 +37,7 @@ export function ConfirmDialog({
       transparent
       animationType="fade"
       onRequestClose={onCancel}
-    >
+     supportedOrientations={['portrait', 'landscape', 'landscape-left', 'landscape-right']}>
       <Pressable style={styles.overlay} onPress={onCancel}>
         <Pressable style={styles.dialog} onPress={(e) => e.stopPropagation()}>
           <View style={styles.iconContainer}>

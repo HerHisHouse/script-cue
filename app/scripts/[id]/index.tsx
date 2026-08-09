@@ -160,10 +160,10 @@ export default function ScriptDetailScreen() {
       const provider = c.voice_provider || 'system';
       const voiceId = c.voice_id || '';
       
-      const providerLabel = provider === 'system' ? 'Sistema' : 
-                            provider === 'elevenlabs' ? 'ElevenLabs' : 
+      const providerLabel = provider === 'system' ? 'Estándar' : 
+                            provider === 'elevenlabs' ? 'Expresiva' : 
                             provider === 'openai' ? 'OpenAI' : 
-                            provider === 'hume' ? 'Hume' : 'Azure';
+                            provider === 'hume' ? 'Natural' : 'Azure';
                             
       let voiceName = voiceId;
 
@@ -190,8 +190,10 @@ export default function ScriptDetailScreen() {
         const entry = perCharacterVoices[nameKey];
         if (entry) {
             const legacyProvider = (entry.provider || 'system') as string;
-            const legacyLabel = legacyProvider === 'system' ? 'Sistema' : 
-                                legacyProvider === 'elevenlabs' ? 'ElevenLabs' : 
+            const legacyLabel = legacyProvider === 'system' ? 'Estándar' : 
+                                legacyProvider === 'elevenlabs' ? 'Expresiva' : 
+                                legacyProvider === 'openai' ? 'OpenAI' : 
+                                legacyProvider === 'hume' ? 'Natural' :
                                 legacyProvider.charAt(0).toUpperCase() + legacyProvider.slice(1);
             let legacyName = '';
             if (legacyProvider === 'system' && entry.systemVoiceId) {

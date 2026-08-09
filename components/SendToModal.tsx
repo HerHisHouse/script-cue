@@ -131,7 +131,7 @@ export function SendToModal({ visible, onClose, onMove, currentProjectId }: Send
             transparent
             animationType="slide"
             onRequestClose={onClose}
-        >
+         supportedOrientations={['portrait', 'landscape', 'landscape-left', 'landscape-right']}>
             <View style={styles.overlay}>
                 <View style={[styles.container, { backgroundColor: colors.surface }]}>
                     <View style={[styles.header, { borderBottomColor: colors.border }]}>

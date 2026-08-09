@@ -1297,7 +1297,7 @@ export default function CarModeScreen() {
             fontSize: 13,
             lineHeight: 18,
           }}>
-            Escucha la escena en bucle interpretada por voces IA.
+            Escucha la escena en bucle interpretada por ScriptCue.
             Configura las voces según los personajes.
           </Text>
         </View>
@@ -1321,7 +1321,7 @@ export default function CarModeScreen() {
           <TouchableOpacity
             hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
             onPress={() => Alert.alert(
-              'Proveedores de voz',
+              'Tipo de Voz',
               PROVIDER_INFO_MESSAGE,
               [{ text: 'Entendido', style: 'default' }]
             )}
@@ -1387,7 +1387,7 @@ export default function CarModeScreen() {
                 }}
               >
                 <Text style={{ color: 'rgba(255,255,255,0.7)', fontSize: 15 }}>
-                  {VOICE_PROVIDERS_CONFIG.find(p => p.value === config.provider)?.label ?? '🔈 Básica'}
+                  {VOICE_PROVIDERS_CONFIG.find(p => p.value === config.provider)?.label ?? '🔊 Estándar'}
                 </Text>
                 <ChevronRight size={16} color="rgba(255,255,255,0.3)" />
               </TouchableOpacity>
@@ -1410,7 +1410,10 @@ export default function CarModeScreen() {
                         }}
                       >
                         <Text style={styles.dropdownItemText}>{provider.label}</Text>
-                        <Text style={styles.providerDescription}>{provider.subtitle}</Text>
+                        <Text style={[
+                          styles.providerDescription,
+                          config.provider === provider.value && { color: 'rgba(255, 255, 255, 0.8)' }
+                        ]}>{provider.subtitle}</Text>
                       </TouchableOpacity>
                     ))}
                   </ScrollView>
@@ -1421,6 +1424,7 @@ export default function CarModeScreen() {
                   provider={config.provider as any}
                   selectedVoiceId={config.voiceId || undefined}
                   selectedVoiceName={getVoiceName(config.provider, config.voiceId)}
+                  characterName={config.characterName}
                   buttonStyle={{ backgroundColor: 'rgba(255,255,255,0.08)', borderColor: 'rgba(255,255,255,0.1)' }}
                   labelStyle={{ color: 'rgba(255,255,255,0.5)' }}
                   valueStyle={{ color: 'rgba(255,255,255,0.9)' }}
@@ -1771,7 +1775,7 @@ export default function CarModeScreen() {
                 e.stopPropagation();
                 Alert.alert(
                   'Acciones de escena',
-                  'Si quieres que la IA también lea las acciones especificadas en el guion, activa este botón y configura la voz que desees.',
+                  'Si quieres que la app también lea las acciones especificadas en el guion, activa este botón y configura la voz que desees.',
                   [{ text: 'Entendido' }]
                 );
               }}

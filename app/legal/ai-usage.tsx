@@ -17,7 +17,7 @@ export default function AIUsageScreen() {
                 <View style={[styles.header, { borderBottomColor: colors.border }]}>
                     <View style={styles.headerContent}>
                         <Sparkles size={24} color={colors.primary} />
-                        <Text style={[styles.title, { color: colors.text }]}>Uso de Inteligencia Artificial</Text>
+                        <Text style={[styles.title, { color: colors.text }]}>Uso de ScriptCue</Text>
                     </View>
                     <TouchableOpacity onPress={() => router.back()} style={styles.closeButton}>
                         <X size={24} color={colors.text} />
@@ -28,13 +28,13 @@ export default function AIUsageScreen() {
                     <View style={[styles.banner, { backgroundColor: colors.primary + '15', borderColor: colors.primary }]}>
                         <Sparkles size={32} color={colors.primary} />
                         <Text style={[styles.bannerText, { color: colors.primary }]}>
-                            Esta aplicación utiliza Inteligencia Artificial como herramienta creativa y educativa
+                            Esta aplicación utiliza ScriptCue como herramienta creativa y educativa
                         </Text>
                     </View>
 
-                    <Text style={[styles.sectionTitle, { color: colors.text }]}>¿Cómo usamos la IA?</Text>
+                    <Text style={[styles.sectionTitle, { color: colors.text }]}>¿Cómo usamos ScriptCue?</Text>
                     <Text style={[styles.paragraph, { color: colors.text }]}>
-                        Esta aplicación utiliza modelos de Inteligencia Artificial para:{'\n\n'}
+                        Esta aplicación utiliza nuestros modelos para:{'\n\n'}
                         • Generar respuestas de personajes{'\n'}
                         • Analizar interpretaciones{'\n'}
                         • Transcribir texto{'\n'}
@@ -42,21 +42,21 @@ export default function AIUsageScreen() {
                         • Ofrecer retroalimentación personalizada
                     </Text>
 
-                    <Text style={[styles.sectionTitle, { color: colors.text }]}>Importante: Limitaciones de la IA</Text>
+                    <Text style={[styles.sectionTitle, { color: colors.text }]}>Importante: Limitaciones de ScriptCue</Text>
                     <Text style={[styles.paragraph, { color: colors.text }]}>
-                        Los resultados generados por IA:{'\n\n'}
+                        Los resultados generados por ScriptCue:{'\n\n'}
                         • <Text style={styles.bold}>Pueden contener imprecisiones</Text>{'\n'}
-                        La IA no es perfecta y puede cometer errores en sus análisis o sugerencias.{'\n\n'}
+                        ScriptCue no es perfecto y puede cometer errores en sus análisis o sugerencias.{'\n\n'}
                         • <Text style={styles.bold}>No son consejos profesionales</Text>{'\n'}
-                        Las recomendaciones de la IA no sustituyen el asesoramiento de un coach, director o profesor de interpretación.{'\n\n'}
+                        Las recomendaciones de ScriptCue no sustituyen el asesoramiento de un coach, director o profesor de interpretación.{'\n\n'}
                         • <Text style={styles.bold}>Son una ayuda creativa y educativa</Text>{'\n'}
-                        Utiliza la IA como una herramienta complementaria para tu práctica, no como única fuente de aprendizaje.
+                        Utiliza ScriptCue como una herramienta complementaria para tu práctica, no como única fuente de aprendizaje.
                     </Text>
 
-                    <Text style={[styles.sectionTitle, { color: colors.text }]}>Tu control sobre la IA</Text>
+                    <Text style={[styles.sectionTitle, { color: colors.text }]}>Tu control sobre ScriptCue</Text>
                     <Text style={[styles.paragraph, { color: colors.text }]}>
-                        • Todas las funciones de IA requieren tu acción explícita{'\n'}
-                        • Puedes elegir cuándo y cómo usar las herramientas de IA{'\n'}
+                        • Todas las funciones de ScriptCue requieren tu acción explícita{'\n'}
+                        • Puedes elegir cuándo y cómo usar las herramientas de ScriptCue{'\n'}
                         • Tus grabaciones nunca se usan para entrenar modelos externos{'\n'}
                         • Los análisis se realizan solo cuando tú lo solicitas
                     </Text>
@@ -64,15 +64,15 @@ export default function AIUsageScreen() {
                     <Text style={[styles.sectionTitle, { color: colors.text }]}>Responsabilidad del usuario</Text>
                     <Text style={[styles.paragraph, { color: colors.text }]}>
                         El usuario acepta que:{'\n'}
-                        • Verifica la precisión del contenido generado por IA antes de usarlo.{'\n'}
-                        • La IA puede:{'\n'}
+                        • Verifica la precisión del contenido generado por ScriptCue antes de usarlo.{'\n'}
+                        • ScriptCue puede:{'\n'}
                         {'  '}- Malinterpretar emociones en video/audio.{'\n'}
                         {'  '}- Generar sugerencias inadecuadas para géneros específicos.{'\n'}
                         {'  '}- Cometer errores de transcripción.{'\n\n'}
-                        • El usuario es responsable de cualquier feedback incorrecto de IA que use en audiciones reales.{'\n\n'}
+                        • El usuario es responsable de cualquier feedback incorrecto de ScriptCue que use en audiciones reales.{'\n\n'}
                         • Script Cue no será responsable de:{'\n'}
-                        {'  '}- Pérdida de oportunidades por seguir recomendaciones de IA.{'\n'}
-                        {'  '}- Crítica negativa de colegas basada en análisis de IA.{'\n'}
+                        {'  '}- Pérdida de oportunidades por seguir recomendaciones de ScriptCue.{'\n'}
+                        {'  '}- Crítica negativa de colegas basada en análisis de ScriptCue.{'\n'}
                         {'  '}- Daños emocionales derivados del feedback automático.
                     </Text>
 
@@ -80,19 +80,19 @@ export default function AIUsageScreen() {
                     <Text style={[styles.paragraph, { color: colors.text }]}>
                         • Tus datos personales están protegidos{'\n'}
                         • No compartimos tu información con terceros{'\n'}
-                        • Los análisis de IA se procesan de forma segura{'\n'}
+                        • Los análisis de ScriptCue se procesan de forma segura{'\n'}
                         • Conservas todos los derechos sobre tus grabaciones
                     </Text>
 
                     <View style={[styles.disclaimer, { backgroundColor: colors.surface, borderColor: colors.border }]}>
                         <Text style={[styles.disclaimerTitle, { color: colors.text }]}>Disclaimer</Text>
                         <Text style={[styles.disclaimerText, { color: colors.textSecondary }]}>
-                            Al usar las funciones de IA en esta aplicación, reconoces que entiendes sus limitaciones y que la usarás como una herramienta complementaria, no como sustituto del aprendizaje profesional.
+                            Al usar las funciones de ScriptCue en esta aplicación, reconoces que entiendes sus limitaciones y que la usarás como una herramienta complementaria, no como sustituto del aprendizaje profesional.
                         </Text>
                     </View>
 
                     <Text style={[styles.contact, { color: colors.textSecondary }]}>
-                        ¿Preguntas sobre el uso de IA?{'\n'}
+                        ¿Preguntas sobre el uso de ScriptCue?{'\n'}
                         Contacta con nosotros: info@scriptcue.es
                     </Text>
                 </ScrollView>

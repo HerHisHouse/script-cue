@@ -424,7 +424,7 @@ export default function QuizModeScreen() {
                     visible={gameFinished}
                     transparent={true}
                     animationType="fade"
-                >
+                 supportedOrientations={['portrait', 'landscape', 'landscape-left', 'landscape-right']}>
                     <View style={[styles.modalOverlay, styles.center]}>
                         <View style={[styles.resultCard, { backgroundColor: colors.surface }]}>
                             <Trophy size={64} color={lives > 0 ? colors.primary : colors.textSecondary} />

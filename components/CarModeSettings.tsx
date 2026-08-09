@@ -45,7 +45,7 @@ export function CarModeSettings({
             transparent
             animationType="slide"
             onRequestClose={onClose}
-        >
+         supportedOrientations={['portrait', 'landscape', 'landscape-left', 'landscape-right']}>
             <View style={styles.overlay}>
                 <View style={styles.modal}>
                     <View style={styles.header}>

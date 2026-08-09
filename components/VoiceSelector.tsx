@@ -39,6 +39,7 @@ interface VoiceSelectorProps {
     disabled?: boolean;
     systemLanguage?: string;
     selectedVoiceName?: string;
+    characterName?: string;
     buttonStyle?: object;
     labelStyle?: object;
     valueStyle?: object;
@@ -51,6 +52,7 @@ export function VoiceSelector({
     disabled = false,
     systemLanguage = 'es-ES',
     selectedVoiceName,
+    characterName,
     buttonStyle,
     labelStyle,
     valueStyle,
@@ -350,10 +352,10 @@ export function VoiceSelector({
     const getProviderTitle = () => {
         switch (provider) {
             case 'openai': return 'Voces de OpenAI';
-            case 'elevenlabs': return 'Voces de ElevenLabs';
+            case 'elevenlabs': return 'Voces Expresivas';
             case 'azure': return 'Voces de Azure';
-            case 'system': return 'Voces del Sistema';
-            case 'hume': return 'Voces de Hume';
+            case 'system': return 'Voces Estándar';
+            case 'hume': return 'Voces Naturales';
         }
     };
 
@@ -501,10 +503,17 @@ export function VoiceSelector({
                 <ChevronDown size={20} color={colors.textSecondary} />
             </TouchableOpacity>
 
-            <Modal visible={modalVisible} animationType="slide" transparent={false} onRequestClose={handleClose}>
+            <Modal visible={modalVisible} animationType="slide" transparent={false} onRequestClose={handleClose} supportedOrientations={['portrait', 'landscape', 'landscape-left', 'landscape-right']}>
                 <SafeAreaView style={[styles.fullScreenModal, { backgroundColor: colors.background }]}>
                     <View style={[styles.modalHeader, { borderBottomColor: colors.border }]}>
-                        <Text style={[styles.modalTitle, { color: colors.text }]}>{getProviderTitle()}</Text>
+                        <View style={{ flex: 1, paddingRight: 10 }}>
+                            <Text style={[styles.modalTitle, { color: colors.text }]} numberOfLines={1}>{getProviderTitle()}</Text>
+                            {characterName ? (
+                                <Text style={{ color: colors.textSecondary, fontSize: rf(14), marginTop: 2 }}>
+                                    Selecciona voz para {characterName}.
+                                </Text>
+                            ) : null}
+                        </View>
                         <View style={styles.headerActions}>
                             {provider !== 'system' && provider !== 'openai' && (
                                 <TouchableOpacity onPress={() => loadData(true)} style={[styles.refreshButton, { backgroundColor: colors.surface, borderColor: colors.border }]}>

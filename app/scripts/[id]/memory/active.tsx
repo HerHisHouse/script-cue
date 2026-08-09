@@ -296,7 +296,7 @@ export default function MemoryModeScreen() {
             {' \n\n'}
             Con un toque verás las primeras letras de cada palabra. Con dos toques se mostrará el texto completo. Con un tercer toque se volverá a ocultar.
             {' \n\n'}
-            Las líneas de la IA se reproducirán automáticamente.
+            La réplica se reproducirá automáticamente.
             {' \n\n'}
             Usa los botones de navegación para moverte por el guion.
           </Text>

@@ -279,7 +279,7 @@ export default function AnalysisScreen() {
                             ¿Cómo quieres trabajar el análisis de esta escena?
                         </Text>
                         <Text style={[styles.infoDescription, { color: colors.textSecondary }]}>
-                            Puedes completar el análisis rellenando el formulario, pedirle a la IA que lo rellene por ti, o crear tu propio análisis personalizado.
+                            Puedes completar el análisis rellenando el formulario predeterminado, crear tu propio análisis personalizado o pedirle a ScriptCue que lo analice por ti.
                         </Text>
                     </View>
 
@@ -288,7 +288,16 @@ export default function AnalysisScreen() {
                         onPress={() => setMode('manual')}
                     >
                         <FileText size={24} color="#FFFFFF" />
-                        <Text style={styles.modeButtonText}>Análisis manual</Text>
+                        <Text style={styles.modeButtonText}>Análisis predeterminado</Text>
+                    </TouchableOpacity>
+
+                    {/* Botón de análisis personalizado */}
+                    <TouchableOpacity
+                        style={[styles.modeButton, { backgroundColor: colors.primary }]}
+                        onPress={() => router.push(`/scripts/${id}/analysis/custom`)}
+                    >
+                        <PenLine size={24} color="#FFFFFF" />
+                        <Text style={styles.modeButtonText}>Análisis personalizado</Text>
                     </TouchableOpacity>
 
                     {/* Mostrar botón de resultado de IA solo si existe */}
@@ -298,7 +307,7 @@ export default function AnalysisScreen() {
                             onPress={() => setMode('ai-result')}
                         >
                             <Sparkles size={24} color="#FFFFFF" />
-                            <Text style={styles.modeButtonText}>Resultado del análisis por IA</Text>
+                            <Text style={styles.modeButtonText}>Resultado del análisis por ScriptCue</Text>
                         </TouchableOpacity>
                     )}
 
@@ -309,18 +318,9 @@ export default function AnalysisScreen() {
                             onPress={() => setMode('ai')}
                         >
                             <Sparkles size={24} color="#FFFFFF" />
-                            <Text style={styles.modeButtonText}>Análisis asistido por IA</Text>
+                            <Text style={styles.modeButtonText}>Análisis por ScriptCue</Text>
                         </TouchableOpacity>
                     )}
-
-                    {/* Botón de análisis personalizado */}
-                    <TouchableOpacity
-                        style={[styles.modeButton, { backgroundColor: colors.primary }]}
-                        onPress={() => router.push(`/scripts/${id}/analysis/custom`)}
-                    >
-                        <PenLine size={24} color="#FFFFFF" />
-                        <Text style={styles.modeButtonText}>Análisis personalizado</Text>
-                    </TouchableOpacity>
                 </ScrollView>
             </SafeAreaView>
         );
@@ -442,7 +442,7 @@ export default function AnalysisScreen() {
                 // Recargar datos para actualizar estados
                 await loadData();
 
-                Alert.alert('Guardado', 'El análisis generado por IA ha sido guardado correctamente.', [
+                Alert.alert('Guardado', 'El análisis generado ha sido guardado correctamente.', [
                     { text: 'OK', onPress: () => setMode('select') }
                 ]);
             } catch (error: any) {
@@ -460,7 +460,7 @@ export default function AnalysisScreen() {
                         <ArrowLeft size={24} color={colors.text} />
                     </TouchableOpacity>
                     <Text style={[styles.headerTitle, { color: colors.text }]} numberOfLines={1}>
-                        Resultado del análisis por IA
+                        Resultado del análisis
                     </Text>
                     <TouchableOpacity onPress={handleSaveAIAnalysis} style={styles.saveButton} disabled={saving}>
                         {saving ? (
@@ -475,7 +475,7 @@ export default function AnalysisScreen() {
                     <View style={[styles.aiResultBanner, { backgroundColor: colors.primary + '15', borderColor: colors.primary + '40' }]}>
                         <Sparkles size={24} color={colors.primary} />
                         <Text style={[styles.aiResultText, { color: colors.text }]}>
-                            Este análisis ha sido generado por IA. Puedes guardarlo tal cual, editarlo o descartarlo y hacer uno manual.
+                            Éste es el análisis generado. Puedes guardarlo tal cual, editarlo o descartarlo y hacer uno manual.
                         </Text>
                     </View>
 
@@ -494,7 +494,7 @@ export default function AnalysisScreen() {
                                         borderColor: colors.border,
                                     },
                                 ]}
-                                placeholder="Análisis generado por IA..."
+                                placeholder="Análisis generado por ScriptCue..."
                                 placeholderTextColor={colors.placeholder}
                                 multiline
                                 numberOfLines={4}
@@ -517,7 +517,7 @@ export default function AnalysisScreen() {
                         ) : (
                             <>
                                 <Save size={24} color="#FFFFFF" />
-                                <Text style={styles.saveButtonText}>Guardar análisis de IA</Text>
+                                <Text style={styles.saveButtonText}>Guardar análisis</Text>
                             </>
                         )}
                     </TouchableOpacity>
@@ -536,7 +536,7 @@ export default function AnalysisScreen() {
                     <TouchableOpacity onPress={() => setMode('select')} style={styles.backButton} disabled={generating}>
                         <ArrowLeft size={24} color={generating ? colors.textSecondary : colors.text} />
                     </TouchableOpacity>
-                    <Text style={[styles.headerTitle, { color: colors.text }]}>Análisis con IA</Text>
+                    <Text style={[styles.headerTitle, { color: colors.text }]}>Creando análisis</Text>
                     <View style={{ width: 40 }} />
                 </View>
 
@@ -547,7 +547,7 @@ export default function AnalysisScreen() {
                         Generando análisis...
                     </Text>
                     <Text style={[styles.generatingSubtitle, { color: colors.textSecondary }]}>
-                        La IA está analizando tu guion con los 10 puntos de análisis actoral
+                        ScriptCue está analizando tu guion con los 10 puntos de análisis actoral
                     </Text>
                 </View>
             </SafeAreaView>

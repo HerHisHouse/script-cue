@@ -1980,11 +1980,22 @@ export default function RecordingsScreen() {
       }
 
       // Borra el archivo del bucket (si falla, registra y continúa con DB)
-      const { error: storageError } = await supabase.storage
-        .from('recordings')
-        .remove([recording.audio_url]);
-      if (storageError) {
-        logger.warn('[recording.delete][storage_error]', storageError);
+      let storagePath = recording.audio_url;
+      if (storagePath) {
+        if (storagePath.startsWith('file://') || storagePath.startsWith('/')) {
+          storagePath = ''; // No borrar de Storage si es local
+        } else if (storagePath.includes('/recordings/')) {
+          storagePath = storagePath.split('/recordings/')[1];
+        }
+      }
+
+      if (storagePath) {
+        const { error: storageError } = await supabase.storage
+          .from('recordings')
+          .remove([storagePath]);
+        if (storageError) {
+          logger.warn('[recording.delete][storage_error]', storageError);
+        }
       }
 
       // Borra el registro en DB con filtro de seguridad por usuario
@@ -2204,12 +2215,21 @@ export default function RecordingsScreen() {
 
                 // Delete from storage if it's a remote file
                 if (recording.audio_url) {
-                  const { error: storageError } = await supabase.storage
-                    .from('recordings')
-                    .remove([recording.audio_url]);
+                  let storagePath = recording.audio_url;
+                  if (storagePath.startsWith('file://') || storagePath.startsWith('/')) {
+                    storagePath = '';
+                  } else if (storagePath.includes('/recordings/')) {
+                    storagePath = storagePath.split('/recordings/')[1];
+                  }
 
-                  if (storageError) {
-                    console.error('Error deleting from storage:', storageError);
+                  if (storagePath) {
+                    const { error: storageError } = await supabase.storage
+                      .from('recordings')
+                      .remove([storagePath]);
+
+                    if (storageError) {
+                      console.error('Error deleting from storage:', storageError);
+                    }
                   }
                 }
               }
@@ -3249,7 +3269,7 @@ export default function RecordingsScreen() {
           visible={renameModalVisible}
           transparent
           animationType="fade"
-          onRequestClose={() => setRenameModalVisible(false)}
+          onRequestClose={() = supportedOrientations={['portrait', 'landscape', 'landscape-left', 'landscape-right']}> setRenameModalVisible(false)}
         >
           <View style={styles.modalOverlay}>
             <View style={[styles.modalContent, { backgroundColor: colors.surface }]}>
@@ -3295,7 +3315,7 @@ export default function RecordingsScreen() {
           visible={shareModalVisible}
           transparent
           animationType="fade"
-          onRequestClose={() => setShareModalVisible(false)}
+          onRequestClose={() = supportedOrientations={['portrait', 'landscape', 'landscape-left', 'landscape-right']}> setShareModalVisible(false)}
         >
           <View style={styles.modalOverlay}>
             <View style={[styles.modalContent, { backgroundColor: colors.surface }]}>

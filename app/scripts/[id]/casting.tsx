@@ -222,9 +222,10 @@ export default function CastingModeScreen() {
 
   // ── Plano General Automático (solo Teleprompter Libre) ──────────────
   const SHOT_TYPES: { value: ShotType; label: string; description: string }[] = [
-    { value: 'closeup',  label: 'Primer plano',   description: 'Cabeza y hombros' },
-    { value: 'medium',   label: 'Plano medio',     description: 'Hasta el pecho' },
+    { value: 'wide',     label: 'Plano general',   description: 'Cuerpo completo' },
     { value: 'american', label: 'Plano americano', description: 'Hasta el muslo' },
+    { value: 'medium',   label: 'Plano medio',     description: 'Hasta el pecho' },
+    { value: 'closeup',  label: 'Primer plano',    description: 'Cabeza y hombros' },
   ];
 
   // Zoom de cámara según tipo de plano (prop zoom de CameraView, escala 0–1)
@@ -237,7 +238,7 @@ export default function CastingModeScreen() {
   };
 
   const [autoWideShotEnabled, setAutoWideShotEnabled] = useState(false);
-  const [workingShot, setWorkingShot] = useState<ShotType>('medium');
+  const [workingShot, setWorkingShot] = useState<ShotType>('wide');
 
   // Animated.Value que controla el zoom real de la cámara durante la transición
   const zoomAnimValue = useRef(new Animated.Value(0.08)).current;
@@ -2868,7 +2869,7 @@ export default function CastingModeScreen() {
         visible={showQualityModal}
         transparent={true}
         animationType="fade"
-      >
+       supportedOrientations={['portrait', 'landscape', 'landscape-left', 'landscape-right']}>
         <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.8)', justifyContent: 'center', alignItems: 'center', padding: rp(20) }}>
           <View style={[styles.qualitySection, { width: '100%', backgroundColor: '#1A1A24', borderColor: '#2A2A35' }]}>
             <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: rp(16), gap: rp(8) }}>

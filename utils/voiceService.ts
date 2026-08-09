@@ -12,29 +12,29 @@ export type VoiceProvider = 'openai' | 'elevenlabs' | 'azure' | 'system' | 'hume
 export const VOICE_PROVIDERS_CONFIG = [
   { 
     value: 'system',
-    label: '🔈 Básica',
-    subtitle: 'Voces del sistema'
+    label: '🔊 Estándar',
+    subtitle: 'Voces del dispositivo'
   },
   {
     value: 'hume',
-    label: '🎙️ Natural',
-    subtitle: 'Calidad de estudio'
+    label: '🎙 Natural',
+    subtitle: 'Voces realistas'
   },
   { 
     value: 'elevenlabs',
     label: '🎭 Expresiva',
-    subtitle: 'Voces hiperrealistas'
+    subtitle: 'Emociones configurables'
   }
 ];
 
 export const PROVIDER_INFO_MESSAGE = 
-  'Selecciona qué IA leerá las líneas de este personaje:\n\n' +
-  '🔈 Básica (Sistema)\n' +
-  'Incluida en todos los planes. Funciona sin conexión.\n\n' +
-  '🎙️ Natural (Hume)\n' +
-  'Voz clara y fluida con opciones expresivas.\n\n' +
-  '🎭 Expresiva (ElevenLabs)\n' +
-  'La más realista. Transmite emociones. Solo Plan Profesional.';
+  'Elige la calidad de voz con la que este personaje interpretará sus líneas.\n\n' +
+  '🔊 Estándar\n' +
+  'Voces del dispositivo. Calidad más plana.\n\n' +
+  '🎙 Natural\n' +
+  'Voces realistas para un ensayo más natural.\n\n' +
+  '🎭 Expresiva\n' +
+  'Las voces más avanzadas, con emociones y matices interpretativos.';
 
 
 export interface VoiceOption {
@@ -220,23 +220,16 @@ export async function getElevenLabsVoices(forceRefresh = false): Promise<VoiceOp
   elevenLabsVoicesPromise = (async () => {
     try {
       const collectionId = process.env.EXPO_PUBLIC_ELEVENLABS_COLLECTION_ID || 'Cy4MgTzrGqXsWuRKrXaQ';
-      let response = await fetch(`https://api.elevenlabs.io/v1/voices?collection_id=${collectionId}`, {
+      let response = await fetch('https://api.elevenlabs.io/v1/voices', {
         headers: {
-          'xi-api-key': apiKey,
+          'xi-api-key': apiKey.trim(),
         },
       });
 
       if (!response.ok) {
-        console.warn(`ElevenLabs collection fetch failed: ${response.status}. Falling back to all voices.`);
-        response = await fetch('https://api.elevenlabs.io/v1/voices', {
-          headers: {
-            'xi-api-key': apiKey,
-          },
-        });
-      }
-
-      if (!response.ok) {
-        throw new Error(`ElevenLabs API error: ${response.status}`);
+        const errorText = await response.text();
+        console.error(`ElevenLabs API Error ${response.status}:`, errorText);
+        throw new Error(`ElevenLabs API error: ${response.status} - ${errorText}`);
       }
 
       let data = await response.json();

@@ -274,7 +274,7 @@ export default function ReviewScreen() {
   const confirmAndGenerate = () => {
     Alert.alert(
       'Confirmar guion',
-      `Se generarán voces para ${lines.filter(l => !l.isUserCharacter && !l.isAction).length} líneas de IA. ¿Continuar?`,
+      `Se generarán voces para ${lines.filter(l => !l.isUserCharacter && !l.isAction).length} líneas de réplica. ¿Continuar?`,
       [{ text: 'Cancelar', style: 'cancel' }, { text: 'Confirmar', onPress: doConfirm }]
     );
   };
@@ -382,7 +382,7 @@ export default function ReviewScreen() {
                         {item.isAction ? 'TARJETA DE ACCIÓN' : item.characterName}
                         {!item.isAction && (
                           <Text style={[s.badge, { color: colors.textSecondary }]}>
-                            {item.isUserCharacter ? '  · TÚ' : '  · IA'}
+                            {item.isUserCharacter ? '  · TÚ' : '  · SC'}
                           </Text>
                         )}
                       </Text>
@@ -469,7 +469,7 @@ export default function ReviewScreen() {
           visible={editModalVisible}
           transparent
           animationType="slide"
-          onRequestClose={() => setEditModalVisible(false)}
+          onRequestClose={() = supportedOrientations={['portrait', 'landscape', 'landscape-left', 'landscape-right']}> setEditModalVisible(false)}
         >
           <KeyboardAvoidingView
             behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
@@ -549,7 +549,7 @@ export default function ReviewScreen() {
           visible={emotionModalVisible}
           transparent
           animationType="fade"
-          onRequestClose={() => setEmotionModalVisible(false)}
+          onRequestClose={() = supportedOrientations={['portrait', 'landscape', 'landscape-left', 'landscape-right']}> setEmotionModalVisible(false)}
         >
           <Pressable style={[s.modalOverlay, { backgroundColor: 'rgba(0,0,0,0.4)' }]} onPress={() => setEmotionModalVisible(false)}>
             <View style={[s.modalContent, { backgroundColor: colors.surface, paddingHorizontal: 0, paddingBottom: Math.max(insets.bottom + rp(20), rp(20)) }]}>
@@ -577,7 +577,7 @@ export default function ReviewScreen() {
         </Modal>
 
         {/* ── Add Line Modal ── */}
-        <Modal visible={showAddModal} transparent animationType="slide" onRequestClose={() => setShowAddModal(false)}>
+        <Modal visible={showAddModal} transparent animationType="slide" onRequestClose={() = supportedOrientations={['portrait', 'landscape', 'landscape-left', 'landscape-right']}> setShowAddModal(false)}>
           <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
             <Pressable style={s.modalOverlay} onPress={() => setShowAddModal(false)}>
               <Pressable onPress={e => e.stopPropagation()} style={[s.modalContent, { backgroundColor: colors.surface, paddingBottom: Math.max(insets.bottom + rp(20), rp(40)) }]}>
@@ -641,7 +641,7 @@ export default function ReviewScreen() {
           visible={showReviewInfo}
           transparent={true}
           animationType="fade"
-          onRequestClose={() => setShowReviewInfo(false)}
+          onRequestClose={() = supportedOrientations={['portrait', 'landscape', 'landscape-left', 'landscape-right']}> setShowReviewInfo(false)}
         >
           <View style={s.modalOverlay}>
             <View style={[s.modalContent, { backgroundColor: colors.surface, paddingBottom: Math.max(insets.bottom + rp(20), rp(40)) }]}>
@@ -651,7 +651,7 @@ export default function ReviewScreen() {
               </View>
 
               <Text style={{ color: colors.textSecondary, fontSize: rf(14), lineHeight: rf(22), marginBottom: rp(20) }}>
-                La IA puede cometer errores al transcribir el guion.
+                El sistema puede cometer errores al transcribir el guion.
                 {'\n\n'}
                 Revisa el texto, comprueba las tarjetas de las acciones y los diálogos, reordena las líneas si es necesario puedes crear nuevas pulsando "+". Confirma cuando esté listo. Después se generarán las voces automáticamente.
               </Text>
@@ -690,7 +690,7 @@ export default function ReviewScreen() {
           visible={showAddLineInfo}
           transparent={true}
           animationType="fade"
-          onRequestClose={() => setShowAddLineInfo(false)}
+          onRequestClose={() = supportedOrientations={['portrait', 'landscape', 'landscape-left', 'landscape-right']}> setShowAddLineInfo(false)}
         >
           <View style={s.modalOverlay}>
             <View style={[s.modalContent, { backgroundColor: colors.surface, paddingBottom: Math.max(insets.bottom + rp(20), rp(40)) }]}>

@@ -500,7 +500,7 @@ export default function EchoModeScreen() {
                     <Text style={[styles.instructions, { color: colors.text }]}>
                         Lee cada frase, memorízala y repítela cuando desaparezca.
                         {'\n\n'}
-                        Las líneas de la IA se reproducirán automáticamente para darte contexto.
+                        Las líneas de réplica se reproducirán automáticamente para darte contexto.
                     </Text>
 
                     <TouchableOpacity

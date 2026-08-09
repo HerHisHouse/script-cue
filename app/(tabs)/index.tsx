@@ -861,7 +861,7 @@ export default function IndexScreen() {
       )}
 
       {/* Modal Renombrar guion */}
-      <Modal visible={renameModalVisible} transparent animationType="fade" onRequestClose={() => setRenameModalVisible(false)}>
+      <Modal visible={renameModalVisible} transparent animationType="fade" onRequestClose={() = supportedOrientations={['portrait', 'landscape', 'landscape-left', 'landscape-right']}> setRenameModalVisible(false)}>
         <View style={styles.modalOverlay}>
           <View style={[styles.modalContent, { backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border }]}>
             <Text style={[styles.modalTitle, { color: colors.text }]}>Renombrar guion</Text>
@@ -894,7 +894,7 @@ export default function IndexScreen() {
       </Modal>
 
       {/* Modal Confirmación Eliminación Masiva */}
-      <Modal visible={bulkDeleteModalVisible} transparent animationType="fade" onRequestClose={() => setBulkDeleteModalVisible(false)}>
+      <Modal visible={bulkDeleteModalVisible} transparent animationType="fade" onRequestClose={() = supportedOrientations={['portrait', 'landscape', 'landscape-left', 'landscape-right']}> setBulkDeleteModalVisible(false)}>
         <View style={styles.modalOverlay}>
           <View style={[styles.modalContent, { backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border }]}>
             <Text style={[styles.modalTitle, { color: colors.text }]}>Eliminar seleccionados</Text>

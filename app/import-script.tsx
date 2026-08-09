@@ -44,6 +44,12 @@ const CHARACTER_COLORS = [
 
 const GREEN_COLOR = '#10B981';
 
+function getAvailableColor(existingCharacters: CharacterConfig[]): string {
+  const usedColors = new Set(existingCharacters.map(c => c.color));
+  const available = CHARACTER_COLORS.find(c => !usedColors.has(c.value));
+  return available ? available.value : CHARACTER_COLORS[0].value;
+}
+
 interface CharacterConfig {
   id: string;
   name: string;
@@ -166,17 +172,21 @@ export default function ImportScriptScreen() {
               const uniqueNames = Array.from(new Set(linesData.map(l => l.character_name)))
                 .filter(name => name && name.toUpperCase() !== 'ACCIÓN');
                 
+              const tempMapped: CharacterConfig[] = [];
               mapped = uniqueNames.map((nameUpper, idx) => {
                 const per = perMap[nameUpper] || {};
-                return {
+                const isMyCharacter = idx === 0;
+                const newChar = {
                   id: `${Date.now()}-${Math.random().toString(36).slice(2)}`,
                   name: nameUpper,
-                  isMyCharacter: idx === 0, // Por defecto el primero es el usuario
-                  gender: 'male',
-                  color: idx === 0 ? GREEN_COLOR : CHARACTER_COLORS[(idx - 1) % CHARACTER_COLORS.length].value,
-                  provider: idx === 0 ? undefined : ((per.provider as any) || 'system'),
-                  systemVoiceId: idx === 0 ? undefined : (per.systemVoiceId || defaultSystemVoiceId || ''),
+                  isMyCharacter,
+                  gender: 'male' as const,
+                  color: isMyCharacter ? GREEN_COLOR : getAvailableColor(tempMapped),
+                  provider: isMyCharacter ? undefined : ((per.provider as any) || 'system'),
+                  systemVoiceId: isMyCharacter ? undefined : (per.systemVoiceId || defaultSystemVoiceId || ''),
                 };
+                tempMapped.push(newChar);
+                return newChar;
               });
             }
           }
@@ -268,11 +278,16 @@ export default function ImportScriptScreen() {
 
     for (let i = 0; i < count; i++) {
       const isMyCharacter = i === 0;
-      let color = GREEN_COLOR;
+      let existingColor = characters[i]?.color;
+      let finalColor = GREEN_COLOR;
 
       if (!isMyCharacter) {
-        color = CHARACTER_COLORS[availableColorIndex % CHARACTER_COLORS.length].value;
-        availableColorIndex++;
+        // If they had a color and it's not GREEN and not already used, keep it
+        if (existingColor && existingColor !== GREEN_COLOR && !newCharacters.some(c => c.color === existingColor)) {
+            finalColor = existingColor;
+        } else {
+            finalColor = getAvailableColor(newCharacters);
+        }
       }
 
       newCharacters.push({
@@ -280,7 +295,7 @@ export default function ImportScriptScreen() {
         name: characters[i]?.name || '',
         isMyCharacter,
         gender: characters[i]?.gender || 'male',
-        color,
+        color: finalColor,
         provider: isMyCharacter ? undefined : (characters[i]?.provider || 'system'),
         systemVoiceId: isMyCharacter ? undefined : (characters[i]?.systemVoiceId || defaultSystemVoiceId || ''),
       });
@@ -296,11 +311,29 @@ export default function ImportScriptScreen() {
   }
 
   function toggleMyCharacter(index: number) {
-    let newCharacters = characters.map((char, i) => ({
-      ...char,
-      isMyCharacter: i === index,
-      color: i === index ? GREEN_COLOR : (char.color === GREEN_COLOR ? CHARACTER_COLORS[0].value : char.color),
-    }));
+    let newCharacters = [...characters];
+    
+    // El personaje que antes era el mío, ahora necesitará un color. Lo procesamos primero.
+    const oldMyCharIndex = newCharacters.findIndex(c => c.isMyCharacter);
+    
+    newCharacters = newCharacters.map((char, i) => {
+      let finalColor = char.color;
+      
+      if (i === index) {
+        // El nuevo personaje mío recibe verde
+        finalColor = GREEN_COLOR;
+      } else if (i === oldMyCharIndex) {
+        // El que era el mío antes y ahora deja de serlo, necesita un color disponible
+        const otherChars = newCharacters.filter((_, idx) => idx !== oldMyCharIndex && idx !== index);
+        finalColor = getAvailableColor(otherChars);
+      }
+      
+      return {
+        ...char,
+        isMyCharacter: i === index,
+        color: finalColor,
+      };
+    });
 
     // Mover el personaje seleccionado a la posición 0 ("Personaje 1")
     if (index !== 0) {
@@ -931,10 +964,10 @@ export default function ImportScriptScreen() {
                     <>
                       {/* Operador de voces - PRIMERO */}
                       <View style={[styles.labelWithInfo, { marginTop: 12 }]}>
-                        <Text style={[styles.label, { color: colors.text, marginTop: 0, marginBottom: 0 }]}>Proveedor de voz</Text>
+                        <Text style={[styles.label, { color: colors.text, marginTop: 0, marginBottom: 0 }]}>Tipo de voz</Text>
                         <TouchableOpacity
                           onPress={() => Alert.alert(
-                            'Proveedores de voz',
+                            'Tipo de Voz',
                             PROVIDER_INFO_MESSAGE,
                             [{ text: 'Entendido', style: 'default' }]
                           )}
@@ -949,7 +982,7 @@ export default function ImportScriptScreen() {
                         onPress={() => setOpenOperatorIndex(openOperatorIndex === index ? null : index)}
                       >
                         <Text style={[styles.pickerText, { color: colors.text }]}>
-                          {VOICE_PROVIDERS_CONFIG.find(p => p.value === (char.provider || 'system'))?.label ?? '🔈 Básica'}
+                          {VOICE_PROVIDERS_CONFIG.find(p => p.value === (char.provider || 'system'))?.label ?? '🔊 Estándar'}
                         </Text>
                         <ChevronDown size={20} color={colors.textSecondary} />
                       </TouchableOpacity>
@@ -993,6 +1026,7 @@ export default function ImportScriptScreen() {
                       <VoiceSelector
                         selectedVoiceId={char.voiceId || char.systemVoiceId}
                         provider={(char.voiceProvider || char.provider || 'openai') as 'openai' | 'elevenlabs' | 'azure' | 'hume' | 'system'}
+                        characterName={char.name}
                         onVoiceSelect={(voiceId, provider) => {
                           if (provider === 'system') {
                             updateCharacter(index, {
@@ -1095,7 +1129,7 @@ export default function ImportScriptScreen() {
                       name: '', 
                       isMyCharacter: false, 
                       gender: 'male',
-                      color: CHARACTER_COLORS[characters.length % CHARACTER_COLORS.length].value,
+                      color: getAvailableColor(characters),
                       provider: 'system',
                       systemVoiceId: defaultSystemVoiceId
                     }

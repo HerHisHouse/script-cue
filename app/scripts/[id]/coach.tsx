@@ -595,7 +595,7 @@ export default function CoachModeScreen() {
         <View style={[styles.tabContent, { padding: 20, alignItems: 'center', marginTop: 40 }]}>
           <AlertCircle size={48} color="#ef4444" style={{ marginBottom: 16 }} />
           <Text style={{ color: colors.text, textAlign: 'center', fontSize: rf(16), lineHeight: 24, marginBottom: 16 }}>
-            Ocurrió un error en el servidor de IA al procesar esta grabación.
+            Ocurrió un error en el servidor de ScriptCue al procesar esta grabación.
           </Text>
           <Text style={{ color: colors.textSecondary, textAlign: 'center', fontSize: rf(14), lineHeight: 20 }}>
             {analysis.feedback.error}
@@ -679,7 +679,7 @@ export default function CoachModeScreen() {
       case 'comparacion':
         const comp = analysis.comparacion;
         
-        // Función para detectar si la IA devolvió el texto de instrucción (placeholder) o frases genéricas de 'no hay toma'
+        // Función para detectar si ScriptCue devolvió el texto de instrucción (placeholder) o frases genéricas de 'no hay toma'
         const isPlaceholder = (str: string) => {
             if (!str) return true;
             const s = str.toLowerCase();
@@ -912,7 +912,7 @@ export default function CoachModeScreen() {
           visible={showDisclaimer}
           transparent
           animationType="fade"
-          onRequestClose={() => { }}
+          onRequestClose={() = supportedOrientations={['portrait', 'landscape', 'landscape-left', 'landscape-right']}> { }}
         >
           <View style={styles.modalOverlay}>
             <View style={[styles.modalContent, { backgroundColor: colors.surface }]}>
@@ -1003,7 +1003,7 @@ export default function CoachModeScreen() {
               <Brain size={48} color={colors.primary} style={{ marginBottom: 16 }} />
               <Text style={[styles.introTitle, { color: colors.text }]}>Análisis de Interpretación</Text>
               <Text style={[styles.introText, { color: colors.textSecondary }]}>
-                La IA analizará la grabación para darte propuestas de actuación.
+                ScriptCue analizará la escena para darte propuestas de actuación diferentes.
               </Text>
 
               {/* Modal selector de personaje */}

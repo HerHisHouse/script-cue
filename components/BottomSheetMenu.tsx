@@ -99,6 +99,7 @@ export function BottomSheetMenu({ visible, onClose, title, children, backgroundC
       transparent
       animationType="none"
       onRequestClose={onClose}
+      supportedOrientations={['portrait', 'landscape', 'landscape-left', 'landscape-right']}
     >
       {/* Backdrop */}
       <Animated.View style={[styles.backdrop, { opacity }]}>
