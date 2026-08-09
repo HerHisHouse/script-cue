@@ -16,10 +16,10 @@ export type ShotType = 'closeup' | 'medium' | 'american' | 'wide';
 // Canvas base: 240 x 440
 // Cabeza: Y=24-76 (Centro Y=50), Manos: Y=246, Pies: Y=415
 const SHOT_VIEWBOX: Record<ShotType, string> = {
-  closeup:  '35 15 170 130',  // Cabeza y hombros
-  medium:   '25 15 190 200',  // Cabeza hasta el pecho/cintura
-  american: '15 10 210 280',  // Cabeza hasta los muslos
-  wide:     '0 0 240 440',    // Cuerpo completo con aire arriba y abajo
+  closeup:  '10 -10 220 180', // Cabeza y hombros (con más aire)
+  medium:   '0 -20 240 260',  // Hasta el pecho
+  american: '-15 -40 270 360',// Hasta los muslos
+  wide:     '-35 -60 310 560',// Cuerpo completo (mucho aire alrededor para que se vea completo y pequeño)
 };
 
 function SilhouetteGuide({ shotType }: { shotType: ShotType }) {
@@ -97,9 +97,6 @@ const styles = StyleSheet.create({
     ...StyleSheet.absoluteFillObject,
     alignItems: 'center',
     justifyContent: 'center',
-    paddingTop: 70,
-    paddingBottom: 90,
-    paddingHorizontal: 20,
   },
 });
 
