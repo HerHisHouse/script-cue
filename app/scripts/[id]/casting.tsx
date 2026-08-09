@@ -2871,147 +2871,154 @@ export default function CastingModeScreen() {
         animationType="fade"
        supportedOrientations={['portrait', 'landscape', 'landscape-left', 'landscape-right']}>
         <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.8)', justifyContent: 'center', alignItems: 'center', padding: rp(20) }}>
-          <View style={[styles.qualitySection, { width: '100%', backgroundColor: '#1A1A24', borderColor: '#2A2A35' }]}>
-            <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: rp(16), gap: rp(8) }}>
-              <Video size={rp(24)} color="#a78bfa" />
-              <Text style={[styles.qualitySectionTitle, { marginBottom: 0 }]}>
-                Calidad del vídeo
-              </Text>
-            </View>
-            <Text style={styles.qualitySectionSubtitle}>
-              Mayor calidad = archivo más grande
-            </Text>
-
-            <View style={styles.qualityOptions}>
-              {[
-                {
-                  value: 'high',
-                  label: 'Alta',
-                  desc: '1080p — Máxima calidad',
-                  size: '~60MB/min'
-                },
-                {
-                  value: 'medium',
-                  label: 'Media (Recomendada)',
-                  desc: '720p — Estándar profesional',
-                  size: '~30MB/min'
-                },
-                {
-                  value: 'low',
-                  label: 'Baja',
-                  desc: '480p — Archivos más pequeños',
-                  size: '~12MB/min'
-                },
-              ].map((option) => (
-                <TouchableOpacity
-                  key={option.value}
-                  style={[
-                    styles.qualityOption,
-                    videoQuality === option.value && styles.qualityOptionSelected,
-                  ]}
-                  onPress={() => setVideoQuality(option.value as VideoQuality)}
-                >
-                  <View style={{ flex: 1 }}>
-                    <Text style={[
-                      styles.qualityOptionLabel,
-                      videoQuality === option.value && styles.qualityOptionLabelSelected
-                    ]}>
-                      {option.label}
-                    </Text>
-                    <Text style={styles.qualityOptionDesc}>{option.desc}</Text>
-                  </View>
-                  <Text style={styles.qualityOptionSize}>{option.size}</Text>
-                  {videoQuality === option.value && (
-                    <View style={styles.qualityCheckmark}>
-                      <Text style={{ color: '#a78bfa', fontSize: rf(16) }}>✓</Text>
-                    </View>
-                  )}
-                </TouchableOpacity>
-              ))}
-            </View>
-
-            {/* Sección auriculares */}
-            {castingMode === 'script_config' && (
-              <View style={{ marginTop: rp(24) }}>
-                <Text style={[styles.qualitySectionTitle, { marginBottom: rp(4) }]}>
-                  🎧 ¿Usarás auriculares?
+          <ScrollView 
+            bounces={false}
+            showsVerticalScrollIndicator={true}
+            style={{ width: '100%', maxWidth: 500, maxHeight: '100%' }}
+            contentContainerStyle={{ flexGrow: 1, justifyContent: 'center' }}
+          >
+            <View style={[styles.qualitySection, { width: '100%', backgroundColor: '#1A1A24', borderColor: '#2A2A35' }]}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: rp(16), gap: rp(8) }}>
+                <Video size={rp(24)} color="#a78bfa" />
+                <Text style={[styles.qualitySectionTitle, { marginBottom: 0 }]}>
+                  Calidad del vídeo
                 </Text>
-                <Text style={styles.qualitySectionSubtitle}>
-                  Afecta a la calidad del audio mezclado
-                </Text>
-
-                <View style={{ flexDirection: 'row', gap: rp(10), marginTop: rp(12) }}>
-                  
-                  <TouchableOpacity
-                    style={[
-                      styles.qualityOption,
-                      { flex: 1, flexDirection: 'column', alignItems: 'center' },
-                      hasHeadphones === true && styles.qualityOptionSelected,
-                    ]}
-                    onPress={() => setHasHeadphones(true)}
-                  >
-                    <Text style={{ fontSize: rf(28), marginBottom: rp(8) }}>🎧</Text>
-                    <Text style={[
-                      styles.qualityOptionLabel,
-                      hasHeadphones === true && styles.qualityOptionLabelSelected
-                    ]}>
-                      Sí
-                    </Text>
-                    <Text style={styles.qualityOptionDesc}>
-                      Ambas voces suenan a la vez
-                    </Text>
-                    {hasHeadphones === true && (
-                      <Text style={{ color: '#a78bfa', fontSize: rf(16), marginTop: rp(4) }}>✓</Text>
-                    )}
-                  </TouchableOpacity>
-
-                  <TouchableOpacity
-                    style={[
-                      styles.qualityOption,
-                      { flex: 1, flexDirection: 'column', alignItems: 'center' },
-                      hasHeadphones === false && styles.qualityOptionSelected,
-                    ]}
-                    onPress={() => setHasHeadphones(false)}
-                  >
-                    <Text style={{ fontSize: rf(28), marginBottom: rp(8) }}>📱</Text>
-                    <Text style={[
-                      styles.qualityOptionLabel,
-                      hasHeadphones === false && styles.qualityOptionLabelSelected
-                    ]}>
-                      No
-                    </Text>
-                    <Text style={styles.qualityOptionDesc}>
-                      Se silencia el eco automáticamente
-                    </Text>
-                    {hasHeadphones === false && (
-                      <Text style={{ color: '#a78bfa', fontSize: rf(16), marginTop: rp(4) }}>✓</Text>
-                    )}
-                  </TouchableOpacity>
-
-                </View>
               </View>
-            )}
+              <Text style={styles.qualitySectionSubtitle}>
+                Mayor calidad = archivo más grande
+              </Text>
 
-            <TouchableOpacity
-              style={{
-                backgroundColor: (qualityApplied || videoQuality) && (castingMode !== 'script_config' || hasHeadphones !== null)
-                  ? '#10B981'
-                  : '#444',
-                paddingVertical: rp(14),
-                borderRadius: rp(12),
-                alignItems: 'center',
-                marginTop: rp(24),
-                opacity: (castingMode !== 'script_config' || hasHeadphones !== null) ? 1 : 0.5,
-              }}
-              disabled={castingMode === 'script_config' && hasHeadphones === null}
-              onPress={() => {
-                setShowQualityModal(false);
-                setQualityApplied(true);
-              }}
-            >
-              <Text style={{ color: 'white', fontWeight: 'bold', fontSize: rf(16) }}>Aplicar</Text>
-            </TouchableOpacity>
-          </View>
+              <View style={styles.qualityOptions}>
+                {[
+                  {
+                    value: 'high',
+                    label: 'Alta',
+                    desc: '1080p — Máxima calidad',
+                    size: '~60MB/min'
+                  },
+                  {
+                    value: 'medium',
+                    label: 'Media (Recomendada)',
+                    desc: '720p — Estándar profesional',
+                    size: '~30MB/min'
+                  },
+                  {
+                    value: 'low',
+                    label: 'Baja',
+                    desc: '480p — Archivos más pequeños',
+                    size: '~12MB/min'
+                  },
+                ].map((option) => (
+                  <TouchableOpacity
+                    key={option.value}
+                    style={[
+                      styles.qualityOption,
+                      videoQuality === option.value && styles.qualityOptionSelected,
+                    ]}
+                    onPress={() => setVideoQuality(option.value as VideoQuality)}
+                  >
+                    <View style={{ flex: 1 }}>
+                      <Text style={[
+                        styles.qualityOptionLabel,
+                        videoQuality === option.value && styles.qualityOptionLabelSelected
+                      ]}>
+                        {option.label}
+                      </Text>
+                      <Text style={styles.qualityOptionDesc}>{option.desc}</Text>
+                    </View>
+                    <Text style={styles.qualityOptionSize}>{option.size}</Text>
+                    {videoQuality === option.value && (
+                      <View style={styles.qualityCheckmark}>
+                        <Text style={{ color: '#a78bfa', fontSize: rf(16) }}>✓</Text>
+                      </View>
+                    )}
+                  </TouchableOpacity>
+                ))}
+              </View>
+
+              {/* Sección auriculares */}
+              {castingMode === 'script_config' && (
+                <View style={{ marginTop: rp(24) }}>
+                  <Text style={[styles.qualitySectionTitle, { marginBottom: rp(4) }]}>
+                    🎧 ¿Usarás auriculares?
+                  </Text>
+                  <Text style={styles.qualitySectionSubtitle}>
+                    Afecta a la calidad del audio mezclado
+                  </Text>
+
+                  <View style={{ flexDirection: 'row', gap: rp(10), marginTop: rp(12) }}>
+                    
+                    <TouchableOpacity
+                      style={[
+                        styles.qualityOption,
+                        { flex: 1, flexDirection: 'column', alignItems: 'center' },
+                        hasHeadphones === true && styles.qualityOptionSelected,
+                      ]}
+                      onPress={() => setHasHeadphones(true)}
+                    >
+                      <Text style={{ fontSize: rf(28), marginBottom: rp(8) }}>🎧</Text>
+                      <Text style={[
+                        styles.qualityOptionLabel,
+                        hasHeadphones === true && styles.qualityOptionLabelSelected
+                      ]}>
+                        Sí
+                      </Text>
+                      <Text style={styles.qualityOptionDesc}>
+                        Ambas voces suenan a la vez
+                      </Text>
+                      {hasHeadphones === true && (
+                        <Text style={{ color: '#a78bfa', fontSize: rf(16), marginTop: rp(4) }}>✓</Text>
+                      )}
+                    </TouchableOpacity>
+
+                    <TouchableOpacity
+                      style={[
+                        styles.qualityOption,
+                        { flex: 1, flexDirection: 'column', alignItems: 'center' },
+                        hasHeadphones === false && styles.qualityOptionSelected,
+                      ]}
+                      onPress={() => setHasHeadphones(false)}
+                    >
+                      <Text style={{ fontSize: rf(28), marginBottom: rp(8) }}>📱</Text>
+                      <Text style={[
+                        styles.qualityOptionLabel,
+                        hasHeadphones === false && styles.qualityOptionLabelSelected
+                      ]}>
+                        No
+                      </Text>
+                      <Text style={styles.qualityOptionDesc}>
+                        Se silencia el eco automáticamente
+                      </Text>
+                      {hasHeadphones === false && (
+                        <Text style={{ color: '#a78bfa', fontSize: rf(16), marginTop: rp(4) }}>✓</Text>
+                      )}
+                    </TouchableOpacity>
+
+                  </View>
+                </View>
+              )}
+
+              <TouchableOpacity
+                style={{
+                  backgroundColor: (qualityApplied || videoQuality) && (castingMode !== 'script_config' || hasHeadphones !== null)
+                    ? '#10B981'
+                    : '#444',
+                  paddingVertical: rp(14),
+                  borderRadius: rp(12),
+                  alignItems: 'center',
+                  marginTop: rp(24),
+                  opacity: (castingMode !== 'script_config' || hasHeadphones !== null) ? 1 : 0.5,
+                }}
+                disabled={castingMode === 'script_config' && hasHeadphones === null}
+                onPress={() => {
+                  setShowQualityModal(false);
+                  setQualityApplied(true);
+                }}
+              >
+                <Text style={{ color: 'white', fontWeight: 'bold', fontSize: rf(16) }}>Aplicar</Text>
+              </TouchableOpacity>
+            </View>
+          </ScrollView>
         </View>
       </Modal>
     </View>
