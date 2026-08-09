@@ -11,6 +11,7 @@ import {
   Dimensions,
   PanResponder,
   Animated,
+  Easing,
   LayoutAnimation,
   Pressable,
   ScrollView,
@@ -29,7 +30,9 @@ import { Audio, InterruptionModeIOS, InterruptionModeAndroid } from 'expo-av';
 import * as FileSystem from 'expo-file-system/legacy'; // Fix: Use legacy API
 import { transcribeAudio } from '@/services/transcription'; // Import transcription service
 import { calculateSimilarity } from '@/utils/stringUtils'; // Helper for similarity
-import { ArrowLeft, Mic, RotateCcw, Play, Pause, Square, Video, SwitchCamera, Settings2, SkipBack, SkipForward, MoreVertical, EyeOff, Eye, Minus, Plus, Volume2, GripHorizontal, X, Timer, Clapperboard, Trash2, ChevronRight, MessageSquare, FileText, Type, Snail, Rabbit, FlipHorizontal, Bold, Italic, Underline, AlignLeft, AlignCenter, AlignRight, Keyboard as KeyboardIcon, Info, MonitorPlay } from 'lucide-react-native';
+import { ArrowLeft, Mic, RotateCcw, Play, Pause, Square, Video, SwitchCamera, Settings2, SkipBack, SkipForward, MoreVertical, EyeOff, Eye, Minus, Plus, Volume2, GripHorizontal, X, Timer, Clapperboard, Trash2, ChevronRight, MessageSquare, FileText, Type, Snail, Rabbit, FlipHorizontal, Bold, Italic, Underline, AlignLeft, AlignCenter, AlignRight, Keyboard as KeyboardIcon, Info, MonitorPlay, Maximize2, CheckCircle2 } from 'lucide-react-native';
+import * as Haptics from 'expo-haptics';
+import SilhouetteGuide, { ShotType } from '@/components/SilhouetteGuide';
 import { FontAwesome5 } from '@expo/vector-icons';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/utils/supabase';
@@ -217,6 +220,37 @@ export default function CastingModeScreen() {
   const scrollOffsetRef = useRef(0);
   const freeTextInputRef = useRef<any>(null);
 
+  // ── Plano General Automático (solo Teleprompter Libre) ──────────────
+  const SHOT_TYPES: { value: ShotType; label: string; description: string }[] = [
+    { value: 'closeup',  label: 'Primer plano',   description: 'Cabeza y hombros' },
+    { value: 'medium',   label: 'Plano medio',     description: 'Hasta el pecho' },
+    { value: 'american', label: 'Plano americano', description: 'Hasta el muslo' },
+  ];
+
+  // Zoom de cámara según tipo de plano (prop zoom de CameraView, escala 0–1)
+  // wide=0 es el campo más ancho disponible en cámara frontal (sin zoom digital)
+  const ZOOM_BY_SHOT: Record<ShotType, number> = {
+    wide:     0,
+    american: 0.05,
+    medium:   0.08,
+    closeup:  0.15,
+  };
+
+  const [autoWideShotEnabled, setAutoWideShotEnabled] = useState(false);
+  const [workingShot, setWorkingShot] = useState<ShotType>('medium');
+
+  // Animated.Value que controla el zoom real de la cámara durante la transición
+  const zoomAnimValue = useRef(new Animated.Value(0.08)).current;
+
+  // Detección de palmada — umbrales y refs
+  const CLAP_THRESHOLD_DB = -10;     // pico mínimo para considerarse palmada
+  const DOUBLE_CLAP_WINDOW_MS = 800; // ventana temporal entre las dos palmadas
+  const CLAP_DEBOUNCE_MS = 80;       // tiempo mínimo entre picos (anti-eco/reverb)
+  const clapTimestampsRef = useRef<number[]>([]);
+  const lastClapPeakRef = useRef<number>(0);
+  const clapMeteringRecordingRef = useRef<Audio.Recording | null>(null);
+  // ────────────────────────────────────────────────────────────────────
+
   const handleFreeTextChange = useCallback((newPlain: string) => {
     setFreeText(newPlain);
   }, []);
@@ -329,6 +363,27 @@ export default function CastingModeScreen() {
   const processingRef = useRef(false);
   const SILENCE_THRESHOLD = -45; // dB (More sensitive)
   const [metering, setMetering] = useState(-160);
+
+  // Sincronizar zoomAnimValue → estado zoom durante la animación de transición
+  useEffect(() => {
+    const listenerId = zoomAnimValue.addListener(({ value }) => {
+      setZoom(value);
+    });
+    return () => zoomAnimValue.removeListener(listenerId);
+  }, []);
+
+  // Actualizar zoom de cámara cuando cambia el plano de trabajo o se activa la función
+  useEffect(() => {
+    if (!autoWideShotEnabled) {
+      // Restablecer al "1x" habitual al desactivar
+      zoomAnimValue.setValue(0.08);
+      setZoom(0.08);
+    } else {
+      const target = ZOOM_BY_SHOT[workingShot];
+      zoomAnimValue.setValue(target);
+      setZoom(target);
+    }
+  }, [autoWideShotEnabled, workingShot]);
 
   const panResponder = useRef(
     PanResponder.create({
@@ -1261,6 +1316,102 @@ export default function CastingModeScreen() {
     }
   }
 
+  // ── Detección de doble palmada ─────────────────────────────────────
+  /**
+   * Abre una grabación auxiliar de metering durante la grabación de vídeo.
+   * NOTA DE SEGURIDAD: En iOS, expo-camera y expo-av comparten AVAudioSession.
+   * El try/catch garantiza que un eventual conflicto nunca afecte la grabación
+   * de vídeo. → Probar obligatoriamente en dispositivo físico antes de publicar.
+   */
+  async function startClapDetection() {
+    if (!autoWideShotEnabled || castingType !== 'free') return;
+    try {
+      const { recording } = await Audio.Recording.createAsync(
+        {
+          isMeteringEnabled: true,
+          android: {
+            extension: '.m4a',
+            outputFormat: Audio.AndroidOutputFormat.MPEG_4,
+            audioEncoder: Audio.AndroidAudioEncoder.AAC,
+            sampleRate: 16000,
+            numberOfChannels: 1,
+            bitRate: 16000,
+          },
+          ios: {
+            extension: '.m4a',
+            outputFormat: Audio.IOSOutputFormat.MPEG4AAC,
+            audioQuality: Audio.IOSAudioQuality.MIN,
+            sampleRate: 16000,
+            numberOfChannels: 1,
+            bitRate: 16000,
+            linearPCMBitDepth: 16,
+            linearPCMIsBigEndian: false,
+            linearPCMIsFloat: false,
+          },
+          web: {},
+        },
+        (status) => {
+          if (!status.isRecording || status.metering === undefined) return;
+          handleClapDetection(status.metering);
+        },
+        50
+      );
+      clapMeteringRecordingRef.current = recording;
+      console.log('[Teleprompter] Detección de palmada iniciada ✅');
+    } catch (e) {
+      // No interrumpe la grabación de vídeo — solo advertencia
+      console.warn('[Teleprompter] No se pudo iniciar detección de palmada (vídeo no afectado):', e);
+    }
+  }
+
+  async function stopClapDetection() {
+    if (!clapMeteringRecordingRef.current) return;
+    try {
+      await clapMeteringRecordingRef.current.stopAndUnloadAsync();
+    } catch { }
+    const uri = clapMeteringRecordingRef.current.getURI();
+    if (uri) {
+      try { await FileSystem.deleteAsync(uri, { idempotent: true }); } catch { }
+    }
+    clapMeteringRecordingRef.current = null;
+    clapTimestampsRef.current = [];
+    lastClapPeakRef.current = 0;
+    console.log('[Teleprompter] Detección de palmada detenida');
+  }
+
+  function handleClapDetection(db: number) {
+    if (db < CLAP_THRESHOLD_DB) return;
+    const now = Date.now();
+
+    // Debounce: ignorar picos muy seguidos (eco, reverberación de la sala)
+    if (now - lastClapPeakRef.current < CLAP_DEBOUNCE_MS) return;
+    lastClapPeakRef.current = now;
+
+    // Registrar y limpiar timestamps fuera de la ventana
+    clapTimestampsRef.current.push(now);
+    clapTimestampsRef.current = clapTimestampsRef.current.filter(
+      t => now - t < DOUBLE_CLAP_WINDOW_MS
+    );
+
+    if (clapTimestampsRef.current.length >= 2) {
+      console.log('[Teleprompter] Doble palmada detectada');
+      triggerWideShotTransition();
+      clapTimestampsRef.current = []; // Resetear para no re-disparar
+    }
+  }
+
+  function triggerWideShotTransition() {
+    Animated.timing(zoomAnimValue, {
+      toValue: 0, // Plano general = zoom mínimo (campo más ancho disponible)
+      duration: 600,
+      easing: Easing.inOut(Easing.ease),
+      useNativeDriver: false, // El zoom de cámara no admite native driver
+    }).start();
+    // Feedback háptico de confirmación
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+  }
+  // ────────────────────────────────────────────────────────────────────
+
   async function startRecording() {
     if (user) trackEvent(user.id, 'mode_opened', 'casting', { script_id: id, quality: videoQuality, has_headphones: hasHeadphones });
     if (!cameraRef.current) return;
@@ -1307,6 +1458,10 @@ export default function CastingModeScreen() {
         lineTimingsRef.current = [];
         setLineTimingsCount(0);
         activateKeepAwakeAsync();
+
+        // Iniciar detección de palmada (solo Teleprompter Libre con toggle activo)
+        // Modo seguro: try/catch interno — no bloquea si hay conflicto de audio en iOS
+        startClapDetection();
 
         // Timer is now managed by the declarative useEffect above (tied to isPlaying/isRecording)
         // No need to start a manual interval here
@@ -1369,6 +1524,9 @@ export default function CastingModeScreen() {
     setIsRecording(false);
     setIsPlaying(false);
     deactivateKeepAwake();
+
+    // Detener detección de palmada antes de parar la cámara
+    await stopClapDetection();
 
     try {
       const video = await cameraRef.current.stopRecording();
@@ -1484,6 +1642,9 @@ export default function CastingModeScreen() {
       countdownCancelledRef.current = true;
       (cameraRef.current as any)._cancelRecording = true;
       cameraRef.current.stopRecording();
+
+      // Detener detección de palmada (no bloqueante)
+      stopClapDetection();
 
       setIsRecording(false);
       setIsPlaying(false);
@@ -1672,7 +1833,7 @@ export default function CastingModeScreen() {
             >
               <Clapperboard size={rp(48)} color={colors.primary} style={{ marginBottom: 16 }} />
               <Text style={{ color: colors.text, fontSize: rf(20), fontWeight: '700' }}>SelfTape</Text>
-              <Text style={{ color: colors.textSecondary, fontSize: rf(14), textAlign: 'center', marginTop: 8 }}>Graba tu self tape con la réplica por IA</Text>
+              <Text style={{ color: colors.textSecondary, fontSize: rf(14), textAlign: 'center', marginTop: 8 }}>Graba con la réplica en tiempo real</Text>
             </TouchableOpacity>
 
             <TouchableOpacity
@@ -1681,7 +1842,7 @@ export default function CastingModeScreen() {
             >
               <MonitorPlay size={rp(48)} color="#10B981" style={{ marginBottom: 16 }} />
               <Text style={{ color: colors.text, fontSize: rf(20), fontWeight: '700' }}>Teleprompter</Text>
-              <Text style={{ color: colors.textSecondary, fontSize: rf(14), textAlign: 'center', marginTop: 8 }}>Crea un teleprompter profesional a partir de cualquier texto.</Text>
+              <Text style={{ color: colors.textSecondary, fontSize: rf(14), textAlign: 'center', marginTop: 8 }}>Graba con teleprompter para presentaciones largas o reels</Text>
             </TouchableOpacity>
           </View>
         </SafeAreaView>
@@ -1910,7 +2071,7 @@ export default function CastingModeScreen() {
                         </View>
                       ) : (
                         <View style={[styles.configAiBadge, { backgroundColor: line.color }]}>
-                          <Text style={styles.configAiBadgeText}>IA</Text>
+                          <Text style={styles.configAiBadgeText}>SC</Text>
                         </View>
                       )}
                     </View>
@@ -2000,6 +2161,11 @@ export default function CastingModeScreen() {
           )}
           {castingType === 'free' && globalBackground !== 'transparent' && (
             <View style={[StyleSheet.absoluteFill, { backgroundColor: globalBackground }]} />
+          )}
+
+          {/* Silueta guía de encuadre — solo Teleprompter Libre, antes de grabar */}
+          {castingType === 'free' && autoWideShotEnabled && !isRecording && (
+            <SilhouetteGuide shotType={workingShot} />
           )}
 
           {/* UI Overlay - Absolute positioned */}
@@ -2232,7 +2398,7 @@ export default function CastingModeScreen() {
                               </View>
                             ) : (
                               <View style={[styles.aiBadge, { backgroundColor: line.color }]}>
-                                <Text style={styles.aiBadgeText}>IA</Text>
+                                <Text style={styles.aiBadgeText}>SC</Text>
                               </View>
                             )}
                           </View>
@@ -2403,7 +2569,7 @@ export default function CastingModeScreen() {
                       <View style={[styles.menuItem, { paddingHorizontal: 20, justifyContent: 'space-between' }]}>
                         <View style={{ flexDirection: 'row', alignItems: 'center', gap: rp(12) }}>
                           <Volume2 size={rp(20)} color="white" />
-                          <Text style={styles.menuText}>Volumen voz IA</Text>
+                          <Text style={styles.menuText}>Volumen réplica</Text>
                         </View>
                         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
                           <TouchableOpacity onPress={() => setTtsVolume(Math.max(0.1, ttsVolume - 0.1))} style={styles.volumeBtnMenu}>
@@ -2619,6 +2785,52 @@ export default function CastingModeScreen() {
                           </TouchableOpacity>
                         </View>
                       </View>
+                      <View style={{ height: 1, backgroundColor: '#333', marginVertical: 8 }} />
+
+                      {/* 5. Plano General Automático */}
+                      <BottomSheetToggle
+                        label="Plano general automático"
+                        Icon={Maximize2}
+                        value={autoWideShotEnabled}
+                        onValueChange={setAutoWideShotEnabled}
+                        iconColor="white"
+                        textColor="white"
+                      />
+
+                      {/* Selector de plano de trabajo (visible si el toggle está activo) */}
+                      {autoWideShotEnabled && (
+                        <View style={styles.shotSelectorContainer}>
+                          <Text style={styles.shotSelectorLabel}>
+                            Plano de trabajo — colócate antes de grabar
+                          </Text>
+                          {SHOT_TYPES.map(shot => (
+                            <TouchableOpacity
+                              key={shot.value}
+                              onPress={() => setWorkingShot(shot.value)}
+                              style={[
+                                styles.shotOption,
+                                workingShot === shot.value && styles.shotOptionActive,
+                              ]}
+                            >
+                              <View style={{ flex: 1 }}>
+                                <Text style={[
+                                  styles.shotOptionLabel,
+                                  workingShot === shot.value && { fontWeight: '700', color: '#fff' },
+                                ]}>
+                                  {shot.label}
+                                </Text>
+                                <Text style={styles.shotOptionDesc}>{shot.description}</Text>
+                              </View>
+                              {workingShot === shot.value && (
+                                <CheckCircle2 size={rp(18)} color="#10B981" />
+                              )}
+                            </TouchableOpacity>
+                          ))}
+                          <Text style={styles.shotSelectorHint}>
+                            💡 Da dos palmadas durante la grabación para hacer zoom out al plano general
+                          </Text>
+                        </View>
+                      )}
                     </>
                   )}
                 </ScrollView>
@@ -2638,7 +2850,7 @@ export default function CastingModeScreen() {
                 <Text style={styles.processingText}>
                   {castingType === 'free'
                     ? 'Estamos guardando el vídeo, podrás encontrarlo en Grabaciones.'
-                    : 'Estamos mezclando tu actuación con el audio de IA de alta calidad.'}
+                    : 'Estamos mezclando tu actuación con la voz de réplica de alta calidad.'}
                 </Text>
                 {castingType !== 'free' && (
                   <Text style={styles.processingSubtext}>
@@ -3784,6 +3996,50 @@ const styles = StyleSheet.create({
     width: rp(24),
     alignItems: 'center',
   },
+
+  // ── Plano General Automático ─────────────────────────────────────
+  shotSelectorContainer: {
+    marginHorizontal: rp(20),
+    marginTop: rp(4),
+    marginBottom: rp(8),
+    backgroundColor: 'rgba(255,255,255,0.05)',
+    borderRadius: rp(12),
+    padding: rp(12),
+  },
+  shotSelectorLabel: {
+    color: 'rgba(255,255,255,0.55)',
+    fontSize: rf(12),
+    marginBottom: rp(10),
+    textAlign: 'center',
+  },
+  shotOption: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: rp(10),
+    paddingHorizontal: rp(12),
+    borderRadius: rp(8),
+    marginBottom: rp(4),
+  },
+  shotOptionActive: {
+    backgroundColor: 'rgba(16,185,129,0.15)',
+  },
+  shotOptionLabel: {
+    color: 'rgba(255,255,255,0.75)',
+    fontSize: rf(14),
+    marginBottom: rp(2),
+  },
+  shotOptionDesc: {
+    color: 'rgba(255,255,255,0.40)',
+    fontSize: rf(11),
+  },
+  shotSelectorHint: {
+    color: 'rgba(255,255,255,0.35)',
+    fontSize: rf(11),
+    textAlign: 'center',
+    marginTop: rp(8),
+    lineHeight: rf(15),
+  },
+  // ─────────────────────────────────────────────────────────────────
 });
 
 // Helper to convert ArrayBuffer to Base64
