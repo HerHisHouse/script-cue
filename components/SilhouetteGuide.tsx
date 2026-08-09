@@ -9,24 +9,24 @@ export type ShotType = 'closeup' | 'medium' | 'american' | 'wide';
  * para guiar al actor a colocarse en el encuadre correcto según el tipo
  * de plano seleccionado (primer plano, medio, americano, general).
  *
- * Se utiliza viewBox adaptativo con preserveAspectRatio="xMidYMin meet"
- * para evitar deformaciones y mantener una silueta realista y estética.
+ * Proporciones anatómicas humanas reales (cabeza, hombros, brazos hasta medio muslo, torso y piernas)
+ * con aire arriba y abajo en encuadre vertical u horizontal.
  */
 
-// ViewBox de la figura completa: 200 x 420
-// Cabeza centro: (100, 65), Hombros: Y=130, Cintura: Y=230, Caderas: Y=290, Pies: Y=410
+// Canvas base: 240 x 440
+// Cabeza: Y=24-76 (Centro Y=50), Manos: Y=246, Pies: Y=415
 const SHOT_VIEWBOX: Record<ShotType, string> = {
-  closeup:  '25 20 150 160',  // Cabeza + hombros
-  medium:   '15 20 170 230',  // Cabeza hasta el pecho/cintura
-  american: '5 15 190 320',   // Cabeza hasta los muslos
-  wide:     '0 0 200 420',    // Cuerpo completo
+  closeup:  '35 15 170 130',  // Cabeza y hombros
+  medium:   '25 15 190 200',  // Cabeza hasta el pecho/cintura
+  american: '15 10 210 280',  // Cabeza hasta los muslos
+  wide:     '0 0 240 440',    // Cuerpo completo con aire arriba y abajo
 };
 
 function SilhouetteGuide({ shotType }: { shotType: ShotType }) {
   const viewBox = SHOT_VIEWBOX[shotType] || SHOT_VIEWBOX.medium;
 
-  const fillColor = 'rgba(255, 255, 255, 0.18)';
-  const strokeColor = 'rgba(255, 255, 255, 0.60)';
+  const fillColor = 'rgba(255, 255, 255, 0.16)';
+  const strokeColor = 'rgba(255, 255, 255, 0.65)';
   const strokeW = 2;
 
   return (
@@ -35,44 +35,49 @@ function SilhouetteGuide({ shotType }: { shotType: ShotType }) {
         width="100%"
         height="100%"
         viewBox={viewBox}
-        preserveAspectRatio="xMidYMin meet"
+        preserveAspectRatio="xMidYMid meet"
       >
         <G>
           {/* Cabeza anatómica */}
           <Ellipse
-            cx="100"
-            cy="65"
-            rx="28"
-            ry="36"
+            cx="120"
+            cy="50"
+            rx="20"
+            ry="26"
             fill={fillColor}
             stroke={strokeColor}
             strokeWidth={strokeW}
           />
 
-          {/* Cuerpo completo en curva fluida (Cuello, Hombros, Brazos, Torso, Caderas, Piernas) */}
+          {/* Cuerpo completo proporcional (Cuello, Hombros, Brazos largos hasta el muslo, Torso, Piernas y Pies) */}
           <Path
             d="
-              M 88 96
-              C 87 108, 72 122, 36 134
-              C 24 138, 20 150, 24 168
-              C 27 182, 42 185, 48 170
-              C 52 158, 56 148, 60 144
-              C 63 170, 65 205, 68 230
-              C 70 255, 60 275, 58 305
-              C 56 335, 62 380, 64 410
-              L 92 410
-              C 92 365, 94 315, 96 265
-              C 97 250, 98 250, 100 250
-              C 102 250, 103 250, 104 265
-              C 106 315, 108 365, 108 410
-              L 136 410
-              C 138 380, 144 335, 142 305
-              C 140 275, 130 255, 132 230
-              C 135 205, 137 170, 140 144
-              C 144 148, 148 158, 152 170
-              C 158 185, 173 182, 176 168
-              C 180 150, 176 138, 164 134
-              C 128 122, 113 108, 112 96
+              M 110 74
+              C 109 83, 96 92, 68 102
+              C 56 106, 50 118, 48 135
+              C 46 155, 46 185, 47 215
+              C 48 232, 50 245, 54 246
+              C 58 247, 62 238, 63 226
+              C 64 202, 65 178, 68 156
+              C 70 148, 74 146, 77 154
+              C 80 175, 82 205, 85 228
+              C 87 252, 79 275, 77 305
+              C 75 335, 82 380, 84 415
+              L 106 415
+              C 106 370, 107 318, 111 245
+              C 112 232, 114 232, 115 245
+              C 119 318, 120 370, 120 415
+              L 142 415
+              C 144 380, 151 335, 149 305
+              C 147 275, 139 252, 141 228
+              C 144 205, 146 175, 149 154
+              C 152 146, 156 148, 158 156
+              C 161 178, 162 202, 163 226
+              C 164 238, 168 247, 172 246
+              C 176 245, 178 232, 179 215
+              C 180 185, 180 155, 178 135
+              C 176 118, 170 106, 158 102
+              C 130 92, 117 83, 116 74
               Z
             "
             fill={fillColor}
@@ -91,8 +96,10 @@ const styles = StyleSheet.create({
   overlay: {
     ...StyleSheet.absoluteFillObject,
     alignItems: 'center',
-    justifyContent: 'flex-start',
-    paddingTop: '8%',
+    justifyContent: 'center',
+    paddingTop: 70,
+    paddingBottom: 90,
+    paddingHorizontal: 20,
   },
 });
 
