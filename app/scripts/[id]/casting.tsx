@@ -1325,8 +1325,11 @@ export default function CastingModeScreen() {
    * de vídeo. → Probar obligatoriamente en dispositivo físico antes de publicar.
    */
   async function startClapDetection() {
+    console.log('[Teleprompter] Intentando iniciar detección de palmada, facing actual:', facing);
+    console.log('[Teleprompter] Condiciones:', { autoWideShotEnabled, castingType });
     if (!autoWideShotEnabled || castingType !== 'free') return;
     try {
+      console.log('[Teleprompter] Solicitando Audio.Recording.createAsync...');
       const { recording } = await Audio.Recording.createAsync(
         {
           isMeteringEnabled: true,
