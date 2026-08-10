@@ -42,6 +42,7 @@ export function SilhouetteGuide({ shotType }: { shotType: ShotType }) {
 
   const visibleRatio = SHOT_VISIBLE_HEIGHT[shotType];
   const screenHeight = Dimensions.get('window').height;
+  const screenWidth = Dimensions.get('window').width;
   
   // En lugar de solo recortar el contenedor, calculamos una escala
   // para que la porción visible ocupe toda la altura deseada.
