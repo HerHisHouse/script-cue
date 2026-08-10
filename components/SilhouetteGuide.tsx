@@ -42,30 +42,38 @@ export function SilhouetteGuide({ shotType }: { shotType: ShotType }) {
 
   const visibleRatio = SHOT_VISIBLE_HEIGHT[shotType];
   const screenHeight = Dimensions.get('window').height;
-  // Alto del contenedor recortado según el plano — el SVG
-  // se posiciona arriba (cabeza) y se recorta por overflow
-  const clippedHeight = screenHeight * visibleRatio;
+  
+  // En lugar de solo recortar el contenedor, calculamos una escala
+  // para que la porción visible ocupe toda la altura deseada.
+  const scale = 1 / visibleRatio;
+  
+  // Altura base de la silueta en plano general (cuerpo entero)
+  const baseHeight = screenHeight * 0.95;
+  // Como el SVG original es un cuadrado (viewBox 206x206), le damos
+  // un ancho base igual al alto para que no se encoja por los lados.
+  const baseWidth = baseHeight; 
+
+  const targetHeight = baseHeight * scale;
+  const targetWidth = baseWidth * scale;
+
+  // Inyectar preserveAspectRatio para que la cabeza (top del SVG)
+  // siempre quede anclada en la parte superior del contenedor al escalar.
+  const modifiedSvgXml = svgXml.replace('<svg ', '<svg preserveAspectRatio="xMidYMin meet" ');
 
   return (
-    <View style={StyleSheet.absoluteFill} pointerEvents="none">
+    <View style={[StyleSheet.absoluteFill, { overflow: 'hidden', alignItems: 'center', justifyContent: 'flex-start' }]} pointerEvents="none">
       <View
         style={{
-          position: 'absolute',
-          top: 0,
-          left: 0,
-          right: 0,
-          height: clippedHeight,
-          overflow: 'hidden',
-          justifyContent: 'flex-start',
-          alignItems: 'center',
+          width: targetWidth,
+          height: targetHeight,
+          // Un pequeño margen superior para que la cabeza no toque el borde de la pantalla
+          marginTop: screenHeight * 0.05,
         }}
       >
         <SvgXml
-          xml={svgXml}
-          width="60%"
-          height={screenHeight * 0.95}
-          // Altura fija del cuerpo entero; el contenedor
-          // recorta la parte inferior según el plano
+          xml={modifiedSvgXml}
+          width="100%"
+          height="100%"
           fill="rgba(255,255,255,0.18)"
           stroke="rgba(255,255,255,0.75)"
           strokeWidth={2}
