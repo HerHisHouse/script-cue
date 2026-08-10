@@ -244,9 +244,9 @@ export default function CastingModeScreen() {
   const zoomAnimValue = useRef(new Animated.Value(0.08)).current;
 
   // Detección de palmada — umbrales y refs
-  const CLAP_THRESHOLD_DB = -22;     // pico mínimo para considerarse palmada
-  const DOUBLE_CLAP_WINDOW_MS = 800; // ventana temporal entre las dos palmadas
-  const CLAP_DEBOUNCE_MS = 80;       // tiempo mínimo entre picos (anti-eco/reverb)
+  const CLAP_THRESHOLD_DB = -14;     // Equilibrado: ignora voz normal pero capta palmadas traseras
+  const DOUBLE_CLAP_WINDOW_MS = 1000; // ventana temporal entre las dos palmadas
+  const CLAP_DEBOUNCE_MS = 250;      // Tiempo mínimo real entre dos palmadas humanas
   const clapTimestampsRef = useRef<number[]>([]);
   const lastClapPeakRef = useRef<number>(0);
   const clapMeteringRecordingRef = useRef<Audio.Recording | null>(null);
