@@ -33,7 +33,7 @@
         }
       },
       "bundleIdentifier": "es.scriptcue.app",
-      "buildNumber": "38"
+      "buildNumber": "39"
     },
     "web": {
       "bundler": "metro",

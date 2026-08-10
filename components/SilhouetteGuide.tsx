@@ -47,17 +47,21 @@ export function SilhouetteGuide({ shotType }: { shotType: ShotType }) {
   // para que la porción visible ocupe toda la altura deseada.
   const scale = 1 / visibleRatio;
   
-  // Altura base de la silueta en plano general (cuerpo entero)
-  const baseHeight = screenHeight * 0.95;
-  // Como el SVG original es un cuadrado (viewBox 206x206), le damos
-  // un ancho base igual al alto para que no se encoja por los lados.
+  const isWide = shotType === 'wide';
+  const isLandscape = screenWidth > screenHeight;
+
+  // Altura base: en plano general (wide) lo hacemos más pequeño para tener aire
+  // arriba y abajo (no tocar timer ni botón rec). Para el resto, lo mantenemos grande
+  // para que el recorte sea fiel al zoom.
+  const baseHeight = screenHeight * (isWide ? (isLandscape ? 0.60 : 0.70) : 0.95);
   const baseWidth = baseHeight; 
 
   const targetHeight = baseHeight * scale;
   const targetWidth = baseWidth * scale;
 
-  // Inyectar preserveAspectRatio para que la cabeza (top del SVG)
-  // siempre quede anclada en la parte superior del contenedor al escalar.
+  // Margen superior para el aire de la cabeza
+  const dynamicMarginTop = screenHeight * (isWide ? (isLandscape ? 0.20 : 0.15) : 0.05);
+
   const modifiedSvgXml = svgXml.replace('<svg ', '<svg preserveAspectRatio="xMidYMin meet" ');
 
   return (
@@ -66,8 +70,7 @@ export function SilhouetteGuide({ shotType }: { shotType: ShotType }) {
         style={{
           width: targetWidth,
           height: targetHeight,
-          // Un pequeño margen superior para que la cabeza no toque el borde de la pantalla
-          marginTop: screenHeight * 0.05,
+          marginTop: dynamicMarginTop,
         }}
       >
         <SvgXml

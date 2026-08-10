@@ -244,7 +244,7 @@ export default function CastingModeScreen() {
   const zoomAnimValue = useRef(new Animated.Value(0.08)).current;
 
   // Detección de palmada — umbrales y refs
-  const CLAP_THRESHOLD_DB = -10;     // pico mínimo para considerarse palmada
+  const CLAP_THRESHOLD_DB = -22;     // pico mínimo para considerarse palmada
   const DOUBLE_CLAP_WINDOW_MS = 800; // ventana temporal entre las dos palmadas
   const CLAP_DEBOUNCE_MS = 80;       // tiempo mínimo entre picos (anti-eco/reverb)
   const clapTimestampsRef = useRef<number[]>([]);
