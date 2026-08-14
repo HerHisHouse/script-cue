@@ -104,7 +104,7 @@ const ActionTimingInput = ({ actionId, isManualAction, duration, adjustment, upd
 export default function CastingModeScreen() {
   const router = useRouter();
   const { id } = useLocalSearchParams();
-  const { colors } = useTheme();
+  const { colors, isDark } = useTheme();
   const { user } = useAuth();
   const insets = useSafeAreaInsets();
 
@@ -222,10 +222,10 @@ export default function CastingModeScreen() {
 
   // ── Plano General Automático (solo Teleprompter Libre) ──────────────
   const SHOT_TYPES: { value: ShotType; label: string; description: string }[] = [
-    { value: 'wide',     label: 'Plano general',   description: 'Cuerpo completo' },
+    { value: 'wide', label: 'Plano general', description: 'Cuerpo entero — fija esto primero' },
+    { value: 'closeup', label: 'Primer plano', description: 'Cabeza y hombros' },
+    { value: 'medium',  label: 'Plano medio',   description: 'Hasta el pecho' },
     { value: 'american', label: 'Plano americano', description: 'Hasta el muslo' },
-    { value: 'medium',   label: 'Plano medio',     description: 'Hasta el pecho' },
-    { value: 'closeup',  label: 'Primer plano',    description: 'Cabeza y hombros' },
   ];
 
   // Zoom de cámara según tipo de plano (prop zoom de CameraView, escala 0–1)
@@ -239,6 +239,62 @@ export default function CastingModeScreen() {
 
   const [autoWideShotEnabled, setAutoWideShotEnabled] = useState(false);
   const [workingShot, setWorkingShot] = useState<ShotType>('wide');
+
+  async function handleAutoWideShotToggle(value: boolean) {
+    if (value) {
+      const AsyncStorage = 
+        (await import('@react-native-async-storage/async-storage')).default;
+      const hideInfo = 
+        await AsyncStorage.getItem('casting_hide_wideshot_info');
+
+      if (hideInfo !== 'true') {
+        Alert.alert(
+          '🎬 Plano general automático',
+          'Así funciona:\n\n' +
+          '1️⃣ Colócate según la silueta guía para fijar tu plano general\n\n' +
+          '2️⃣ Elige tu plano de trabajo (primer plano, medio o americano)\n\n' +
+          '3️⃣ Graba tu presentación con normalidad\n\n' +
+          '4️⃣ Da dos palmadas cuando quieras mostrar el plano general\n\n' +
+          '5️⃣ La cámara hará zoom out automáticamente para que gires o muestres perfiles',
+          [
+            {
+              text: 'No volver a mostrar',
+              onPress: async () => {
+                await AsyncStorage.setItem(
+                  'casting_hide_wideshot_info', 'true'
+                );
+                activateWideShot();
+              }
+            },
+            {
+              text: 'Entendido',
+              onPress: () => activateWideShot()
+            }
+          ]
+        );
+        return;
+      }
+    }
+    
+    activateWideShot();
+
+    function activateWideShot() {
+      setAutoWideShotEnabled(value);
+      if (!value) {
+        setZoom(0.08);
+        zoomAnimValue.setValue(0.08);
+      } else {
+        // Al activar, arrancar SIEMPRE mostrando el plano
+        // general primero (silueta de cuerpo entero) para
+        // que el usuario fije esa referencia antes de elegir
+        // su plano de trabajo
+        setWorkingShot('wide');
+        const z = ZOOM_BY_SHOT['wide'];
+        setZoom(z);
+        zoomAnimValue.setValue(z);
+      }
+    }
+  }
 
   // Animated.Value que controla el zoom real de la cámara durante la transición
   const zoomAnimValue = useRef(new Animated.Value(0.08)).current;
@@ -1019,8 +1075,8 @@ export default function CastingModeScreen() {
       console.error('Error saving free text:', e);
     }
 
-    scrollOffsetRef.current = 0;
-    freeScrollViewRef.current?.scrollTo({ y: 0, animated: false });
+    scrollOffsetRef.current = screenHeight;
+    freeScrollViewRef.current?.scrollTo({ y: screenHeight, animated: false });
     setIsPlaying(false); // No auto-arrancar
   }
 
@@ -1832,21 +1888,59 @@ export default function CastingModeScreen() {
 
           <View style={{ flex: 1, padding: rp(24), gap: rp(24), justifyContent: 'center' }}>
             <TouchableOpacity
-              style={[styles.btn, { backgroundColor: colors.card, padding: rp(32), borderRadius: rp(16), alignItems: 'center', width: '100%' }]}
-              onPress={() => setCastingMode('script_config')}
-            >
-              <Clapperboard size={rp(48)} color={colors.primary} style={{ marginBottom: 16 }} />
-              <Text style={{ color: colors.text, fontSize: rf(20), fontWeight: '700' }}>SelfTape</Text>
-              <Text style={{ color: colors.textSecondary, fontSize: rf(14), textAlign: 'center', marginTop: 8 }}>Graba con la réplica en tiempo real</Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={[styles.btn, { backgroundColor: colors.card, padding: rp(32), borderRadius: rp(16), alignItems: 'center', width: '100%' }]}
+              style={[
+                styles.btn,
+                { backgroundColor: colors.card, padding: rp(32), borderRadius: rp(16), alignItems: 'center', width: '100%' },
+                !isDark && {
+                  shadowColor: '#000',
+                  shadowOffset: { width: 0, height: 6 },
+                  shadowOpacity: 0.08,
+                  shadowRadius: 20,
+                  elevation: 4,
+                  borderWidth: 1,
+                  borderColor: 'rgba(0,0,0,0.03)',
+                }
+              ]}
               onPress={() => setCastingMode('free_input')}
             >
               <MonitorPlay size={rp(48)} color="#10B981" style={{ marginBottom: 16 }} />
-              <Text style={{ color: colors.text, fontSize: rf(20), fontWeight: '700' }}>Teleprompter</Text>
-              <Text style={{ color: colors.textSecondary, fontSize: rf(14), textAlign: 'center', marginTop: 8 }}>Graba con teleprompter para presentaciones largas o reels</Text>
+              <Text style={{ color: colors.text, fontSize: rf(20), fontWeight: '700' }}>Presentación</Text>
+              <View style={{ marginTop: 12 }}>
+                <Text style={{ color: colors.textSecondary, fontSize: rf(14), marginBottom: 4 }}>
+                  Graba la presentación de tu casting:
+                </Text>
+                <Text style={{ color: colors.textSecondary, fontSize: rf(14), marginTop: 2 }}>• Teleprompter integrado</Text>
+                <Text style={{ color: colors.textSecondary, fontSize: rf(14), marginTop: 2 }}>• Plano General automático</Text>
+                <Text style={{ color: colors.textSecondary, fontSize: rf(14), marginTop: 2 }}>• Configuración del texto</Text>
+              </View>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[
+                styles.btn,
+                { backgroundColor: colors.card, padding: rp(32), borderRadius: rp(16), alignItems: 'center', width: '100%' },
+                !isDark && {
+                  shadowColor: '#000',
+                  shadowOffset: { width: 0, height: 6 },
+                  shadowOpacity: 0.08,
+                  shadowRadius: 20,
+                  elevation: 4,
+                  borderWidth: 1,
+                  borderColor: 'rgba(0,0,0,0.03)',
+                }
+              ]}
+              onPress={() => setCastingMode('script_config')}
+            >
+              <Clapperboard size={rp(48)} color={colors.primary} style={{ marginBottom: 16 }} />
+              <Text style={{ color: colors.text, fontSize: rf(20), fontWeight: '700' }}>Selftape</Text>
+              <View style={{ marginTop: 12 }}>
+                <Text style={{ color: colors.textSecondary, fontSize: rf(14), marginBottom: 4 }}>
+                  Graba la escena de tu casting:
+                </Text>
+                <Text style={{ color: colors.textSecondary, fontSize: rf(14), marginTop: 2 }}>• Réplica en tiempo real</Text>
+                <Text style={{ color: colors.textSecondary, fontSize: rf(14), marginTop: 2 }}>• Guion cargado en teleprompter</Text>
+                <Text style={{ color: colors.textSecondary, fontSize: rf(14), marginTop: 2 }}>• Configuración de la escena</Text>
+              </View>
             </TouchableOpacity>
           </View>
         </SafeAreaView>
@@ -2433,7 +2527,8 @@ export default function CastingModeScreen() {
                 ) : (
                   <ScrollView
                     ref={freeScrollViewRef}
-                    contentContainerStyle={{ paddingTop: screenHeight - rp(250), paddingBottom: screenHeight, paddingLeft: Math.max(insets.left, rp(24)), paddingRight: Math.max(insets.right, rp(24)) }}
+                    contentContainerStyle={{ paddingTop: (screenHeight - rp(250)) + screenHeight, paddingBottom: screenHeight, paddingLeft: Math.max(insets.left, rp(24)), paddingRight: Math.max(insets.right, rp(24)) }}
+                    contentOffset={{ y: scrollOffsetRef.current, x: 0 }}
                     scrollEnabled={!isPlaying}
                     showsVerticalScrollIndicator={false}
                     onScroll={(e) => {
@@ -2739,7 +2834,57 @@ export default function CastingModeScreen() {
                       )}
                       <View style={{ height: 1, backgroundColor: '#333', marginVertical: 8 }} />
 
-                      {/* 2. Modo Espejo */}
+                      {/* 2. Plano General Automático */}
+                      <BottomSheetToggle
+                        label="Plano general automático"
+                        Icon={Maximize2}
+                        value={autoWideShotEnabled}
+                        onValueChange={handleAutoWideShotToggle}
+                        iconColor="white"
+                        textColor="white"
+                      />
+
+                      {/* Selector de plano de trabajo (visible si el toggle está activo) */}
+                      {autoWideShotEnabled && (
+                        <View style={{ paddingHorizontal: 20, marginTop: 8 }}>
+                          <Text style={{ color: 'rgba(255,255,255,0.6)', fontSize: rf(12), marginBottom: 8 }}>
+                            {workingShot === 'wide' 
+                              ? '1. Colócate según la silueta para fijar tu plano general'
+                              : '2. Plano de trabajo (inicio de grabación)'}
+                          </Text>
+                          {SHOT_TYPES.map(shot => (
+                            <TouchableOpacity
+                              key={shot.value}
+                              onPress={() => {
+                                setWorkingShot(shot.value);
+                                const z = ZOOM_BY_SHOT[shot.value];
+                                zoomAnimValue.setValue(z);
+                                setZoom(z);
+                              }}
+                              style={{
+                                flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+                                paddingVertical: 10, borderRadius: 8,
+                                backgroundColor: workingShot === shot.value ? 'rgba(16,185,129,0.2)' : 'transparent',
+                                paddingHorizontal: 12, marginBottom: 4,
+                              }}
+                            >
+                              <View>
+                                <Text style={{ color: 'white', fontSize: rf(14), fontWeight: workingShot === shot.value ? '700' : '400' }}>
+                                  {shot.label}
+                                </Text>
+                                <Text style={{ color: 'rgba(255,255,255,0.5)', fontSize: rf(11) }}>{shot.description}</Text>
+                              </View>
+                              {workingShot === shot.value && <CheckCircle2 size={rp(18)} color="#10B981" />}
+                            </TouchableOpacity>
+                          ))}
+                          <Text style={{ color: 'rgba(255,255,255,0.4)', fontSize: rf(11), marginTop: 6, textAlign: 'center' }}>
+                            Da dos palmadas durante la grabación para hacer zoom out al plano general
+                          </Text>
+                        </View>
+                      )}
+                      <View style={{ height: 1, backgroundColor: '#333', marginVertical: 8 }} />
+
+                      {/* 3. Modo Espejo */}
                       <BottomSheetToggle
                         label="Modo Espejo"
                         Icon={FlipHorizontal}
@@ -2750,7 +2895,7 @@ export default function CastingModeScreen() {
                       />
                       <View style={{ height: 1, backgroundColor: '#333', marginVertical: 8 }} />
 
-                      {/* 3. Espera inicial */}
+                      {/* 4. Espera inicial */}
                       <View style={[styles.menuItem, { paddingHorizontal: 20, justifyContent: 'space-between' }]}>
                         <View style={{ flexDirection: 'row', alignItems: 'center', gap: rp(12) }}>
                           <Timer size={rp(20)} color="white" />
@@ -2770,7 +2915,7 @@ export default function CastingModeScreen() {
                       </View>
                       <View style={{ height: 1, backgroundColor: '#333', marginVertical: 8 }} />
 
-                      {/* 4. Velocidad */}
+                      {/* 5. Velocidad */}
                       <View style={{ marginVertical: 8 }}>
                         <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12, paddingHorizontal: 20 }}>
                           <Snail size={rp(20)} color="white" />
@@ -2789,52 +2934,6 @@ export default function CastingModeScreen() {
                           </TouchableOpacity>
                         </View>
                       </View>
-                      <View style={{ height: 1, backgroundColor: '#333', marginVertical: 8 }} />
-
-                      {/* 5. Plano General Automático */}
-                      <BottomSheetToggle
-                        label="Plano general automático"
-                        Icon={Maximize2}
-                        value={autoWideShotEnabled}
-                        onValueChange={setAutoWideShotEnabled}
-                        iconColor="white"
-                        textColor="white"
-                      />
-
-                      {/* Selector de plano de trabajo (visible si el toggle está activo) */}
-                      {autoWideShotEnabled && (
-                        <View style={styles.shotSelectorContainer}>
-                          <Text style={styles.shotSelectorLabel}>
-                            Plano de trabajo — colócate antes de grabar
-                          </Text>
-                          {SHOT_TYPES.map(shot => (
-                            <TouchableOpacity
-                              key={shot.value}
-                              onPress={() => setWorkingShot(shot.value)}
-                              style={[
-                                styles.shotOption,
-                                workingShot === shot.value && styles.shotOptionActive,
-                              ]}
-                            >
-                              <View style={{ flex: 1 }}>
-                                <Text style={[
-                                  styles.shotOptionLabel,
-                                  workingShot === shot.value && { fontWeight: '700', color: '#fff' },
-                                ]}>
-                                  {shot.label}
-                                </Text>
-                                <Text style={styles.shotOptionDesc}>{shot.description}</Text>
-                              </View>
-                              {workingShot === shot.value && (
-                                <CheckCircle2 size={rp(18)} color="#10B981" />
-                              )}
-                            </TouchableOpacity>
-                          ))}
-                          <Text style={styles.shotSelectorHint}>
-                            💡 Da dos palmadas durante la grabación para hacer zoom out al plano general
-                          </Text>
-                        </View>
-                      )}
                     </>
                   )}
                 </ScrollView>
