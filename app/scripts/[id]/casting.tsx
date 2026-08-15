@@ -25,8 +25,8 @@ import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 import { useRouter, useLocalSearchParams, Stack } from 'expo-router';
 import Constants from 'expo-constants';
 import { activateKeepAwakeAsync, deactivateKeepAwake } from 'expo-keep-awake';
-import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import { rf, rp } from '@/utils/responsive';
+import { VerticalZoomSlider } from '@/components/VerticalZoomSlider';
 import { Audio, InterruptionModeIOS, InterruptionModeAndroid } from 'expo-av';
 import * as FileSystem from 'expo-file-system/legacy'; // Fix: Use legacy API
 import { transcribeAudio } from '@/services/transcription'; // Import transcription service
@@ -140,30 +140,9 @@ export default function CastingModeScreen() {
   const recordingTimeRef = useRef(0);
   const [facing, setFacing] = useState<'back' | 'front'>('front');
   const [zoom, setZoom] = useState(0.08);
-  const [isZooming, setIsZooming] = useState(false);
-  const zoomBaseRef = useRef(zoom);
-  const zoomTimeoutRef = useRef<NodeJS.Timeout | null>(null);
-
+  const [showZoomSlider, setShowZoomSlider] = useState(false);
   const MIN_ZOOM = 0;
   const MAX_ZOOM = 0.2;
-
-  const pinchGesture = Gesture.Pinch()
-    .runOnJS(true)
-    .onStart(() => {
-      zoomBaseRef.current = zoom;
-      setIsZooming(true);
-      if (zoomTimeoutRef.current) clearTimeout(zoomTimeoutRef.current);
-    })
-    .onUpdate((event) => {
-      const delta = (event.scale - 1) * 0.15;
-      let newZoom = zoomBaseRef.current + delta;
-      newZoom = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, newZoom));
-      setZoom(newZoom);
-    })
-    .onEnd(() => {
-      zoomBaseRef.current = zoom;
-      zoomTimeoutRef.current = setTimeout(() => setIsZooming(false), 1000);
-    });
 
   const [isRecording, setIsRecording] = useState(false);
   // Flag to cancel the countdown loop without relying on cameraRef properties
@@ -2240,26 +2219,13 @@ export default function CastingModeScreen() {
         <>
           {/* Dynamic Camera Component Loader */}
           {CameraComponent.current && (castingType !== 'free' || globalBackground === 'transparent') && (
-            <GestureDetector gesture={pinchGesture}>
-              <View style={StyleSheet.absoluteFill}>
-                <CameraComponent.current
-                  ref={cameraRef}
-                  isActive={castingMode === 'recording' && !isProcessing}
-                  facing={facing}
-                  zoom={zoom}
-                  videoQuality={videoQuality}
-                />
-              </View>
-            </GestureDetector>
-          )}
-
-          {/* Zoom Visual Feedback */}
-          {isZooming && (
-            <View style={styles.zoomIndicator}>
-              <Text style={styles.zoomIndicatorText}>
-                {(1 + zoom * 10).toFixed(1)}x
-              </Text>
-            </View>
+            <CameraComponent.current
+              ref={cameraRef}
+              isActive={castingMode === 'recording' && !isProcessing}
+              facing={facing}
+              zoom={zoom}
+              videoQuality={videoQuality}
+            />
           )}
           {castingType === 'free' && globalBackground !== 'transparent' && (
             <View style={[StyleSheet.absoluteFill, { backgroundColor: globalBackground }]} />
@@ -2318,6 +2284,12 @@ export default function CastingModeScreen() {
                       <TouchableOpacity onPress={() => { setZoom(0.15); setIsZoomMenuOpen(false) }} style={[styles.zoomBtnHeader, zoom === 0.15 && styles.activeZoomBtnHeader]}>
                         <Text style={styles.zoomTextHeader}>2x</Text>
                       </TouchableOpacity>
+                      <TouchableOpacity
+                        onPress={() => { setIsZoomMenuOpen(false); setShowZoomSlider(true); }}
+                        style={styles.zoomBtnHeader}
+                      >
+                        <Text style={styles.zoomTextHeader}>⇕</Text>
+                      </TouchableOpacity>
                     </View>
                   )}
                 </View>
@@ -2327,6 +2299,16 @@ export default function CastingModeScreen() {
               </View>
             </View>
 
+            {/* Vertical Zoom Slider Overlay */}
+            {showZoomSlider && (
+              <VerticalZoomSlider
+                zoom={zoom}
+                minZoom={MIN_ZOOM}
+                maxZoom={MAX_ZOOM}
+                onZoomChange={setZoom}
+                onClose={() => setShowZoomSlider(false)}
+              />
+            )}
 
 
             {/* Pantalla de procesamiento — solo mientras se sube */}
@@ -3978,21 +3960,6 @@ const styles = StyleSheet.create({
     fontSize: rf(16),
     fontStyle: 'italic',
     lineHeight: rf(22),
-  },
-  zoomIndicator: {
-    position: 'absolute',
-    top: '50%',
-    alignSelf: 'center',
-    backgroundColor: 'rgba(0,0,0,0.6)',
-    paddingHorizontal: rp(16),
-    paddingVertical: rp(8),
-    borderRadius: rp(20),
-    zIndex: 100,
-  },
-  zoomIndicatorText: {
-    color: '#FFD700',
-    fontSize: rf(24),
-    fontWeight: 'bold',
   },
   zoomControls: {
     position: 'absolute',
