@@ -221,24 +221,7 @@ export default function CastingModeScreen() {
   const freeTextInputRef = useRef<any>(null);
 
   // ── Plano General Automático (solo Teleprompter Libre) ──────────────
-  const SHOT_TYPES: { value: ShotType; label: string; description: string }[] = [
-    { value: 'wide', label: 'Plano general', description: 'Cuerpo entero — fija esto primero' },
-    { value: 'closeup', label: 'Primer plano', description: 'Cabeza y hombros' },
-    { value: 'medium',  label: 'Plano medio',   description: 'Hasta el pecho' },
-    { value: 'american', label: 'Plano americano', description: 'Hasta el muslo' },
-  ];
-
-  // Zoom de cámara según tipo de plano (prop zoom de CameraView, escala 0–1)
-  // wide=0 es el campo más ancho disponible en cámara frontal (sin zoom digital)
-  const ZOOM_BY_SHOT: Record<ShotType, number> = {
-    wide:     0,
-    american: 0.05,
-    medium:   0.08,
-    closeup:  0.15,
-  };
-
   const [autoWideShotEnabled, setAutoWideShotEnabled] = useState(false);
-  const [workingShot, setWorkingShot] = useState<ShotType>('wide');
 
   async function handleAutoWideShotToggle(value: boolean) {
     if (value) {
@@ -252,7 +235,7 @@ export default function CastingModeScreen() {
           '🎬 Plano general automático',
           'Así funciona:\n\n' +
           '1️⃣ Colócate según la silueta guía para fijar tu plano general\n\n' +
-          '2️⃣ Elige tu plano de trabajo (primer plano, medio o americano)\n\n' +
+          '2️⃣ Usa el zoom (0.5x/1x/2x) para ajustar tu plano de trabajo como quieras\n\n' +
           '3️⃣ Graba tu presentación con normalidad\n\n' +
           '4️⃣ Da dos palmadas cuando quieras mostrar el plano general\n\n' +
           '5️⃣ La cámara hará zoom out automáticamente para que gires o muestres perfiles',
@@ -284,14 +267,9 @@ export default function CastingModeScreen() {
         setZoom(0.08);
         zoomAnimValue.setValue(0.08);
       } else {
-        // Al activar, arrancar SIEMPRE mostrando el plano
-        // general primero (silueta de cuerpo entero) para
-        // que el usuario fije esa referencia antes de elegir
-        // su plano de trabajo
-        setWorkingShot('wide');
-        const z = ZOOM_BY_SHOT['wide'];
-        setZoom(z);
-        zoomAnimValue.setValue(z);
+        // Al activar, arrancar SIEMPRE mostrando el plano general primero
+        setZoom(0);
+        zoomAnimValue.setValue(0);
       }
     }
   }
@@ -428,19 +406,6 @@ export default function CastingModeScreen() {
     });
     return () => zoomAnimValue.removeListener(listenerId);
   }, []);
-
-  // Actualizar zoom de cámara cuando cambia el plano de trabajo o se activa la función
-  useEffect(() => {
-    if (!autoWideShotEnabled) {
-      // Restablecer al "1x" habitual al desactivar
-      zoomAnimValue.setValue(0.08);
-      setZoom(0.08);
-    } else {
-      const target = ZOOM_BY_SHOT[workingShot];
-      zoomAnimValue.setValue(target);
-      setZoom(target);
-    }
-  }, [autoWideShotEnabled, workingShot]);
 
   const panResponder = useRef(
     PanResponder.create({
@@ -2262,8 +2227,8 @@ export default function CastingModeScreen() {
           )}
 
           {/* Silueta guía de encuadre — solo Teleprompter Libre, antes de grabar */}
-          {castingType === 'free' && autoWideShotEnabled && !isRecording && (
-            <SilhouetteGuide shotType={workingShot} />
+          {castingType === 'free' && autoWideShotEnabled && !isRecording && zoom === 0 && (
+            <SilhouetteGuide shotType="wide" />
           )}
 
           {/* UI Overlay - Absolute positioned */}
@@ -2844,39 +2809,13 @@ export default function CastingModeScreen() {
                         textColor="white"
                       />
 
-                      {/* Selector de plano de trabajo (visible si el toggle está activo) */}
+                      {/* Mensaje de plano de trabajo manual (visible si el toggle está activo) */}
                       {autoWideShotEnabled && (
                         <View style={{ paddingHorizontal: 20, marginTop: 8 }}>
                           <Text style={{ color: 'rgba(255,255,255,0.6)', fontSize: rf(12), marginBottom: 8 }}>
-                            {workingShot === 'wide' 
-                              ? '1. Colócate según la silueta para fijar tu plano general'
-                              : '2. Plano de trabajo (inicio de grabación)'}
+                            Ajusta tu plano de trabajo con el zoom (0.5x/1x/2x) 
+                            y colócate libremente
                           </Text>
-                          {SHOT_TYPES.map(shot => (
-                            <TouchableOpacity
-                              key={shot.value}
-                              onPress={() => {
-                                setWorkingShot(shot.value);
-                                const z = ZOOM_BY_SHOT[shot.value];
-                                zoomAnimValue.setValue(z);
-                                setZoom(z);
-                              }}
-                              style={{
-                                flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-                                paddingVertical: 10, borderRadius: 8,
-                                backgroundColor: workingShot === shot.value ? 'rgba(16,185,129,0.2)' : 'transparent',
-                                paddingHorizontal: 12, marginBottom: 4,
-                              }}
-                            >
-                              <View>
-                                <Text style={{ color: 'white', fontSize: rf(14), fontWeight: workingShot === shot.value ? '700' : '400' }}>
-                                  {shot.label}
-                                </Text>
-                                <Text style={{ color: 'rgba(255,255,255,0.5)', fontSize: rf(11) }}>{shot.description}</Text>
-                              </View>
-                              {workingShot === shot.value && <CheckCircle2 size={rp(18)} color="#10B981" />}
-                            </TouchableOpacity>
-                          ))}
                           <Text style={{ color: 'rgba(255,255,255,0.4)', fontSize: rf(11), marginTop: 6, textAlign: 'center' }}>
                             Da dos palmadas durante la grabación para hacer zoom out al plano general
                           </Text>
