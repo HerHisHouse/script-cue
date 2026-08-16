@@ -1,4 +1,4 @@
-import React, { useRef } from 'react';
+import React, { useRef, useCallback } from 'react';
 import {
   View,
   StyleSheet,
@@ -28,59 +28,92 @@ export function VerticalZoomSlider({
 }: Props) {
   const zoomRange = maxZoom - minZoom;
 
-  function handleTouch(locationY: number) {
-    // Invertir: arriba = zoom máximo, abajo = zoom mínimo
-    const clampedY = Math.max(0, Math.min(SLIDER_HEIGHT, locationY));
-    const ratio = 1 - clampedY / SLIDER_HEIGHT;
-    const newZoom = minZoom + ratio * zoomRange;
-    onZoomChange(newZoom);
-  }
+  // Store the absolute Y position of the track top, measured once on layout
+  const trackTopRef = useRef<number>(0);
+  const trackRef = useRef<View>(null);
+
+  const measureTrack = useCallback(() => {
+    trackRef.current?.measure((_x, _y, _w, _h, _px, pageY) => {
+      trackTopRef.current = pageY;
+    });
+  }, []);
+
+  /**
+   * Convert an absolute screen Y position to a zoom value.
+   * pageY from PanResponder events is always in screen coordinates,
+   * so this is rock-solid regardless of nesting.
+   */
+  const pageYToZoom = useCallback(
+    (pageY: number): number => {
+      const relY = pageY - trackTopRef.current;
+      const clampedY = Math.max(0, Math.min(SLIDER_HEIGHT, relY));
+      // Invert: top → max zoom, bottom → min zoom
+      const ratio = 1 - clampedY / SLIDER_HEIGHT;
+      return minZoom + ratio * zoomRange;
+    },
+    [minZoom, zoomRange]
+  );
 
   const panResponder = useRef(
     PanResponder.create({
       onStartShouldSetPanResponder: () => true,
       onMoveShouldSetPanResponder: () => true,
+      // Measure on grant so we always have fresh coordinates
       onPanResponderGrant: (evt) => {
-        handleTouch(evt.nativeEvent.locationY);
+        trackRef.current?.measure((_x, _y, _w, _h, _px, pageY) => {
+          trackTopRef.current = pageY;
+          // Apply immediately with the touch position
+          onZoomChange(pageYToZoom(evt.nativeEvent.pageY));
+        });
       },
       onPanResponderMove: (evt) => {
-        handleTouch(evt.nativeEvent.locationY);
+        onZoomChange(pageYToZoom(evt.nativeEvent.pageY));
       },
     })
   ).current;
 
-  // Posición del thumb (clamp para evitar salirse del track)
-  const currentRatio = zoomRange > 0 ? (zoom - minZoom) / zoomRange : 0;
-  const clampedRatio = Math.max(0, Math.min(1, currentRatio));
-  const thumbPosition = SLIDER_HEIGHT * (1 - clampedRatio);
+  // Visual position of the thumb
+  const currentRatio =
+    zoomRange > 0 ? Math.max(0, Math.min(1, (zoom - minZoom) / zoomRange)) : 0;
+  const thumbTop = SLIDER_HEIGHT * (1 - currentRatio) - 16;
 
-  // Etiqueta de zoom aproximada
-  const zoomLabel = `${(1 + clampedRatio * 1.5).toFixed(1)}x`;
+  // Height of the filled (active) portion of the track
+  const filledHeight = Math.max(0, SLIDER_HEIGHT - 8 - (SLIDER_HEIGHT * (1 - currentRatio)));
+
+  // Human-readable zoom label
+  const zoomLabel = `${(1 + currentRatio * 1.5).toFixed(1)}x`;
 
   return (
     <View style={styles.container} pointerEvents="box-none">
-      <TouchableOpacity onPress={onClose} style={styles.closeBtn} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-        <X size={16} color="white" />
+      {/* Close button */}
+      <TouchableOpacity
+        onPress={onClose}
+        style={styles.closeBtn}
+        hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+      >
+        <X size={15} color="white" />
       </TouchableOpacity>
 
+      {/* Zoom label badge */}
       <View style={styles.labelBadge}>
         <Text style={styles.labelText}>{zoomLabel}</Text>
       </View>
 
-      <View style={styles.sliderTrack} {...panResponder.panHandlers}>
-        {/* Track fill visual */}
-        <View style={styles.sliderTrackLine} />
+      {/* Slider track — PanResponder attached here */}
+      <View
+        ref={trackRef}
+        onLayout={measureTrack}
+        style={styles.sliderTrack}
+        {...panResponder.panHandlers}
+      >
+        {/* Static grey centre line */}
+        <View style={styles.trackLine} />
 
-        {/* Filled portion below thumb */}
-        <View
-          style={[
-            styles.sliderTrackFilled,
-            { height: SLIDER_HEIGHT - thumbPosition - 4 },
-          ]}
-        />
+        {/* Purple filled portion (below thumb) */}
+        <View style={[styles.trackFilled, { height: filledHeight }]} />
 
         {/* Thumb */}
-        <View style={[styles.thumb, { top: thumbPosition - 16 }]} />
+        <View style={[styles.thumb, { top: thumbTop }]} />
       </View>
     </View>
   );
@@ -90,20 +123,21 @@ const styles = StyleSheet.create({
   container: {
     position: 'absolute',
     right: 16,
-    top: '30%',
+    top: '28%',
     alignItems: 'center',
     zIndex: 1000,
   },
   closeBtn: {
     marginBottom: 8,
-    backgroundColor: 'rgba(0,0,0,0.65)',
+    backgroundColor: 'rgba(0,0,0,0.7)',
     borderRadius: 14,
-    padding: 7,
+    width: 28,
+    height: 28,
     alignItems: 'center',
     justifyContent: 'center',
   },
   labelBadge: {
-    backgroundColor: 'rgba(0,0,0,0.75)',
+    backgroundColor: 'rgba(0,0,0,0.78)',
     borderRadius: 12,
     paddingHorizontal: 10,
     paddingVertical: 5,
@@ -118,24 +152,22 @@ const styles = StyleSheet.create({
   sliderTrack: {
     width: SLIDER_WIDTH,
     height: SLIDER_HEIGHT,
-    backgroundColor: 'rgba(0,0,0,0.55)',
+    backgroundColor: 'rgba(0,0,0,0.58)',
     borderRadius: SLIDER_WIDTH / 2,
     alignItems: 'center',
-    justifyContent: 'flex-start',
-    paddingVertical: 4,
-    // Border sutil para delimitación visual
+    // Important: no justifyContent so children use absolute positioning cleanly
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.12)',
+    borderColor: 'rgba(255,255,255,0.13)',
   },
-  sliderTrackLine: {
+  trackLine: {
     position: 'absolute',
     width: 3,
-    height: SLIDER_HEIGHT - 16,
-    backgroundColor: 'rgba(255,255,255,0.2)',
-    borderRadius: 2,
     top: 8,
+    bottom: 8,
+    backgroundColor: 'rgba(255,255,255,0.22)',
+    borderRadius: 2,
   },
-  sliderTrackFilled: {
+  trackFilled: {
     position: 'absolute',
     width: 3,
     bottom: 8,
@@ -144,6 +176,7 @@ const styles = StyleSheet.create({
   },
   thumb: {
     position: 'absolute',
+    left: (SLIDER_WIDTH - 32) / 2,
     width: 32,
     height: 32,
     borderRadius: 16,
@@ -152,7 +185,7 @@ const styles = StyleSheet.create({
     borderColor: '#a78bfa',
     shadowColor: '#7c3aed',
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.45,
+    shadowOpacity: 0.5,
     shadowRadius: 6,
     elevation: 6,
   },

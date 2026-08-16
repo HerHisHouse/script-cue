@@ -2274,7 +2274,7 @@ export default function CastingModeScreen() {
                     </Text>
                   </TouchableOpacity>
                   {isZoomMenuOpen && (
-                    <View style={{ position: 'absolute', top: 44, left: 0, backgroundColor: 'rgba(0,0,0,0.6)', borderRadius: 18, paddingVertical: 4 }}>
+                    <View style={{ position: 'absolute', top: 48, left: 0, right: 0, backgroundColor: 'rgba(0,0,0,0.72)', borderRadius: 20, paddingVertical: 6, alignItems: 'center', width: rp(44) }}>
                       <TouchableOpacity onPress={() => { setZoom(0); setIsZoomMenuOpen(false) }} style={[styles.zoomBtnHeader, zoom === 0 && styles.activeZoomBtnHeader]}>
                         <Text style={styles.zoomTextHeader}>0.5x</Text>
                       </TouchableOpacity>
@@ -2288,7 +2288,7 @@ export default function CastingModeScreen() {
                         onPress={() => { setIsZoomMenuOpen(false); setShowZoomSlider(true); }}
                         style={styles.zoomBtnHeader}
                       >
-                        <Text style={styles.zoomTextHeader}>⇕</Text>
+                        <Text style={[styles.zoomTextHeader, { fontSize: rf(9), letterSpacing: 0.8, opacity: 0.9 }]}>ZOOM</Text>
                       </TouchableOpacity>
                     </View>
                   )}
@@ -3989,15 +3989,15 @@ const styles = StyleSheet.create({
     fontWeight: '800',
   },
   zoomBtnHeader: {
-    width: rp(32),
-    height: rp(32),
-    borderRadius: rp(16),
+    width: rp(44),
+    height: rp(44),
+    borderRadius: rp(22),
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: 'transparent'
+    backgroundColor: 'transparent',
   },
   activeZoomBtnHeader: {
-    backgroundColor: 'rgba(255,255,255,0.2)',
+    backgroundColor: 'rgba(255,255,255,0.22)',
     width: rp(44),
     height: rp(44),
     borderRadius: rp(22),
