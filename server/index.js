@@ -1,3 +1,5 @@
+process.env.FONTCONFIG_PATH = '/etc/fonts';
+
 const express = require('express');
 const cors = require('cors');
 const ffmpeg = require('fluent-ffmpeg');
@@ -533,12 +535,11 @@ function generateSrtFile(subtitleEntries, outputPath) {
  * Compatible con cualquier codec de entrada (h264, hevc, etc.).
  */
 async function burnSubtitlesIntoVideo(videoPath, srtPath, outputPath) {
-  // Estilo ASS universal compatible con Linux (Docker/Railway fontconfig), macOS y Windows
-  // Usamos FontName=sans-serif para resolución garantizada en cualquier entorno
+  // Estilo ASS con fuente libre DejaVu Sans instalada en el contenedor Railway (apt: fonts-dejavu-core)
   const subtitleStyle =
-    'FontName=sans-serif,FontSize=20,PrimaryColour=&H00FFFFFF&,' +
+    'FontName=DejaVu Sans,FontSize=18,PrimaryColour=&H00FFFFFF&,' +
     'OutlineColour=&H00000000&,BorderStyle=3,Outline=1,Shadow=0,' +
-    'BackColour=&H80000000&,Alignment=2,MarginV=30';
+    'BackColour=&H80000000&,Alignment=2,MarginV=40';
 
   console.log(`[Subtitles] Comando burn: video=${videoPath}, srt=${srtPath}`);
 
