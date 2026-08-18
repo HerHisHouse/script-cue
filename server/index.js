@@ -14,10 +14,16 @@ console.log('[Casting] ffprobe path:', ffprobePath);
 
 const { execSync } = require('child_process');
 try {
-  const fonts = execSync('fc-list | grep -i dejavu').toString();
-  console.log('[Fonts] Fuentes DejaVu disponibles:\n', fonts);
+  const fonts = execSync('fc-list : family | grep -i dejavu || true').toString().trim();
+  if (fonts) {
+    console.log('[Fonts] Fuentes DejaVu disponibles:\n', fonts);
+  } else {
+    console.log('[Fonts] ⚠️ fc-list ejecutó pero no encontró fuentes DejaVu.');
+    const allFonts = execSync('fc-list : family | head -20 || true').toString().trim();
+    console.log('[Fonts] Primeras fuentes del sistema:\n', allFonts || '(Ninguna)');
+  }
 } catch (e) {
-  console.log('[Fonts] Error listando fuentes:', e.message);
+  console.log('[Fonts] Error ejecutando fc-list:', e.message);
 }
 
 const { createClient } = require('@supabase/supabase-js');
