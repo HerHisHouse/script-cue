@@ -407,10 +407,64 @@ async function transcribeWithWhisper(audioFilePath, userId = null) {
   return data.text;
 }
 
+async function transcribeWithWhisperTimestamped(audioFilePath, userId = null) {
+  const FormData = require('form-data');
+  const form = new FormData();
+  
+  const ext = path.extname(audioFilePath).toLowerCase();
+  const filename = path.basename(audioFilePath);
+  const mimeTypes = {
+    '.wav': 'audio/wav',
+    '.mp4': 'audio/mp4',
+    '.m4a': 'audio/m4a',
+    '.mp3': 'audio/mpeg',
+    '.webm': 'audio/webm',
+    '.ogg': 'audio/ogg',
+    '.flac': 'audio/flac',
+  };
+  const contentType = mimeTypes[ext] || 'audio/wav';
+
+  form.append('file', fs.createReadStream(audioFilePath), {
+    filename,
+    contentType,
+  });
+
+  form.append('model', 'whisper-1');
+  form.append('language', 'es');
+  form.append('response_format', 'verbose_json');
+  form.append('timestamp_granularities[]', 'segment');
+
+  const response = await fetch('https://api.openai.com/v1/audio/transcriptions', {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${process.env.OPENAI_API_KEY}`,
+      ...form.getHeaders(),
+    },
+    body: form,
+  });
+
+  const data = await response.json();
+  if (!response.ok) throw new Error(data.error?.message || 'Error en Whisper');
+
+  // Registrar uso de API
+  await logApiUsage({
+    userId,
+    provider: 'openai_analysis',
+    tokens: 0,
+    durationSeconds: 0,
+    mode: 'subtitles',
+  });
+
+  return {
+    text: data.text || '',
+    segments: data.segments || [],
+  };
+}
+
 /**
  * Genera entradas de subtítulos para el modo Selftape (híbrido):
  * - Líneas IA  → texto directo del guion (timing ya conocido)
- * - Líneas actor → recorte de userAudioFile + transcripción Whisper
+ * - Líneas actor → recorte de userAudioFile + transcripción Whisper con timestamps precisos por segmento
  */
 async function generateSubtitlesForCasting(jobId, lineTimings, userAudioFile, userId) {
   const subtitleEntries = [];
@@ -429,7 +483,7 @@ async function generateSubtitlesForCasting(jobId, lineTimings, userAudioFile, us
     });
   }
 
-  // ── Líneas del actor: recortar audio + Whisper ──────────────────────────
+  // ── Líneas del actor: recortar audio + Whisper timestamped ────────────────
   for (const line of userLines) {
     if (!line.duration || line.duration < 0.3) continue; // ignorar silencios muy cortos
 
@@ -447,12 +501,29 @@ async function generateSubtitlesForCasting(jobId, lineTimings, userAudioFile, us
           .run();
       });
 
-      const transcription = await transcribeWithWhisper(clipPath, userId);
-      subtitleEntries.push({
-        start: line.startTime,
-        end: line.startTime + line.duration,
-        text: transcription.trim(),
-      });
+      const result = await transcribeWithWhisperTimestamped(clipPath, userId);
+
+      if (result.segments && result.segments.length > 0) {
+        // Usar los segmentos reales devueltos por Whisper,
+        // sumando el offset del startTime del turno para
+        // convertir a tiempo absoluto del vídeo completo
+        for (const segment of result.segments) {
+          const segText = (segment.text || '').trim();
+          if (!segText) continue;
+          subtitleEntries.push({
+            start: line.startTime + segment.start,
+            end: line.startTime + segment.end,
+            text: segText,
+          });
+        }
+      } else if (result.text && result.text.trim()) {
+        // Fallback si no vienen segmentos: usar el rango completo
+        subtitleEntries.push({
+          start: line.startTime,
+          end: line.startTime + line.duration,
+          text: result.text.trim(),
+        });
+      }
     } catch (e) {
       console.warn(`[Job ${jobId}] [Subtitles] Error transcribiendo línea de actor en t=${line.startTime}s:`, e.message);
       // Si falla, omitir ese subtítulo sin romper el proceso
@@ -559,11 +630,11 @@ function generateSrtFile(subtitleEntries, outputPath) {
  * Compatible con cualquier codec de entrada (h264, hevc, etc.).
  */
 async function burnSubtitlesIntoVideo(videoPath, srtPath, outputPath) {
-  // Usar nombre de fuente sin espacios (DejaVuSans) para simplificar el escapado
+  // Estilo ASS estilizado: texto blanco con contorno negro de 2px, sin caja de fondo (BorderStyle=1)
   const subtitleStyle =
-    "FontName=DejaVuSans,FontSize=18,PrimaryColour=&H00FFFFFF&," +
-    "OutlineColour=&H00000000&,BorderStyle=3,Outline=1,Shadow=0," +
-    "BackColour=&H80000000&,Alignment=2,MarginV=40";
+    "FontName=DejaVuSans,FontSize=13,PrimaryColour=&H00FFFFFF&," +
+    "OutlineColour=&H00000000&,BorderStyle=1,Outline=2,Shadow=0," +
+    "Alignment=2,MarginV=40";
 
   console.log(`[Subtitles] Comando burn: video=${videoPath}, srt=${srtPath}`);
 
