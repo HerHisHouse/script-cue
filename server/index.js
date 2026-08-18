@@ -12,6 +12,14 @@ ffmpeg.setFfprobePath(ffprobePath);
 console.log('[Casting] ffmpeg path:', ffmpegPath);
 console.log('[Casting] ffprobe path:', ffprobePath);
 
+const { execSync } = require('child_process');
+try {
+  const fonts = execSync('fc-list | grep -i dejavu').toString();
+  console.log('[Fonts] Fuentes DejaVu disponibles:\n', fonts);
+} catch (e) {
+  console.log('[Fonts] Error listando fuentes:', e.message);
+}
+
 const { createClient } = require('@supabase/supabase-js');
 const fetch = require('node-fetch');
 const fs = require('fs');
@@ -535,11 +543,11 @@ function generateSrtFile(subtitleEntries, outputPath) {
  * Compatible con cualquier codec de entrada (h264, hevc, etc.).
  */
 async function burnSubtitlesIntoVideo(videoPath, srtPath, outputPath) {
-  // Estilo ASS con fuente libre DejaVu Sans instalada en el contenedor Railway (apt: fonts-dejavu-core)
+  // Usar nombre de fuente sin espacios (DejaVuSans) para simplificar el escapado
   const subtitleStyle =
-    'FontName=DejaVu Sans,FontSize=18,PrimaryColour=&H00FFFFFF&,' +
-    'OutlineColour=&H00000000&,BorderStyle=3,Outline=1,Shadow=0,' +
-    'BackColour=&H80000000&,Alignment=2,MarginV=40';
+    "FontName=DejaVuSans,FontSize=18,PrimaryColour=&H00FFFFFF&," +
+    "OutlineColour=&H00000000&,BorderStyle=3,Outline=1,Shadow=0," +
+    "BackColour=&H80000000&,Alignment=2,MarginV=40";
 
   console.log(`[Subtitles] Comando burn: video=${videoPath}, srt=${srtPath}`);
 
@@ -550,18 +558,16 @@ async function burnSubtitlesIntoVideo(videoPath, srtPath, outputPath) {
     throw new Error(`[Subtitles] Archivo SRT no encontrado en ${srtPath}`);
   }
 
-  // Escapar la ruta para el filtro subtitles de ffmpeg (barras normales, comillas simples y dos puntos)
-  const escapedSrtPath = srtPath
-    .replace(/\\/g, '/')
-    .replace(/'/g, "'\\''")
-    .replace(/:/g, '\\:');
+  // Escapar solo los dos puntos de la ruta (necesario en el filtro subtitles)
+  const escapedSrtPath = srtPath.replace(/:/g, '\\:');
+  const vfFilter = `subtitles='${escapedSrtPath}':force_style='${subtitleStyle}'`;
 
-  console.log(`[Subtitles] Ruta SRT usada en el filtro: '${escapedSrtPath}'`);
+  console.log(`[Subtitles] Filtro -vf completo:`, vfFilter);
 
   await new Promise((resolve, reject) => {
     ffmpeg(videoPath)
       .outputOptions([
-        '-vf', `subtitles='${escapedSrtPath}':force_style='${subtitleStyle}'`,
+        '-vf', vfFilter,
         '-c:a', 'copy',
         '-c:v', 'libx264',
         '-preset', 'ultrafast',
@@ -570,25 +576,15 @@ async function burnSubtitlesIntoVideo(videoPath, srtPath, outputPath) {
       ])
       .output(outputPath)
       .on('stderr', (line) => {
-        if (
-          line.includes('subtitle') ||
-          line.includes('font') ||
-          line.includes('ass') ||
-          line.includes('error') ||
-          line.includes('Error') ||
-          line.includes('Failed')
-        ) {
-          console.log(`[Subtitles] [ffmpeg]:`, line);
-        }
+        console.log(`[Subtitles] [ffmpeg]:`, line);
       })
       .on('end', () => {
         const outSize = fs.existsSync(outputPath) ? fs.statSync(outputPath).size : 0;
         console.log(`[Subtitles] Burn completado, tamaño output: ${outSize} bytes`);
         resolve();
       })
-      .on('error', (err, stdout, stderr) => {
+      .on('error', (err) => {
         console.error(`[Subtitles] Error en ffmpeg burn:`, err.message);
-        console.error(`[Subtitles] ffmpeg stderr completo:\n`, stderr);
         reject(err);
       })
       .run();
