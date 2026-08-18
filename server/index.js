@@ -335,7 +335,25 @@ function getVideoDuration(filePath) {
 async function transcribeWithWhisper(audioFilePath, userId = null) {
   const FormData = require('form-data');
   const form = new FormData();
-  form.append('file', fs.createReadStream(audioFilePath));
+  
+  const ext = path.extname(audioFilePath).toLowerCase();
+  const filename = path.basename(audioFilePath);
+  const mimeTypes = {
+    '.wav': 'audio/wav',
+    '.mp4': 'video/mp4',
+    '.m4a': 'audio/m4a',
+    '.mp3': 'audio/mp3',
+    '.webm': 'audio/webm',
+    '.ogg': 'audio/ogg',
+    '.flac': 'audio/flac',
+  };
+  const contentType = mimeTypes[ext] || 'audio/wav';
+
+  form.append('file', fs.createReadStream(audioFilePath), {
+    filename,
+    contentType,
+  });
+
   form.append('model', 'whisper-1');
   form.append('language', 'es');
 
@@ -430,7 +448,25 @@ async function generateSubtitlesForCasting(jobId, lineTimings, userAudioFile, us
 async function generateSubtitlesForFreeMode(audioFilePath, userId = null) {
   const FormData = require('form-data');
   const form = new FormData();
-  form.append('file', fs.createReadStream(audioFilePath));
+  
+  const ext = path.extname(audioFilePath).toLowerCase();
+  const filename = path.basename(audioFilePath);
+  const mimeTypes = {
+    '.wav': 'audio/wav',
+    '.mp4': 'video/mp4',
+    '.m4a': 'audio/m4a',
+    '.mp3': 'audio/mp3',
+    '.webm': 'audio/webm',
+    '.ogg': 'audio/ogg',
+    '.flac': 'audio/flac',
+  };
+  const contentType = mimeTypes[ext] || 'audio/wav';
+
+  form.append('file', fs.createReadStream(audioFilePath), {
+    filename,
+    contentType,
+  });
+
   form.append('model', 'whisper-1');
   form.append('language', 'es');
   form.append('response_format', 'verbose_json'); // incluye timestamps por segmento
