@@ -533,19 +533,34 @@ function generateSrtFile(subtitleEntries, outputPath) {
  * Compatible con cualquier codec de entrada (h264, hevc, etc.).
  */
 async function burnSubtitlesIntoVideo(videoPath, srtPath, outputPath) {
-  // Estilo: texto blanco con borde negro y fondo semitransparente — legible sobre cualquier fondo
+  // Estilo ASS universal compatible con Linux (Docker/Railway fontconfig), macOS y Windows
+  // Usamos FontName=sans-serif para resolución garantizada en cualquier entorno
   const subtitleStyle =
-    'FontName=Arial,FontSize=18,PrimaryColour=&HFFFFFF&,' +
-    'OutlineColour=&H000000&,BorderStyle=3,Outline=1,Shadow=0,' +
-    'BackColour=&H80000000&,Alignment=2,MarginV=40';
+    'FontName=sans-serif,FontSize=20,PrimaryColour=&H00FFFFFF&,' +
+    'OutlineColour=&H00000000&,BorderStyle=3,Outline=1,Shadow=0,' +
+    'BackColour=&H80000000&,Alignment=2,MarginV=30';
 
-  // Escapar la ruta del SRT (los dos puntos en rutas Windows/Windows-like rompen el filtro)
-  const escapedSrtPath = srtPath.replace(/\\/g, '/').replace(/:/g, '\\:');
+  console.log(`[Subtitles] Comando burn: video=${videoPath}, srt=${srtPath}`);
+
+  if (fs.existsSync(srtPath)) {
+    const srtContent = fs.readFileSync(srtPath, 'utf-8');
+    console.log(`[Subtitles] Contenido del SRT (primeras 300 chars):\n`, srtContent.substring(0, 300));
+  } else {
+    throw new Error(`[Subtitles] Archivo SRT no encontrado en ${srtPath}`);
+  }
+
+  // Escapar la ruta para el filtro subtitles de ffmpeg (barras normales, comillas simples y dos puntos)
+  const escapedSrtPath = srtPath
+    .replace(/\\/g, '/')
+    .replace(/'/g, "'\\''")
+    .replace(/:/g, '\\:');
+
+  console.log(`[Subtitles] Ruta SRT usada en el filtro: '${escapedSrtPath}'`);
 
   await new Promise((resolve, reject) => {
     ffmpeg(videoPath)
       .outputOptions([
-        '-vf', `subtitles=${escapedSrtPath}:force_style='${subtitleStyle}'`,
+        '-vf', `subtitles='${escapedSrtPath}':force_style='${subtitleStyle}'`,
         '-c:a', 'copy',
         '-c:v', 'libx264',
         '-preset', 'ultrafast',
@@ -553,8 +568,28 @@ async function burnSubtitlesIntoVideo(videoPath, srtPath, outputPath) {
         '-threads', '1',
       ])
       .output(outputPath)
-      .on('end', resolve)
-      .on('error', reject)
+      .on('stderr', (line) => {
+        if (
+          line.includes('subtitle') ||
+          line.includes('font') ||
+          line.includes('ass') ||
+          line.includes('error') ||
+          line.includes('Error') ||
+          line.includes('Failed')
+        ) {
+          console.log(`[Subtitles] [ffmpeg]:`, line);
+        }
+      })
+      .on('end', () => {
+        const outSize = fs.existsSync(outputPath) ? fs.statSync(outputPath).size : 0;
+        console.log(`[Subtitles] Burn completado, tamaño output: ${outSize} bytes`);
+        resolve();
+      })
+      .on('error', (err, stdout, stderr) => {
+        console.error(`[Subtitles] Error en ffmpeg burn:`, err.message);
+        console.error(`[Subtitles] ffmpeg stderr completo:\n`, stderr);
+        reject(err);
+      })
       .run();
   });
 }
@@ -835,6 +870,7 @@ async function processCastingInBackground(jobId, files, body) {
         if (body.addSubtitles === 'true') {
             console.log(`[Job ${jobId}] Generando subtítulos...`);
             try {
+                console.log(`[Job ${jobId}] [Subtitles] Tamaño ANTES de quemar subtítulos: ${fs.statSync(outputFile).size} bytes`);
                 const subtitleEntries = await generateSubtitlesForCasting(
                     jobId, lineTimings, userAudioFile, userId
                 );
@@ -846,11 +882,18 @@ async function processCastingInBackground(jobId, files, body) {
                     const videoWithSubtitlesPath = path.join(tempDir, 'video_subtitled.mp4');
                     await burnSubtitlesIntoVideo(outputFile, srtPath, videoWithSubtitlesPath);
 
-                    // Sustituir el outputFile por la versión con subtítulos
-                    try { fs.unlinkSync(outputFile); } catch {}
-                    fs.renameSync(videoWithSubtitlesPath, outputFile);
+                    const subtitledSize = fs.existsSync(videoWithSubtitlesPath) ? fs.statSync(videoWithSubtitlesPath).size : 0;
+                    console.log(`[Job ${jobId}] [Subtitles] Tamaño del archivo subtitulado generado: ${subtitledSize} bytes`);
 
-                    console.log(`[Job ${jobId}] ✅ Subtítulos incrustados (${subtitleEntries.length} entradas)`);
+                    if (subtitledSize > 0) {
+                        try { fs.unlinkSync(outputFile); } catch {}
+                        fs.renameSync(videoWithSubtitlesPath, outputFile);
+
+                        console.log(`[Job ${jobId}] [Subtitles] Tamaño DESPUÉS del reemplazo (outputFile final): ${fs.statSync(outputFile).size} bytes`);
+                        console.log(`[Job ${jobId}] ✅ Subtítulos incrustados (${subtitleEntries.length} entradas)`);
+                    } else {
+                        console.error(`[Job ${jobId}] ❌ Subtítulos: videoWithSubtitlesPath no se generó correctamente.`);
+                    }
                 } else {
                     console.log(`[Job ${jobId}] ⚠️ Subtítulos: sin entradas válidas, se omite el quemado`);
                 }
@@ -1137,6 +1180,7 @@ async function processTeleprompterInBackground(jobId, files, body) {
     if (body.addSubtitles === 'true') {
       console.log(`[Job ${jobId}] Generando subtítulos (modo Presentación)...`);
       try {
+        console.log(`[Job ${jobId}] [Subtitles] Tamaño ANTES de quemar subtítulos: ${fs.statSync(outputFile).size} bytes`);
         const subtitleEntries = await generateSubtitlesForFreeMode(videoFile, body.userId);
 
         if (subtitleEntries.length > 0) {
@@ -1146,11 +1190,18 @@ async function processTeleprompterInBackground(jobId, files, body) {
           const videoWithSubtitlesPath = path.join(tempDir, 'video_subtitled.mp4');
           await burnSubtitlesIntoVideo(outputFile, srtPath, videoWithSubtitlesPath);
 
-          // Sustituir el outputFile por la versión con subtítulos
-          try { fs.unlinkSync(outputFile); } catch {}
-          fs.renameSync(videoWithSubtitlesPath, outputFile);
+          const subtitledSize = fs.existsSync(videoWithSubtitlesPath) ? fs.statSync(videoWithSubtitlesPath).size : 0;
+          console.log(`[Job ${jobId}] [Subtitles] Tamaño del archivo subtitulado generado: ${subtitledSize} bytes`);
 
-          console.log(`[Job ${jobId}] ✅ Subtítulos incrustados (${subtitleEntries.length} entradas)`);
+          if (subtitledSize > 0) {
+            try { fs.unlinkSync(outputFile); } catch {}
+            fs.renameSync(videoWithSubtitlesPath, outputFile);
+
+            console.log(`[Job ${jobId}] [Subtitles] Tamaño DESPUÉS del reemplazo (outputFile final): ${fs.statSync(outputFile).size} bytes`);
+            console.log(`[Job ${jobId}] ✅ Subtítulos incrustados (${subtitleEntries.length} entradas)`);
+          } else {
+            console.error(`[Job ${jobId}] ❌ Subtítulos: videoWithSubtitlesPath no se generó correctamente.`);
+          }
         } else {
           console.log(`[Job ${jobId}] ⚠️ Subtítulos: sin entradas válidas, se omite el quemado`);
         }
