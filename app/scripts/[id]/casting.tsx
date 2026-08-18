@@ -15,6 +15,7 @@ import {
   LayoutAnimation,
   Pressable,
   ScrollView,
+  Switch,
   TextInput,
   KeyboardAvoidingView,
   Keyboard,
@@ -193,6 +194,7 @@ export default function CastingModeScreen() {
   const [showQualityModal, setShowQualityModal] = useState(false);
   const [qualityApplied, setQualityApplied] = useState(false);
   const [hasHeadphones, setHasHeadphones] = useState<boolean | null>(null);
+  const [addSubtitles, setAddSubtitles] = useState(false);
 
   useEffect(() => {
     if ((castingMode === 'script_config' || castingMode === 'free_input') && !qualityApplied) {
@@ -386,6 +388,7 @@ export default function CastingModeScreen() {
     startTime: number;
     duration: number;
     audioPath?: string;
+    text?: string; // Texto del guion (solo líneas IA) para subtítulos
   }>>([]);
   // Keep state for UI updates if needed, but rely on ref for logic
   const [lineTimingsCount, setLineTimingsCount] = useState(0);
@@ -783,6 +786,7 @@ export default function CastingModeScreen() {
               startTime: lineStartTime,
               duration,
               audioPath: audioUri,
+              text: line.cleanText || line.text, // Para subtítulos
             });
             setLineTimingsCount(c => c + 1);
           }
@@ -808,6 +812,7 @@ export default function CastingModeScreen() {
               type: 'ai',
               startTime: lineStartTime,
               duration: estimatedDuration,
+              text: line.cleanText || line.text, // Para subtítulos
             });
             setLineTimingsCount(c => c + 1);
           }
@@ -1615,6 +1620,7 @@ export default function CastingModeScreen() {
       console.log('[Teleprompter] Sending video to Railway for background processing...');
       const formData = new FormData();
       formData.append('userId', user?.id || '');
+      formData.append('addSubtitles', addSubtitles ? 'true' : 'false');
       formData.append('video', {
         uri: uri,
         name: 'video.mp4',
@@ -1709,6 +1715,7 @@ export default function CastingModeScreen() {
       formData.append('lineTimings', JSON.stringify(lineTimings));
       formData.append('hasHeadphones', (hasHeadphones ?? false) ? 'true' : 'false');
       formData.append('useLocalOnly', teleSettings.useLocalOnly ? 'true' : 'false');
+      formData.append('addSubtitles', addSubtitles ? 'true' : 'false');
 
       // Vídeo
       formData.append('video', {
@@ -3059,6 +3066,38 @@ export default function CastingModeScreen() {
                   </View>
                 </View>
               )}
+
+              {/* Sección subtítulos */}
+              <View style={{ marginTop: rp(24) }}>
+                <Text style={[styles.qualitySectionTitle, { marginBottom: rp(4) }]}>
+                  💬 Subtítulos
+                </Text>
+                <Text style={styles.qualitySectionSubtitle}>
+                  Se incrustan automáticamente en el vídeo final
+                </Text>
+
+                <TouchableOpacity
+                  style={[
+                    styles.qualityOption,
+                    { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: rp(12) },
+                  ]}
+                  onPress={() => setAddSubtitles(!addSubtitles)}
+                  activeOpacity={0.8}
+                >
+                  <View style={{ flex: 1, marginRight: rp(12) }}>
+                    <Text style={styles.qualityOptionLabel}>Añadir subtítulos</Text>
+                    <Text style={styles.qualityOptionDesc}>
+                      Útil para revisar diálogo o accesibilidad
+                    </Text>
+                  </View>
+                  <Switch
+                    value={addSubtitles}
+                    onValueChange={setAddSubtitles}
+                    trackColor={{ false: '#3A3A4A', true: '#7c3aed' }}
+                    thumbColor={addSubtitles ? '#a78bfa' : '#888'}
+                  />
+                </TouchableOpacity>
+              </View>
 
               <TouchableOpacity
                 style={{
