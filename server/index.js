@@ -340,9 +340,9 @@ async function transcribeWithWhisper(audioFilePath, userId = null) {
   const filename = path.basename(audioFilePath);
   const mimeTypes = {
     '.wav': 'audio/wav',
-    '.mp4': 'video/mp4',
+    '.mp4': 'audio/mp4',
     '.m4a': 'audio/m4a',
-    '.mp3': 'audio/mp3',
+    '.mp3': 'audio/mpeg',
     '.webm': 'audio/webm',
     '.ogg': 'audio/ogg',
     '.flac': 'audio/flac',
@@ -445,59 +445,63 @@ async function generateSubtitlesForCasting(jobId, lineTimings, userAudioFile, us
  * Genera entradas de subtítulos para el modo Presentación:
  * transcripción completa del audio con timestamps por segmento (verbose_json).
  */
-async function generateSubtitlesForFreeMode(audioFilePath, userId = null) {
+async function generateSubtitlesForFreeMode(videoFilePath, userId = null) {
   const FormData = require('form-data');
-  const form = new FormData();
-  
-  const ext = path.extname(audioFilePath).toLowerCase();
-  const filename = path.basename(audioFilePath);
-  const mimeTypes = {
-    '.wav': 'audio/wav',
-    '.mp4': 'video/mp4',
-    '.m4a': 'audio/m4a',
-    '.mp3': 'audio/mp3',
-    '.webm': 'audio/webm',
-    '.ogg': 'audio/ogg',
-    '.flac': 'audio/flac',
-  };
-  const contentType = mimeTypes[ext] || 'audio/wav';
+  const tempAudioPath = path.join(path.dirname(videoFilePath), `temp_free_audio_${Date.now()}.mp3`);
 
-  form.append('file', fs.createReadStream(audioFilePath), {
-    filename,
-    contentType,
-  });
+  try {
+    // 1. Extraer audio del vídeo a un MP3 mono liviano (evita límite de 25MB de Whisper y MIME types inválidos como video/mp4)
+    await new Promise((resolve, reject) => {
+      ffmpeg(videoFilePath)
+        .toFormat('mp3')
+        .audioBitrate('128k')
+        .audioChannels(1) // Mono
+        .on('end', resolve)
+        .on('error', reject)
+        .save(tempAudioPath);
+    });
 
-  form.append('model', 'whisper-1');
-  form.append('language', 'es');
-  form.append('response_format', 'verbose_json'); // incluye timestamps por segmento
+    const form = new FormData();
+    form.append('file', fs.createReadStream(tempAudioPath), {
+      filename: 'audio.mp3',
+      contentType: 'audio/mpeg',
+    });
 
-  const response = await fetch('https://api.openai.com/v1/audio/transcriptions', {
-    method: 'POST',
-    headers: {
-      'Authorization': `Bearer ${process.env.OPENAI_API_KEY}`,
-      ...form.getHeaders(),
-    },
-    body: form,
-  });
+    form.append('model', 'whisper-1');
+    form.append('language', 'es');
+    form.append('response_format', 'verbose_json'); // incluye timestamps por segmento
 
-  const data = await response.json();
-  if (!response.ok) throw new Error(data.error?.message || 'Error en Whisper (Presentación)');
+    const response = await fetch('https://api.openai.com/v1/audio/transcriptions', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${process.env.OPENAI_API_KEY}`,
+        ...form.getHeaders(),
+      },
+      body: form,
+    });
 
-  // Registrar uso
-  await logApiUsage({
-    userId,
-    provider: 'openai_analysis',
-    tokens: 0,
-    durationSeconds: 0,
-    mode: 'subtitles',
-  });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error?.message || 'Error en Whisper (Presentación)');
 
-  // data.segments contiene start/end/text de cada fragmento detectado
-  return (data.segments || []).map(seg => ({
-    start: seg.start,
-    end: seg.end,
-    text: seg.text.trim(),
-  }));
+    // Registrar uso
+    await logApiUsage({
+      userId,
+      provider: 'openai_analysis',
+      tokens: 0,
+      durationSeconds: 0,
+      mode: 'subtitles',
+    });
+
+    // data.segments contiene start/end/text de cada fragmento detectado
+    return (data.segments || []).map(seg => ({
+      start: seg.start,
+      end: seg.end,
+      text: (seg.text || '').trim(),
+    })).filter(seg => seg.text.length > 0);
+
+  } finally {
+    try { if (fs.existsSync(tempAudioPath)) fs.unlinkSync(tempAudioPath); } catch {}
+  }
 }
 
 /**
