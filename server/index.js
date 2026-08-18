@@ -47,10 +47,20 @@ app.use(cors());
 app.use(express.json({ limit: '200mb' })); // Increased for large video files
 app.use('/download', express.static(path.join(__dirname, 'public'))); // Serve processed videos
 
+// WebSocket setup para compatibilidad de Supabase Realtime en Node.js
+const ws = require('ws');
+if (!globalThis.WebSocket) {
+  globalThis.WebSocket = ws;
+}
+
 // Supabase client
 const supabase = createClient(
     process.env.SUPABASE_URL,
-    process.env.SUPABASE_SERVICE_KEY
+    process.env.SUPABASE_SERVICE_KEY,
+    {
+      auth: { persistSession: false },
+      realtime: { transport: ws },
+    }
 );
 // Costes aproximados por proveedor (en euros)
 const API_COSTS = {
