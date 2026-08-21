@@ -678,6 +678,259 @@ async function burnSubtitlesIntoVideo(videoPath, srtPath, outputPath) {
   });
 }
 
+// ── Extraer el audio del usuario desde el vídeo grabado ────────────────────
+// Reutilizado por processCastingInBackground y processTakePreviewInBackground.
+async function extractUserAudio(jobId, videoFile, userAudioFile) {
+    console.log(`[Job ${jobId}] Extrayendo audio del usuario...`);
+    await new Promise((resolve, reject) => {
+        ffmpeg(videoFile)
+            .output(userAudioFile)
+            .audioCodec('aac')
+            .audioBitrate('192k')
+            .noVideo()
+            .outputOptions(['-threads', '1', '-bufsize', '2M'])
+            .on('end', resolve)
+            .on('error', reject)
+            .run();
+    });
+}
+
+// ── Mezclar el audio del usuario con los audios de la IA en sus timestamps ──
+// Reutilizado por processCastingInBackground y processTakePreviewInBackground.
+async function mixAudioTracks(jobId, tempDir, userAudioFile, mixedAudioFile, lineTimings, allFiles, hasHeadphones) {
+    console.log(`[Job ${jobId}] Procesando audios de la IA...`);
+    const aiSegments = [];
+
+    for (const timing of lineTimings) {
+        if (timing.type === 'ai') {
+            const upload = allFiles.find(f => f.fieldname === `aiAudio_${timing.index}`);
+            if (upload) {
+                const aiAudioFile = path.join(tempDir, `ai_${timing.index}.mp3`);
+                fs.renameSync(upload.path, aiAudioFile);
+                aiSegments.push({
+                    file: aiAudioFile,
+                    startTime: timing.startTime,
+                    duration: timing.duration,
+                });
+                console.log(`[Job ${jobId}] Audio IA línea ${timing.index}`);
+            }
+        }
+    }
+
+    const filterParts = [];
+
+    if (hasHeadphones) {
+        filterParts.push('[0:a]highpass=f=80,loudnorm=I=-16:TP=-1.5:LRA=11[user_clean]');
+        aiSegments.forEach((segment, idx) => {
+            const delayMs = Math.round(segment.startTime * 1000);
+            const duration = segment.duration || 3;
+            const fade = Math.min(0.05, duration * 0.1).toFixed(3);
+            const fadeOut = Math.max(0, duration - parseFloat(fade)).toFixed(3);
+            filterParts.push(
+                `[${idx + 1}:a]loudnorm=I=-16:TP=-1.5:LRA=7,` +
+                `afade=t=in:st=0:d=${fade},` +
+                `afade=t=out:st=${fadeOut}:d=${fade},` +
+                `adelay=${delayMs}|${delayMs}[ai${idx}]`
+            );
+        });
+        const allStreams = ['[user_clean]', ...aiSegments.map((_, i) => `[ai${i}]`)].join('');
+        filterParts.push(
+            `${allStreams}amix=inputs=${aiSegments.length + 1}:` +
+            `duration=longest:dropout_transition=0:normalize=0,` +
+            `alimiter=limit=0.95:attack=2:release=50[outa]`
+        );
+    } else {
+        filterParts.push(
+            '[0:a]highpass=f=100,afftdn=nf=-25,' +
+            'loudnorm=I=-16:TP=-1.5:LRA=11[user_normalized]'
+        );
+        let volumeExpression = '1';
+        if (aiSegments.length > 0) {
+            const conditions = aiSegments.map(segment => {
+                const start = Math.max(0, (segment.startTime - 0.08)).toFixed(3);
+                const end = (segment.startTime + segment.duration + 0.08).toFixed(3);
+                return `between(t,${start},${end})`;
+            });
+            volumeExpression = `if(gte(${conditions.join('+')},1),0,1)`;
+        }
+        filterParts.push(`[user_normalized]volume='${volumeExpression}':eval=frame[user_controlled]`);
+        aiSegments.forEach((segment, idx) => {
+            const delayMs = Math.round(segment.startTime * 1000);
+            const duration = segment.duration || 3;
+            const fade = '0.08';
+            const fadeOut = Math.max(0, duration - 0.08).toFixed(3);
+            filterParts.push(
+                `[${idx + 1}:a]highpass=f=100,` +
+                `loudnorm=I=-18:TP=-1.5:LRA=7,` +
+                `afade=t=in:st=0:d=${fade},` +
+                `afade=t=out:st=${fadeOut}:d=${fade},` +
+                `adelay=${delayMs}|${delayMs}[ai${idx}]`
+            );
+        });
+        const allStreams = ['[user_controlled]', ...aiSegments.map((_, i) => `[ai${i}]`)].join('');
+        filterParts.push(
+            `${allStreams}amix=inputs=${aiSegments.length + 1}:` +
+            `duration=longest:dropout_transition=0:normalize=0,` +
+            `acompressor=threshold=-20dB:ratio=2.5:attack=8:release=150:makeup=1,` +
+            `alimiter=limit=0.92:attack=2:release=80[outa]`
+        );
+    }
+
+    await new Promise((resolve, reject) => {
+        const command = ffmpeg();
+        command.input(userAudioFile);
+        aiSegments.forEach(segment => command.input(segment.file));
+        command
+            .complexFilter(filterParts.join(';'))
+            .map('[outa]')
+            .audioCodec('aac')
+            .audioBitrate('192k')
+            .audioChannels(1)
+            .audioFrequency(44100)
+            .output(mixedAudioFile)
+            .on('start', (cmd) => console.log(`[Job ${jobId}] Mix cmd:`, cmd))
+            .on('end', resolve)
+            .on('error', reject)
+            .run();
+    });
+
+    // Limpiar audios individuales de IA
+    console.log(`[Job ${jobId}] Limpiando audios temporales de IA...`);
+    for (const segment of aiSegments) {
+        try { if (fs.existsSync(segment.file)) fs.unlinkSync(segment.file); } catch {}
+    }
+}
+
+// ── Unir vídeo + audio mezclado con compresión condicional según tamaño ────
+// Reutilizado por processCastingInBackground y processTakePreviewInBackground.
+// Devuelve la duración (en segundos) del vídeo original.
+async function muxVideoWithAudio(jobId, videoFile, mixedAudioFile, outputFile) {
+    const videoSizeMB = fs.statSync(videoFile).size / (1024 * 1024);
+    const needsCompression = videoSizeMB > 45;
+    console.log(`[Job ${jobId}] ${needsCompression ? 'Comprimiendo (ultrafast)...' : 'Copia directa...'}`);
+
+    const getInfo = (file) => new Promise((resolve) => {
+        ffmpeg.ffprobe(file, (err, meta) => {
+            if (err) resolve({ error: err.message });
+            else resolve({
+                duration: meta.format.duration,
+                size: meta.format.size,
+                streams: meta.streams.map(s => ({
+                    codec: s.codec_name,
+                    duration: s.duration,
+                    type: s.codec_type
+                }))
+            });
+        });
+    });
+
+    const videoInfo = await getInfo(videoFile);
+    const audioInfo = await getInfo(mixedAudioFile);
+
+    console.log(`[Job ${jobId}] Input vídeo info:`, JSON.stringify(videoInfo));
+    console.log(`[Job ${jobId}] Codec vídeo: ${videoInfo.streams[0]?.codec}`);
+    console.log(`[Job ${jobId}] Input audio info:`, JSON.stringify(audioInfo));
+
+    // Obtener duración del vídeo original para usar -t en lugar de -shortest
+    const videoDuration = await getVideoDuration(videoFile);
+    console.log(`[Job ${jobId}] Duración del vídeo original: ${videoDuration}s`);
+
+    const videoCodec = videoInfo.streams[0]?.codec || 'h264';
+    const isHEVC = videoCodec === 'hevc';
+    const crf = isHEVC ? '23' : '28';
+
+    const minAcceptableMB = (videoDuration / 60) * 20;
+
+    console.log(`[Job ${jobId}] Codec: ${videoCodec}, CRF: ${crf}`);
+    console.log(`[Job ${jobId}] Mínimo aceptable: ${minAcceptableMB.toFixed(1)}MB`);
+
+    const runFfmpeg = (crfValue) => new Promise((resolve, reject) => {
+        ffmpeg()
+            .input(videoFile)
+            .input(mixedAudioFile)
+            .outputOptions([
+                '-c:v libx264',
+                `-crf ${crfValue}`,
+                '-preset ultrafast',
+                '-vf', 'scale=-2:720',
+                '-pix_fmt', 'yuv420p',
+                '-threads 1',
+                '-c:a aac',
+                '-b:a 128k',
+                '-map 0:v:0',
+                '-map 1:a:0',
+                '-movflags +faststart',
+                `-t ${videoDuration}`,
+            ])
+            .output(outputFile)
+            .on('start', (cmd) => console.log(`[Job ${jobId}] Final cmd:`, cmd))
+            .on('stderr', (line) => {
+                if (
+                    line.includes('Duration') ||
+                    line.includes('frame=') ||
+                    line.includes('time=') ||
+                    line.includes('Output') ||
+                    line.includes('error') ||
+                    line.includes('Error') ||
+                    line.includes('Invalid') ||
+                    line.includes('moov atom')
+                ) {
+                    console.log(`[Job ${jobId}] [ffmpeg]:`, line);
+                }
+            })
+            .on('end', resolve)
+            .on('error', (err, stdout, stderr) => {
+                console.error(`[Job ${jobId}] [ffmpeg error]:`, err.message);
+                console.error(`[Job ${jobId}] [ffmpeg stderr]:`, stderr);
+                reject(err);
+            })
+            .run();
+    });
+
+    if (needsCompression) {
+        await runFfmpeg(crf);
+
+        let finalSizeMB = fs.statSync(outputFile).size / (1024 * 1024);
+        console.log(`[Job ${jobId}] Tamaño tras primera compresión: ${finalSizeMB.toFixed(1)}MB`);
+
+        if (finalSizeMB < minAcceptableMB) {
+            const betterCrf = isHEVC ? '18' : '20';
+            console.log(`[Job ${jobId}] ⚠️ Resultado demasiado pequeño. Reintentando con CRF ${betterCrf}...`);
+
+            try { fs.unlinkSync(outputFile); } catch {}
+            await runFfmpeg(betterCrf);
+
+            finalSizeMB = fs.statSync(outputFile).size / (1024 * 1024);
+            console.log(`[Job ${jobId}] Tamaño tras reintento: ${finalSizeMB.toFixed(1)}MB`);
+        }
+    } else {
+        await new Promise((resolve, reject) => {
+            ffmpeg()
+                .input(videoFile)
+                .input(mixedAudioFile)
+                .outputOptions([
+                    '-c:v copy',
+                    '-c:a aac',
+                    '-b:a 128k',
+                    '-map 0:v:0',
+                    '-map 1:a:0',
+                    '-movflags +faststart',
+                    '-t', String(videoDuration),
+                ])
+                .output(outputFile)
+                .on('end', resolve)
+                .on('error', reject)
+                .run();
+        });
+    }
+
+    // Limpiar temporales intermedios
+    try { fs.unlinkSync(videoFile); } catch {}
+    try { fs.unlinkSync(mixedAudioFile); } catch {}
+
+    return videoDuration;
+}
+
 async function processCastingInBackground(jobId, files, body) {
 
     const { scriptId, userId, lineTimings: lineTimingsJson, hasHeadphones: hasHeadphonesRaw } = body;
@@ -708,247 +961,16 @@ async function processCastingInBackground(jobId, files, body) {
             );
         }
 
-        // ── PASO 1: Extraer audio del usuario ──────────────────────────────────
-        console.log(`[Job ${jobId}] Extrayendo audio del usuario...`);
-        await new Promise((resolve, reject) => {
-            ffmpeg(videoFile)
-                .output(userAudioFile)
-                .audioCodec('aac')
-                .audioBitrate('192k')
-                .noVideo()
-                .outputOptions(['-threads', '1', '-bufsize', '2M'])
-                .on('end', resolve)
-                .on('error', reject)
-                .run();
-        });
+        // ── PASO 1: Extraer audio del usuario (reutilizado) ────────────────────
+        await extractUserAudio(jobId, videoFile, userAudioFile);
 
-        // ── PASO 2: Procesar y mezclar audios de la IA ─────────────────────────
-        console.log(`[Job ${jobId}] Procesando audios de la IA...`);
-        const aiSegments = [];
+        // ── PASO 2: Procesar y mezclar audios de la IA (reutilizado) ───────────
         const allFiles = Array.isArray(files) ? files : Object.values(files).flat();
-
-        for (const timing of lineTimings) {
-            if (timing.type === 'ai') {
-                const upload = allFiles.find(f => f.fieldname === `aiAudio_${timing.index}`);
-                if (upload) {
-                    const aiAudioFile = path.join(tempDir, `ai_${timing.index}.mp3`);
-                    fs.renameSync(upload.path, aiAudioFile);
-                    aiSegments.push({
-                        file: aiAudioFile,
-                        startTime: timing.startTime,
-                        duration: timing.duration,
-                    });
-                    console.log(`[Job ${jobId}] Audio IA línea ${timing.index}`);
-                }
-            }
-        }
-
-        const filterParts = [];
-
-        if (hasHeadphones) {
-            filterParts.push('[0:a]highpass=f=80,loudnorm=I=-16:TP=-1.5:LRA=11[user_clean]');
-            aiSegments.forEach((segment, idx) => {
-                const delayMs = Math.round(segment.startTime * 1000);
-                const duration = segment.duration || 3;
-                const fade = Math.min(0.05, duration * 0.1).toFixed(3);
-                const fadeOut = Math.max(0, duration - parseFloat(fade)).toFixed(3);
-                filterParts.push(
-                    `[${idx + 1}:a]loudnorm=I=-16:TP=-1.5:LRA=7,` +
-                    `afade=t=in:st=0:d=${fade},` +
-                    `afade=t=out:st=${fadeOut}:d=${fade},` +
-                    `adelay=${delayMs}|${delayMs}[ai${idx}]`
-                );
-            });
-            const allStreams = ['[user_clean]', ...aiSegments.map((_, i) => `[ai${i}]`)].join('');
-            filterParts.push(
-                `${allStreams}amix=inputs=${aiSegments.length + 1}:` +
-                `duration=longest:dropout_transition=0:normalize=0,` +
-                `alimiter=limit=0.95:attack=2:release=50[outa]`
-            );
-        } else {
-            filterParts.push(
-                '[0:a]highpass=f=100,afftdn=nf=-25,' +
-                'loudnorm=I=-16:TP=-1.5:LRA=11[user_normalized]'
-            );
-            let volumeExpression = '1';
-            if (aiSegments.length > 0) {
-                const conditions = aiSegments.map(segment => {
-                    const start = Math.max(0, (segment.startTime - 0.08)).toFixed(3);
-                    const end = (segment.startTime + segment.duration + 0.08).toFixed(3);
-                    return `between(t,${start},${end})`;
-                });
-                volumeExpression = `if(gte(${conditions.join('+')},1),0,1)`;
-            }
-            filterParts.push(`[user_normalized]volume='${volumeExpression}':eval=frame[user_controlled]`);
-            aiSegments.forEach((segment, idx) => {
-                const delayMs = Math.round(segment.startTime * 1000);
-                const duration = segment.duration || 3;
-                const fade = '0.08';
-                const fadeOut = Math.max(0, duration - 0.08).toFixed(3);
-                filterParts.push(
-                    `[${idx + 1}:a]highpass=f=100,` +
-                    `loudnorm=I=-18:TP=-1.5:LRA=7,` +
-                    `afade=t=in:st=0:d=${fade},` +
-                    `afade=t=out:st=${fadeOut}:d=${fade},` +
-                    `adelay=${delayMs}|${delayMs}[ai${idx}]`
-                );
-            });
-            const allStreams = ['[user_controlled]', ...aiSegments.map((_, i) => `[ai${i}]`)].join('');
-            filterParts.push(
-                `${allStreams}amix=inputs=${aiSegments.length + 1}:` +
-                `duration=longest:dropout_transition=0:normalize=0,` +
-                `acompressor=threshold=-20dB:ratio=2.5:attack=8:release=150:makeup=1,` +
-                `alimiter=limit=0.92:attack=2:release=80[outa]`
-            );
-        }
-
-        await new Promise((resolve, reject) => {
-            const command = ffmpeg();
-            command.input(userAudioFile);
-            aiSegments.forEach(segment => command.input(segment.file));
-            command
-                .complexFilter(filterParts.join(';'))
-                .map('[outa]')
-                .audioCodec('aac')
-                .audioBitrate('192k')
-                .audioChannels(1)
-                .audioFrequency(44100)
-                .output(mixedAudioFile)
-                .on('start', (cmd) => console.log(`[Job ${jobId}] Mix cmd:`, cmd))
-                .on('end', resolve)
-                .on('error', reject)
-                .run();
-        });
-
-        // Limpiar audios individuales de IA
-        console.log(`[Job ${jobId}] Limpiando audios temporales de IA...`);
-        for (const segment of aiSegments) {
-            try { if (fs.existsSync(segment.file)) fs.unlinkSync(segment.file); } catch {}
-        }
+        await mixAudioTracks(jobId, tempDir, userAudioFile, mixedAudioFile, lineTimings, allFiles, hasHeadphones);
         // NOTA: userAudioFile se elimina más abajo, tras la generación de subtítulos (si aplica)
 
-        // ── PASO 3: Unir vídeo + audio mezclado (compresión inteligente) ──────
-        const needsCompression = videoSizeMB > 45;
-        console.log(`[Job ${jobId}] ${needsCompression ? 'Comprimiendo (ultrafast)...' : 'Copia directa...'}`);
-
-        const getInfo = (file) => new Promise((resolve) => {
-            ffmpeg.ffprobe(file, (err, meta) => {
-                if (err) resolve({ error: err.message });
-                else resolve({
-                    duration: meta.format.duration,
-                    size: meta.format.size,
-                    streams: meta.streams.map(s => ({
-                        codec: s.codec_name,
-                        duration: s.duration,
-                        type: s.codec_type
-                    }))
-                });
-            });
-        });
-
-        const videoInfo = await getInfo(videoFile);
-        const audioInfo = await getInfo(mixedAudioFile);
-
-        console.log(`[Job ${jobId}] Input vídeo info:`, JSON.stringify(videoInfo));
-        console.log(`[Job ${jobId}] Codec vídeo: ${videoInfo.streams[0]?.codec}`);
-        console.log(`[Job ${jobId}] Input audio info:`, JSON.stringify(audioInfo));
-
-        // Obtener duración del vídeo original para usar -t en lugar de -shortest
-        const videoDuration = await getVideoDuration(videoFile);
-        console.log(`[Job ${jobId}] Duración del vídeo original: ${videoDuration}s`);
-
-        const videoCodec = videoInfo.streams[0]?.codec || 'h264';
-        const isHEVC = videoCodec === 'hevc';
-        const crf = isHEVC ? '23' : '28';
-
-        const minAcceptableMB = (videoDuration / 60) * 20;
-
-        console.log(`[Job ${jobId}] Codec: ${videoCodec}, CRF: ${crf}`);
-        console.log(`[Job ${jobId}] Mínimo aceptable: ${minAcceptableMB.toFixed(1)}MB`);
-
-        const runFfmpeg = (crfValue) => new Promise((resolve, reject) => {
-            ffmpeg()
-                .input(videoFile)
-                .input(mixedAudioFile)
-                .outputOptions([
-                    '-c:v libx264',
-                    `-crf ${crfValue}`,
-                    '-preset ultrafast',
-                    '-vf', 'scale=-2:720',
-                    '-pix_fmt', 'yuv420p',
-                    '-threads 1',
-                    '-c:a aac',
-                    '-b:a 128k',
-                    '-map 0:v:0',
-                    '-map 1:a:0',
-                    '-movflags +faststart',
-                    `-t ${videoDuration}`,
-                ])
-                .output(outputFile)
-                .on('start', (cmd) => console.log(`[Job ${jobId}] Final cmd:`, cmd))
-                .on('stderr', (line) => {
-                    if (
-                        line.includes('Duration') ||
-                        line.includes('frame=') ||
-                        line.includes('time=') ||
-                        line.includes('Output') ||
-                        line.includes('error') ||
-                        line.includes('Error') ||
-                        line.includes('Invalid') ||
-                        line.includes('moov atom')
-                    ) {
-                        console.log(`[Job ${jobId}] [ffmpeg]:`, line);
-                    }
-                })
-                .on('end', resolve)
-                .on('error', (err, stdout, stderr) => {
-                    console.error(`[Job ${jobId}] [ffmpeg error]:`, err.message);
-                    console.error(`[Job ${jobId}] [ffmpeg stderr]:`, stderr);
-                    reject(err);
-                })
-                .run();
-        });
-
-        if (needsCompression) {
-            await runFfmpeg(crf);
-            
-            let finalSizeMB = fs.statSync(outputFile).size / (1024 * 1024);
-            console.log(`[Job ${jobId}] Tamaño tras primera compresión: ${finalSizeMB.toFixed(1)}MB`);
-
-            if (finalSizeMB < minAcceptableMB) {
-                const betterCrf = isHEVC ? '18' : '20';
-                console.log(`[Job ${jobId}] ⚠️ Resultado demasiado pequeño. Reintentando con CRF ${betterCrf}...`);
-                
-                try { fs.unlinkSync(outputFile); } catch {}
-                await runFfmpeg(betterCrf);
-                
-                finalSizeMB = fs.statSync(outputFile).size / (1024 * 1024);
-                console.log(`[Job ${jobId}] Tamaño tras reintento: ${finalSizeMB.toFixed(1)}MB`);
-            }
-        } else {
-            await new Promise((resolve, reject) => {
-                ffmpeg()
-                    .input(videoFile)
-                    .input(mixedAudioFile)
-                    .outputOptions([
-                        '-c:v copy',
-                        '-c:a aac',
-                        '-b:a 128k',
-                        '-map 0:v:0',
-                        '-map 1:a:0',
-                        '-movflags +faststart',
-                        '-t', String(videoDuration),
-                    ])
-                    .output(outputFile)
-                    .on('end', resolve)
-                    .on('error', reject)
-                    .run();
-            });
-        }
-
-        // Limpiar temporales intermedios
-        try { fs.unlinkSync(videoFile); } catch {}
-        try { fs.unlinkSync(mixedAudioFile); } catch {}
+        // ── PASO 3: Unir vídeo + audio mezclado (reutilizado) ──────────────────
+        const videoDuration = await muxVideoWithAudio(jobId, videoFile, mixedAudioFile, outputFile);
 
         // ── PASO 3b: Quemar subtítulos (si está activado) ──────────────────────
         if (body.addSubtitles === 'true') {
@@ -1116,7 +1138,144 @@ async function processCastingInBackground(jobId, files, body) {
     }
 }
 
+// =============================================================================
+// COMPARADOR DE TOMAS — PREVIEW EN BACKGROUND (Fase 2)
+// =============================================================================
+// Igual que /process-casting, pero el resultado mezclado se guarda solo para
+// descarga temporal (downloads/) y NUNCA se sube a Supabase ni se inserta en
+// la tabla `recordings` — esto es un preview para comparar tomas, no una
+// grabación final.
+// Reutiliza extractUserAudio / mixAudioTracks / muxVideoWithAudio, las mismas
+// funciones que usa processCastingInBackground.
+app.post('/process-take-preview', upload.any(), async (req, res) => {
+    const jobId = `preview_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+    console.log(`[Preview] Job iniciado: ${jobId}`);
+
+    const { scriptId, userId, lineTimings: lineTimingsJson } = req.body;
+    const files = req.files;
+
+    if (!files || files.length === 0 || !lineTimingsJson) {
+        return res.status(400).json({ error: 'Missing required fields or files' });
+    }
+
+    // Responder inmediatamente — el cliente no debe esperar al procesamiento
+    res.json({ success: true, jobId });
+
+    // Registrar el job en Supabase, marcado como preview (job_type requiere la
+    // columna añadida en supabase/migrations/20260821120000_add_job_type_to_casting_jobs.sql)
+    try {
+        const { error } = await supabase.from('casting_jobs').insert({
+            job_id: jobId,
+            user_id: userId,
+            script_id: scriptId || null,
+            status: 'processing',
+            job_type: 'take_preview',
+        });
+        if (error) console.error('[Preview] Error registrando job:', error);
+    } catch (err) {
+        console.error('[Preview] Error registrando job:', err);
+    }
+
+    processTakePreviewInBackground(jobId, files, req.body)
+        .catch(async (err) => {
+            console.error(`[Job ${jobId}] Error fatal:`, err.message);
+            try {
+                await supabase.from('casting_jobs').update({
+                    status: 'error',
+                    error_message: err.message,
+                    updated_at: new Date().toISOString(),
+                }).eq('job_id', jobId);
+            } catch (updateErr) {
+                console.error('[Preview] Error actualizando status de error:', updateErr);
+            }
+        });
+});
+
+async function processTakePreviewInBackground(jobId, files, body) {
+    const { lineTimings: lineTimingsJson, hasHeadphones: hasHeadphonesRaw } = body;
+    const lineTimings = JSON.parse(lineTimingsJson);
+    const hasHeadphones = hasHeadphonesRaw === 'true';
+
+    const tempDir = path.join(__dirname, 'temp', `preview_${Date.now()}`);
+    fs.mkdirSync(tempDir, { recursive: true });
+
+    const videoFile = path.join(tempDir, 'input.mp4');
+    const userAudioFile = path.join(tempDir, 'user_audio.m4a');
+    const mixedAudioFile = path.join(tempDir, 'mixed_audio.m4a');
+    const outputFile = path.join(tempDir, 'output.mp4');
+
+    try {
+        const allFiles = Array.isArray(files) ? files : Object.values(files).flat();
+        const uploadedVideo = allFiles.find(f => f.fieldname === 'video');
+        if (!uploadedVideo) throw new Error('No video file uploaded');
+        fs.renameSync(uploadedVideo.path, videoFile);
+
+        const videoSizeMB = fs.statSync(videoFile).size / (1024 * 1024);
+        console.log(`[Job ${jobId}] Vídeo: ${videoSizeMB.toFixed(1)}MB`);
+
+        if (videoSizeMB > 200) {
+            throw new Error(
+                `Vídeo demasiado grande (${videoSizeMB.toFixed(0)}MB). ` +
+                'Usa calidad Básica para escenas largas.'
+            );
+        }
+
+        // ── PASO 1 y 2: extraer y mezclar audio (reutilizado) ───────────────
+        await extractUserAudio(jobId, videoFile, userAudioFile);
+        await mixAudioTracks(jobId, tempDir, userAudioFile, mixedAudioFile, lineTimings, allFiles, hasHeadphones);
+        try { if (fs.existsSync(userAudioFile)) fs.unlinkSync(userAudioFile); } catch {}
+
+        // ── PASO 3: unir vídeo + audio mezclado (reutilizado) ───────────────
+        await muxVideoWithAudio(jobId, videoFile, mixedAudioFile, outputFile);
+
+        // ── DIFERENCIA CLAVE: guardar en downloads/ en vez de subir a Supabase ─
+        const downloadsDir = path.join(__dirname, 'downloads');
+        if (!fs.existsSync(downloadsDir)) fs.mkdirSync(downloadsDir, { recursive: true });
+
+        const downloadFileName = `${jobId}.mp4`;
+        const downloadPath = path.join(downloadsDir, downloadFileName);
+        fs.copyFileSync(outputFile, downloadPath);
+        console.log(`[Job ${jobId}] Preview guardado para descarga: ${downloadFileName}`);
+
+        // Auto-borrado tras 2 horas (más margen que el de 1h de vídeos grandes de
+        // casting normal, ya que el usuario puede tardar en grabar varias tomas)
+        setTimeout(() => {
+            try {
+                if (fs.existsSync(downloadPath)) {
+                    fs.unlinkSync(downloadPath);
+                    console.log(`[Job ${jobId}] Preview expirado y borrado`);
+                }
+            } catch (e) {
+                console.warn(`[Job ${jobId}] Error borrando preview expirado:`, e.message);
+            }
+        }, 2 * 60 * 60 * 1000);
+
+        // Marcar como completado — sin insert en `recordings`, esto no es una
+        // grabación final, solo un preview para el comparador de tomas.
+        await supabase.from('casting_jobs').update({
+            status: 'completed',
+            updated_at: new Date().toISOString(),
+        }).eq('job_id', jobId);
+
+        console.log(`[Job ${jobId}] ✅ Preview completo`);
+
+    } finally {
+        try { fs.rmSync(tempDir, { recursive: true, force: true }); } catch {}
+
+        if (files) {
+            const allFiles = Array.isArray(files) ? files : Object.values(files).flat();
+            for (const file of allFiles) {
+                try {
+                    if (fs.existsSync(file.path)) fs.unlinkSync(file.path);
+                } catch {}
+            }
+        }
+    }
+}
+
 // Endpoint para descargar vídeos guardados temporalmente en el servidor
+// (genérico: sirve cualquier downloads/<jobId>.mp4, sea de casting normal,
+// teleprompter/Presentación o preview del comparador de tomas)
 app.get('/download-casting/:jobId', (req, res) => {
     const { jobId } = req.params;
     const downloadsDir = path.join(__dirname, 'downloads');
@@ -1324,7 +1483,7 @@ async function processTeleprompterInBackground(jobId, files, body) {
         .insert({
           user_id: body.userId,
           script_id: body.scriptId || null,
-          title: `Teleprompter - ${new Date().toLocaleDateString('es-ES')}`,
+          title: `Presentación - ${new Date().toLocaleDateString('es-ES')}`,
           audio_url: publicUrl,
           type: 'video',
           duration_seconds: Math.round(videoDuration),

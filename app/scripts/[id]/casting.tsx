@@ -1912,6 +1912,12 @@ export default function CastingModeScreen() {
 
       console.log(`[Comparador] Toma ${takeNumber} guardada localmente:`, localPath);
 
+      // Disparar el procesamiento en Railway en background, sin esperar
+      // (fire and forget, para no bloquear al usuario)
+      sendTakeForPreviewProcessing(takeMetadata).catch(e => {
+        console.warn('[Comparador] Error enviando toma a procesar:', e);
+      });
+
       setIsProcessing(false);
       setProcessingProgress(0);
 
@@ -1943,6 +1949,70 @@ export default function CastingModeScreen() {
       console.error('[Comparador] Error guardando toma localmente:', e);
       setIsProcessing(false);
       Alert.alert('Error', 'No se pudo guardar la toma. Inténtalo de nuevo.');
+    }
+  }
+
+  // Comparador de tomas (Fase 2): envía la toma guardada localmente a Railway para
+  // mezclar el audio de la IA con el audio del usuario (mismo pipeline que el
+  // casting normal, vía /process-take-preview), sin subir el resultado a Supabase.
+  async function sendTakeForPreviewProcessing(takeMetadata: any) {
+    try {
+      const formData = new FormData();
+      formData.append('userId', user?.id || '');
+      formData.append('scriptId', takeMetadata.scriptId || '');
+      formData.append('lineTimings', JSON.stringify(takeMetadata.lineTimings));
+      formData.append('hasHeadphones', takeMetadata.hasHeadphones ? 'true' : 'false');
+
+      // Vídeo: usamos la copia local persistente, no el archivo temporal de la
+      // cámara, ya que este envío es asíncrono y el usuario puede grabar otra
+      // toma (nueva grabación de cámara) antes de que termine de subir.
+      formData.append('video', {
+        uri: takeMetadata.localPath,
+        name: 'video.mp4',
+        type: 'video/mp4',
+      } as any);
+
+      // Adjuntar audios de la IA igual que en el flujo normal
+      for (const timing of takeMetadata.lineTimings) {
+        if (timing.type === 'ai' && timing.audioPath) {
+          formData.append(`aiAudio_${timing.index}`, {
+            uri: timing.audioPath,
+            name: `ai_${timing.index}.mp3`,
+            type: 'audio/mpeg',
+          } as any);
+        }
+      }
+
+      const castingServerUrl = process.env.EXPO_PUBLIC_CASTING_SERVER_URL || 'https://script-cue-merge-server-production.up.railway.app';
+      const response = await fetch(`${castingServerUrl}/process-take-preview`, {
+        method: 'POST',
+        body: formData,
+      });
+      const result = await response.json();
+
+      if (result.success && result.jobId) {
+        console.log(`[Comparador] Toma enviada a procesar: ${result.jobId}`);
+
+        // Actualizar la metadata local con el jobId, para poder consultar su
+        // estado y descarga después en la Fase 3
+        const sessionId = takeMetadata.sessionId;
+        const existingTakes = await AsyncStorage.getItem(`takes_${sessionId}`);
+        const takesArray = existingTakes ? JSON.parse(existingTakes) : [];
+
+        const updatedTakes = takesArray.map((t: any) =>
+          t.id === takeMetadata.id
+            ? { ...t, jobId: result.jobId, status: 'processing_preview' }
+            : t
+        );
+
+        await AsyncStorage.setItem(`takes_${sessionId}`, JSON.stringify(updatedTakes));
+      } else {
+        console.error('[Comparador] No se recibió jobId al enviar la toma a procesar');
+      }
+    } catch (e) {
+      console.error('[Comparador] Error enviando toma para preview:', e);
+      // No mostrar error al usuario aquí — esto ocurre en background,
+      // no debe interrumpir el flujo de grabar más tomas
     }
   }
 
