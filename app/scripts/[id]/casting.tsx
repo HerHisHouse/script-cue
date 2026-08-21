@@ -142,8 +142,8 @@ export default function CastingModeScreen() {
   const [facing, setFacing] = useState<'back' | 'front'>('front');
   const [zoom, setZoom] = useState(0.08);
   const [showZoomSlider, setShowZoomSlider] = useState(false);
-  const MIN_ZOOM = 0;
-  const MAX_ZOOM = 0.2;
+  const MIN_ZOOM = 0;   // 0 = gran angular máximo del hardware (equivale a 0.5x)
+  const MAX_ZOOM = 0.3; // Subido de 0.2 para dar más alcance al slider
 
   const [isRecording, setIsRecording] = useState(false);
   // Flag to cancel the countdown loop without relying on cameraRef properties
@@ -189,12 +189,13 @@ export default function CastingModeScreen() {
   type CastingMode = 'selection' | 'script_config' | 'free_input' | 'recording';
   const [castingMode, setCastingMode] = useState<CastingMode>('selection');
   const [castingType, setCastingType] = useState<'script' | 'free' | null>(null);
-  type VideoQuality = 'medium' | 'low';
+  type VideoQuality = 'high' | 'medium' | 'low';
   const [videoQuality, setVideoQuality] = useState<VideoQuality>('medium');
   const [showQualityModal, setShowQualityModal] = useState(false);
   const [qualityApplied, setQualityApplied] = useState(false);
   const [hasHeadphones, setHasHeadphones] = useState<boolean | null>(null);
   const [addSubtitles, setAddSubtitles] = useState(false);
+  const [isQualityDropdownOpen, setIsQualityDropdownOpen] = useState(false);
 
   useEffect(() => {
     if ((castingMode === 'script_config' || castingMode === 'free_input') && !qualityApplied) {
@@ -285,9 +286,9 @@ export default function CastingModeScreen() {
   const zoomAnimValue = useRef(new Animated.Value(0.08)).current;
 
   // Detección de palmada — umbrales y refs
-  const CLAP_THRESHOLD_DB = -14;     // Equilibrado: ignora voz normal pero capta palmadas traseras
-  const DOUBLE_CLAP_WINDOW_MS = 1000; // ventana temporal entre las dos palmadas
-  const CLAP_DEBOUNCE_MS = 250;      // Tiempo mínimo real entre dos palmadas humanas
+  const CLAP_THRESHOLD_DB = -18;     // Rebajado: más fácil de detectar sin perder precisión
+  const DOUBLE_CLAP_WINDOW_MS = 1200; // Ventana ligeramente más amplia para dar más margen
+  const CLAP_DEBOUNCE_MS = 180;      // Más rápido: capta mejor la segunda palmada
   const clapTimestampsRef = useRef<number[]>([]);
   const lastClapPeakRef = useRef<number>(0);
   const clapMeteringRecordingRef = useRef<Audio.Recording | null>(null);
@@ -396,6 +397,9 @@ export default function CastingModeScreen() {
   const recordingStartTime = useRef<number>(0);
   const [isProcessing, setIsProcessing] = useState(false);
   const [processingProgress, setProcessingProgress] = useState(0);
+
+  // Comparador de tomas (Fase 1): id de sesión de tomas locales pendientes de comparar
+  const currentTakeSessionRef = useRef<string | null>(null);
 
   // Transcription State (replacing VAD)
   // Transcription State (replacing VAD)
@@ -1436,10 +1440,13 @@ export default function CastingModeScreen() {
   }
 
   function triggerWideShotTransition() {
+    // Sync the animated value with the current zoom state before animating
+    // to avoid a jump when the Animated.Value is out of sync
+    zoomAnimValue.setValue(zoom);
     Animated.timing(zoomAnimValue, {
       toValue: 0, // Plano general = zoom mínimo (campo más ancho disponible)
-      duration: 600,
-      easing: Easing.inOut(Easing.ease),
+      duration: 800,
+      easing: Easing.out(Easing.quad),
       useNativeDriver: false, // El zoom de cámara no admite native driver
     }).start();
     // Feedback háptico de confirmación
@@ -1603,7 +1610,7 @@ export default function CastingModeScreen() {
           user_id: user?.id,
           script_id: null,
           project_id: null,
-          title: `Teleprompter - ${new Date().toLocaleDateString('es-ES')}`,
+          title: `Presentación - ${new Date().toLocaleDateString('es-ES')}`,
           audio_url: uri,  // local file:// URI → shows 📱 Local
           type: 'video',
           duration_seconds: recordingTimeRef.current,
@@ -1630,40 +1637,52 @@ export default function CastingModeScreen() {
       setProcessingProgress(50); // Muestra progreso mientras sube
 
       const castingServerUrl = process.env.EXPO_PUBLIC_CASTING_SERVER_URL || 'https://script-cue-merge-server-production.up.railway.app';
-      const controller = new AbortController();
-      // Timeout largo para la subida (180s)
-      const timeoutId = setTimeout(() => controller.abort(), 180000);
 
-      let response;
-      try {
-        response = await fetch(`${castingServerUrl}/compress-video`, {
-          method: 'POST',
-          body: formData,
-          signal: controller.signal,
-        });
-        clearTimeout(timeoutId);
-      } catch (fetchError: any) {
-        clearTimeout(timeoutId);
-        if (fetchError.name === 'AbortError') {
-          throw new Error('La subida tardó más de 3 minutos. Intenta con un video más corto o una mejor conexión.');
+      // Capturamos el jobId para pasarlo a Grabaciones aunque el race acabe antes
+      let capturedJobId: string | null = null;
+
+      const uploadPromise = (async () => {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 180000);
+        let response;
+        try {
+          response = await fetch(`${castingServerUrl}/compress-video`, {
+            method: 'POST',
+            body: formData,
+            signal: controller.signal,
+          });
+          clearTimeout(timeoutId);
+          if (!response.ok) {
+            console.error(`Error del servidor: ${response.status}`);
+            return;
+          }
+          const result = await response.json();
+          if (result.jobId) {
+            capturedJobId = result.jobId;
+          } else {
+            console.error('El servidor no devolvió confirmación del trabajo en segundo plano.');
+          }
+        } catch (fetchError: any) {
+          clearTimeout(timeoutId);
+          console.error('Background upload failed:', fetchError);
         }
-        throw fetchError;
-      }
+      })();
 
-      if (!response.ok) {
-        throw new Error(`Error del servidor: ${response.status}`);
-      }
-
-      const result = await response.json();
-      if (!result.success || !result.jobId) {
-        throw new Error('El servidor no devolvió confirmación del trabajo en segundo plano.');
-      }
+      // Wait max 5 seconds before navigating away
+      await Promise.race([
+        uploadPromise,
+        new Promise(resolve => setTimeout(resolve, 5000))
+      ]);
 
       setProcessingProgress(100);
       setIsProcessing(false);
 
-      // Redirigir a la pestaña de grabaciones donde se verá el banner de "Procesando..."
-      router.replace('/(tabs)/recordings');
+      // Redirigir a Grabaciones. Si tenemos jobId lo pasamos para mostrar el banner inmediatamente
+      if (capturedJobId) {
+        router.replace(`/(tabs)/recordings?pendingJobId=${capturedJobId}`);
+      } else {
+        router.replace('/(tabs)/recordings');
+      }
 
     } catch (e: any) {
       console.error(e);
@@ -1702,6 +1721,33 @@ export default function CastingModeScreen() {
       return;
     }
 
+    // Solo preguntar en Selftape (castingType === 'script'), no en Presentación
+    if (castingType === 'script') {
+      Alert.alert(
+        '🎬 ¿Otra toma?',
+        '¿Quieres grabar otra toma de esta escena para comparar cuál te gusta más?',
+        [
+          {
+            text: 'No, enviar esta',
+            style: 'default',
+            onPress: () => proceedWithNormalFlow(uri, _hasHeadphonesArg),
+          },
+          {
+            text: 'Sí, grabar otra',
+            style: 'default',
+            onPress: () => saveTakeLocally(uri, _hasHeadphonesArg),
+          },
+        ],
+        { cancelable: false }
+      );
+      return;
+    }
+
+    // Presentación sigue su flujo actual sin cambios
+    proceedWithNormalFlow(uri, _hasHeadphonesArg);
+  }
+
+  async function proceedWithNormalFlow(uri: string, _hasHeadphonesArg: boolean = false) {
     try {
       setIsProcessing(true);
       setProcessingProgress(20);
@@ -1740,91 +1786,70 @@ export default function CastingModeScreen() {
 
       const castingServerUrl = process.env.EXPO_PUBLIC_CASTING_SERVER_URL || 'https://script-cue-merge-server-production.up.railway.app';
 
-      // Timeout de 2 minutos solo para la subida — el procesamiento ocurre en segundo plano
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 120000);
+      // Capturamos el jobId para pasarlo a Grabaciones aunque el race acabe antes
+      let capturedJobId: string | null = null;
 
-      let response;
-      try {
-        response = await fetch(`${castingServerUrl}/process-casting`, {
-          method: 'POST',
-          body: formData,
-          signal: controller.signal,
-        });
-        clearTimeout(timeoutId);
-      } catch (fetchError: any) {
-        clearTimeout(timeoutId);
-        if (fetchError.name === 'AbortError') {
-          throw new Error(
-            'La subida del vídeo tardó demasiado. ' +
-            'Comprueba tu conexión a internet e inténtalo de nuevo.'
-          );
+      const uploadPromise = (async () => {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 120000);
+        let response;
+        try {
+          response = await fetch(`${castingServerUrl}/process-casting`, {
+            method: 'POST',
+            body: formData,
+            signal: controller.signal,
+          });
+          clearTimeout(timeoutId);
+
+          if (!response.ok) {
+            const errorData = await response.json().catch(() => ({}));
+            if (response.status === 413) {
+              Alert.alert(
+                '📹 Vídeo demasiado grande',
+                errorData.error || 'Graba en calidad Básica (480p) para escenas largas.',
+                [{ text: 'Entendido' }]
+              );
+              return;
+            }
+            if (response.status === 502) {
+              Alert.alert(
+                '⚠️ Error del servidor',
+                'El servidor no pudo procesar el vídeo. ' +
+                'Prueba con calidad Básica (480p) o graba una escena más corta.',
+                [{ text: 'Entendido' }]
+              );
+              return;
+            }
+            console.error(`Error del servidor: ${response.status}`);
+            return;
+          }
+
+          const result = await response.json();
+          if (result.jobId) {
+            capturedJobId = result.jobId;
+          } else {
+            console.error('No jobId returned from server for selftape');
+          }
+        } catch (fetchError: any) {
+          clearTimeout(timeoutId);
+          console.error('[Casting] Background upload failed:', fetchError);
         }
-        throw fetchError;
-      }
+      })();
 
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
-
-        if (response.status === 413) {
-          Alert.alert(
-            '📹 Vídeo demasiado grande',
-            errorData.error || 'Graba en calidad Básica (480p) para escenas largas.',
-            [{ text: 'Entendido' }]
-          );
-          setIsProcessing(false);
-          return;
-        }
-
-        if (response.status === 502) {
-          Alert.alert(
-            '⚠️ Error del servidor',
-            'El servidor no pudo procesar el vídeo. ' +
-            'Prueba con calidad Básica (480p) o graba una escena más corta.',
-            [{ text: 'Entendido' }]
-          );
-          setIsProcessing(false);
-          return;
-        }
-
-        if (response.status === 504 || response.status === 524) {
-          throw new Error('El servidor tardó demasiado. Espera un momento e inténtalo de nuevo.');
-        }
-
-        throw new Error(`Error del servidor: ${response.status}`);
-      }
-
-      const result = await response.json();
+      // Timeout de 5s máximo para no bloquear al usuario
+      await Promise.race([
+        uploadPromise,
+        new Promise(resolve => setTimeout(resolve, 5000))
+      ]);
 
       setProcessingProgress(100);
       setIsProcessing(false);
 
-      if (result.jobId) {
-        // El servidor ha recibido el vídeo y está procesando en segundo plano
-        Alert.alert(
-          '🎬 ¡Selftape enviado!',
-          'Tu vídeo se está procesando en segundo plano.\n\n' +
-          'Te avisaremos en Grabaciones cuando esté listo. ' +
-          'Puedes seguir usando la app mientras tanto.',
-          [
-            {
-              text: 'Ver Grabaciones',
-              onPress: () => router.replace('/(tabs)/recordings'),
-            },
-            {
-              text: 'Seguir en la app',
-              style: 'cancel',
-              onPress: () => router.replace(`/scripts/${id}`),
-            },
-          ]
-        );
+      // Redirigir a Grabaciones. Si tenemos jobId lo pasamos para mostrar el banner inmediatamente
+      if (capturedJobId) {
+        router.replace(`/(tabs)/recordings?pendingJobId=${capturedJobId}`);
       } else {
-        // Servidor con flujo clásico (descarga directa)
-        Alert.alert(
-          '🎬 ¡Grabación enviada!',
-          'Tu selftape se ha guardado en Grabaciones.',
-          [{ text: 'OK', onPress: () => router.replace(`/scripts/${id}`) }]
-        );
+        router.replace('/(tabs)/recordings');
       }
 
     } catch (e: any) {
@@ -1838,7 +1863,88 @@ export default function CastingModeScreen() {
     }
   }
 
+  // Comparador de tomas (Fase 1): guarda el vídeo localmente en vez de subirlo a Railway.
+  // El procesamiento de audio y la pantalla de comparador llegan en fases posteriores.
+  async function saveTakeLocally(uri: string, _hasHeadphonesArg: boolean = false) {
+    try {
+      setIsProcessing(true);
+      setProcessingProgress(20);
 
+      // Crear un identificador único para esta sesión de tomas.
+      // Si ya existe una sesión activa (el usuario ya grabó una toma anterior
+      // de esta misma escena), reutilizar el mismo sessionId.
+      const sessionId = currentTakeSessionRef.current || `take_session_${Date.now()}`;
+      currentTakeSessionRef.current = sessionId;
+
+      // Contar cuántas tomas lleva ya en esta sesión
+      const existingTakes = await AsyncStorage.getItem(`takes_${sessionId}`);
+      const takesArray = existingTakes ? JSON.parse(existingTakes) : [];
+      const takeNumber = takesArray.length + 1;
+
+      // Copiar el vídeo a un directorio persistente local
+      const localFileName = `take_${sessionId}_${takeNumber}.mp4`;
+      const takesDir = `${FileSystem.documentDirectory}takes/`;
+      const localPath = `${takesDir}${localFileName}`;
+
+      // Asegurar que el directorio existe
+      const dirInfo = await FileSystem.getInfoAsync(takesDir);
+      if (!dirInfo.exists) {
+        await FileSystem.makeDirectoryAsync(takesDir, { intermediates: true });
+      }
+
+      await FileSystem.copyAsync({ from: uri, to: localPath });
+
+      // Guardar metadata de esta toma
+      const takeMetadata = {
+        id: `${sessionId}_take${takeNumber}`,
+        sessionId,
+        takeNumber,
+        localPath,
+        scriptId: id, // el id del guion actual
+        lineTimings: lineTimingsRef.current,
+        hasHeadphones: _hasHeadphonesArg,
+        createdAt: new Date().toISOString(),
+        status: 'pending_processing', // se procesará en Fase 2
+      };
+
+      takesArray.push(takeMetadata);
+      await AsyncStorage.setItem(`takes_${sessionId}`, JSON.stringify(takesArray));
+
+      console.log(`[Comparador] Toma ${takeNumber} guardada localmente:`, localPath);
+
+      setIsProcessing(false);
+      setProcessingProgress(0);
+
+      // Preguntar si quiere grabar otra toma más, o ya ha terminado y quiere ir a comparar
+      Alert.alert(
+        `✅ Toma ${takeNumber} guardada`,
+        '¿Quieres grabar otra toma más, o prefieres terminar aquí por ahora?',
+        [
+          {
+            text: 'Grabar otra toma',
+            onPress: () => {
+              // Reiniciar la grabación desde el principio del guion
+              setCurrentIndex(0);
+              setIsPlaying(false);
+              // El usuario vuelve a pulsar grabar manualmente
+            },
+          },
+          {
+            text: 'Terminar por ahora',
+            onPress: () => {
+              currentTakeSessionRef.current = null; // cerrar sesión
+              router.replace(`/scripts/${id}`);
+              // Nota: en la Fase 3, esto llevará al Comparador en vez de volver al guion
+            },
+          },
+        ]
+      );
+    } catch (e: any) {
+      console.error('[Comparador] Error guardando toma localmente:', e);
+      setIsProcessing(false);
+      Alert.alert('Error', 'No se pudo guardar la toma. Inténtalo de nuevo.');
+    }
+  }
 
   function toggleCamera() {
     setFacing(current => (current === 'back' ? 'front' : 'back'));
@@ -1878,7 +1984,7 @@ export default function CastingModeScreen() {
                   borderColor: 'rgba(0,0,0,0.03)',
                 }
               ]}
-              onPress={() => setCastingMode('free_input')}
+              onPress={() => { setQualityApplied(false); setCastingMode('free_input'); }}
             >
               <MonitorPlay size={rp(48)} color="#10B981" style={{ marginBottom: 16 }} />
               <Text style={{ color: colors.text, fontSize: rf(20), fontWeight: '700' }}>Presentación</Text>
@@ -1906,7 +2012,7 @@ export default function CastingModeScreen() {
                   borderColor: 'rgba(0,0,0,0.03)',
                 }
               ]}
-              onPress={() => setCastingMode('script_config')}
+              onPress={() => { setQualityApplied(false); setCastingMode('script_config'); }}
             >
               <Clapperboard size={rp(48)} color={colors.primary} style={{ marginBottom: 16 }} />
               <Text style={{ color: colors.text, fontSize: rf(20), fontWeight: '700' }}>Selftape</Text>
@@ -1946,7 +2052,7 @@ export default function CastingModeScreen() {
             {/* Leyenda de ayuda */}
             <View style={{ paddingHorizontal: rp(16), paddingTop: rp(8), paddingBottom: rp(4) }}>
               <Text style={{ color: colors.textSecondary, fontSize: rf(12), textAlign: 'center' }}>
-                Escribe o pega en el visor el texto plano que quieras, una vez dentro podrás editarlo a tu gusto
+                Escribe o pega el texto que quieras que aparezca en el teleprompter. Una vez dentro podrás editarlo a tu gusto
               </Text>
             </View>
 
@@ -2915,11 +3021,15 @@ export default function CastingModeScreen() {
               <View style={styles.processingModal}>
                 <ActivityIndicator size="large" color="#3B82F6" />
                 <Text style={styles.processingTitle}>
-                  {castingType === 'free' ? 'Enviando vídeo...' : 'Procesando tu casting...'}
+                  {castingType === 'free' 
+                    ? (addSubtitles ? 'Procesando vídeo' : 'Enviando vídeo...') 
+                    : 'Procesando tu casting...'}
                 </Text>
                 <Text style={styles.processingText}>
                   {castingType === 'free'
-                    ? 'Estamos guardando el vídeo, podrás encontrarlo en Grabaciones.'
+                    ? (addSubtitles 
+                        ? 'Se están generando los subtítulos, encontrarás el vídeo en la pantalla de Grabaciones' 
+                        : 'Estamos guardando el vídeo, podrás encontrarlo en Grabaciones.')
                     : 'Estamos mezclando tu actuación con la voz de réplica de alta calidad.'}
                 </Text>
                 {castingType !== 'free' && (
@@ -2954,55 +3064,72 @@ export default function CastingModeScreen() {
                 </Text>
               </View>
               <Text style={styles.qualitySectionSubtitle}>
-                Mayor calidad = archivo más grande
+                Selecciona la calidad para grabar el vídeo
               </Text>
 
               <View style={styles.qualityOptions}>
-                {[
-                  {
-                    value: 'high',
-                    label: 'Alta',
-                    desc: '1080p — Máxima calidad',
-                    size: '~60MB/min'
-                  },
-                  {
-                    value: 'medium',
-                    label: 'Media (Recomendada)',
-                    desc: '720p — Estándar profesional',
-                    size: '~30MB/min'
-                  },
-                  {
-                    value: 'low',
-                    label: 'Baja',
-                    desc: '480p — Archivos más pequeños',
-                    size: '~12MB/min'
-                  },
-                ].map((option) => (
-                  <TouchableOpacity
-                    key={option.value}
-                    style={[
-                      styles.qualityOption,
-                      videoQuality === option.value && styles.qualityOptionSelected,
-                    ]}
-                    onPress={() => setVideoQuality(option.value as VideoQuality)}
-                  >
-                    <View style={{ flex: 1 }}>
-                      <Text style={[
-                        styles.qualityOptionLabel,
-                        videoQuality === option.value && styles.qualityOptionLabelSelected
-                      ]}>
-                        {option.label}
-                      </Text>
-                      <Text style={styles.qualityOptionDesc}>{option.desc}</Text>
-                    </View>
-                    <Text style={styles.qualityOptionSize}>{option.size}</Text>
-                    {videoQuality === option.value && (
-                      <View style={styles.qualityCheckmark}>
-                        <Text style={{ color: '#a78bfa', fontSize: rf(16) }}>✓</Text>
-                      </View>
-                    )}
-                  </TouchableOpacity>
-                ))}
+                <TouchableOpacity
+                  style={[styles.qualityOption, { borderColor: '#2A2A35', borderWidth: 1, backgroundColor: '#21212C', flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }]}
+                  onPress={() => setIsQualityDropdownOpen(!isQualityDropdownOpen)}
+                >
+                  <Text style={[styles.qualityOptionLabel, { color: '#FFF' }]}>
+                    {videoQuality === 'high' ? 'Alta (1080p)' : videoQuality === 'medium' ? 'Media (720p)' : 'Baja (480p)'}
+                  </Text>
+                  <Text style={{ color: '#a78bfa', fontSize: rp(16) }}>{isQualityDropdownOpen ? '▲' : '▼'}</Text>
+                </TouchableOpacity>
+
+                {isQualityDropdownOpen && (
+                  <View style={{ marginTop: rp(8), gap: rp(8) }}>
+                    {[
+                      {
+                        value: 'high',
+                        label: 'Alta',
+                        desc: '1080p — Máxima calidad',
+                        size: '~60MB/min'
+                      },
+                      {
+                        value: 'medium',
+                        label: 'Media (Recomendada)',
+                        desc: '720p — Estándar profesional',
+                        size: '~30MB/min'
+                      },
+                      {
+                        value: 'low',
+                        label: 'Baja',
+                        desc: '480p — Archivos más pequeños',
+                        size: '~12MB/min'
+                      },
+                    ].map((option) => (
+                      <TouchableOpacity
+                        key={option.value}
+                        style={[
+                          styles.qualityOption,
+                          videoQuality === option.value && styles.qualityOptionSelected,
+                        ]}
+                        onPress={() => {
+                          setVideoQuality(option.value as any);
+                          setIsQualityDropdownOpen(false);
+                        }}
+                      >
+                        <View style={{ flex: 1 }}>
+                          <Text style={[
+                            styles.qualityOptionLabel,
+                            videoQuality === option.value && styles.qualityOptionLabelSelected
+                          ]}>
+                            {option.label}
+                          </Text>
+                          <Text style={styles.qualityOptionDesc}>{option.desc}</Text>
+                        </View>
+                        <Text style={styles.qualityOptionSize}>{option.size}</Text>
+                        {videoQuality === option.value && (
+                          <View style={styles.qualityCheckmark}>
+                            <Text style={{ color: '#a78bfa', fontSize: rf(16) }}>✓</Text>
+                          </View>
+                        )}
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+                )}
               </View>
 
               {/* Sección auriculares */}
@@ -3012,7 +3139,7 @@ export default function CastingModeScreen() {
                     🎧 ¿Usarás auriculares?
                   </Text>
                   <Text style={styles.qualitySectionSubtitle}>
-                    Afecta a la calidad del audio mezclado
+                    Lo recomendamos para una mayor calidad de audio
                   </Text>
 
                   <View style={{ flexDirection: 'row', gap: rp(10), marginTop: rp(12) }}>
@@ -3033,7 +3160,7 @@ export default function CastingModeScreen() {
                         Sí
                       </Text>
                       <Text style={styles.qualityOptionDesc}>
-                        Ambas voces suenan a la vez
+                        Mejora el audio y evita ecos
                       </Text>
                       {hasHeadphones === true && (
                         <Text style={{ color: '#a78bfa', fontSize: rf(16), marginTop: rp(4) }}>✓</Text>
@@ -3056,7 +3183,7 @@ export default function CastingModeScreen() {
                         No
                       </Text>
                       <Text style={styles.qualityOptionDesc}>
-                        Se silencia el eco automáticamente
+                        Es posible tener algo de eco en la mezcla final
                       </Text>
                       {hasHeadphones === false && (
                         <Text style={{ color: '#a78bfa', fontSize: rf(16), marginTop: rp(4) }}>✓</Text>
