@@ -407,22 +407,22 @@ export default function ScriptDetailScreen() {
               <Text style={styles.actionText}>ESTUDIO</Text>
             </TouchableOpacity>
 
-            {/* 2. Modo Memory */}
-            <TouchableOpacity
-              style={styles.actionButton}
-              onPress={() => router.push(`/scripts/${id}/memory`)}
-            >
-              <Brain size={24} color="#FFFFFF" />
-              <Text style={styles.actionText}>MEMORIA</Text>
-            </TouchableOpacity>
-
-            {/* 3. Modo Análisis */}
+            {/* 2. Modo Análisis */}
             <TouchableOpacity
               style={styles.actionButton}
               onPress={() => router.push(`/scripts/${id}/analysis`)}
             >
               <FileText size={24} color="#FFFFFF" />
               <Text style={styles.actionText}>ANÁLISIS</Text>
+            </TouchableOpacity>
+
+            {/* 3. Modo Memoria */}
+            <TouchableOpacity
+              style={styles.actionButton}
+              onPress={() => router.push(`/scripts/${id}/memory`)}
+            >
+              <Brain size={24} color="#FFFFFF" />
+              <Text style={styles.actionText}>MEMORIA</Text>
             </TouchableOpacity>
           </View>
 
@@ -436,22 +436,22 @@ export default function ScriptDetailScreen() {
               <Text style={styles.actionText}>ESCENA</Text>
             </TouchableOpacity>
 
-            {/* 5. Modo Casting */}
-            <TouchableOpacity
-              style={styles.actionButton}
-              onPress={() => router.push(`/scripts/${id}/casting`)}
-            >
-              <Clapperboard size={24} color="#FFFFFF" />
-              <Text style={styles.actionText}>CASTING</Text>
-            </TouchableOpacity>
-
-            {/* 6. Modo Coche */}
+            {/* 5. Modo Coche */}
             <TouchableOpacity
               style={styles.actionButton}
               onPress={() => router.push(`/scripts/${id}/car`)}
             >
               <Car size={24} color="#FFFFFF" />
               <Text style={styles.actionText}>COCHE</Text>
+            </TouchableOpacity>
+
+            {/* 6. Modo Casting */}
+            <TouchableOpacity
+              style={styles.actionButton}
+              onPress={() => router.push(`/scripts/${id}/casting`)}
+            >
+              <Clapperboard size={24} color="#FFFFFF" />
+              <Text style={styles.actionText}>CASTING</Text>
             </TouchableOpacity>
           </View>
         </View>

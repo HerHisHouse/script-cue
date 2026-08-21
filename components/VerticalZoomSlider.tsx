@@ -5,10 +5,12 @@ import {
   PanResponder,
   Text,
   TouchableOpacity,
+  useWindowDimensions,
 } from 'react-native';
 import { X } from 'lucide-react-native';
 
-const SLIDER_HEIGHT = 240;
+const SLIDER_HEIGHT_PORTRAIT = 240;
+const SLIDER_HEIGHT_LANDSCAPE = 140;
 const SLIDER_WIDTH = 44;
 
 type Props = {
@@ -26,6 +28,10 @@ export function VerticalZoomSlider({
   onZoomChange,
   onClose,
 }: Props) {
+  const { width, height } = useWindowDimensions();
+  const isLandscape = width > height;
+  const SLIDER_HEIGHT = isLandscape ? SLIDER_HEIGHT_LANDSCAPE : SLIDER_HEIGHT_PORTRAIT;
+
   const zoomRange = maxZoom - minZoom;
 
   // Store the absolute Y position of the track top, measured once on layout
@@ -51,7 +57,7 @@ export function VerticalZoomSlider({
       const ratio = 1 - clampedY / SLIDER_HEIGHT;
       return minZoom + ratio * zoomRange;
     },
-    [minZoom, zoomRange]
+    [minZoom, zoomRange, SLIDER_HEIGHT]
   );
 
   const panResponder = useRef(
@@ -80,11 +86,14 @@ export function VerticalZoomSlider({
   // Height of the filled (active) portion of the track
   const filledHeight = Math.max(0, SLIDER_HEIGHT - 8 - (SLIDER_HEIGHT * (1 - currentRatio)));
 
-  // Human-readable zoom label
-  const zoomLabel = `${(1 + currentRatio * 1.5).toFixed(1)}x`;
+  // Human-readable zoom label — mirrors the button labels: min=0.5x, max=2x
+  // Buttons: zoom=0→0.5x, zoom=0.08→1x, zoom=0.15→2x
+  // We map currentRatio (0→1) to the visual scale 0.5→2
+  const zoomLabelValue = 0.5 + currentRatio * 1.5;
+  const zoomLabel = `${zoomLabelValue.toFixed(1)}x`;
 
   return (
-    <View style={styles.container} pointerEvents="box-none">
+    <View style={[styles.container, isLandscape && styles.containerLandscape]} pointerEvents="box-none">
       {/* Close button */}
       <TouchableOpacity
         onPress={onClose}
@@ -103,7 +112,7 @@ export function VerticalZoomSlider({
       <View
         ref={trackRef}
         onLayout={measureTrack}
-        style={styles.sliderTrack}
+        style={[styles.sliderTrack, { height: SLIDER_HEIGHT }]}
         {...panResponder.panHandlers}
       >
         {/* Static grey centre line */}
@@ -126,6 +135,9 @@ const styles = StyleSheet.create({
     top: '28%',
     alignItems: 'center',
     zIndex: 1000,
+  },
+  containerLandscape: {
+    top: '10%',
   },
   closeBtn: {
     marginBottom: 8,
@@ -151,7 +163,6 @@ const styles = StyleSheet.create({
   },
   sliderTrack: {
     width: SLIDER_WIDTH,
-    height: SLIDER_HEIGHT,
     backgroundColor: 'rgba(0,0,0,0.58)',
     borderRadius: SLIDER_WIDTH / 2,
     alignItems: 'center',
