@@ -1,3 +1,5 @@
+process.env.FONTCONFIG_PATH = '/etc/fonts';
+
 const express = require('express');
 const cors = require('cors');
 const ffmpeg = require('fluent-ffmpeg');
@@ -9,6 +11,20 @@ ffmpeg.setFfprobePath(ffprobePath);
 
 console.log('[Casting] ffmpeg path:', ffmpegPath);
 console.log('[Casting] ffprobe path:', ffprobePath);
+
+const { execSync } = require('child_process');
+try {
+  const fonts = execSync('fc-list : family | grep -i dejavu || true').toString().trim();
+  if (fonts) {
+    console.log('[Fonts] Fuentes DejaVu disponibles:\n', fonts);
+  } else {
+    console.log('[Fonts] ⚠️ fc-list ejecutó pero no encontró fuentes DejaVu.');
+    const allFonts = execSync('fc-list : family | head -20 || true').toString().trim();
+    console.log('[Fonts] Primeras fuentes del sistema:\n', allFonts || '(Ninguna)');
+  }
+} catch (e) {
+  console.log('[Fonts] Error ejecutando fc-list:', e.message);
+}
 
 const { createClient } = require('@supabase/supabase-js');
 const fetch = require('node-fetch');
@@ -31,10 +47,20 @@ app.use(cors());
 app.use(express.json({ limit: '200mb' })); // Increased for large video files
 app.use('/download', express.static(path.join(__dirname, 'public'))); // Serve processed videos
 
+// WebSocket setup para compatibilidad de Supabase Realtime en Node.js
+const ws = require('ws');
+if (!globalThis.WebSocket) {
+  globalThis.WebSocket = ws;
+}
+
 // Supabase client
 const supabase = createClient(
     process.env.SUPABASE_URL,
-    process.env.SUPABASE_SERVICE_KEY
+    process.env.SUPABASE_SERVICE_KEY,
+    {
+      auth: { persistSession: false },
+      realtime: { transport: ws },
+    }
 );
 // Costes aproximados por proveedor (en euros)
 const API_COSTS = {
@@ -335,7 +361,25 @@ function getVideoDuration(filePath) {
 async function transcribeWithWhisper(audioFilePath, userId = null) {
   const FormData = require('form-data');
   const form = new FormData();
-  form.append('file', fs.createReadStream(audioFilePath));
+  
+  const ext = path.extname(audioFilePath).toLowerCase();
+  const filename = path.basename(audioFilePath);
+  const mimeTypes = {
+    '.wav': 'audio/wav',
+    '.mp4': 'audio/mp4',
+    '.m4a': 'audio/m4a',
+    '.mp3': 'audio/mpeg',
+    '.webm': 'audio/webm',
+    '.ogg': 'audio/ogg',
+    '.flac': 'audio/flac',
+  };
+  const contentType = mimeTypes[ext] || 'audio/wav';
+
+  form.append('file', fs.createReadStream(audioFilePath), {
+    filename,
+    contentType,
+  });
+
   form.append('model', 'whisper-1');
   form.append('language', 'es');
 
@@ -363,10 +407,64 @@ async function transcribeWithWhisper(audioFilePath, userId = null) {
   return data.text;
 }
 
+async function transcribeWithWhisperTimestamped(audioFilePath, userId = null) {
+  const FormData = require('form-data');
+  const form = new FormData();
+  
+  const ext = path.extname(audioFilePath).toLowerCase();
+  const filename = path.basename(audioFilePath);
+  const mimeTypes = {
+    '.wav': 'audio/wav',
+    '.mp4': 'audio/mp4',
+    '.m4a': 'audio/m4a',
+    '.mp3': 'audio/mpeg',
+    '.webm': 'audio/webm',
+    '.ogg': 'audio/ogg',
+    '.flac': 'audio/flac',
+  };
+  const contentType = mimeTypes[ext] || 'audio/wav';
+
+  form.append('file', fs.createReadStream(audioFilePath), {
+    filename,
+    contentType,
+  });
+
+  form.append('model', 'whisper-1');
+  form.append('language', 'es');
+  form.append('response_format', 'verbose_json');
+  form.append('timestamp_granularities[]', 'segment');
+
+  const response = await fetch('https://api.openai.com/v1/audio/transcriptions', {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${process.env.OPENAI_API_KEY}`,
+      ...form.getHeaders(),
+    },
+    body: form,
+  });
+
+  const data = await response.json();
+  if (!response.ok) throw new Error(data.error?.message || 'Error en Whisper');
+
+  // Registrar uso de API
+  await logApiUsage({
+    userId,
+    provider: 'openai_analysis',
+    tokens: 0,
+    durationSeconds: 0,
+    mode: 'subtitles',
+  });
+
+  return {
+    text: data.text || '',
+    segments: data.segments || [],
+  };
+}
+
 /**
  * Genera entradas de subtítulos para el modo Selftape (híbrido):
  * - Líneas IA  → texto directo del guion (timing ya conocido)
- * - Líneas actor → recorte de userAudioFile + transcripción Whisper
+ * - Líneas actor → recorte de userAudioFile + transcripción Whisper con timestamps precisos por segmento
  */
 async function generateSubtitlesForCasting(jobId, lineTimings, userAudioFile, userId) {
   const subtitleEntries = [];
@@ -385,7 +483,7 @@ async function generateSubtitlesForCasting(jobId, lineTimings, userAudioFile, us
     });
   }
 
-  // ── Líneas del actor: recortar audio + Whisper ──────────────────────────
+  // ── Líneas del actor: recortar audio + Whisper timestamped ────────────────
   for (const line of userLines) {
     if (!line.duration || line.duration < 0.3) continue; // ignorar silencios muy cortos
 
@@ -403,12 +501,29 @@ async function generateSubtitlesForCasting(jobId, lineTimings, userAudioFile, us
           .run();
       });
 
-      const transcription = await transcribeWithWhisper(clipPath, userId);
-      subtitleEntries.push({
-        start: line.startTime,
-        end: line.startTime + line.duration,
-        text: transcription.trim(),
-      });
+      const result = await transcribeWithWhisperTimestamped(clipPath, userId);
+
+      if (result.segments && result.segments.length > 0) {
+        // Usar los segmentos reales devueltos por Whisper,
+        // sumando el offset del startTime del turno para
+        // convertir a tiempo absoluto del vídeo completo
+        for (const segment of result.segments) {
+          const segText = (segment.text || '').trim();
+          if (!segText) continue;
+          subtitleEntries.push({
+            start: line.startTime + segment.start,
+            end: line.startTime + segment.end,
+            text: segText,
+          });
+        }
+      } else if (result.text && result.text.trim()) {
+        // Fallback si no vienen segmentos: usar el rango completo
+        subtitleEntries.push({
+          start: line.startTime,
+          end: line.startTime + line.duration,
+          text: result.text.trim(),
+        });
+      }
     } catch (e) {
       console.warn(`[Job ${jobId}] [Subtitles] Error transcribiendo línea de actor en t=${line.startTime}s:`, e.message);
       // Si falla, omitir ese subtítulo sin romper el proceso
@@ -427,41 +542,63 @@ async function generateSubtitlesForCasting(jobId, lineTimings, userAudioFile, us
  * Genera entradas de subtítulos para el modo Presentación:
  * transcripción completa del audio con timestamps por segmento (verbose_json).
  */
-async function generateSubtitlesForFreeMode(audioFilePath, userId = null) {
+async function generateSubtitlesForFreeMode(videoFilePath, userId = null) {
   const FormData = require('form-data');
-  const form = new FormData();
-  form.append('file', fs.createReadStream(audioFilePath));
-  form.append('model', 'whisper-1');
-  form.append('language', 'es');
-  form.append('response_format', 'verbose_json'); // incluye timestamps por segmento
+  const tempAudioPath = path.join(path.dirname(videoFilePath), `temp_free_audio_${Date.now()}.mp3`);
 
-  const response = await fetch('https://api.openai.com/v1/audio/transcriptions', {
-    method: 'POST',
-    headers: {
-      'Authorization': `Bearer ${process.env.OPENAI_API_KEY}`,
-      ...form.getHeaders(),
-    },
-    body: form,
-  });
+  try {
+    // 1. Extraer audio del vídeo a un MP3 mono liviano (evita límite de 25MB de Whisper y MIME types inválidos como video/mp4)
+    await new Promise((resolve, reject) => {
+      ffmpeg(videoFilePath)
+        .toFormat('mp3')
+        .audioBitrate('128k')
+        .audioChannels(1) // Mono
+        .on('end', resolve)
+        .on('error', reject)
+        .save(tempAudioPath);
+    });
 
-  const data = await response.json();
-  if (!response.ok) throw new Error(data.error?.message || 'Error en Whisper (Presentación)');
+    const form = new FormData();
+    form.append('file', fs.createReadStream(tempAudioPath), {
+      filename: 'audio.mp3',
+      contentType: 'audio/mpeg',
+    });
 
-  // Registrar uso
-  await logApiUsage({
-    userId,
-    provider: 'openai_analysis',
-    tokens: 0,
-    durationSeconds: 0,
-    mode: 'subtitles',
-  });
+    form.append('model', 'whisper-1');
+    form.append('language', 'es');
+    form.append('response_format', 'verbose_json'); // incluye timestamps por segmento
 
-  // data.segments contiene start/end/text de cada fragmento detectado
-  return (data.segments || []).map(seg => ({
-    start: seg.start,
-    end: seg.end,
-    text: seg.text.trim(),
-  }));
+    const response = await fetch('https://api.openai.com/v1/audio/transcriptions', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${process.env.OPENAI_API_KEY}`,
+        ...form.getHeaders(),
+      },
+      body: form,
+    });
+
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error?.message || 'Error en Whisper (Presentación)');
+
+    // Registrar uso
+    await logApiUsage({
+      userId,
+      provider: 'openai_analysis',
+      tokens: 0,
+      durationSeconds: 0,
+      mode: 'subtitles',
+    });
+
+    // data.segments contiene start/end/text de cada fragmento detectado
+    return (data.segments || []).map(seg => ({
+      start: seg.start,
+      end: seg.end,
+      text: (seg.text || '').trim(),
+    })).filter(seg => seg.text.length > 0);
+
+  } finally {
+    try { if (fs.existsSync(tempAudioPath)) fs.unlinkSync(tempAudioPath); } catch {}
+  }
 }
 
 /**
@@ -493,19 +630,31 @@ function generateSrtFile(subtitleEntries, outputPath) {
  * Compatible con cualquier codec de entrada (h264, hevc, etc.).
  */
 async function burnSubtitlesIntoVideo(videoPath, srtPath, outputPath) {
-  // Estilo: texto blanco con borde negro y fondo semitransparente — legible sobre cualquier fondo
+  // Estilo ASS estilizado: texto blanco con contorno negro de 2px, sin caja de fondo (BorderStyle=1)
   const subtitleStyle =
-    'FontName=Arial,FontSize=18,PrimaryColour=&HFFFFFF&,' +
-    'OutlineColour=&H000000&,BorderStyle=3,Outline=1,Shadow=0,' +
-    'BackColour=&H80000000&,Alignment=2,MarginV=40';
+    "FontName=DejaVuSans,FontSize=13,PrimaryColour=&H00FFFFFF&," +
+    "OutlineColour=&H00000000&,BorderStyle=1,Outline=2,Shadow=0," +
+    "Alignment=2,MarginV=40";
 
-  // Escapar la ruta del SRT (los dos puntos en rutas Windows/Windows-like rompen el filtro)
-  const escapedSrtPath = srtPath.replace(/\\/g, '/').replace(/:/g, '\\:');
+  console.log(`[Subtitles] Comando burn: video=${videoPath}, srt=${srtPath}`);
+
+  if (fs.existsSync(srtPath)) {
+    const srtContent = fs.readFileSync(srtPath, 'utf-8');
+    console.log(`[Subtitles] Contenido del SRT (primeras 300 chars):\n`, srtContent.substring(0, 300));
+  } else {
+    throw new Error(`[Subtitles] Archivo SRT no encontrado en ${srtPath}`);
+  }
+
+  // Escapar solo los dos puntos de la ruta (necesario en el filtro subtitles)
+  const escapedSrtPath = srtPath.replace(/:/g, '\\:');
+  const vfFilter = `subtitles='${escapedSrtPath}':force_style='${subtitleStyle}'`;
+
+  console.log(`[Subtitles] Filtro -vf completo:`, vfFilter);
 
   await new Promise((resolve, reject) => {
     ffmpeg(videoPath)
       .outputOptions([
-        '-vf', `subtitles=${escapedSrtPath}:force_style='${subtitleStyle}'`,
+        '-vf', vfFilter,
         '-c:a', 'copy',
         '-c:v', 'libx264',
         '-preset', 'ultrafast',
@@ -513,8 +662,18 @@ async function burnSubtitlesIntoVideo(videoPath, srtPath, outputPath) {
         '-threads', '1',
       ])
       .output(outputPath)
-      .on('end', resolve)
-      .on('error', reject)
+      .on('stderr', (line) => {
+        console.log(`[Subtitles] [ffmpeg]:`, line);
+      })
+      .on('end', () => {
+        const outSize = fs.existsSync(outputPath) ? fs.statSync(outputPath).size : 0;
+        console.log(`[Subtitles] Burn completado, tamaño output: ${outSize} bytes`);
+        resolve();
+      })
+      .on('error', (err) => {
+        console.error(`[Subtitles] Error en ffmpeg burn:`, err.message);
+        reject(err);
+      })
       .run();
   });
 }
@@ -795,6 +954,7 @@ async function processCastingInBackground(jobId, files, body) {
         if (body.addSubtitles === 'true') {
             console.log(`[Job ${jobId}] Generando subtítulos...`);
             try {
+                console.log(`[Job ${jobId}] [Subtitles] Tamaño ANTES de quemar subtítulos: ${fs.statSync(outputFile).size} bytes`);
                 const subtitleEntries = await generateSubtitlesForCasting(
                     jobId, lineTimings, userAudioFile, userId
                 );
@@ -806,11 +966,18 @@ async function processCastingInBackground(jobId, files, body) {
                     const videoWithSubtitlesPath = path.join(tempDir, 'video_subtitled.mp4');
                     await burnSubtitlesIntoVideo(outputFile, srtPath, videoWithSubtitlesPath);
 
-                    // Sustituir el outputFile por la versión con subtítulos
-                    try { fs.unlinkSync(outputFile); } catch {}
-                    fs.renameSync(videoWithSubtitlesPath, outputFile);
+                    const subtitledSize = fs.existsSync(videoWithSubtitlesPath) ? fs.statSync(videoWithSubtitlesPath).size : 0;
+                    console.log(`[Job ${jobId}] [Subtitles] Tamaño del archivo subtitulado generado: ${subtitledSize} bytes`);
 
-                    console.log(`[Job ${jobId}] ✅ Subtítulos incrustados (${subtitleEntries.length} entradas)`);
+                    if (subtitledSize > 0) {
+                        try { fs.unlinkSync(outputFile); } catch {}
+                        fs.renameSync(videoWithSubtitlesPath, outputFile);
+
+                        console.log(`[Job ${jobId}] [Subtitles] Tamaño DESPUÉS del reemplazo (outputFile final): ${fs.statSync(outputFile).size} bytes`);
+                        console.log(`[Job ${jobId}] ✅ Subtítulos incrustados (${subtitleEntries.length} entradas)`);
+                    } else {
+                        console.error(`[Job ${jobId}] ❌ Subtítulos: videoWithSubtitlesPath no se generó correctamente.`);
+                    }
                 } else {
                     console.log(`[Job ${jobId}] ⚠️ Subtítulos: sin entradas válidas, se omite el quemado`);
                 }
@@ -1097,6 +1264,7 @@ async function processTeleprompterInBackground(jobId, files, body) {
     if (body.addSubtitles === 'true') {
       console.log(`[Job ${jobId}] Generando subtítulos (modo Presentación)...`);
       try {
+        console.log(`[Job ${jobId}] [Subtitles] Tamaño ANTES de quemar subtítulos: ${fs.statSync(outputFile).size} bytes`);
         const subtitleEntries = await generateSubtitlesForFreeMode(videoFile, body.userId);
 
         if (subtitleEntries.length > 0) {
@@ -1106,11 +1274,18 @@ async function processTeleprompterInBackground(jobId, files, body) {
           const videoWithSubtitlesPath = path.join(tempDir, 'video_subtitled.mp4');
           await burnSubtitlesIntoVideo(outputFile, srtPath, videoWithSubtitlesPath);
 
-          // Sustituir el outputFile por la versión con subtítulos
-          try { fs.unlinkSync(outputFile); } catch {}
-          fs.renameSync(videoWithSubtitlesPath, outputFile);
+          const subtitledSize = fs.existsSync(videoWithSubtitlesPath) ? fs.statSync(videoWithSubtitlesPath).size : 0;
+          console.log(`[Job ${jobId}] [Subtitles] Tamaño del archivo subtitulado generado: ${subtitledSize} bytes`);
 
-          console.log(`[Job ${jobId}] ✅ Subtítulos incrustados (${subtitleEntries.length} entradas)`);
+          if (subtitledSize > 0) {
+            try { fs.unlinkSync(outputFile); } catch {}
+            fs.renameSync(videoWithSubtitlesPath, outputFile);
+
+            console.log(`[Job ${jobId}] [Subtitles] Tamaño DESPUÉS del reemplazo (outputFile final): ${fs.statSync(outputFile).size} bytes`);
+            console.log(`[Job ${jobId}] ✅ Subtítulos incrustados (${subtitleEntries.length} entradas)`);
+          } else {
+            console.error(`[Job ${jobId}] ❌ Subtítulos: videoWithSubtitlesPath no se generó correctamente.`);
+          }
         } else {
           console.log(`[Job ${jobId}] ⚠️ Subtítulos: sin entradas válidas, se omite el quemado`);
         }

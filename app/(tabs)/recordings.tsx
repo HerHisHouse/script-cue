@@ -566,7 +566,7 @@ export default function RecordingsScreen() {
     };
   }, [loadRecordings]);
 
-  const checkPendingJobs = async () => {
+  const checkPendingJobs = useCallback(async () => {
     if (!user?.id) return;
     const thirtyMinsAgo = new Date(Date.now() - 30 * 60 * 1000).toISOString();
     const { data } = await supabase
@@ -580,12 +580,12 @@ export default function RecordingsScreen() {
       setProcessingJobs(data.map((j: any) => j.job_id));
       console.log('[Grabaciones] Jobs pendientes encontrados:', data.length);
     }
-  };
+  }, [user?.id]);
 
   useEffect(() => {
     loadRecordings();
     checkPendingJobs();
-  }, [user?.id, loadRecordings]);
+  }, [user?.id, loadRecordings, checkPendingJobs]);
 
   const downloadLargeCastingVideo = async (jobId: string) => {
     try {
@@ -773,6 +773,7 @@ export default function RecordingsScreen() {
   useFocusEffect(
     useCallback(() => {
       handleRefresh();
+      checkPendingJobs();
       return () => {
         // Cleanup: cerrar todos los menús cuando se pierde el foco
         setShowHeaderMenu(false);
@@ -782,7 +783,7 @@ export default function RecordingsScreen() {
         // y controlamos el stop del audio de forma más precisa o aceptamos que siga sonando si se queda en segundo plano (si es deseado)
         // Por ahora, solo cerramos los menús. El playerVisible se queda si el modal está abierto.
       };
-    }, [handleRefresh])
+    }, [handleRefresh, checkPendingJobs])
   );
 
   // Mantener loopModeRef actualizado y aplicar al sound actual
