@@ -1916,6 +1916,7 @@ export default function CastingModeScreen() {
         scriptId: id, // el id del guion actual
         lineTimings: lineTimingsRef.current,
         hasHeadphones: _hasHeadphonesArg,
+        addSubtitles, // config real usada en esta toma, para "Usar esta toma" (Fase 4)
         createdAt: new Date().toISOString(),
         status: 'pending_processing', // se procesará en Fase 2
       };
