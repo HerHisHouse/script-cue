@@ -2069,7 +2069,10 @@ export default function CastingModeScreen() {
             <View style={{ width: rp(44) }} />
           </View>
 
-          <View style={{ flex: 1, padding: rp(24), gap: rp(24), justifyContent: 'center' }}>
+          <ScrollView
+            style={{ flex: 1 }}
+            contentContainerStyle={{ padding: rp(24), gap: rp(24), flexGrow: 1, justifyContent: 'center' }}
+          >
             <TouchableOpacity
               style={[
                 styles.btn,
@@ -2129,7 +2132,7 @@ export default function CastingModeScreen() {
             <TouchableOpacity
               style={[
                 styles.btn,
-                { backgroundColor: colors.card, padding: rp(20), borderRadius: rp(16), flexDirection: 'row', alignItems: 'center', width: '100%' },
+                { backgroundColor: colors.card, padding: rp(32), borderRadius: rp(16), alignItems: 'center', width: '100%' },
                 !isDark && {
                   shadowColor: '#000',
                   shadowOffset: { width: 0, height: 6 },
@@ -2142,15 +2145,15 @@ export default function CastingModeScreen() {
               ]}
               onPress={() => router.push(`/scripts/${id}/take-comparator`)}
             >
-              <Layers size={rp(32)} color="#FBBF24" style={{ marginRight: 16 }} />
-              <View style={{ flex: 1 }}>
-                <Text style={{ color: colors.text, fontSize: rf(17), fontWeight: '700' }}>Comparador de Tomas</Text>
-                <Text style={{ color: colors.textSecondary, fontSize: rf(13), marginTop: 2 }}>
+              <Layers size={rp(48)} color="#FBBF24" style={{ marginBottom: 16 }} />
+              <Text style={{ color: colors.text, fontSize: rf(20), fontWeight: '700' }}>Comparador de Tomas</Text>
+              <View style={{ marginTop: 12 }}>
+                <Text style={{ color: colors.textSecondary, fontSize: rf(14), textAlign: 'center' }}>
                   Revisa, compara y elige entre tus tomas guardadas
                 </Text>
               </View>
             </TouchableOpacity>
-          </View>
+          </ScrollView>
         </SafeAreaView>
       )}
 

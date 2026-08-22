@@ -304,7 +304,7 @@ export default function TakeComparatorScreen() {
       {/* Modal de reproducción */}
       {playingTakeId && videoUri && (
         <Modal visible animationType="slide">
-          <View style={{ flex: 1, backgroundColor: 'black' }}>
+          <SafeAreaView style={{ flex: 1, backgroundColor: 'black' }}>
             <TouchableOpacity
               onPress={() => {
                 setPlayingTakeId(null);
@@ -327,7 +327,7 @@ export default function TakeComparatorScreen() {
                 setVideoUri(null);
               }}
             />
-          </View>
+          </SafeAreaView>
         </Modal>
       )}
 
