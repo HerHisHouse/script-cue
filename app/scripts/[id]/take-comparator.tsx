@@ -4,7 +4,7 @@ import {
   ActivityIndicator, Alert, TextInput, Modal,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useRouter } from 'expo-router';
+import { useRouter, useLocalSearchParams } from 'expo-router';
 import { Video, ResizeMode } from 'expo-av';
 import * as FileSystem from 'expo-file-system/legacy';
 import * as Sharing from 'expo-sharing';
@@ -55,12 +55,16 @@ const EXPIRATION_OPTIONS = [
   { label: '10 días', value: 10 },
   { label: '15 días', value: 15 },
   { label: '20 días', value: 20 },
-  { label: 'No borrar nunca (requiere guardar localmente)', value: -1 },
+  // Solo visible en desarrollo, para poder probar el borrado automático
+  // sin esperar días reales. 0.00347 días ≈ 5 minutos — se mantiene en
+  // días para no mezclar unidades con el resto del cálculo.
+  ...(__DEV__ ? [{ label: '⚙️ 5 minutos (DEV)', value: 0.00347 }] : []),
 ];
 
 // Descubre todas las sesiones de tomas guardadas (vía el índice global) y
 // enriquece cada toma con el título del guion al que pertenece su sesión.
-async function getAllTakesFromStorage(): Promise<Take[]> {
+// Si se pasa scriptId, filtra para devolver solo las tomas de ese guion.
+async function getAllTakesFromStorage(scriptId?: string): Promise<Take[]> {
   const sessionsIndex = await AsyncStorage.getItem('take_sessions_index');
   const sessionsList: string[] = sessionsIndex ? JSON.parse(sessionsIndex) : [];
 
@@ -76,7 +80,8 @@ async function getAllTakesFromStorage(): Promise<Take[]> {
       if (sessionMetaData) scriptTitle = JSON.parse(sessionMetaData).scriptTitle;
     } catch {}
 
-    takesFromAllSessions.push(...takes.map(t => ({ ...t, scriptTitle })));
+    const filtered = scriptId ? takes.filter(t => t.scriptId === scriptId) : takes;
+    takesFromAllSessions.push(...filtered.map(t => ({ ...t, scriptTitle })));
   }
 
   takesFromAllSessions.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
@@ -91,8 +96,76 @@ async function updateTakeStatusInStorage(take: Take, newStatus: TakeStatus) {
   await AsyncStorage.setItem(`takes_${take.sessionId}`, JSON.stringify(updated));
 }
 
+// Borra silenciosamente las tomas locales cuyo plazo de expiración configurado
+// ya pasó, salvo las protegidas (guardadas permanentemente o promocionadas a
+// Grabaciones). Recorre todas las sesiones (no solo las del guion actual),
+// ya que el ajuste de expiración es global para todo el Comparador.
+async function cleanupExpiredTakes() {
+  try {
+    const expirationDaysRaw = await AsyncStorage.getItem(EXPIRATION_SETTING_KEY);
+    const expirationDays = expirationDaysRaw ? parseFloat(expirationDaysRaw) : 15;
+
+    // Valor negativo (p.ej. -1 "no borrar nunca", de una versión anterior de
+    // este ajuste) no debe interpretarse como "expira inmediatamente".
+    if (!Number.isFinite(expirationDays) || expirationDays < 0) return;
+
+    const sessionsIndex = await AsyncStorage.getItem('take_sessions_index');
+    const sessionsList: string[] = sessionsIndex ? JSON.parse(sessionsIndex) : [];
+
+    const now = Date.now();
+    const expirationMs = expirationDays * 24 * 60 * 60 * 1000;
+
+    for (const sessionId of sessionsList) {
+      const takesData = await AsyncStorage.getItem(`takes_${sessionId}`);
+      if (!takesData) continue;
+
+      const takes: Take[] = JSON.parse(takesData);
+      const remainingTakes: Take[] = [];
+      let anyDeleted = false;
+
+      for (const take of takes) {
+        const takeAge = now - new Date(take.createdAt).getTime();
+        const isExpired = takeAge > expirationMs;
+        const isProtected = take.savedLocally === true || take.promoted === true;
+
+        if (isExpired && !isProtected) {
+          console.log(`[Comparador] Expirando toma: ${take.id}`);
+          try {
+            const fileInfo = await FileSystem.getInfoAsync(take.localPath);
+            if (fileInfo.exists) {
+              await FileSystem.deleteAsync(take.localPath, { idempotent: true });
+            }
+          } catch (e) {
+            console.warn(`[Comparador] Error borrando archivo expirado ${take.id}:`, e);
+          }
+          anyDeleted = true;
+        } else {
+          remainingTakes.push(take);
+        }
+      }
+
+      if (anyDeleted) {
+        if (remainingTakes.length === 0) {
+          await AsyncStorage.removeItem(`takes_${sessionId}`);
+          await AsyncStorage.removeItem(`session_meta_${sessionId}`);
+
+          const updatedSessionsList = sessionsList.filter(s => s !== sessionId);
+          await AsyncStorage.setItem('take_sessions_index', JSON.stringify(updatedSessionsList));
+        } else {
+          await AsyncStorage.setItem(`takes_${sessionId}`, JSON.stringify(remainingTakes));
+        }
+      }
+    }
+
+    console.log('[Comparador] Limpieza de expiración completada');
+  } catch (e) {
+    console.error('[Comparador] Error en limpieza de expiración:', e);
+  }
+}
+
 export default function TakeComparatorScreen() {
   const router = useRouter();
+  const { id } = useLocalSearchParams();
   const { colors } = useTheme();
   const { user } = useAuth();
 
@@ -111,7 +184,11 @@ export default function TakeComparatorScreen() {
   const pollIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   useEffect(() => {
-    loadAllTakes();
+    async function initScreen() {
+      await cleanupExpiredTakes(); // silencioso, sin alertas
+      await loadAllTakes();
+    }
+    initScreen();
     loadExpirationSetting().then(setExpirationDays);
 
     // Polling para detectar cuándo Railway termina de procesar una toma.
@@ -129,7 +206,7 @@ export default function TakeComparatorScreen() {
   async function loadAllTakes() {
     setLoading(true);
     try {
-      setAllTakes(await getAllTakesFromStorage());
+      setAllTakes(await getAllTakesFromStorage(id as string));
     } catch (e) {
       console.error('[Comparador] Error cargando tomas:', e);
     } finally {
@@ -138,7 +215,7 @@ export default function TakeComparatorScreen() {
   }
 
   async function checkProcessingTakes() {
-    const takes = await getAllTakesFromStorage();
+    const takes = await getAllTakesFromStorage(id as string);
     const processingTakes = takes.filter(t => t.status === 'processing_preview' && t.jobId);
     if (processingTakes.length === 0) return;
 
@@ -425,7 +502,8 @@ export default function TakeComparatorScreen() {
   // la limpieza automática programada se implementa en la Fase 5) ─────────
   async function loadExpirationSetting(): Promise<number> {
     const saved = await AsyncStorage.getItem(EXPIRATION_SETTING_KEY);
-    return saved ? parseInt(saved, 10) : 15;
+    // parseFloat (no parseInt): la opción DEV usa un valor fraccionario de días
+    return saved ? parseFloat(saved) : 15;
   }
 
   async function selectExpiration(days: number) {
@@ -663,9 +741,8 @@ export default function TakeComparatorScreen() {
             <View style={[styles.renameModalContent, { backgroundColor: colors.card }]}>
               <Text style={[styles.renameModalTitle, { color: colors.text }]}>Expiración de tomas locales</Text>
               <Text style={{ color: colors.textSecondary, fontSize: rf(13), marginBottom: rp(16), lineHeight: rf(18) }}>
-                Controla cuánto tiempo se conservan las tomas guardadas en tu dispositivo (Documents/takes) antes
-                de limpiarse automáticamente. Los previews mezclados en Railway siempre expiran a las 2 horas,
-                independientemente de este ajuste.
+                Las tomas se borrarán automáticamente pasado este tiempo. Las tomas que guardes en tu dispositivo
+                (botón &quot;Guardar&quot;) nunca se borrarán automáticamente, sin importar este ajuste.
               </Text>
               {EXPIRATION_OPTIONS.map(opt => (
                 <TouchableOpacity
