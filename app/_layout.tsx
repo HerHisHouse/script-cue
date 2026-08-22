@@ -154,6 +154,7 @@ function AppRoot() {
         <Stack.Screen name="scripts/[id]/studio-v2" options={{ headerShown: false }} />
         <Stack.Screen name="scripts/[id]/coach" options={{ headerShown: false }} />
         <Stack.Screen name="scripts/[id]/casting" options={{ headerShown: false }} />
+        <Stack.Screen name="scripts/[id]/take-comparator" options={{ headerShown: false }} />
         <Stack.Screen name="scripts/[id]/car" options={{ headerShown: false }} />
         <Stack.Screen name="scripts/[id]/analysis" options={{ headerShown: false }} />
         <Stack.Screen name="scripts/[id]/chubbuck-guide" options={{ headerShown: false }} />

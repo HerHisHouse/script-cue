@@ -32,7 +32,7 @@ import { Audio, InterruptionModeIOS, InterruptionModeAndroid } from 'expo-av';
 import * as FileSystem from 'expo-file-system/legacy'; // Fix: Use legacy API
 import { transcribeAudio } from '@/services/transcription'; // Import transcription service
 import { calculateSimilarity } from '@/utils/stringUtils'; // Helper for similarity
-import { ArrowLeft, Mic, RotateCcw, Play, Pause, Square, Video, SwitchCamera, Settings2, SkipBack, SkipForward, MoreVertical, EyeOff, Eye, Minus, Plus, Volume2, GripHorizontal, X, Timer, Clapperboard, Trash2, ChevronRight, MessageSquare, FileText, Type, Snail, Rabbit, FlipHorizontal, Bold, Italic, Underline, AlignLeft, AlignCenter, AlignRight, Keyboard as KeyboardIcon, Info, MonitorPlay, Maximize2, CheckCircle2 } from 'lucide-react-native';
+import { ArrowLeft, Mic, RotateCcw, Play, Pause, Square, Video, SwitchCamera, Settings2, SkipBack, SkipForward, MoreVertical, EyeOff, Eye, Minus, Plus, Volume2, GripHorizontal, X, Timer, Clapperboard, Trash2, ChevronRight, MessageSquare, FileText, Type, Snail, Rabbit, FlipHorizontal, Bold, Italic, Underline, AlignLeft, AlignCenter, AlignRight, Keyboard as KeyboardIcon, Info, MonitorPlay, Maximize2, CheckCircle2, Layers } from 'lucide-react-native';
 import * as Haptics from 'expo-haptics';
 import SilhouetteGuide, { ShotType } from '@/components/SilhouetteGuide';
 import { FontAwesome5 } from '@expo/vector-icons';
@@ -1923,6 +1923,24 @@ export default function CastingModeScreen() {
       takesArray.push(takeMetadata);
       await AsyncStorage.setItem(`takes_${sessionId}`, JSON.stringify(takesArray));
 
+      // Mantener un índice global de sesiones, ya que AsyncStorage no permite
+      // listar keys por prefijo de forma nativa — el Comparador lo usa para
+      // descubrir todas las sesiones existentes.
+      const sessionsIndex = await AsyncStorage.getItem('take_sessions_index');
+      const sessionsList: string[] = sessionsIndex ? JSON.parse(sessionsIndex) : [];
+      if (!sessionsList.includes(sessionId)) {
+        sessionsList.push(sessionId);
+        await AsyncStorage.setItem('take_sessions_index', JSON.stringify(sessionsList));
+      }
+
+      // Metadata de la sesión (a qué guion pertenece), para mostrarla en el listado
+      await AsyncStorage.setItem(`session_meta_${sessionId}`, JSON.stringify({
+        sessionId,
+        scriptId: id,
+        scriptTitle: script?.title || 'Sin título',
+        createdAt: new Date().toISOString(),
+      }));
+
       console.log(`[Comparador] Toma ${takeNumber} guardada localmente:`, localPath);
 
       // Disparar el procesamiento en Railway en background, sin esperar
@@ -1952,8 +1970,7 @@ export default function CastingModeScreen() {
             text: 'Terminar por ahora',
             onPress: () => {
               currentTakeSessionRef.current = null; // cerrar sesión
-              router.replace(`/scripts/${id}`);
-              // Nota: en la Fase 3, esto llevará al Comparador en vez de volver al guion
+              router.replace(`/scripts/${id}/take-comparator`);
             },
           },
         ]
@@ -2106,6 +2123,31 @@ export default function CastingModeScreen() {
                 <Text style={{ color: colors.textSecondary, fontSize: rf(14), marginTop: 2 }}>• Réplica en tiempo real</Text>
                 <Text style={{ color: colors.textSecondary, fontSize: rf(14), marginTop: 2 }}>• Guion cargado en teleprompter</Text>
                 <Text style={{ color: colors.textSecondary, fontSize: rf(14), marginTop: 2 }}>• Configuración de la escena</Text>
+              </View>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[
+                styles.btn,
+                { backgroundColor: colors.card, padding: rp(20), borderRadius: rp(16), flexDirection: 'row', alignItems: 'center', width: '100%' },
+                !isDark && {
+                  shadowColor: '#000',
+                  shadowOffset: { width: 0, height: 6 },
+                  shadowOpacity: 0.08,
+                  shadowRadius: 20,
+                  elevation: 4,
+                  borderWidth: 1,
+                  borderColor: 'rgba(0,0,0,0.03)',
+                }
+              ]}
+              onPress={() => router.push(`/scripts/${id}/take-comparator`)}
+            >
+              <Layers size={rp(32)} color="#FBBF24" style={{ marginRight: 16 }} />
+              <View style={{ flex: 1 }}>
+                <Text style={{ color: colors.text, fontSize: rf(17), fontWeight: '700' }}>Comparador de Tomas</Text>
+                <Text style={{ color: colors.textSecondary, fontSize: rf(13), marginTop: 2 }}>
+                  Revisa, compara y elige entre tus tomas guardadas
+                </Text>
               </View>
             </TouchableOpacity>
           </View>
