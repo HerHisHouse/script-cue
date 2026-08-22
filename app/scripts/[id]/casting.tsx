@@ -472,6 +472,9 @@ export default function CastingModeScreen() {
       if (autoAdvanceTimerRef.current) clearTimeout(autoAdvanceTimerRef.current);
       if (silenceTimerRef.current) clearTimeout(silenceTimerRef.current);
       if (noSpeechTimerRef.current) clearTimeout(noSpeechTimerRef.current);
+      // Comparador de tomas: no dejar una sesión "fantasma" activa si el
+      // usuario sale de Selftape sin pulsar "Terminar por ahora"
+      currentTakeSessionRef.current = null;
     };
   }, []);
 
@@ -1723,6 +1726,16 @@ export default function CastingModeScreen() {
 
     // Solo preguntar en Selftape (castingType === 'script'), no en Presentación
     if (castingType === 'script') {
+      // Si ya existe una sesión de comparador activa, esta es la toma 2, 3, 4...
+      // No volver a preguntar con la opción de "enviar directamente": guardarla
+      // como toma adicional de la misma sesión.
+      if (currentTakeSessionRef.current) {
+        saveTakeLocally(uri, _hasHeadphonesArg);
+        return;
+      }
+
+      // Solo si es la PRIMERA toma de la sesión (no hay sesión activa todavía),
+      // mostrar la pregunta inicial completa
       Alert.alert(
         '🎬 ¿Otra toma?',
         '¿Quieres grabar otra toma de esta escena para comparar cuál te gusta más?',
@@ -1924,7 +1937,7 @@ export default function CastingModeScreen() {
       // Preguntar si quiere grabar otra toma más, o ya ha terminado y quiere ir a comparar
       Alert.alert(
         `✅ Toma ${takeNumber} guardada`,
-        '¿Quieres grabar otra toma más, o prefieres terminar aquí por ahora?',
+        `Llevas ${takeNumber} toma(s) grabada(s) de esta escena. ¿Quieres grabar otra más, o prefieres terminar aquí? Podrás compararlas más adelante desde el Comparador de Tomas.`,
         [
           {
             text: 'Grabar otra toma',
