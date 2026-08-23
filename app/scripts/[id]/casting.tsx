@@ -1954,9 +1954,14 @@ export default function CastingModeScreen() {
       setProcessingProgress(0);
 
       // Preguntar si quiere grabar otra toma más, o ya ha terminado y quiere ir a comparar
+      const isFirstTake = takeNumber === 1;
+      const savedMessage = isFirstTake
+        ? 'Llevas 1 toma grabada de esta escena. Podrás compararla más adelante desde el Comparador de Tomas.'
+        : `Llevas ${takeNumber} tomas grabadas de esta escena. ¿Quieres grabar otra más, o prefieres terminar aquí? Podrás compararlas más adelante desde el Comparador de Tomas.`;
+
       Alert.alert(
         `✅ Toma ${takeNumber} guardada`,
-        `Llevas ${takeNumber} toma(s) grabada(s) de esta escena. ¿Quieres grabar otra más, o prefieres terminar aquí? Podrás compararlas más adelante desde el Comparador de Tomas.`,
+        savedMessage,
         [
           {
             text: 'Grabar otra toma',

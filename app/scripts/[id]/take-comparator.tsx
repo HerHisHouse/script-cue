@@ -42,6 +42,7 @@ type Take = {
   customName?: string;
   createdAt: string;
   scriptTitle?: string; // resuelto desde session_meta_<sessionId>
+  previewLocalPath?: string; // preview ya mezclado, descargado automáticamente
   permanentLocalPath?: string;
   savedLocally?: boolean;
   promoted?: boolean;
@@ -50,15 +51,58 @@ type Take = {
 const CASTING_SERVER_URL =
   process.env.EXPO_PUBLIC_CASTING_SERVER_URL || 'https://script-cue-merge-server-production.up.railway.app';
 
+// Carpeta persistente para los previews YA MEZCLADOS, descargados automáticamente
+// en cuanto Railway termina de procesarlos — distinta de takes/ (vídeo original
+// sin mezclar) y de takes_saved/ (guardado permanente explícito del usuario).
+const PREVIEWS_DIR = `${FileSystem.documentDirectory}takes_previews/`;
+
+async function ensurePreviewsDir() {
+  const dirInfo = await FileSystem.getInfoAsync(PREVIEWS_DIR);
+  if (!dirInfo.exists) {
+    await FileSystem.makeDirectoryAsync(PREVIEWS_DIR, { intermediates: true });
+  }
+}
+
+// Descarga el preview mezclado a almacenamiento local persistente en cuanto
+// Railway confirma que el job terminó, para dejar de depender de la ventana
+// de 2h de descarga temporal del servidor.
+async function downloadPreviewAutomatically(take: Take) {
+  try {
+    await ensurePreviewsDir();
+
+    const downloadUrl = `${CASTING_SERVER_URL}/download-casting/${take.jobId}`;
+    const previewLocalPath = `${PREVIEWS_DIR}${take.id}.mp4`;
+
+    const downloadResult = await FileSystem.downloadAsync(downloadUrl, previewLocalPath);
+    if (downloadResult.status !== 200) {
+      throw new Error('No se pudo descargar el preview desde el servidor.');
+    }
+
+    console.log(`[Comparador] Preview descargado automáticamente: ${take.id}`);
+
+    const takesData = await AsyncStorage.getItem(`takes_${take.sessionId}`);
+    if (takesData) {
+      const takes: Take[] = JSON.parse(takesData);
+      const updated = takes.map(t =>
+        t.id === take.id ? { ...t, status: 'ready' as TakeStatus, previewLocalPath } : t
+      );
+      await AsyncStorage.setItem(`takes_${take.sessionId}`, JSON.stringify(updated));
+    }
+  } catch (e) {
+    console.error(`[Comparador] Error descargando preview automáticamente para ${take.id}:`, e);
+    await updateTakeStatusInStorage(take, 'error');
+  }
+}
+
 const EXPIRATION_SETTING_KEY = 'take_comparator_expiration_days';
 const EXPIRATION_OPTIONS = [
   { label: '10 días', value: 10 },
   { label: '15 días', value: 15 },
   { label: '20 días', value: 20 },
-  // Solo visible en desarrollo, para poder probar el borrado automático
-  // sin esperar días reales. 0.00347 días ≈ 5 minutos — se mantiene en
-  // días para no mezclar unidades con el resto del cálculo.
-  ...(__DEV__ ? [{ label: '⚙️ 5 minutos (DEV)', value: 0.00347 }] : []),
+  // TODO: eliminar esta opción una vez verificado el borrado automático en
+  // dispositivo real. 0.00347 días ≈ 5 minutos — se mantiene en días para
+  // no mezclar unidades con el resto del cálculo.
+  { label: '⚙️ 5 minutos (PRUEBA)', value: 0.00347 },
 ];
 
 // Descubre todas las sesiones de tomas guardadas (vía el índice global) y
@@ -135,8 +179,16 @@ async function cleanupExpiredTakes() {
             if (fileInfo.exists) {
               await FileSystem.deleteAsync(take.localPath, { idempotent: true });
             }
+
+            // Borrar también el preview ya mezclado, si se llegó a descargar
+            if (take.previewLocalPath) {
+              const previewInfo = await FileSystem.getInfoAsync(take.previewLocalPath);
+              if (previewInfo.exists) {
+                await FileSystem.deleteAsync(take.previewLocalPath, { idempotent: true });
+              }
+            }
           } catch (e) {
-            console.warn(`[Comparador] Error borrando archivo expirado ${take.id}:`, e);
+            console.warn(`[Comparador] Error borrando archivos expirados ${take.id}:`, e);
           }
           anyDeleted = true;
         } else {
@@ -229,7 +281,10 @@ export default function TakeComparatorScreen() {
           .single();
 
         if (data?.status === 'completed') {
-          await updateTakeStatusInStorage(take, 'ready');
+          // Descarga el preview mezclado a almacenamiento local persistente y
+          // marca la toma como 'ready' (o 'error' si la descarga falla) —
+          // deja de depender de la ventana de 2h de descarga de Railway.
+          await downloadPreviewAutomatically(take);
           changed = true;
         } else if (data?.status === 'error') {
           await updateTakeStatusInStorage(take, 'error');
@@ -244,34 +299,26 @@ export default function TakeComparatorScreen() {
   }
 
   async function playTake(take: Take) {
-    if (take.status !== 'ready' || !take.jobId) {
-      Alert.alert(
-        'Toma aún procesando',
-        'Esta toma todavía se está procesando con el audio de la IA. Espera unos segundos.'
-      );
+    if (take.status !== 'ready' || !take.previewLocalPath) {
+      Alert.alert('Toma aún procesando', 'Esta toma todavía se está preparando.');
       return;
     }
 
     try {
       setDownloadingTakeId(take.id);
 
-      // Descargamos el preview a un directorio de caché antes de reproducirlo
-      // (mismo patrón que ya usa el resto de la app para previews temporales,
-      // p.ej. utils/voiceService.ts) en vez de apuntar el <Video> directamente
-      // a /download-casting/:jobId, que responde con Content-Disposition:
-      // attachment y no está pensado para streaming.
-      const downloadUrl = `${CASTING_SERVER_URL}/download-casting/${take.jobId}`;
-      const localUri = `${FileSystem.cacheDirectory}preview_${take.jobId}.mp4`;
-
-      const result = await FileSystem.downloadAsync(downloadUrl, localUri);
-      if (result.status !== 200) {
-        throw new Error('El preview ya no está disponible (puede haber expirado, disponible 2h).');
+      // El preview mezclado ya se descargó automáticamente en cuanto Railway
+      // terminó de procesarlo (ver downloadPreviewAutomatically) — solo hace
+      // falta comprobar que el archivo local sigue existiendo.
+      const fileInfo = await FileSystem.getInfoAsync(take.previewLocalPath);
+      if (!fileInfo.exists) {
+        throw new Error('El archivo de esta toma ya no está disponible.');
       }
 
-      setVideoUri(result.uri);
+      setVideoUri(take.previewLocalPath);
       setPlayingTakeId(take.id);
     } catch (e: any) {
-      Alert.alert('Error', e.message || 'No se pudo reproducir esta toma. Puede que haya expirado.');
+      Alert.alert('Toma no disponible', e.message || 'No se pudo reproducir esta toma.');
     } finally {
       setDownloadingTakeId(null);
     }
@@ -300,20 +347,19 @@ export default function TakeComparatorScreen() {
 
   // ── PARTE A: Compartir ─────────────────────────────────────────────────
   async function shareTake(take: Take) {
-    if (take.status !== 'ready' || !take.jobId) {
-      Alert.alert('Toma aún procesando', 'Espera a que termine de procesarse.');
+    if (take.status !== 'ready' || !take.previewLocalPath) {
+      Alert.alert('Toma no disponible', 'Espera a que termine de procesarse.');
       return;
     }
 
     try {
       setSharingTakeId(take.id);
 
-      const downloadUrl = `${CASTING_SERVER_URL}/download-casting/${take.jobId}`;
-      const localUri = `${FileSystem.cacheDirectory}share_${take.id}.mp4`;
-
-      const downloadResult = await FileSystem.downloadAsync(downloadUrl, localUri);
-      if (downloadResult.status !== 200) {
-        throw new Error('El preview ya no está disponible (puede haber expirado).');
+      // El preview ya está descargado localmente — no hace falta volver a
+      // pedirlo a Railway.
+      const fileInfo = await FileSystem.getInfoAsync(take.previewLocalPath);
+      if (!fileInfo.exists) {
+        throw new Error('El archivo de esta toma ya no está disponible.');
       }
 
       const isAvailable = await Sharing.isAvailableAsync();
@@ -322,7 +368,7 @@ export default function TakeComparatorScreen() {
         return;
       }
 
-      await Sharing.shareAsync(downloadResult.uri, {
+      await Sharing.shareAsync(take.previewLocalPath, {
         mimeType: 'video/mp4',
         dialogTitle: take.customName || `Toma ${take.takeNumber}`,
       });
@@ -335,15 +381,19 @@ export default function TakeComparatorScreen() {
 
   // ── PARTE B: Descargar a local permanente ───────────────────────────────
   async function downloadTakePermanently(take: Take) {
-    if (take.status !== 'ready' || !take.jobId) {
-      Alert.alert('Toma aún procesando', 'Espera a que termine de procesarse.');
+    if (take.status !== 'ready' || !take.previewLocalPath) {
+      Alert.alert('Toma no disponible', 'Espera a que termine de procesarse.');
       return;
     }
 
     try {
       setSavingTakeId(take.id);
 
-      const downloadUrl = `${CASTING_SERVER_URL}/download-casting/${take.jobId}`;
+      const fileInfo = await FileSystem.getInfoAsync(take.previewLocalPath);
+      if (!fileInfo.exists) {
+        throw new Error('El archivo de esta toma ya no está disponible.');
+      }
+
       const permanentDir = `${FileSystem.documentDirectory}takes_saved/`;
       const dirInfo = await FileSystem.getInfoAsync(permanentDir);
       if (!dirInfo.exists) {
@@ -353,10 +403,8 @@ export default function TakeComparatorScreen() {
       const fileName = `${(take.customName || `toma_${take.takeNumber}`).replace(/[^a-zA-Z0-9_-]/g, '_')}.mp4`;
       const permanentPath = `${permanentDir}${fileName}`;
 
-      const downloadResult = await FileSystem.downloadAsync(downloadUrl, permanentPath);
-      if (downloadResult.status !== 200) {
-        throw new Error('El preview ya no está disponible (puede haber expirado).');
-      }
+      // Copiar (no volver a descargar) desde el preview ya local
+      await FileSystem.copyAsync({ from: take.previewLocalPath, to: permanentPath });
 
       const takesData = await AsyncStorage.getItem(`takes_${take.sessionId}`);
       if (takesData) {
