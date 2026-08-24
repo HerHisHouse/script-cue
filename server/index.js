@@ -112,6 +112,40 @@ app.get('/health', (req, res) => {
     res.json({ status: 'ok', timestamp: new Date().toISOString() });
 });
 
+// Genera un WAV de silencio puro (PCM, ceros) escrito directamente con Node,
+// sin pasar por ffmpeg — usado por el segmento type: 'silence' de /merge para
+// no depender del input virtual lavfi/anullsrc de ffmpeg, que no está
+// disponible en todos los builds de ffmpeg-static (falla en Render aunque
+// funciona en Railway).
+function generateSilenceWav(durationSeconds, outputPath) {
+    const sampleRate = 44100;
+    const numChannels = 1;
+    const bitsPerSample = 16;
+    const numSamples = Math.floor(durationSeconds * sampleRate);
+    const dataSize = numSamples * numChannels * (bitsPerSample / 8);
+
+    const buffer = Buffer.alloc(44 + dataSize);
+
+    // Cabecera WAV
+    buffer.write('RIFF', 0);
+    buffer.writeUInt32LE(36 + dataSize, 4);
+    buffer.write('WAVE', 8);
+    buffer.write('fmt ', 12);
+    buffer.writeUInt32LE(16, 16);
+    buffer.writeUInt16LE(1, 20); // PCM
+    buffer.writeUInt16LE(numChannels, 22);
+    buffer.writeUInt32LE(sampleRate, 24);
+    buffer.writeUInt32LE(sampleRate * numChannels * (bitsPerSample / 8), 28);
+    buffer.writeUInt16LE(numChannels * (bitsPerSample / 8), 32);
+    buffer.writeUInt16LE(bitsPerSample, 34);
+    buffer.write('data', 36);
+    buffer.writeUInt32LE(dataSize, 40);
+    // El resto del buffer ya está inicializado a 0 (silencio)
+
+    fs.writeFileSync(outputPath, buffer);
+    return outputPath;
+}
+
 // Merge endpoint
 app.post('/merge', async (req, res) => {
     const { segments, userId, scriptId } = req.body;
@@ -145,20 +179,15 @@ app.post('/merge', async (req, res) => {
 
             if (segment.type === 'silence') {
                 const duration = parseFloat(segment.duration) || 1;
-                const localPath = path.join(tempDir, `segment_${i}.mp3`);
+                const localPath = path.join(tempDir, `segment_${i}.wav`);
 
                 console.log(`[Merge] Generando silencio ${i + 1}/${segments.length}: ${duration}s`);
 
-                await new Promise((resolve, reject) => {
-                    ffmpeg()
-                        .input('anullsrc=r=44100:cl=mono')
-                        .inputOptions(['-f', 'lavfi'])
-                        .outputOptions(['-t', String(duration), '-acodec', 'mp3', '-b:a', '128k'])
-                        .output(localPath)
-                        .on('end', resolve)
-                        .on('error', reject)
-                        .run();
-                });
+                // Silencio generado como WAV PCM puro en Node, sin pasar por ffmpeg
+                // (evita depender de que el binario de ffmpeg del entorno tenga
+                // soporte para el input virtual lavfi/anullsrc — en Render el
+                // build de ffmpeg-static no lo trae, aunque el de Railway sí).
+                generateSilenceWav(duration, localPath);
 
                 downloadedFiles.push(localPath);
                 continue;
