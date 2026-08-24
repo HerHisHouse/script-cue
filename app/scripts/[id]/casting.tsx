@@ -3804,8 +3804,8 @@ const styles = StyleSheet.create({
   },
   cancelRecordingContainer: {
     position: 'absolute',
-    bottom: rp(100),
-    left: rp(20),
+    top: rp(80),
+    right: rp(16),
     zIndex: 1000,
   },
   cancelRecordingBtn: {
