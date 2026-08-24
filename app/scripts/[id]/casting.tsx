@@ -20,6 +20,7 @@ import {
   KeyboardAvoidingView,
   Keyboard,
   Modal,
+  useWindowDimensions,
 } from 'react-native';
 
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -109,6 +110,8 @@ export default function CastingModeScreen() {
   const { colors, isDark } = useTheme();
   const { user } = useAuth();
   const insets = useSafeAreaInsets();
+  const { width: windowWidth, height: windowHeight } = useWindowDimensions();
+  const isLandscape = windowWidth > windowHeight;
 
   // Camera Component Loader
   const cameraRef = useRef<any>(null);
@@ -2802,7 +2805,7 @@ export default function CastingModeScreen() {
 
             {/* Botón de cancelar grabación (solo visible cuando está grabando) */}
             {isRecording && (
-              <View style={styles.cancelRecordingContainer}>
+              <View style={[styles.cancelRecordingContainer, { top: isLandscape ? rp(70) : rp(130) }]}>
                 <TouchableOpacity
                   onPress={cancelRecording}
                   style={styles.cancelRecordingBtn}
