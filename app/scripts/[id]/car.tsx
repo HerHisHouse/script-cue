@@ -1870,7 +1870,7 @@ export default function CarModeScreen() {
         />
 
         <BottomSheetOption
-          label="Descargar audio de la escena completa"
+          label="Descargar audio"
           onPress={() => {
             setShowMenu(false);
             generateSceneAudio('full');
@@ -1878,6 +1878,7 @@ export default function CarModeScreen() {
           textColor="white"
           Icon={Download}
           iconColor="rgba(255,255,255,0.3)"
+          infoText="🎧 Descargar audio\nDescarga el audio de la escena completa interpretada con las voces que hayas configurado."
           isLoading={isGeneratingAudio && generatingMode === 'full'}
           disabled={isGeneratingAudio}
         />
@@ -1901,10 +1902,8 @@ export default function CarModeScreen() {
           <TouchableOpacity
             onPress={() => Alert.alert(
               '🎭 Italiana rápida',
-              'Descarga el audio de la escena con las líneas de tus compañeros de reparto, pero en silencio ' +
-              'total durante tus propias líneas, respetando el tiempo exacto que duran.\n\n' +
-              'Así puedes practicar en cualquier lugar, con auriculares y el móvil en el bolsillo, respondiendo ' +
-              'en los huecos de silencio como en un ensayo real.',
+              'Descarga el audio de la escena pero sólo las réplicas, se dejará en silencio tus partes respetando el tiempo estimado que duran.\n\n' +
+              'Así puedes practicar respondiendo en los huecos como en un pase "Italiana" real.',
               [{ text: 'Entendido' }]
             )}
             style={styles.italianaInfoBtn}
