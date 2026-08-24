@@ -1,7 +1,7 @@
 import React from 'react';
-import { View, Text, Switch, StyleSheet, TouchableOpacity } from 'react-native';
+import { View, Text, Switch, StyleSheet, TouchableOpacity, Alert } from 'react-native';
 import { useTheme } from '@/contexts/ThemeContext';
-import { LucideIcon } from 'lucide-react-native';
+import { LucideIcon, Info } from 'lucide-react-native';
 
 export interface BottomSheetToggleProps {
   label: string;
@@ -12,6 +12,7 @@ export interface BottomSheetToggleProps {
   textColor?: string;
   borderColor?: string;
   description?: string; // Optional subtitle
+  infoText?: string;
 }
 
 export function BottomSheetToggle({
@@ -22,7 +23,8 @@ export function BottomSheetToggle({
   iconColor,
   textColor,
   borderColor,
-  description
+  description,
+  infoText
 }: BottomSheetToggleProps) {
   const { colors } = useTheme();
 
@@ -35,7 +37,17 @@ export function BottomSheetToggle({
       <View style={styles.leftContent}>
         {Icon && <Icon size={20} color={iconColor || colors.textSecondary} style={styles.icon} />}
         <View style={styles.textContainer}>
-          <Text style={[styles.label, { color: textColor || colors.text }]}>{label}</Text>
+          <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+            <Text style={[styles.label, { color: textColor || colors.text }]}>{label}</Text>
+            {infoText && (
+              <TouchableOpacity 
+                onPress={() => Alert.alert('Información', infoText)}
+                style={{ marginLeft: 6, padding: 4 }}
+              >
+                <Info size={16} color={iconColor || colors.textSecondary} />
+              </TouchableOpacity>
+            )}
+          </View>
           {description && (
             <Text style={[styles.description, { color: textColor ? (textColor + 'B3') : colors.textSecondary }]}>
               {description}

@@ -3075,6 +3075,7 @@ export default function CastingModeScreen() {
                         onValueChange={handleAutoWideShotToggle}
                         iconColor="white"
                         textColor="white"
+                        infoText="Activa el toggle si necesitas hacer un plano general al final de tu presentación. Solo tendrás que dar 2 palmadas."
                       />
 
                       {/* Mensaje de plano de trabajo manual (visible si el toggle está activo) */}
