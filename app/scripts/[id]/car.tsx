@@ -24,6 +24,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/utils/supabase';
 import { DialogueLine } from '@/utils/dialogueParser';
 import { loadDialogueLines } from '@/utils/loadDialogueLines';
+import { calculateLineDuration } from '@/utils/sceneConfig';
 import { X, Settings, Mic, Play, SkipForward, SkipBack, Repeat, RotateCcw, Pause, ChevronDown, Volume2, Info, Car, MessageSquare, MoreVertical, Download, ChevronRight } from 'lucide-react-native';
 import { Audio } from 'expo-av';
 import * as Speech from 'expo-speech';
@@ -183,6 +184,7 @@ export default function CarModeScreen() {
   const [viewMode, setViewMode] = useState('Guion'); // Menu visibility
   const [isGeneratingAudio, setIsGeneratingAudio] = useState(false); // Audio generation in progress
   const [generatingProgress, setGeneratingProgress] = useState(0); // Progress 0-100
+  const [generatingMode, setGeneratingMode] = useState<'full' | 'italiana' | null>(null);
   const [readActions, setReadActions] = useState(false); // Enable action lines reading
   const [allScriptLines, setAllScriptLines] = useState<DialogueLine[]>([]); // All lines including actions
   const [showActionsInfo, setShowActionsInfo] = useState(false); // Info tooltip for actions toggle
@@ -975,11 +977,16 @@ export default function CarModeScreen() {
     }
   };
 
-  // Generate full scene audio and save to recordings
-  const generateSceneAudio = async () => {
+  // Generate full scene audio and save to recordings.
+  // exportMode 'full': todas las líneas con voz TTS (comportamiento original).
+  // exportMode 'italiana': las líneas del personaje del usuario se sustituyen
+  // por silencio de duración estimada (sin generar/pagar TTS para ellas), para
+  // poder practicar respondiendo en el hueco como en un ensayo real.
+  const generateSceneAudio = async (exportMode: 'full' | 'italiana' = 'full') => {
     if (isGeneratingAudio) return;
 
     setIsGeneratingAudio(true);
+    setGeneratingMode(exportMode);
     setGeneratingProgress(0);
     setShowMenu(false);
 
@@ -1025,12 +1032,26 @@ export default function CarModeScreen() {
         return filePath;
       }
 
-      // Collect all audio URIs
-      const audioSegments: { uri: string; index: number; characterName: string }[] = [];
+      // Collect all segments, in dialogue order. En modo 'italiana', las
+      // líneas del personaje del usuario se sustituyen por un marcador de
+      // silencio (duración estimada por texto, sin generar TTS para ellas);
+      // el resto de líneas siguen su camino normal de generación de voz.
+      type BuiltSegment =
+        | { type: 'ai'; localUri: string }
+        | { type: 'silence'; duration: number };
+
+      const builtSegments: BuiltSegment[] = [];
       const totalLines = dialogueLines.length;
 
       for (let i = 0; i < dialogueLines.length; i++) {
         const line = dialogueLines[i];
+
+        if (exportMode === 'italiana' && line.isUserCharacter) {
+          builtSegments.push({ type: 'silence', duration: calculateLineDuration(line.text) });
+          setGeneratingProgress(Math.round(((i + 1) / totalLines) * 50));
+          continue;
+        }
+
         const voiceConfig = getVoiceConfigForCharacter(line.characterName);
 
         if (!voiceConfig || voiceConfig.provider === 'system') {
@@ -1051,28 +1072,30 @@ export default function CarModeScreen() {
         );
 
         if (audioUri) {
-          audioSegments.push({ uri: audioUri, index: i, characterName: line.characterName });
+          builtSegments.push({ type: 'ai', localUri: audioUri });
         }
 
         setGeneratingProgress(Math.round(((i + 1) / totalLines) * 50));
       }
 
-      if (audioSegments.length === 0) {
+      if (builtSegments.length === 0) {
         Alert.alert('Error', 'No se pudo generar ningún segmento de audio.');
         return;
       }
 
-      // Upload segments to Supabase for merging
+      // Upload segments to Supabase for merging — solo los de voz IA, los de
+      // silencio los genera el propio servidor, no requieren subida.
       console.log('[GenerateScene] Uploading segments for merge...');
-      const uploadedPaths: string[] = [];
+      const aiSegments = builtSegments.filter((s): s is { type: 'ai'; localUri: string } => s.type === 'ai');
+      const uploadedPaths: (string | null)[] = [];
 
-      for (let i = 0; i < audioSegments.length; i++) {
-        const segment = audioSegments[i];
-        const extension = segment.uri.endsWith('.mp3') ? 'mp3' : 'm4a';
+      for (let i = 0; i < aiSegments.length; i++) {
+        const segment = aiSegments[i];
+        const extension = segment.localUri.endsWith('.mp3') ? 'mp3' : 'm4a';
         const fileName = `${currentUser.id}/scene-audio/${Date.now()}_${i}.${extension}`;
         const contentType = extension === 'mp3' ? 'audio/mpeg' : 'audio/m4a';
 
-        const base64 = await FileSystem.readAsStringAsync(segment.uri, {
+        const base64 = await FileSystem.readAsStringAsync(segment.localUri, {
           encoding: FileSystem.EncodingType.Base64,
         });
 
@@ -1087,9 +1110,30 @@ export default function CarModeScreen() {
           uploadedPaths.push(fileName);
         } catch (uploadError) {
           console.error('[GenerateScene] Upload error:', uploadError);
+          uploadedPaths.push(null);
         }
 
-        setGeneratingProgress(50 + Math.round(((i + 1) / audioSegments.length) * 30));
+        setGeneratingProgress(50 + Math.round(((i + 1) / aiSegments.length) * 30));
+      }
+
+      // Reconstruir el orden final tal y como aparece en el guion, uniendo
+      // audios ya subidos y silencios. Si algún audio no llegó a subirse, se
+      // omite esa posición en vez de desalinear el resto de la secuencia.
+      let aiCursor = 0;
+      const finalSegments: ({ type: 'ai'; path: string } | { type: 'silence'; duration: number })[] = [];
+      for (const seg of builtSegments) {
+        if (seg.type === 'ai') {
+          const uploadedPath = uploadedPaths[aiCursor];
+          aiCursor++;
+          if (uploadedPath) finalSegments.push({ type: 'ai', path: uploadedPath });
+        } else {
+          finalSegments.push(seg);
+        }
+      }
+
+      if (finalSegments.length === 0) {
+        Alert.alert('Error', 'No se pudo generar ningún segmento de audio.');
+        return;
       }
 
       // Send to Render for merging
@@ -1101,11 +1145,11 @@ export default function CarModeScreen() {
         body: JSON.stringify({
           userId: currentUser.id, // Added missing userId
           scriptId: id, // Added missing scriptId
-          segments: uploadedPaths.map((path, idx) => ({
-            path: path, // Changed storagePath to path
-            index: idx,
-            type: 'ai',
-          })),
+          segments: finalSegments.map((seg, idx) =>
+            seg.type === 'ai'
+              ? { path: seg.path, index: idx, type: 'ai' }
+              : { duration: seg.duration, index: idx, type: 'silence' }
+          ),
         }),
       });
 
@@ -1126,6 +1170,10 @@ export default function CarModeScreen() {
         .single();
 
       const scriptTitle = scriptData?.title || 'Escena';
+      const recordingTitle = exportMode === 'italiana'
+        ? `${scriptTitle} - Audio Escena (Italiana rápida)`
+        : `${scriptTitle} - Audio Escena`;
+      const fileNameSuffix = exportMode === 'italiana' ? '_italiana' : '_completa';
 
       // ── LOCAL-ONLY MODE ────────────────────────────────────────────────────
       const carSettings = await getSettings();
@@ -1143,7 +1191,7 @@ export default function CarModeScreen() {
         }
 
         const ext = mergeResult.path.endsWith('.mp3') ? 'mp3' : 'm4a';
-        const localFileName = `scene_audio_merged_${Date.now()}.${ext}`;
+        const localFileName = `scene_audio_merged${fileNameSuffix}_${Date.now()}.${ext}`;
         const localPath = `${FileSystem.documentDirectory}${localFileName}`;
 
         const downloadResult = await FileSystem.downloadAsync(signedUrlData.signedUrl, localPath);
@@ -1162,8 +1210,8 @@ export default function CarModeScreen() {
         // Save local path to DB
         const recordingData = {
           user_id: currentUser.id,
-          title: `${scriptTitle} - Audio Escena`,
-          duration_seconds: audioSegments.length * 3, // Rough estimate
+          title: recordingTitle,
+          duration_seconds: finalSegments.length * 3, // Rough estimate
           script_id: id,
           audio_url: localPath,   // local file:// URI → shows 📱 Local
           type: 'audio',
@@ -1182,8 +1230,8 @@ export default function CarModeScreen() {
       // Save cloud path to recordings table
       const recordingData = {
         user_id: currentUser.id,
-        title: `${scriptTitle} - Audio Escena`,
-        duration_seconds: audioSegments.length * 3, // Rough estimate
+        title: recordingTitle,
+        duration_seconds: finalSegments.length * 3, // Rough estimate
         script_id: id,
         audio_url: mergeResult.path,
         type: 'audio',
@@ -1211,6 +1259,7 @@ export default function CarModeScreen() {
       Alert.alert('Error', 'No se pudo generar el audio de la escena.');
     } finally {
       setIsGeneratingAudio(false);
+      setGeneratingMode(null);
       setGeneratingProgress(0);
     }
   };
@@ -1821,15 +1870,48 @@ export default function CarModeScreen() {
         />
 
         <BottomSheetOption
-          label="Descargar audio de escena"
+          label="Descargar audio de la escena completa"
           onPress={() => {
             setShowMenu(false);
-            generateSceneAudio();
+            generateSceneAudio('full');
           }}
           textColor="white"
           Icon={Download}
           iconColor="rgba(255,255,255,0.3)"
+          isLoading={isGeneratingAudio && generatingMode === 'full'}
+          disabled={isGeneratingAudio}
         />
+
+        <View style={styles.italianaRow}>
+          <TouchableOpacity
+            style={styles.italianaRowMain}
+            onPress={() => {
+              setShowMenu(false);
+              generateSceneAudio('italiana');
+            }}
+            disabled={isGeneratingAudio}
+          >
+            {isGeneratingAudio && generatingMode === 'italiana' ? (
+              <ActivityIndicator size="small" color="rgba(255,255,255,0.3)" style={styles.italianaRowIcon} />
+            ) : (
+              <Download size={20} color="rgba(255,255,255,0.3)" style={styles.italianaRowIcon} />
+            )}
+            <Text style={[styles.italianaRowText, { opacity: isGeneratingAudio ? 0.5 : 1 }]}>Italiana rápida</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            onPress={() => Alert.alert(
+              '🎭 Italiana rápida',
+              'Descarga el audio de la escena con las líneas de tus compañeros de reparto, pero en silencio ' +
+              'total durante tus propias líneas, respetando el tiempo exacto que duran.\n\n' +
+              'Así puedes practicar en cualquier lugar, con auriculares y el móvil en el bolsillo, respondiendo ' +
+              'en los huecos de silencio como en un ensayo real.',
+              [{ text: 'Entendido' }]
+            )}
+            style={styles.italianaInfoBtn}
+          >
+            <Info size={18} color="rgba(255,255,255,0.4)" />
+          </TouchableOpacity>
+        </View>
       </BottomSheetMenu>
       
       {/* Audio Generation Progress Overlay */}
@@ -1851,6 +1933,11 @@ export default function CarModeScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
+  italianaRow: { flexDirection: 'row', alignItems: 'center', borderBottomWidth: 1, borderBottomColor: 'rgba(255,255,255,0.06)' },
+  italianaRowMain: { flex: 1, flexDirection: 'row', alignItems: 'center', paddingHorizontal: 20, paddingVertical: 14 },
+  italianaRowIcon: { marginRight: 12 },
+  italianaRowText: { color: 'white', fontSize: 16, fontWeight: '500' },
+  italianaInfoBtn: { paddingHorizontal: 20, paddingVertical: 14 },
   header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: rp(20) },
   closeButton: { flexDirection: 'row', alignItems: 'center', backgroundColor: 'rgba(239, 68, 68, 0.2)', padding: rp(12), borderRadius: 16 },
   closeText: { fontSize: rf(20), fontWeight: 'bold', marginLeft: rp(8) },

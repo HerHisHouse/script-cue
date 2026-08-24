@@ -136,10 +136,33 @@ app.post('/merge', async (req, res) => {
         console.log(`[Merge] Processing ${segments.length} segments for user ${userId}`);
         console.log('[Merge] Segments:', JSON.stringify(segments, null, 2));
 
-        // Download all segments
+        // Download all segments (o generar silencio, para segmentos type: 'silence'
+        // — usado por la "Italiana rápida" del Modo Coche: sustituye las líneas
+        // del personaje del usuario por silencio en vez de audio TTS)
         const downloadedFiles = [];
         for (let i = 0; i < segments.length; i++) {
             const segment = segments[i];
+
+            if (segment.type === 'silence') {
+                const duration = parseFloat(segment.duration) || 1;
+                const localPath = path.join(tempDir, `segment_${i}.mp3`);
+
+                console.log(`[Merge] Generando silencio ${i + 1}/${segments.length}: ${duration}s`);
+
+                await new Promise((resolve, reject) => {
+                    ffmpeg()
+                        .input('anullsrc=r=44100:cl=mono')
+                        .inputOptions(['-f', 'lavfi'])
+                        .outputOptions(['-t', String(duration), '-acodec', 'mp3', '-b:a', '128k'])
+                        .output(localPath)
+                        .on('end', resolve)
+                        .on('error', reject)
+                        .run();
+                });
+
+                downloadedFiles.push(localPath);
+                continue;
+            }
 
             // Preserve original extension
             const extension = segment.path.endsWith('.mp3') ? 'mp3' : 'm4a';
