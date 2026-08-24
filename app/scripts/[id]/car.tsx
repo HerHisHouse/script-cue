@@ -1878,7 +1878,8 @@ export default function CarModeScreen() {
           textColor="white"
           Icon={Download}
           iconColor="rgba(255,255,255,0.3)"
-          infoText="🎧 Descargar audio\nDescarga el audio de la escena completa interpretada con las voces que hayas configurado."
+          infoTitle="🎧 Descargar audio"
+          infoText="Descarga el audio de la escena completa interpretada con las voces que hayas configurado."
           isLoading={isGeneratingAudio && generatingMode === 'full'}
           disabled={isGeneratingAudio}
         />
@@ -1897,18 +1898,20 @@ export default function CarModeScreen() {
             ) : (
               <Download size={20} color="rgba(255,255,255,0.3)" style={styles.italianaRowIcon} />
             )}
-            <Text style={[styles.italianaRowText, { opacity: isGeneratingAudio ? 0.5 : 1 }]}>Italiana rápida</Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            onPress={() => Alert.alert(
-              '🎭 Italiana rápida',
-              'Descarga el audio de la escena pero sólo las réplicas, se dejará en silencio tus partes respetando el tiempo estimado que duran.\n\n' +
-              'Así puedes practicar respondiendo en los huecos como en un pase "Italiana" real.',
-              [{ text: 'Entendido' }]
-            )}
-            style={styles.italianaInfoBtn}
-          >
-            <Info size={18} color="rgba(255,255,255,0.4)" />
+            <View style={{ flexDirection: 'row', alignItems: 'center', flex: 1 }}>
+              <Text style={[styles.italianaRowText, { opacity: isGeneratingAudio ? 0.5 : 1 }]}>Descarga audio a la "Italiana"</Text>
+              <TouchableOpacity
+                onPress={() => Alert.alert(
+                  '🎭 Audio a la Italiana',
+                  'Descarga el audio de la escena pero sólo las réplicas, se dejará en silencio tus partes respetando el tiempo estimado que duran.\n\n' +
+                  'Así puedes practicar respondiendo en los huecos como en un pase a la "Italiana" real.',
+                  [{ text: 'Entendido' }]
+                )}
+                style={{ marginLeft: 6, padding: 4 }}
+              >
+                <Info size={16} color="rgba(255,255,255,0.4)" />
+              </TouchableOpacity>
+            </View>
           </TouchableOpacity>
         </View>
       </BottomSheetMenu>

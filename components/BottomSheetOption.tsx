@@ -1,7 +1,7 @@
 import React from 'react';
-import { TouchableOpacity, Text, StyleSheet, ActivityIndicator } from 'react-native';
+import { TouchableOpacity, Text, StyleSheet, ActivityIndicator, View, Alert } from 'react-native';
 import { useTheme } from '@/contexts/ThemeContext';
-import { LucideIcon } from 'lucide-react-native';
+import { LucideIcon, Info } from 'lucide-react-native';
 
 export interface BottomSheetOptionProps {
   label: string;
@@ -12,6 +12,8 @@ export interface BottomSheetOptionProps {
   isDestructive?: boolean;
   isLoading?: boolean;
   disabled?: boolean;
+  infoText?: string;
+  infoTitle?: string;
 }
 
 export function BottomSheetOption({ 
@@ -22,7 +24,9 @@ export function BottomSheetOption({
   textColor,
   isDestructive,
   isLoading,
-  disabled
+  disabled,
+  infoText,
+  infoTitle
 }: BottomSheetOptionProps) {
   const { colors } = useTheme();
 
@@ -41,9 +45,19 @@ export function BottomSheetOption({
       ) : (
         Icon && <Icon size={20} color={finalIconColor} style={styles.icon} />
       )}
-      <Text style={[styles.label, { color: finalTextColor }]}>
-        {label}
-      </Text>
+      <View style={{ flex: 1, flexDirection: 'row', alignItems: 'center' }}>
+        <Text style={[styles.label, { color: finalTextColor }]}>
+          {label}
+        </Text>
+        {infoText && (
+          <TouchableOpacity 
+            onPress={() => Alert.alert(infoTitle || 'Información', infoText)}
+            style={{ marginLeft: 6, padding: 4 }}
+          >
+            <Info size={16} color={finalIconColor} />
+          </TouchableOpacity>
+        )}
+      </View>
     </TouchableOpacity>
   );
 }
