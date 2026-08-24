@@ -3332,37 +3332,39 @@ export default function CastingModeScreen() {
                 </View>
               )}
 
-              {/* Sección subtítulos */}
-              <View style={{ marginTop: rp(24) }}>
-                <Text style={[styles.qualitySectionTitle, { marginBottom: rp(4) }]}>
-                  💬 Subtítulos
-                </Text>
-                <Text style={styles.qualitySectionSubtitle}>
-                  Se incrustan automáticamente en el vídeo final
-                </Text>
-
-                <TouchableOpacity
-                  style={[
-                    styles.qualityOption,
-                    { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: rp(12) },
-                  ]}
-                  onPress={() => setAddSubtitles(!addSubtitles)}
-                  activeOpacity={0.8}
-                >
-                  <View style={{ flex: 1, marginRight: rp(12) }}>
-                    <Text style={styles.qualityOptionLabel}>Añadir subtítulos</Text>
-                    <Text style={styles.qualityOptionDesc}>
-                      Útil para revisar diálogo o accesibilidad
-                    </Text>
-                  </View>
-                  <Switch
-                    value={addSubtitles}
-                    onValueChange={setAddSubtitles}
-                    trackColor={{ false: '#3A3A4A', true: '#7c3aed' }}
-                    thumbColor={addSubtitles ? '#a78bfa' : '#888'}
-                  />
-                </TouchableOpacity>
-              </View>
+              {/* Sección subtítulos (Oculto en Selftape por ahora) */}
+              {castingMode !== 'script_config' && (
+                <View style={{ marginTop: rp(24) }}>
+                  <Text style={[styles.qualitySectionTitle, { marginBottom: rp(4) }]}>
+                    💬 Subtítulos
+                  </Text>
+                  <Text style={styles.qualitySectionSubtitle}>
+                    Se incrustan automáticamente en el vídeo final
+                  </Text>
+  
+                  <TouchableOpacity
+                    style={[
+                      styles.qualityOption,
+                      { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: rp(12) },
+                    ]}
+                    onPress={() => setAddSubtitles(!addSubtitles)}
+                    activeOpacity={0.8}
+                  >
+                    <View style={{ flex: 1, marginRight: rp(12) }}>
+                      <Text style={styles.qualityOptionLabel}>Añadir subtítulos</Text>
+                      <Text style={styles.qualityOptionDesc}>
+                        Útil para revisar diálogo o accesibilidad
+                      </Text>
+                    </View>
+                    <Switch
+                      value={addSubtitles}
+                      onValueChange={setAddSubtitles}
+                      trackColor={{ false: '#3A3A4A', true: '#7c3aed' }}
+                      thumbColor={addSubtitles ? '#a78bfa' : '#888'}
+                    />
+                  </TouchableOpacity>
+                </View>
+              )}
 
               <TouchableOpacity
                 style={{
