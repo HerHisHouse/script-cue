@@ -2161,7 +2161,7 @@ export default function CastingModeScreen() {
                 <Text style={{ color: colors.textSecondary, fontSize: rf(14), marginBottom: 4 }}>
                   Revisa, compara y selecciona:
                 </Text>
-                <Text style={{ color: colors.textSecondary, fontSize: rf(14), marginTop: 2 }}>• Elige entre tus tomas guardadas</Text>
+                <Text style={{ color: colors.textSecondary, fontSize: rf(14), marginTop: 2 }}>• Elige entre tus tomas grabadas</Text>
                 <Text style={{ color: colors.textSecondary, fontSize: rf(14), marginTop: 2 }}>• Selecciona tu favorita</Text>
                 <Text style={{ color: colors.textSecondary, fontSize: rf(14), marginTop: 2 }}>• Fija el tiempo de expiración</Text>
               </View>
