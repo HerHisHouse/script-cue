@@ -495,7 +495,7 @@ export default function GhostModeScreen() {
                                 {!isUserTurn ? (
                                     // Partner Line - Just Text
                                     <Text style={[styles.text, { color: colors.text, textAlign: 'center' }]}>
-                                        {currentLine.text}
+                                        {currentLine.cleanText}
                                     </Text>
                                 ) : (
                                     // User Line - Game Logic
