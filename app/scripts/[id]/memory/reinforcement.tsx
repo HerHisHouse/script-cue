@@ -615,13 +615,13 @@ export default function ReinforcementScreen() {
                             <ArrowLeft size={24} color={colors.text} />
                         </TouchableOpacity>
                         <Text style={[styles.headerTitle, { color: colors.text, flex: 1, textAlign: 'center', marginRight: 40 }]}>
-                            Ciclos de Refuerzo
+                            Refuerzo
                         </Text>
                     </View>
                     <View style={[styles.content, styles.center]}>
                         <Text style={[styles.emptyText, { color: colors.textSecondary }]}>
                             ¡Excelente! No tienes errores pendientes.{'\n\n'}
-                            Completa más juegos para generar ciclos de refuerzo.
+                            Completa más juegos para generar refuerzos.
                         </Text>
                         <TouchableOpacity
                             style={[styles.btn, { backgroundColor: colors.primary, marginTop: 20 }]}

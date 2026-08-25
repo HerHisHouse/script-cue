@@ -61,7 +61,7 @@ const GAMES = [
     },
     {
         id: 'reinforcement',
-        title: 'Ciclos de Refuerzo',
+        title: 'Refuerzo',
         description: 'Repasa solo las líneas que más fallas.',
         icon: Zap,
         color: '#EF4444', // Red
