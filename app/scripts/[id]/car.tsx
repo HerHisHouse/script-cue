@@ -440,13 +440,15 @@ export default function CarModeScreen() {
     };
 
     const speakWithSystemTTS = () => {
-      const spanishVoice = availableVoices.find(v =>
+      const selectedVoice = voiceId ? availableVoices.find(v => v.identifier === voiceId || v.name === voiceId) : null;
+
+      const spanishVoice = selectedVoice || availableVoices.find(v =>
         v.language.startsWith('es') && v.identifier.includes('enhanced')
       ) || availableVoices.find(v => v.language.startsWith('es'));
 
       // Use cleanText to avoid reading stage directions
       Speech.speak(line.cleanText, {
-        language: 'es-ES',
+        language: spanishVoice?.language || 'es-ES',
         rate: speechRate,
         voice: spanishVoice?.identifier,
         onDone: handleAudioFinished
