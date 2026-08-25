@@ -1152,6 +1152,10 @@ export default function CarModeScreen() {
               ? { path: seg.path, index: idx, type: 'ai' }
               : { duration: seg.duration, index: idx, type: 'silence' }
           ),
+          // En 'italiana' los huecos del usuario ya son silencios de duración
+          // real — añadir el margen de respiración de 1.5s encima de eso
+          // rompe la cadencia del ejercicio, así que se desactiva por completo.
+          pauseDuration: exportMode === 'italiana' ? 0 : 1.5,
         }),
       });
 
@@ -1173,8 +1177,8 @@ export default function CarModeScreen() {
 
       const scriptTitle = scriptData?.title || 'Escena';
       const recordingTitle = exportMode === 'italiana'
-        ? `${scriptTitle} - Audio Escena (Italiana rápida)`
-        : `${scriptTitle} - Audio Escena`;
+        ? `Audio Italiana - ${scriptTitle}`
+        : `Audio escena - ${scriptTitle}`;
       const fileNameSuffix = exportMode === 'italiana' ? '_italiana' : '_completa';
 
       // ── LOCAL-ONLY MODE ────────────────────────────────────────────────────
@@ -1901,7 +1905,7 @@ export default function CarModeScreen() {
               <Download size={20} color="rgba(255,255,255,0.3)" style={styles.italianaRowIcon} />
             )}
             <View style={{ flexDirection: 'row', alignItems: 'center', flex: 1 }}>
-              <Text style={[styles.italianaRowText, { opacity: isGeneratingAudio ? 0.5 : 1 }]}>Descarga audio a la "Italiana"</Text>
+              <Text style={[styles.italianaRowText, { opacity: isGeneratingAudio ? 0.5 : 1 }]}>Descarga audio a la &quot;Italiana&quot;</Text>
               <TouchableOpacity
                 onPress={() => Alert.alert(
                   '🎭 Audio a la Italiana',

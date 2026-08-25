@@ -149,7 +149,11 @@ function generateSilenceWav(durationSeconds, outputPath) {
 // Merge endpoint
 app.post('/merge', async (req, res) => {
     const { segments, userId, scriptId } = req.body;
-    const pauseDuration = parseFloat(req.body.pauseDuration) || 1.5;
+    // OJO: no usar `|| 1.5` aquí — un pauseDuration de 0 (silenciar la pausa
+    // de respiración, usado por la Italiana rápida) es un valor válido y
+    // "0 || 1.5" lo pisaría por ser falsy en JS.
+    const parsedPauseDuration = parseFloat(req.body.pauseDuration);
+    const pauseDuration = Number.isFinite(parsedPauseDuration) ? parsedPauseDuration : 1.5;
 
     if (!segments || !Array.isArray(segments) || segments.length === 0) {
         return res.status(400).json({ error: 'Invalid segments array' });
