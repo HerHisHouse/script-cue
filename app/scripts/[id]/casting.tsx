@@ -2066,8 +2066,9 @@ export default function CastingModeScreen() {
 
       {/* --- SELECTION SCREEN --- */}
       {castingMode === 'selection' && (
-        <SafeAreaView style={[styles.configContainer, { backgroundColor: colors.background }]}>
-          <View style={styles.configHeader}>
+        <SafeAreaView style={[styles.configContainer, { backgroundColor: colors.surface }]}>
+          <View style={{ flex: 1, backgroundColor: colors.background }}>
+          <View style={[styles.configHeader, { backgroundColor: colors.surface }]}>
             <TouchableOpacity onPress={() => router.replace(`/scripts/${id}`)} style={styles.configBackBtn}>
               <ArrowLeft color={colors.text} size={rp(24)} />
             </TouchableOpacity>
@@ -2163,13 +2164,15 @@ export default function CastingModeScreen() {
               </View>
             </TouchableOpacity>
           </ScrollView>
+          </View>
         </SafeAreaView>
       )}
 
       {/* --- FREE INPUT SCREEN --- */}
       {castingMode === 'free_input' && (
-        <SafeAreaView style={[styles.configContainer, { backgroundColor: colors.background }]}>
-          <View style={styles.configHeader}>
+        <SafeAreaView style={[styles.configContainer, { backgroundColor: colors.surface }]}>
+          <View style={{ flex: 1, backgroundColor: colors.background }}>
+          <View style={[styles.configHeader, { backgroundColor: colors.surface }]}>
             <TouchableOpacity onPress={() => setCastingMode('selection')} style={styles.configBackBtn}>
               <ArrowLeft color={colors.text} size={rp(24)} />
             </TouchableOpacity>
@@ -2224,14 +2227,16 @@ export default function CastingModeScreen() {
               />
             </View>
           </KeyboardAvoidingView>
+          </View>
         </SafeAreaView>
       )}
 
       {/* Scene Configuration Screen */}
       {castingMode === 'script_config' && (
-        <SafeAreaView style={[styles.configContainer, { backgroundColor: colors.background }]}>
+        <SafeAreaView style={[styles.configContainer, { backgroundColor: colors.surface }]}>
           {/* Header */}
-          <View style={styles.configHeader}>
+          <View style={{ flex: 1, backgroundColor: colors.background }}>
+          <View style={[styles.configHeader, { backgroundColor: colors.surface }]}>
             <TouchableOpacity onPress={() => router.replace(`/scripts/${id}`)} style={styles.configBackBtn}>
               <ArrowLeft color={colors.text} size={rp(24)} />
             </TouchableOpacity>
@@ -2460,6 +2465,7 @@ export default function CastingModeScreen() {
               <Text style={styles.startRecordingText}>Empezar a Grabar</Text>
               <ChevronRight size={rp(20)} color="#fff" />
             </TouchableOpacity>
+          </View>
           </View>
         </SafeAreaView>
       )}

@@ -263,7 +263,8 @@ export default function AnalysisScreen() {
     // Pantalla de selección de modo
     if (mode === 'select') {
         return (
-            <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
+            <SafeAreaView style={[styles.container, { backgroundColor: colors.surface }]}>
+                <View style={{ flex: 1, backgroundColor: colors.background }}>
                 <View style={[styles.header, { backgroundColor: colors.surface, borderBottomColor: colors.border }]}>
                     <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
                         <ArrowLeft size={24} color={colors.text} />
@@ -322,6 +323,7 @@ export default function AnalysisScreen() {
                         </TouchableOpacity>
                     )}
                 </ScrollView>
+                </View>
             </SafeAreaView>
         );
     }
@@ -329,7 +331,8 @@ export default function AnalysisScreen() {
     // Pantalla de análisis manual
     if (mode === 'manual') {
         return (
-            <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
+            <SafeAreaView style={[styles.container, { backgroundColor: colors.surface }]}>
+                <View style={{ flex: 1, backgroundColor: colors.background }}>
                 <View style={[styles.header, { backgroundColor: colors.surface, borderBottomColor: colors.border }]}>
                     <TouchableOpacity onPress={() => setMode('select')} style={styles.backButton}>
                         <ArrowLeft size={24} color={colors.text} />
@@ -405,6 +408,7 @@ export default function AnalysisScreen() {
 
                     <View style={{ height: 40 }} />
                 </ScrollView>
+                </View>
             </SafeAreaView>
         );
     }
@@ -454,7 +458,8 @@ export default function AnalysisScreen() {
         };
 
         return (
-            <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
+            <SafeAreaView style={[styles.container, { backgroundColor: colors.surface }]}>
+                <View style={{ flex: 1, backgroundColor: colors.background }}>
                 <View style={[styles.header, { backgroundColor: colors.surface, borderBottomColor: colors.border }]}>
                     <TouchableOpacity onPress={() => setMode('select')} style={styles.backButton}>
                         <ArrowLeft size={24} color={colors.text} />
@@ -524,6 +529,7 @@ export default function AnalysisScreen() {
 
                     <View style={{ height: 40 }} />
                 </ScrollView>
+                </View>
             </SafeAreaView>
         );
     }
@@ -531,7 +537,8 @@ export default function AnalysisScreen() {
     // Pantalla de IA - Generar análisis automáticamente
     if (mode === 'ai') {
         return (
-            <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
+            <SafeAreaView style={[styles.container, { backgroundColor: colors.surface }]}>
+                <View style={{ flex: 1, backgroundColor: colors.background }}>
                 <View style={[styles.header, { backgroundColor: colors.surface, borderBottomColor: colors.border }]}>
                     <TouchableOpacity onPress={() => setMode('select')} style={styles.backButton} disabled={generating}>
                         <ArrowLeft size={24} color={generating ? colors.textSecondary : colors.text} />
@@ -549,6 +556,7 @@ export default function AnalysisScreen() {
                     <Text style={[styles.generatingSubtitle, { color: colors.textSecondary }]}>
                         ScriptCue está analizando tu guion con los 10 puntos de análisis actoral
                     </Text>
+                </View>
                 </View>
             </SafeAreaView>
         );

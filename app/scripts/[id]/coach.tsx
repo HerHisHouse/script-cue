@@ -826,9 +826,10 @@ export default function CoachModeScreen() {
   // --- VIEW: RECORDING SELECTION ---
   if (!selectedRecording) {
     return (
-      <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
+      <SafeAreaView style={[styles.container, { backgroundColor: colors.surface }]}>
         <Stack.Screen options={{ headerShown: false }} />
-        <View style={[styles.header, { borderBottomColor: colors.border }]}>
+        <View style={{ flex: 1, backgroundColor: colors.background }}>
+        <View style={[styles.header, { backgroundColor: colors.surface, borderBottomColor: colors.border }]}>
           <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
             <ArrowLeft size={24} color={colors.text} />
           </TouchableOpacity>
@@ -949,15 +950,17 @@ export default function CoachModeScreen() {
             </View>
           </View>
         </Modal>
+        </View>
       </SafeAreaView>
     );
   }
 
   // --- VIEW: ANALYSIS / DETAILS ---
   return (
-    <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
+    <SafeAreaView style={[styles.container, { backgroundColor: colors.surface }]}>
       <Stack.Screen options={{ headerShown: false }} />
-      <View style={[styles.header, { borderBottomColor: colors.border }]}>
+      <View style={{ flex: 1, backgroundColor: colors.background }}>
+      <View style={[styles.header, { backgroundColor: colors.surface, borderBottomColor: colors.border }]}>
         <TouchableOpacity onPress={() => setSelectedRecording(null)} style={styles.backButton}>
           <ArrowLeft size={24} color={colors.text} />
         </TouchableOpacity>
@@ -1162,7 +1165,7 @@ export default function CoachModeScreen() {
           </>
         )}
       </ScrollView>
-
+      </View>
     </SafeAreaView>
   );
 }

@@ -93,7 +93,8 @@ export default function MemoryMenuScreen() {
     };
 
     return (
-        <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
+        <SafeAreaView style={[styles.container, { backgroundColor: colors.surface }]}>
+            <View style={{ flex: 1, backgroundColor: colors.background }}>
             <View style={[styles.header, { borderBottomColor: colors.border, backgroundColor: colors.surface }]}>
                 <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
                     <ArrowLeft size={24} color={colors.text} />
@@ -142,6 +143,7 @@ export default function MemoryMenuScreen() {
                 </View>
 
             </ScrollView>
+            </View>
         </SafeAreaView>
     );
 }
