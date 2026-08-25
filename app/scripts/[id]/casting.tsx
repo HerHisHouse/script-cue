@@ -2157,10 +2157,13 @@ export default function CastingModeScreen() {
             >
               <Layers size={rp(48)} color="#FBBF24" style={{ marginBottom: 16 }} />
               <Text style={{ color: colors.text, fontSize: rf(20), fontWeight: '700' }}>Tomas</Text>
-              <View style={{ marginTop: 12 }}>
-                <Text style={{ color: colors.textSecondary, fontSize: rf(14), textAlign: 'center' }}>
-                  Revisa, compara y elige entre tus tomas guardadas
+              <View style={{ marginTop: 12, alignItems: 'flex-start', width: '100%' }}>
+                <Text style={{ color: colors.textSecondary, fontSize: rf(14), marginBottom: 4 }}>
+                  Revisa, compara y selecciona:
                 </Text>
+                <Text style={{ color: colors.textSecondary, fontSize: rf(14), marginTop: 2 }}>• Elige entre tus tomas guardadas</Text>
+                <Text style={{ color: colors.textSecondary, fontSize: rf(14), marginTop: 2 }}>• Selecciona tu favorita</Text>
+                <Text style={{ color: colors.textSecondary, fontSize: rf(14), marginTop: 2 }}>• Fija el tiempo de expiración</Text>
               </View>
             </TouchableOpacity>
           </ScrollView>

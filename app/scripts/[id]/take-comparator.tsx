@@ -9,7 +9,7 @@ import { Video, ResizeMode } from 'expo-av';
 import * as FileSystem from 'expo-file-system/legacy';
 import * as Sharing from 'expo-sharing';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { ArrowLeft, Play, Star, Edit3, Share2, Download, Trash2, Settings } from 'lucide-react-native';
+import { ArrowLeft, Play, Star, Edit3, Share2, Download, Trash2, Settings, Info } from 'lucide-react-native';
 import { useTheme } from '@/contexts/ThemeContext';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/utils/supabase';
@@ -99,10 +99,6 @@ const EXPIRATION_OPTIONS = [
   { label: '10 días', value: 10 },
   { label: '15 días', value: 15 },
   { label: '20 días', value: 20 },
-  // TODO: eliminar esta opción una vez verificado el borrado automático en
-  // dispositivo real. 0.00347 días ≈ 5 minutos — se mantiene en días para
-  // no mezclar unidades con el resto del cálculo.
-  { label: '⚙️ 5 minutos (PRUEBA)', value: 0.00347 },
 ];
 
 // Descubre todas las sesiones de tomas guardadas (vía el índice global) y
@@ -591,7 +587,19 @@ export default function TakeComparatorScreen() {
         <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
           <ArrowLeft color={colors.text} size={rp(24)} />
         </TouchableOpacity>
-        <Text style={[styles.headerTitle, { color: colors.text }]}>Comparador de Tomas</Text>
+        <View style={{ flexDirection: 'row', alignItems: 'center', flex: 1, justifyContent: 'center', gap: rp(6) }}>
+          <Text style={[styles.headerTitle, { color: colors.text }]}>Tomas</Text>
+          <TouchableOpacity
+            onPress={() => Alert.alert(
+              'Revisión de Tomas',
+              'En este panel encontrarás todas las tomas que grabes de este guion. Puedes renombrarlas, visualizarlas, marcar favoritas...\n\nSelecciona "Usar toma" con la versión definitiva para que aparezca en Grabaciones.\n\nPulsa ⚙️ para seleccionar el borrado automático de las tomas descartadas para liberar espacio de almacenamiento.',
+              [{ text: 'Entendido' }]
+            )}
+            style={{ padding: 4 }}
+          >
+            <Info color={colors.textSecondary} size={rp(18)} />
+          </TouchableOpacity>
+        </View>
         <TouchableOpacity onPress={() => setShowSettingsModal(true)} style={styles.backBtn}>
           <Settings color={colors.text} size={rp(22)} />
         </TouchableOpacity>
