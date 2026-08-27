@@ -1,5 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, TextInput, ActivityIndicator, Alert, ScrollView, Platform } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { Upload, ArrowLeft, Check, ChevronDown, Camera, Info, X } from 'lucide-react-native';
@@ -84,11 +85,19 @@ export default function ImportScriptScreen() {
   const [loadingExisting, setLoadingExisting] = useState<boolean>(false);
   const [uploadProgress, setUploadProgress] = useState(0);
   const [isScriptReviewed, setIsScriptReviewed] = useState<boolean>(false);
+  const [hideImportAlert, setHideImportAlert] = useState<boolean>(true); // hidden until loaded
 
   useEffect(() => {
     return () => {
       mountedRef.current = false;
     };
+  }, []);
+
+  // Load import alert preference
+  useEffect(() => {
+    AsyncStorage.getItem('hide_import_script_alert').then(val => {
+      setHideImportAlert(val === 'true');
+    }).catch(() => setHideImportAlert(false));
   }, []);
 
   useEffect(() => {
@@ -1158,6 +1167,29 @@ export default function ImportScriptScreen() {
               <Text style={styles.submitText}>{showConfigOnly ? 'Guardar y Continuar' : 'Subir y Analizar'}</Text>
             )}
           </TouchableOpacity>
+
+          {/* Alert informativo sobre formato de guion */}
+          {!showConfigOnly && !hideImportAlert && (
+            <View style={[styles.importAlertBox, { backgroundColor: isDark ? 'rgba(139, 92, 246, 0.1)' : 'rgba(139, 92, 246, 0.08)', borderColor: isDark ? 'rgba(139, 92, 246, 0.3)' : 'rgba(139, 92, 246, 0.2)' }]}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: rp(8) }}>
+                <Info size={rp(18)} color={colors.primary} />
+                <Text style={[styles.importAlertTitle, { color: colors.primary }]}>Formato recomendado</Text>
+              </View>
+              <Text style={[styles.importAlertText, { color: colors.textSecondary }]}>
+                Para un análisis más preciso del texto, es mejor que el guion tenga un formato estándar de "guion cinematográfico". Con personajes y diálogos. De momento no sirven convocatorias de publicidad con actings.
+              </Text>
+              <TouchableOpacity
+                style={styles.importAlertCheckbox}
+                onPress={async () => {
+                  setHideImportAlert(true);
+                  await AsyncStorage.setItem('hide_import_script_alert', 'true');
+                }}
+              >
+                <View style={[styles.importAlertCheckboxBox, { borderColor: colors.border }]} />
+                <Text style={[styles.importAlertCheckboxLabel, { color: colors.textSecondary }]}>No volver a mostrar</Text>
+              </TouchableOpacity>
+            </View>
+          )}
         </View>
       </ScrollView>
     </SafeAreaView>
@@ -1480,5 +1512,35 @@ const styles = StyleSheet.create({
   },
   dropdownItemText: {
     fontSize: rf(14),
+  },
+  importAlertBox: {
+    marginTop: rp(20),
+    padding: rp(16),
+    borderRadius: rp(12),
+    borderWidth: 1,
+  },
+  importAlertTitle: {
+    fontSize: rf(14),
+    fontWeight: '600',
+    marginLeft: rp(6),
+  },
+  importAlertText: {
+    fontSize: rf(13),
+    lineHeight: rf(19),
+  },
+  importAlertCheckbox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: rp(12),
+  },
+  importAlertCheckboxBox: {
+    width: rp(18),
+    height: rp(18),
+    borderRadius: rp(4),
+    borderWidth: 1.5,
+    marginRight: rp(8),
+  },
+  importAlertCheckboxLabel: {
+    fontSize: rf(13),
   },
 });
