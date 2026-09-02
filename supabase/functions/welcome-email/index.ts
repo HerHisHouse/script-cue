@@ -90,7 +90,7 @@ const WELCOME_HTML = `<!DOCTYPE html>
         <!-- CAMBIO 2: Saludo adaptado — sin mención a confirmar correo -->
         <p class="body-text" style="font-family:'Inter',Arial,sans-serif;font-size:15px;color:#4a4a6a;line-height:1.75;margin:0 0 32px;">
           ¡Hola! 👋<br/><br/>
-          Tu cuenta de ScriptCue ya está activa. A partir de ahora tienes acceso a todos los modos para ensayar, memorizar tus guiones y grabar selftapes profesionales con réplica por IA.
+          Tu cuenta de ScriptCue ya está activa. A partir de ahora tienes acceso a todos los modos para ensayar, memorizar tus guiones y grabar selftapes profesionales con la réplica en tiempo real.
         </p>
 
         <!-- CAMBIO 3: Botón hacia la web en vez de confirmación -->
@@ -120,7 +120,7 @@ const WELCOME_HTML = `<!DOCTYPE html>
               <td style="background-color:#f5f3ff;border:1px solid #ddd8f5;border-radius:14px;padding:18px 16px;">
                 <p style="font-size:22px;margin:0 0 10px;line-height:1;">🎭</p>
                 <p class="mode-name" style="font-family:'Inter',Arial,sans-serif;font-size:13px;font-weight:700;color:#0f0f17;margin:0 0 6px;">Modo Estudio</p>
-                <p class="mode-desc" style="font-family:'Inter',Arial,sans-serif;font-size:12px;color:#5a5a7a;line-height:1.55;margin:0;">Practica escenas con la IA dándote la réplica con voces realistas.</p>
+                <p class="mode-desc" style="font-family:'Inter',Arial,sans-serif;font-size:12px;color:#5a5a7a;line-height:1.55;margin:0;">Practica escenas con la App dándote la réplica con voces realistas.</p>
               </td>
             </tr>
             </table>
@@ -131,7 +131,7 @@ const WELCOME_HTML = `<!DOCTYPE html>
               <td style="background-color:#f5f3ff;border:1px solid #ddd8f5;border-radius:14px;padding:18px 16px;">
                 <p style="font-size:22px;margin:0 0 10px;line-height:1;">🎬</p>
                 <p class="mode-name" style="font-family:'Inter',Arial,sans-serif;font-size:13px;font-weight:700;color:#0f0f17;margin:0 0 6px;">Modo Casting</p>
-                <p class="mode-desc" style="font-family:'Inter',Arial,sans-serif;font-size:12px;color:#5a5a7a;line-height:1.55;margin:0;">Graba tu selftape con teleprompter y réplica por IA en tiempo real.</p>
+                <p class="mode-desc" style="font-family:'Inter',Arial,sans-serif;font-size:12px;color:#5a5a7a;line-height:1.55;margin:0;">Graba tu selftape con el guion en el teleprompter y escucha la réplica en directo.</p>
               </td>
             </tr>
             </table>
@@ -159,7 +159,7 @@ const WELCOME_HTML = `<!DOCTYPE html>
               <td style="background-color:#f5f3ff;border:1px solid #ddd8f5;border-radius:14px;padding:18px 16px;">
                 <p style="font-size:22px;margin:0 0 10px;line-height:1;">🔍</p>
                 <p class="mode-name" style="font-family:'Inter',Arial,sans-serif;font-size:13px;font-weight:700;color:#0f0f17;margin:0 0 6px;">Modo Escena</p>
-                <p class="mode-desc" style="font-family:'Inter',Arial,sans-serif;font-size:12px;color:#5a5a7a;line-height:1.55;margin:0;">Explora nuevas posibilidades interpretativas mediante ejercicios, retos y propuestas generadas por IA.</p>
+                <p class="mode-desc" style="font-family:'Inter',Arial,sans-serif;font-size:12px;color:#5a5a7a;line-height:1.55;margin:0;">Explora nuevas posibilidades interpretativas mediante ejercicios, retos y propuestas.</p>
               </td>
             </tr>
             </table>
@@ -176,7 +176,7 @@ const WELCOME_HTML = `<!DOCTYPE html>
               <td style="background-color:#f5f3ff;border:1px solid #ddd8f5;border-radius:14px;padding:18px 16px;">
                 <p style="font-size:22px;margin:0 0 10px;line-height:1;">📊</p>
                 <p class="mode-name" style="font-family:'Inter',Arial,sans-serif;font-size:13px;font-weight:700;color:#0f0f17;margin:0 0 6px;">Modo Análisis</p>
-                <p class="mode-desc" style="font-family:'Inter',Arial,sans-serif;font-size:12px;color:#5a5a7a;line-height:1.55;margin:0;">Analiza objetivos, conflictos, emociones y subtexto de la escena o pídele a la IA que lo examine.</p>
+                <p class="mode-desc" style="font-family:'Inter',Arial,sans-serif;font-size:12px;color:#5a5a7a;line-height:1.55;margin:0;">Analiza objetivos, conflictos, emociones y subtexto de la escena o pídele a la ScriptCue que lo examine.</p>
               </td>
             </tr>
             </table>
