@@ -83,11 +83,16 @@ export function FixedFooter({ activeKey, variant = 'default', dark = true }: Pro
   );
 
   if (floating) {
+    // Blur real (deja transparentar el fondo desenfocado) + un velo de color muy
+    // sutil encima, en vez de un backgroundColor opaco que tapa el efecto glass.
+    const overlayTint = dark ? 'rgba(128,128,128,0.25)' : 'rgba(235,230,245,0.22)';
     return (
       <View style={[styles.floatingWrapper, { bottom: 8, borderColor: dark ? 'rgba(255,255,255,0.4)' : 'rgba(104,58,121,0.25)' }]}>
-        <BlurView intensity={50} tint={dark ? 'dark' : 'light'} style={[styles.floatingBlur, { backgroundColor: dark ? 'rgba(128,128,128,0.25)' : 'rgba(255,255,255,0.45)' }]}>
+        <BlurView intensity={dark ? 50 : 65} tint={dark ? 'dark' : 'light'} style={StyleSheet.absoluteFill} />
+        <View style={[StyleSheet.absoluteFill, { backgroundColor: overlayTint }]} />
+        <View style={styles.floatingBlur}>
           {items}
-        </BlurView>
+        </View>
       </View>
     );
   }

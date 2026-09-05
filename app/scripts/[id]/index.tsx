@@ -273,7 +273,7 @@ export default function ScriptDetailScreen() {
   // Paleta "sobre imagen de fondo" para el nuevo diseño glass de esta pantalla
   const fg = isDark ? '#FFFFFF' : '#2A1B47';
   const fgSecondary = isDark ? 'rgba(255,255,255,0.6)' : '#3d3660';
-  const glassBg = isDark ? 'rgba(128,128,128,0.25)' : 'rgba(255,255,255,0.5)';
+  const glassBg = isDark ? 'rgba(128,128,128,0.25)' : 'rgba(230,230,236,0.6)';
   const glassBorder = isDark ? 'rgba(255,255,255,0.2)' : 'rgba(42,27,71,0.18)';
   const badgeBg = isDark ? 'rgba(255,255,255,0.12)' : 'rgba(104,58,121,0.12)';
 
