@@ -19,12 +19,17 @@ export function BottomSheetMenu({ visible, onClose, title, children, backgroundC
   const insets = useSafeAreaInsets();
   
   const [modalVisible, setModalVisible] = useState(visible);
+  const [isClosing, setIsClosing] = useState(false);
   const translateY = useRef(new Animated.Value(SCREEN_HEIGHT)).current;
   const opacity = useRef(new Animated.Value(0)).current;
   const scrollY = useRef(0);
 
   useEffect(() => {
     if (visible) {
+      // Stop any in-flight close animation
+      translateY.stopAnimation();
+      opacity.stopAnimation();
+      setIsClosing(false);
       setModalVisible(true);
       Animated.parallel([
         Animated.spring(translateY, {
@@ -38,7 +43,12 @@ export function BottomSheetMenu({ visible, onClose, title, children, backgroundC
           useNativeDriver: true,
         })
       ]).start();
-    } else {
+    } else if (modalVisible) {
+      // Only animate close if the modal is currently showing
+      setIsClosing(true);
+      // Stop any in-flight animations before starting close
+      translateY.stopAnimation();
+      opacity.stopAnimation();
       Animated.parallel([
         Animated.timing(translateY, {
           toValue: SCREEN_HEIGHT,
@@ -50,9 +60,18 @@ export function BottomSheetMenu({ visible, onClose, title, children, backgroundC
           duration: 200,
           useNativeDriver: true,
         })
-      ]).start(() => {
+      ]).start(({ finished }) => {
+        // Always unmount the modal when animation completes or is interrupted
         setModalVisible(false);
+        setIsClosing(false);
       });
+      // Safety net: if animation callback never fires (e.g. interrupted by re-render),
+      // force-hide the modal after a generous timeout
+      const safetyTimer = setTimeout(() => {
+        setModalVisible(false);
+        setIsClosing(false);
+      }, 400);
+      return () => clearTimeout(safetyTimer);
     }
   }, [visible]);
 
@@ -102,7 +121,7 @@ export function BottomSheetMenu({ visible, onClose, title, children, backgroundC
       supportedOrientations={['portrait', 'landscape', 'landscape-left', 'landscape-right']}
     >
       {/* Backdrop */}
-      <Animated.View style={[styles.backdrop, { opacity }]}>
+      <Animated.View style={[styles.backdrop, { opacity }]} pointerEvents={isClosing ? 'none' : 'auto'}>
         <Pressable style={StyleSheet.absoluteFill} onPress={onClose} />
       </Animated.View>
 

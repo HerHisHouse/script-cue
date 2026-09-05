@@ -140,6 +140,7 @@ export default function RecordingsScreen() {
   const router = useRouter();
   const { user } = useAuth();
   const { colors, isDark } = useTheme();
+  const params = useLocalSearchParams<{ pendingJobId?: string }>();
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<Recording | null>(null);
   const [deleting, setDeleting] = useState(false);
@@ -587,6 +588,15 @@ export default function RecordingsScreen() {
     checkPendingJobs();
   }, [user?.id, loadRecordings, checkPendingJobs]);
 
+  // Si venimos de casting/presentación con un jobId ya confirmado, mostramos el banner de inmediato
+  useEffect(() => {
+    if (params.pendingJobId) {
+      setProcessingJobs(prev =>
+        prev.includes(params.pendingJobId!) ? prev : [...prev, params.pendingJobId!]
+      );
+    }
+  }, [params.pendingJobId]);
+
   const downloadLargeCastingVideo = async (jobId: string) => {
     try {
       const castingServerUrl = process.env.EXPO_PUBLIC_CASTING_SERVER_URL || 'https://script-cue-merge-server-production.up.railway.app';
@@ -643,7 +653,7 @@ export default function RecordingsScreen() {
             }, 300);
 
             const isTeleprompter = job.job_id?.startsWith('teleprompter_');
-            setCompletedBanner(isTeleprompter ? '¡Tu vídeo de teleprompter está listo!' : '¡Tu selftape está listo!');
+            setCompletedBanner(isTeleprompter ? '¡Tu vídeo está listo!' : '¡Tu selftape está listo!');
             setTimeout(() => setCompletedBanner(null), 5000);
           }
           if (job.status === 'completed_local') {
@@ -711,7 +721,7 @@ export default function RecordingsScreen() {
           }, 300);
 
           const isTeleprompter = job.job_id?.startsWith('teleprompter_');
-          setCompletedBanner(isTeleprompter ? '¡Tu vídeo de teleprompter está listo!' : '¡Tu selftape está listo!');
+          setCompletedBanner(isTeleprompter ? '¡Tu vídeo está listo!' : '¡Tu selftape está listo!');
           setTimeout(() => setCompletedBanner(null), 5000);
         }
         if (job.status === 'completed_local') {
@@ -2110,6 +2120,7 @@ export default function RecordingsScreen() {
       const rawPath = (recording.audio_url || (recording as any).storage_path || '').trim();
       const isAbsoluteLocal = rawPath.startsWith('file://');
       const isLocalPrefix = rawPath.startsWith('local/');
+      const isVideo = recording.type === 'video';
       const settings = await getSettings();
 
       let shareUri: string;
@@ -2125,7 +2136,7 @@ export default function RecordingsScreen() {
       } else {
         // Path de Supabase Storage o prefijo 'local/'
         const baseDir = FileSystem.documentDirectory ?? '';
-        const filename = rawPath.split('/').pop() ?? 'recording.m4a';
+        const filename = rawPath.split('/').pop() ?? (isVideo ? 'recording.mp4' : 'recording.m4a');
         const localUri = baseDir + filename;
 
         let info = await FileSystem.getInfoAsync(localUri);
@@ -2138,7 +2149,15 @@ export default function RecordingsScreen() {
             .from('recordings')
             .createSignedUrl(rawPath, 60 * 60);
           if (error || !data?.signedUrl) {
-            throw new Error('Archivo no disponible para descargar');
+            // El archivo en la nube no es accesible directamente para compartir.
+            // Informar al usuario que debe descargarlo primero con el botón Offline.
+            Alert.alert(
+              isVideo ? 'Descarga requerida' : 'Error al compartir',
+              isVideo
+                ? 'Los vídeos almacenados en la nube deben descargarse al dispositivo antes de compartirlos.\n\nUsa el botón "Offline (Descarga en el terminal)" del menú y, una vez descargado, podrás compartirlo.'
+                : 'No se pudo acceder al archivo. Inténtalo de nuevo o descárgalo primero con el botón "Offline".'
+            );
+            return;
           }
           const dl = await FileSystem.downloadAsync(data.signedUrl, localUri);
           info = await FileSystem.getInfoAsync(dl.uri);
@@ -2150,11 +2169,18 @@ export default function RecordingsScreen() {
       }
 
       const shareTitle = recording.title ?? 'Grabación';
-      const shareOptions: any = {
-        dialogTitle: shareTitle,
-        mimeType: 'audio/m4a',
-        UTI: Platform.OS === 'ios' ? 'public.mpeg-4' : undefined,
-      };
+      // Usar mimeType y UTI correctos según el tipo de grabación
+      const shareOptions: any = isVideo
+        ? {
+            dialogTitle: shareTitle,
+            mimeType: 'video/mp4',
+            UTI: Platform.OS === 'ios' ? 'public.mpeg-4' : undefined,
+          }
+        : {
+            dialogTitle: shareTitle,
+            mimeType: 'audio/m4a',
+            UTI: Platform.OS === 'ios' ? 'public.mpeg-4-audio' : undefined,
+          };
 
       if (canShare) {
         await Sharing.shareAsync(shareUri, shareOptions);
@@ -2668,7 +2694,7 @@ export default function RecordingsScreen() {
               {processingJobs.some(id => id.startsWith('teleprompter_')) && processingJobs.some(id => id.startsWith('casting_') || id.startsWith('job_'))
                 ? 'Procesando tus vídeos en segundo plano...'
                 : processingJobs.some(id => id.startsWith('teleprompter_'))
-                ? 'Procesando tu vídeo de teleprompter en segundo plano...'
+                ? 'Procesando tu vídeo en segundo plano...'
                 : 'Procesando tu selftape en segundo plano...'
               }
             </Text>
