@@ -777,7 +777,7 @@ export default function IndexScreen() {
         ) : (
           <FlatList
             style={{ flex: 1 }}
-            contentContainerStyle={viewMode === 'grid' ? { paddingVertical: 20, paddingBottom: 100 + bottomInset } : { ...styles.list, paddingBottom: 100 + bottomInset }}
+            contentContainerStyle={viewMode === 'grid' ? { paddingVertical: 20, paddingBottom: 200 + bottomInset } : { ...styles.list, paddingBottom: 200 + bottomInset }}
             columnWrapperStyle={viewMode === 'grid' && gridColumns > 1 ? { paddingHorizontal: gridPadding, justifyContent: 'space-between', marginBottom: gridGap } : undefined}
             data={filteredScripts}
             keyExtractor={(item) => item.id}

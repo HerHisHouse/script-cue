@@ -324,7 +324,7 @@ export default function SettingsScreen() {
       <View style={{ flex: 1, backgroundColor: colors.background }}>
         <ScreenHeader title="Ajustes" />
 
-        <ScrollView style={styles.content} contentContainerStyle={{ paddingHorizontal: 12, paddingVertical: 20, paddingBottom: 100 + insets.bottom }}>
+        <ScrollView style={styles.content} contentContainerStyle={{ paddingHorizontal: 12, paddingVertical: 20, paddingBottom: 200 + insets.bottom }}>
           <ConfirmDialog
             visible={showSignOutConfirm}
             title="¿Cerrar sesión?"

@@ -619,7 +619,7 @@ export default function ProjectsScreen() {
           data={filteredItems}
           renderItem={renderItem}
           keyExtractor={(item) => `${item.type} -${item.data.id} `}
-          contentContainerStyle={[styles.listContent, { paddingBottom: 100 + insets.bottom }, filteredItems.length === 0 && { flexGrow: 1 }]}
+          contentContainerStyle={[styles.listContent, { paddingBottom: 200 + insets.bottom }, filteredItems.length === 0 && { flexGrow: 1 }]}
           numColumns={viewMode === 'grid' ? 2 : 1}
           key={viewMode} // Force re-render on mode change
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); loadContent(); }} />}

@@ -2900,7 +2900,7 @@ export default function RecordingsScreen() {
                 data={recordings}
                 renderItem={({ item }) => <RecordingCard item={item} />}
                 keyExtractor={(item) => item.id}
-                contentContainerStyle={viewMode === 'grid' ? { paddingVertical: rp(20), paddingBottom: 100 + insets.bottom } : { ...styles.list, paddingBottom: 100 + insets.bottom }}
+                contentContainerStyle={viewMode === 'grid' ? { paddingVertical: rp(20), paddingBottom: 200 + insets.bottom } : { ...styles.list, paddingBottom: 200 + insets.bottom }}
                 numColumns={viewMode === 'grid' ? gridColumns : 1}
                 key={viewMode === 'grid' ? `grid-${gridColumns}` : 'list'}
                 columnWrapperStyle={viewMode === 'grid' && gridColumns > 1 ? { paddingHorizontal: gridPadding, justifyContent: 'space-between', marginBottom: gridGap } : undefined}

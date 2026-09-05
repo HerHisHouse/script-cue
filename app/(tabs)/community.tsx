@@ -234,7 +234,7 @@ export default function CommunityScreen() {
         <View style={{ flex: 1, backgroundColor: colors.background }}>
           <ScreenHeader title="Comunidad" />
           <ScrollView
-            contentContainerStyle={[styles.scrollContent, { paddingBottom: 120 + insets.bottom }]}
+            contentContainerStyle={[styles.scrollContent, { paddingBottom: 220 + insets.bottom }]}
             showsVerticalScrollIndicator={false}
           >
             {/* Header */}
@@ -288,7 +288,7 @@ export default function CommunityScreen() {
       <View style={{ flex: 1, backgroundColor: colors.background }}>
         <ScreenHeader title="Comunidad" />
         <ScrollView
-          contentContainerStyle={[styles.scrollContent, { paddingBottom: 120 + insets.bottom }]}
+          contentContainerStyle={[styles.scrollContent, { paddingBottom: 220 + insets.bottom }]}
           showsVerticalScrollIndicator={false}
           keyboardShouldPersistTaps="handled"
         >

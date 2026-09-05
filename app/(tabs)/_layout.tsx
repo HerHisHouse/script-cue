@@ -1,18 +1,25 @@
 import { Tabs } from 'expo-router';
 import { FileText, Mic, Settings, Folder, Users } from 'lucide-react-native';
 import { useTheme } from '@/contexts/ThemeContext';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Platform, View } from 'react-native';
+import { Platform, View, StyleSheet, useWindowDimensions } from 'react-native';
+import { BlurView } from 'expo-blur';
 import { rf, rp } from '@/utils/responsive';
 
 export default function TabLayout() {
-  const { colors } = useTheme();
-  const insets = useSafeAreaInsets();
+  const { isDark } = useTheme();
+  // @react-navigation/bottom-tabs calcula su propio `width` internamente, que puede
+  // pisar un `left`/`right` combinado — se fija un width explícito para que el
+  // panel flotante quede realmente contenido dentro del margen de 16 en ambos lados.
+  const { width: screenWidth } = useWindowDimensions();
+  const floatingMargin = 16;
 
-  // Elevación vertical de los elementos para evitar conflicto con la barra de navegación de Android
-  const verticalLift = Platform.OS === 'android' ? 5 : 0;
-  const bottomInset = insets.bottom || 0;
-  const baseHeight = Platform.OS === 'ios' ? 49 : 56; // Altura base recomendada por plataforma
+  // Misma paleta "floating glass" que components/FixedFooter.tsx (variant="floating"),
+  // usada primero en la pantalla Resumen y ahora en la tab bar principal.
+  const activeColor = isDark ? '#FFFFFF' : '#2A1B47';
+  const inactiveColor = isDark ? 'rgba(255,255,255,0.55)' : 'rgba(42,27,71,0.55)';
+  const iconActiveBg = isDark ? 'rgba(255,255,255,0.18)' : 'rgba(104,58,121,0.15)';
+  const borderColor = isDark ? 'rgba(255,255,255,0.4)' : 'rgba(104,58,121,0.25)';
+  const overlayTint = isDark ? 'rgba(128,128,128,0.25)' : 'rgba(235,230,245,0.22)';
 
   // Component for tab icon with background highlight when focused
   const TabIcon = ({
@@ -33,14 +40,9 @@ export default function TabLayout() {
         width: 50,
         height: 34,
         borderRadius: 17,
-        backgroundColor: focused ? `${colors.primary}15` : 'transparent',
+        backgroundColor: focused ? iconActiveBg : 'transparent',
         justifyContent: 'center',
         alignItems: 'center',
-        shadowColor: focused ? colors.primary : 'transparent',
-        shadowOffset: { width: 0, height: 2 },
-        shadowOpacity: focused ? 0.2 : 0,
-        shadowRadius: 4,
-        elevation: focused ? 3 : 0,
       }}
     >
       <Icon size={size} color={color} />
@@ -64,17 +66,36 @@ export default function TabLayout() {
     <Tabs
       screenOptions={{
         headerShown: false,
-        tabBarActiveTintColor: colors.primary,
-        tabBarInactiveTintColor: colors.textSecondary,
+        tabBarActiveTintColor: activeColor,
+        tabBarInactiveTintColor: inactiveColor,
         tabBarStyle: {
-          backgroundColor: colors.surface,
-          borderTopWidth: 1,
-          borderTopColor: colors.border,
-          // Altura ajustada para no reducir la viewarea en iOS
-          height: Platform.OS === 'android' ? baseHeight + 10 : baseHeight + bottomInset + 10,
-          paddingBottom: Platform.OS === 'android' ? 4 : bottomInset + 4,
-          paddingTop: rp(8),
+          position: 'absolute',
+          left: floatingMargin,
+          width: screenWidth - floatingMargin * 2,
+          bottom: 8,
+          height: rp(74),
+          borderRadius: 28,
+          borderWidth: 1,
+          borderColor,
+          backgroundColor: 'transparent',
+          shadowColor: '#000',
+          shadowOffset: { width: 0, height: 8 },
+          shadowOpacity: 0.3,
+          shadowRadius: 16,
+          elevation: 8,
         },
+        // Blur real (deja transparentar el contenido desenfocado detrás) + un velo de
+        // color muy sutil encima, en vez de un backgroundColor opaco sobre el blur.
+        tabBarBackground: () => (
+          <View style={[StyleSheet.absoluteFill, styles.backgroundClip]}>
+            <BlurView
+              intensity={isDark ? 50 : 65}
+              tint={isDark ? 'dark' : 'light'}
+              style={StyleSheet.absoluteFill}
+            />
+            <View style={[StyleSheet.absoluteFill, { backgroundColor: overlayTint }]} />
+          </View>
+        ),
         tabBarItemStyle: {
           marginTop: Platform.OS === 'android' ? 0 : 4, // Adjusted for better centering
         },
@@ -133,3 +154,10 @@ export default function TabLayout() {
     </Tabs>
   );
 }
+
+const styles = StyleSheet.create({
+  backgroundClip: {
+    borderRadius: 28,
+    overflow: 'hidden',
+  },
+});
