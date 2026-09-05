@@ -8,60 +8,93 @@ interface ModeGlassCardProps {
   title: string;
   description: string;
   onPress: () => void;
+  dark?: boolean;
 }
 
-export function ModeGlassCard({ icon, title, description, onPress }: ModeGlassCardProps) {
+export function ModeGlassCard({ icon, title, description, onPress, dark = true }: ModeGlassCardProps) {
+  const theme = dark ? darkPalette : lightPalette;
   return (
-    <Pressable
-      onPress={onPress}
-      style={({ pressed }) => [styles.wrapper, pressed && styles.pressed]}
-    >
-      <BlurView intensity={40} tint="dark" style={styles.blur}>
-        <View style={styles.iconCircle}>{icon}</View>
-        <Text style={styles.title}>{title}</Text>
-        <Text style={styles.description}>{description}</Text>
-      </BlurView>
-    </Pressable>
+    <View style={[styles.shadowWrapper, dark && styles.noShadow]}>
+      <Pressable
+        onPress={onPress}
+        style={({ pressed }) => [styles.wrapper, { borderColor: theme.border }, pressed && styles.pressed]}
+      >
+        <BlurView intensity={40} tint={dark ? 'dark' : 'light'} style={[styles.blur, { backgroundColor: theme.blurBg }]}>
+          <View style={[styles.iconCircle, { backgroundColor: theme.iconBg }]}>{icon}</View>
+          <Text style={[styles.title, { color: theme.title }]}>{title}</Text>
+          <Text style={[styles.description, { color: theme.description }]} numberOfLines={2}>{description}</Text>
+        </BlurView>
+      </Pressable>
+    </View>
   );
 }
 
+const darkPalette = {
+  border: 'rgba(167,139,250,0.25)',
+  blurBg: 'rgba(124,106,247,0.08)',
+  iconBg: 'rgba(167,139,250,0.15)',
+  title: '#ffffff',
+  description: '#a0a0c0',
+};
+
+const lightPalette = {
+  border: 'rgba(104,58,121,0.2)',
+  blurBg: 'rgba(255,255,255,0.45)',
+  iconBg: 'rgba(104,58,121,0.12)',
+  title: '#2A1B47',
+  description: '#6B5B7A',
+};
+
 const styles = StyleSheet.create({
-  wrapper: {
+  // Wrapper exterior: lleva la sombra (solo modo claro). No puede tener
+  // overflow:hidden, porque RN no renderiza shadow*/elevation en un View
+  // que recorta su contenido.
+  shadowWrapper: {
     flex: 1,
     minWidth: '47%',
+    minHeight: rp(154),
+    borderRadius: 20,
+    shadowColor: '#4a3f8f',
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.18,
+    shadowRadius: 14,
+    elevation: 6,
+  },
+  noShadow: {
+    shadowOpacity: 0,
+    elevation: 0,
+  },
+  wrapper: {
+    flex: 1,
     borderRadius: 20,
     overflow: 'hidden',
     borderWidth: 1,
-    borderColor: 'rgba(167,139,250,0.25)',
   },
   pressed: {
     opacity: 0.75,
     transform: [{ scale: 0.98 }],
   },
   blur: {
+    flex: 1,
     paddingVertical: rp(20),
     paddingHorizontal: rp(14),
     alignItems: 'flex-start',
-    backgroundColor: 'rgba(124,106,247,0.08)',
   },
   iconCircle: {
     width: 40,
     height: 40,
     borderRadius: 20,
-    backgroundColor: 'rgba(167,139,250,0.15)',
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: 12,
   },
   title: {
-    color: '#ffffff',
     fontSize: rf(15),
     fontWeight: '700',
     letterSpacing: 0.3,
     marginBottom: 4,
   },
   description: {
-    color: '#a0a0c0',
     fontSize: rf(12.5),
     lineHeight: 17,
   },
