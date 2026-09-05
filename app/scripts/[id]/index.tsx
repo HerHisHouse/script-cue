@@ -7,6 +7,7 @@ import {
   ActivityIndicator,
   Alert,
   ScrollView,
+  ImageBackground,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter, useLocalSearchParams, Link } from 'expo-router';
@@ -14,6 +15,7 @@ import { ArrowLeft, Play, Users, Trash2, Brain, Car, Clapperboard, GraduationCap
 import { supabase } from '@/utils/supabase';
 import { Script, Character } from '@/types/database';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
+import { ModeGlassCard } from '@/components/ModeGlassCard';
 import { useTheme } from '@/contexts/ThemeContext';
 import { useAuth } from '@/contexts/AuthContext';
 import { deleteScript } from '@/utils/scripts';
@@ -269,7 +271,11 @@ export default function ScriptDetailScreen() {
   const characterCountDisplay = charactersLoadError ? '-' : String(characters.length);
 
   return (
-    <View style={[styles.container, { backgroundColor: colors.background }]}>
+    <ImageBackground
+      source={require('@/assets/images/ui-dark-bg.png')}
+      resizeMode="cover"
+      style={styles.container}
+    >
       <View style={[styles.header, { backgroundColor: colors.surface, borderBottomColor: colors.border, paddingTop: insets.top + 10, paddingBottom: 16 }]}>
         <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
           <ArrowLeft size={24} color={colors.text} />
@@ -396,69 +402,59 @@ export default function ScriptDetailScreen() {
           Elige entre los seis modos disponibles
         </Text>
 
-        <View style={[styles.actionsRow, { marginTop: 'auto' }]}>
-          <View style={styles.actionsColumn}>
-            {/* 1. Modo Estudio */}
-            <TouchableOpacity
-              style={styles.actionButton}
-              onPress={() => router.push(`/scripts/${id}/studio-v2`)}
-            >
-              <Play size={24} color="#FFFFFF" />
-              <Text style={styles.actionText}>ESTUDIO</Text>
-            </TouchableOpacity>
+        <View style={[styles.modesGrid, { marginTop: 'auto' }]}>
+          {/* 1. Modo Estudio */}
+          <ModeGlassCard
+            icon={<Play size={22} color="#FFFFFF" />}
+            title="Estudio"
+            description="Ensaya o graba con réplica"
+            onPress={() => router.push(`/scripts/${id}/studio-v2`)}
+          />
 
-            {/* 2. Modo Análisis */}
-            <TouchableOpacity
-              style={styles.actionButton}
-              onPress={() => router.push(`/scripts/${id}/analysis`)}
-            >
-              <FileText size={24} color="#FFFFFF" />
-              <Text style={styles.actionText}>ANÁLISIS</Text>
-            </TouchableOpacity>
+          {/* 2. Modo Escena */}
+          <ModeGlassCard
+            icon={<GraduationCap size={22} color="#FFFFFF" />}
+            title="Escena"
+            description="Laboratorio escénico"
+            onPress={() => router.push(`/scripts/${id}/coach`)}
+          />
 
-            {/* 3. Modo Memoria */}
-            <TouchableOpacity
-              style={styles.actionButton}
-              onPress={() => router.push(`/scripts/${id}/memory`)}
-            >
-              <Brain size={24} color="#FFFFFF" />
-              <Text style={styles.actionText}>MEMORIA</Text>
-            </TouchableOpacity>
-          </View>
+          {/* 3. Modo Análisis */}
+          <ModeGlassCard
+            icon={<FileText size={22} color="#FFFFFF" />}
+            title="Análisis"
+            description="Descubre subtexto y objetivos del personaje"
+            onPress={() => router.push(`/scripts/${id}/analysis`)}
+          />
 
-          <View style={styles.actionsColumn}>
-            {/* 4. Modo Escena */}
-            <TouchableOpacity
-              style={styles.actionButton}
-              onPress={() => router.push(`/scripts/${id}/coach`)}
-            >
-              <GraduationCap size={24} color="#FFFFFF" />
-              <Text style={styles.actionText}>ESCENA</Text>
-            </TouchableOpacity>
+          {/* 4. Modo Coche */}
+          <ModeGlassCard
+            icon={<Car size={22} color="#FFFFFF" />}
+            title="Coche"
+            description="Escucha la escena sin mirar la pantalla"
+            onPress={() => router.push(`/scripts/${id}/car`)}
+          />
 
-            {/* 5. Modo Coche */}
-            <TouchableOpacity
-              style={styles.actionButton}
-              onPress={() => router.push(`/scripts/${id}/car`)}
-            >
-              <Car size={24} color="#FFFFFF" />
-              <Text style={styles.actionText}>COCHE</Text>
-            </TouchableOpacity>
+          {/* 5. Modo Memoria */}
+          <ModeGlassCard
+            icon={<Brain size={22} color="#FFFFFF" />}
+            title="Memoria"
+            description="Juegos de memorización interactivos"
+            onPress={() => router.push(`/scripts/${id}/memory`)}
+          />
 
-            {/* 6. Modo Casting */}
-            <TouchableOpacity
-              style={styles.actionButton}
-              onPress={() => router.push(`/scripts/${id}/casting`)}
-            >
-              <Clapperboard size={24} color="#FFFFFF" />
-              <Text style={styles.actionText}>CASTING</Text>
-            </TouchableOpacity>
-          </View>
+          {/* 6. Modo Casting */}
+          <ModeGlassCard
+            icon={<Clapperboard size={22} color="#FFFFFF" />}
+            title="Casting"
+            description="Graba tu self-tape con réplica"
+            onPress={() => router.push(`/scripts/${id}/casting`)}
+          />
         </View>
         <FixedFooterSpacer />
       </ScrollView>
       <FixedFooter />
-    </View>
+    </ImageBackground>
   );
 }
 
@@ -629,8 +625,9 @@ const styles = StyleSheet.create({
     fontSize: rf(16),
     fontWeight: '700',
   },
-  actionsRow: {
+  modesGrid: {
     flexDirection: 'row',
+    flexWrap: 'wrap',
     gap: 12,
     // el margen se aplica en el componente para empujar el menú al final
   },
@@ -716,29 +713,6 @@ const styles = StyleSheet.create({
     fontSize: rf(12),
     marginTop: 2,
   },
-  actionsColumn: {
-    flex: 1,
-    gap: 12,
-  },
-  actionButton: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 8,
-    paddingVertical: rp(16),
-    paddingHorizontal: rp(12),
-    borderRadius: 12,
-    backgroundColor: '#683a79',
-    shadowColor: '#683a79',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-    elevation: 4,
-    marginBottom: 12,
-    position: 'relative',
-    minHeight: rp(56),
-  },
   infoIcon: {
     position: 'absolute',
     top: 8,
@@ -762,12 +736,6 @@ const styles = StyleSheet.create({
     borderWidth: 2,
     shadowOpacity: 0,
     elevation: 0,
-  },
-  actionText: {
-    fontSize: rf(15),
-    fontWeight: '700',
-    color: '#FFFFFF',
-    textAlign: 'center',
   },
   actionTextSmall: {
     fontSize: rf(14),
