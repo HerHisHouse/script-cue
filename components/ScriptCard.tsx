@@ -33,6 +33,8 @@ export function ScriptCard({ script, onPress, onLongPress, selected = false, sho
   const isGrid = variant === 'grid';
   const menuOpacity = React.useRef(new Animated.Value(0)).current;
   const menuScale = React.useRef(new Animated.Value(0.98)).current;
+  const glassTitleColor = isDark ? '#ffffff' : '#2a2447';
+  const glassDateColor = isDark ? '#a0a0c0' : '#5c5678';
 
   React.useEffect(() => {
     onMenuOpenChange?.(showMenu);
@@ -48,11 +50,17 @@ export function ScriptCard({ script, onPress, onLongPress, selected = false, sho
       style={[
         styles.card,
         {
-          backgroundColor: selected ? colors.input : colors.surface,
-          borderColor: selected ? colors.primary : 'transparent',
-          borderWidth: selected ? 2 : 0,
+          backgroundColor: selected ? colors.input : (isDark ? 'rgba(124,106,247,0.08)' : 'rgba(255,255,255,0.55)'),
+          borderColor: selected ? colors.primary : (isDark ? 'rgba(167,139,250,0.25)' : 'rgba(124,106,247,0.15)'),
+          borderWidth: selected ? 2 : 1,
           padding: isGrid ? 12 : 16,
-          shadowOpacity: isGrid ? 0.04 : 0.05,
+          ...(!isDark ? {
+            shadowColor: '#1a1625',
+            shadowOffset: { width: 0, height: 6 },
+            shadowOpacity: 0.18,
+            shadowRadius: 12,
+            elevation: 5,
+          } : null),
         },
         isGrid ? { flexDirection: 'column', alignItems: 'center', height: 145, justifyContent: 'center' } : null,
         showMenu ? { zIndex: 1002 } : null,
@@ -85,7 +93,7 @@ export function ScriptCard({ script, onPress, onLongPress, selected = false, sho
             style={[
               styles.title,
               {
-                color: colors.text,
+                color: glassTitleColor,
                 fontSize: rf(14),
                 lineHeight: 18,
                 letterSpacing: 0.2,
@@ -99,7 +107,7 @@ export function ScriptCard({ script, onPress, onLongPress, selected = false, sho
             {script.title || '(Sin título)'}
           </Text>
           <Text
-            style={{ color: colors.textSecondary, fontSize: rf(11), lineHeight: 14 }}
+            style={{ color: glassDateColor, fontSize: rf(11), lineHeight: 14 }}
             numberOfLines={1}
           >
             {script.created_at ? new Date(script.created_at).toLocaleDateString('es-ES', {
@@ -114,7 +122,7 @@ export function ScriptCard({ script, onPress, onLongPress, selected = false, sho
             style={[
               styles.iconContainer,
               {
-                backgroundColor: colors.input,
+                backgroundColor: isDark ? 'rgba(167,139,250,0.15)' : 'rgba(124,106,247,0.12)',
                 width: 48,
                 height: 48,
                 borderRadius: 24,
@@ -128,7 +136,7 @@ export function ScriptCard({ script, onPress, onLongPress, selected = false, sho
             <Text
               style={[
                 styles.title,
-                { color: colors.text },
+                { color: glassTitleColor },
               ]}
               numberOfLines={2}
               ellipsizeMode="tail"
@@ -136,8 +144,8 @@ export function ScriptCard({ script, onPress, onLongPress, selected = false, sho
               {script.title || '(Sin título)'}
             </Text>
             <View style={styles.date}>
-              <Clock size={14} color={colors.textSecondary} />
-              <Text style={[styles.dateText, { color: colors.textSecondary }]} numberOfLines={1} ellipsizeMode="tail">
+              <Clock size={14} color={glassDateColor} />
+              <Text style={[styles.dateText, { color: glassDateColor }]} numberOfLines={1} ellipsizeMode="tail">
                 {script.created_at ? new Date(script.created_at).toLocaleDateString('es-ES', {
                   day: 'numeric',
                   month: 'short',
@@ -234,16 +242,11 @@ export function ScriptCard({ script, onPress, onLongPress, selected = false, sho
 const styles = StyleSheet.create({
   card: {
     flexDirection: 'row',
-    borderRadius: 12,
+    borderRadius: 20,
     padding: rp(16),
     marginBottom: rp(12),
     position: 'relative',
     overflow: 'visible',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
-    shadowRadius: 8,
-    elevation: 2,
   },
   checkbox: {
     position: 'absolute',

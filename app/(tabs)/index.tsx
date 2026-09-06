@@ -499,6 +499,7 @@ export default function IndexScreen() {
       )}
       <ScreenHeader
         title={scriptSelectionMode ? `${selectedScriptIds.size} seleccionados` : "Guiones"}
+        style={{ backgroundColor: 'transparent', borderBottomWidth: 0 }}
         onLayout={(e) => setHeaderHeight(e.nativeEvent.layout.height)}
         leftAction={
           scriptSelectionMode ? (
