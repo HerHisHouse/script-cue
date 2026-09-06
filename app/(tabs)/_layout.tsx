@@ -25,11 +25,11 @@ function FloatingTabBar({ state, descriptors, navigation }: BottomTabBarProps) {
   const inactive = isDark ? 'rgba(255,255,255,0.55)' : 'rgba(42,27,71,0.55)';
   const iconActiveBg = isDark ? 'rgba(255,255,255,0.18)' : 'rgba(104,58,121,0.15)';
   const borderColor = isDark ? 'rgba(255,255,255,0.4)' : 'rgba(104,58,121,0.25)';
-  const overlayTint = isDark ? 'rgba(128,128,128,0.25)' : 'rgba(235,230,245,0.22)';
+  const overlayTint = isDark ? 'rgba(124,106,247,0.14)' : 'rgba(235,230,245,0.22)';
 
   return (
     <View style={[styles.floatingWrapper, { borderColor }]}>
-      <BlurView intensity={isDark ? 50 : 65} tint={isDark ? 'dark' : 'light'} style={StyleSheet.absoluteFill} />
+      <BlurView intensity={isDark ? 55 : 65} tint={isDark ? 'dark' : 'light'} style={StyleSheet.absoluteFill} />
       <View style={[StyleSheet.absoluteFill, { backgroundColor: overlayTint }]} />
       <View style={styles.floatingContent}>
         {state.routes.map((route, index) => {

@@ -574,7 +574,14 @@ export default function IndexScreen() {
               accessibilityRole="button"
               accessibilityLabel="Añadir guion"
               accessibilityHint={isAtLimit ? "Has alcanzado el límite de la versión beta" : "Abre el menú para importar o escanear"}
-              style={[styles.addButton, { backgroundColor: isAtLimit ? colors.surface : colors.primary }]}
+              style={[
+                styles.addButton,
+                isAtLimit
+                  ? { backgroundColor: colors.surface }
+                  : isDark
+                    ? { backgroundColor: 'rgba(124,106,247,0.14)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.2)' }
+                    : { backgroundColor: colors.primary },
+              ]}
               onPress={() => {
                 if (isAtLimit) {
                   Alert.alert(

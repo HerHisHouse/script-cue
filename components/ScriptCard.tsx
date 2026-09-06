@@ -78,7 +78,7 @@ export function ScriptCard({ script, onPress, onLongPress, selected = false, sho
             style={[
               styles.iconContainer,
               {
-                backgroundColor: colors.primary,
+                backgroundColor: isDark ? 'rgba(167,139,250,0.15)' : colors.primary,
                 width: 52,
                 height: 52,
                 borderRadius: 10,
@@ -130,7 +130,7 @@ export function ScriptCard({ script, onPress, onLongPress, selected = false, sho
               },
             ]}
           >
-            <FileText size={24} color={colors.primary} />
+            <FileText size={24} color={isDark ? '#FFFFFF' : colors.primary} />
           </View>
           <View style={[styles.content]}>
             <Text

@@ -119,13 +119,16 @@ export function BottomSheetMenu({ visible, onClose, title, children, backgroundC
   // Velo de marca (morado), no gris — y más intenso que en la tab bar porque aquí
   // el blur no tiene un degradado morado detrás (Guiones/Proyectos/Grabaciones usan
   // un fondo plano, ver nota en el componente), así que necesita más "punch" propio.
-  const glassOverlayTint = isDark ? 'rgba(124,106,247,0.14)' : 'rgba(124,106,247,0.10)';
-  const glassTitleColor = isDark ? '#FFFFFF' : '#2A1B47';
+  // En claro, un velo semitransparente morado no basta: el blur sigue mostrando el
+  // scrim oscurecido de detrás y el conjunto sale gris. Se sube a un blanco casi
+  // sólido para que domine sobre lo que el blur capte, en vez de depender del blur.
+  const glassOverlayTint = isDark ? 'rgba(124,106,247,0.14)' : 'rgba(255,255,255,0.88)';
+  const glassTitleColor = isDark ? '#FFFFFF' : '#000000';
   const glassHandleColor = isDark ? 'rgba(255,255,255,0.35)' : 'rgba(42,27,71,0.35)';
   // El scrim al 60% negro oscurecía todo lo que el blur iba a mostrar, dejándolo plano.
   // Se aligera solo en la variante glass; las pantallas con backgroundColor sólido propio
   // (casting.tsx, car.tsx) conservan el scrim original de siempre.
-  const backdropColor = useGlass ? 'rgba(0,0,0,0.32)' : 'rgba(0,0,0,0.6)';
+  const backdropColor = useGlass ? (isDark ? 'rgba(0,0,0,0.32)' : 'rgba(0,0,0,0.12)') : 'rgba(0,0,0,0.6)';
 
   return (
     <Modal
@@ -150,7 +153,7 @@ export function BottomSheetMenu({ visible, onClose, title, children, backgroundC
         <View style={[styles.clip, { paddingBottom: Math.max(insets.bottom, 20) }]}>
           {useGlass ? (
             <>
-              <BlurView intensity={isDark ? 55 : 50} tint={isDark ? 'dark' : 'light'} style={StyleSheet.absoluteFill} />
+              <BlurView intensity={isDark ? 55 : 30} tint={isDark ? 'dark' : 'light'} style={StyleSheet.absoluteFill} />
               <View style={[StyleSheet.absoluteFill, { backgroundColor: glassOverlayTint }]} />
             </>
           ) : (
