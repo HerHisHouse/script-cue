@@ -188,12 +188,19 @@ export default function ReviewScreen() {
       const charId = editSelectedChar ? editSelectedChar.id : 'action-card';
 
       const { error } = await supabase
-        .from('lines').update({ 
+        .from('lines').update({
           content: editText,
           character_name: charName
         }).eq('id', editingLine.id);
       if (error) throw error;
-      
+
+      // El texto cambió: invalidar el audio TTS cacheado para esta línea, si no
+      // quedaría una fila con el hash antiguo que nunca se refresca (ver migración
+      // 20260906120000_add_tts_cache_update_policy.sql para la causa raíz completa).
+      if (editText !== editingLine.text) {
+        await invalidateCacheForLine(editingLine.id);
+      }
+
       setLines(prev => prev.map(l =>
         l.id === editingLine.id
           ? { 

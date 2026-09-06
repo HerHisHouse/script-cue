@@ -125,20 +125,17 @@ export async function getCachedAudio(
     textHash: string
 ): Promise<string | null> {
     try {
-        const query = supabase
+        let query = supabase
             .from('tts_cache')
             .select('*')
             .eq('text_hash', textHash)
-            .eq('provider', provider)
+            .eq('provider', provider);
+
+        query = voiceId ? query.eq('voice_id', voiceId) : query.is('voice_id', null);
+
+        const { data: results, error } = await query
+            .order('created_at', { ascending: false })
             .limit(1);
-
-        if (voiceId) {
-            query.eq('voice_id', voiceId);
-        } else {
-            query.is('voice_id', null);
-        }
-
-        const { data: results, error } = await query;
 
         if (error || !results || results.length === 0) return null;
         const data = results[0];
@@ -326,7 +323,7 @@ export async function generateAndCacheAudio(
         const storagePath = `${userId}/${scriptId}/${lineId}_${provider}_${emotion}.mp3`;
         await uploadAudioToStorage(storagePath, arrayBuffer, userId);
 
-        await supabase.from('tts_cache').upsert({
+        const { error: upsertError } = await supabase.from('tts_cache').upsert({
             script_id: scriptId,
             line_id: lineId,
             character_name: characterName,
@@ -336,6 +333,13 @@ export async function generateAndCacheAudio(
             text_hash: textHash,
             file_size_bytes: arrayBuffer.byteLength,
         }, { onConflict: 'line_id,provider,voice_id' });
+
+        if (upsertError) {
+            // Si esto fallara (p.ej. por RLS bloqueando el UPDATE de la rama de
+            // conflicto), la fila se quedaría con el text_hash antiguo para
+            // siempre y esta línea regeneraría audio en cada reproducción.
+            console.error(`[TTS] ❌ No se pudo guardar la entrada de caché para ${lineId} (${provider}):`, upsertError);
+        }
 
         const localPath = `${FileSystem.cacheDirectory}tts_${lineId}_${provider}_${emotion}.mp3`;
         await FileSystem.writeAsStringAsync(localPath, arrayBufferToBase64(arrayBuffer), { encoding: FileSystem.EncodingType.Base64 });
