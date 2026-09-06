@@ -1,5 +1,6 @@
 import React, { useRef, useEffect, useState } from 'react';
 import { View, Text, Pressable, Modal, StyleSheet, ScrollView, Animated, PanResponder, Dimensions } from 'react-native';
+import { BlurView } from 'expo-blur';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme } from '@/contexts/ThemeContext';
 
@@ -15,7 +16,7 @@ export interface BottomSheetMenuProps {
 const { height: SCREEN_HEIGHT } = Dimensions.get('window');
 
 export function BottomSheetMenu({ visible, onClose, title, children, backgroundColor, titleColor }: BottomSheetMenuProps) {
-  const { colors } = useTheme();
+  const { colors, isDark } = useTheme();
   const insets = useSafeAreaInsets();
   
   const [modalVisible, setModalVisible] = useState(visible);
@@ -107,10 +108,17 @@ export function BottomSheetMenu({ visible, onClose, title, children, backgroundC
 
   if (!modalVisible) return null;
 
+  // Sin backgroundColor explícito -> mismo efecto glass que la tab bar flotante
+  // (BlurView + velo de color sutil). Las pantallas que sí pasan un color propio
+  // (casting.tsx, car.tsx) mantienen su panel sólido intacto.
+  const useGlass = !backgroundColor;
   const bgColor = backgroundColor || colors.surface;
   const isHex = bgColor.startsWith('#');
   // Leve transparencia (90% de opacidad)
   const transparentBg = (isHex && bgColor.length === 7) ? `${bgColor}E6` : bgColor;
+  const glassOverlayTint = isDark ? 'rgba(128,128,128,0.25)' : 'rgba(235,230,245,0.22)';
+  const glassTitleColor = isDark ? '#FFFFFF' : '#2A1B47';
+  const glassHandleColor = isDark ? 'rgba(255,255,255,0.35)' : 'rgba(42,27,71,0.35)';
 
   return (
     <Modal
@@ -126,37 +134,46 @@ export function BottomSheetMenu({ visible, onClose, title, children, backgroundC
       </Animated.View>
 
       {/* Panel deslizable desde abajo */}
-      <Animated.View 
+      <Animated.View
         {...panResponder.panHandlers}
-        style={[styles.bottomSheet, {
-          backgroundColor: transparentBg,
-          paddingBottom: Math.max(insets.bottom, 20),
-          transform: [{ translateY }]
-        }]}
+        style={[styles.bottomSheet, { transform: [{ translateY }] }]}
       >
-        <View style={{ width: '100%' }}>
-          {/* Handle */}
-          <View style={styles.handle} />
-
-          {title && (
-            <Text style={[styles.title, { color: titleColor || colors.text }]}>
-              {title}
-            </Text>
+        {/* Recorta el fondo (blur o sólido) a las esquinas redondeadas, sin tocar
+            la sombra del contenedor exterior (overflow:hidden + shadow no combinan en iOS) */}
+        <View style={[styles.clip, { paddingBottom: Math.max(insets.bottom, 20) }]}>
+          {useGlass ? (
+            <>
+              <BlurView intensity={isDark ? 70 : 65} tint={isDark ? 'dark' : 'light'} style={StyleSheet.absoluteFill} />
+              <View style={[StyleSheet.absoluteFill, { backgroundColor: glassOverlayTint }]} />
+            </>
+          ) : (
+            <View style={[StyleSheet.absoluteFill, { backgroundColor: transparentBg }]} />
           )}
-        </View>
 
-        <ScrollView 
-          bounces={false} 
-          style={{ flexShrink: 1, width: '100%' }}
-          contentContainerStyle={styles.scrollContent}
-          showsVerticalScrollIndicator={true}
-          onScroll={(e) => {
-            scrollY.current = e.nativeEvent.contentOffset.y;
-          }}
-          scrollEventThrottle={16}
-        >
-          {children}
-        </ScrollView>
+          <View style={{ width: '100%' }}>
+            {/* Handle */}
+            <View style={[styles.handle, useGlass && { backgroundColor: glassHandleColor }]} />
+
+            {title && (
+              <Text style={[styles.title, { color: titleColor || (useGlass ? glassTitleColor : colors.text) }]}>
+                {title}
+              </Text>
+            )}
+          </View>
+
+          <ScrollView
+            bounces={false}
+            style={{ flexShrink: 1, width: '100%' }}
+            contentContainerStyle={styles.scrollContent}
+            showsVerticalScrollIndicator={true}
+            onScroll={(e) => {
+              scrollY.current = e.nativeEvent.contentOffset.y;
+            }}
+            scrollEventThrottle={16}
+          >
+            {children}
+          </ScrollView>
+        </View>
       </Animated.View>
     </Modal>
   );
@@ -173,15 +190,18 @@ const styles = StyleSheet.create({
     bottom: 0,
     left: 0,
     right: 0,
-    borderTopLeftRadius: 20,
-    borderTopRightRadius: 20,
-    paddingTop: 8,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: -3 },
     shadowOpacity: 0.3,
     shadowRadius: 10,
     elevation: 10,
     maxHeight: '80%', // To prevent it from taking the whole screen if there are many items
+  },
+  clip: {
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    paddingTop: 8,
+    overflow: 'hidden',
   },
   handle: {
     width: 36,
