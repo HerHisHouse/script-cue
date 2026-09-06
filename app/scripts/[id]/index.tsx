@@ -7,13 +7,15 @@ import {
   ActivityIndicator,
   Alert,
   ScrollView,
+  ImageBackground,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter, useLocalSearchParams, Link } from 'expo-router';
-import { ArrowLeft, Play, Users, Trash2, Brain, Car, Clapperboard, GraduationCap, User, ArrowLeftRight, FileText } from 'lucide-react-native';
+import { ArrowLeft, Play, Trash2, Brain, Car, Clapperboard, GraduationCap, ArrowLeftRight, FileText } from 'lucide-react-native';
 import { supabase } from '@/utils/supabase';
 import { Script, Character } from '@/types/database';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
+import { ModeGlassCard } from '@/components/ModeGlassCard';
 import { useTheme } from '@/contexts/ThemeContext';
 import { useAuth } from '@/contexts/AuthContext';
 import { deleteScript } from '@/utils/scripts';
@@ -26,7 +28,7 @@ import { OPENAI_VOICES, getElevenLabsVoices, getAzureVoices, HUME_VOICES } from 
 export default function ScriptDetailScreen() {
   const router = useRouter();
   const { id } = useLocalSearchParams();
-  const { colors } = useTheme();
+  const { colors, isDark } = useTheme();
   const { user } = useAuth();
   const insets = useSafeAreaInsets();
   const [script, setScript] = useState<Script | null>(null);
@@ -268,16 +270,27 @@ export default function ScriptDetailScreen() {
 
   const characterCountDisplay = charactersLoadError ? '-' : String(characters.length);
 
+  // Paleta "sobre imagen de fondo" para el nuevo diseño glass de esta pantalla
+  const fg = isDark ? '#FFFFFF' : '#2A1B47';
+  const fgSecondary = isDark ? 'rgba(255,255,255,0.6)' : '#3d3660';
+  const glassBg = isDark ? 'rgba(124,106,247,0.14)' : 'rgba(230,230,236,0.6)';
+  const glassBorder = isDark ? 'rgba(255,255,255,0.2)' : 'rgba(42,27,71,0.18)';
+  const badgeBg = isDark ? 'rgba(255,255,255,0.12)' : 'rgba(104,58,121,0.12)';
+
   return (
-    <View style={[styles.container, { backgroundColor: colors.background }]}>
-      <View style={[styles.header, { backgroundColor: colors.surface, borderBottomColor: colors.border, paddingTop: insets.top + 10, paddingBottom: 16 }]}>
-        <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
-          <ArrowLeft size={24} color={colors.text} />
+    <ImageBackground
+      source={isDark ? require('@/assets/images/ui-dark-bg.png') : require('@/assets/images/ui-light-bg.png')}
+      resizeMode="cover"
+      style={styles.container}
+    >
+      <View style={[styles.header, { backgroundColor: 'transparent', borderBottomWidth: 0, paddingTop: insets.top + 10, paddingBottom: 16 }]}>
+        <TouchableOpacity onPress={() => router.back()} style={[styles.backButton, { backgroundColor: glassBg, borderColor: glassBorder }]}>
+          <ArrowLeft size={24} color={fg} />
         </TouchableOpacity>
-        <Text style={[styles.headerTitle, { color: colors.text }]} numberOfLines={1}>
+        <Text style={[styles.headerTitle, { color: fg }]} numberOfLines={1}>
           Resumen
         </Text>
-        <TouchableOpacity onPress={handleDelete} style={styles.deleteButton} disabled={deleting}>
+        <TouchableOpacity onPress={handleDelete} style={[styles.deleteButton, { backgroundColor: glassBg, borderColor: glassBorder }]} disabled={deleting}>
           {deleting ? (
             <ActivityIndicator size="small" color={colors.error} />
           ) : (
@@ -299,32 +312,26 @@ export default function ScriptDetailScreen() {
 
       <ScrollView style={styles.content} contentContainerStyle={styles.contentContainer}>
         {/* Módulo unificado de información del guion */}
-        <View style={[styles.summaryCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+        <View style={styles.summaryCard}>
           {/* Título del guion */}
           <View style={styles.summaryTopRow}>
-            <View style={[styles.summaryBadgeLarge, { backgroundColor: colors.input }]}>
-              <Clapperboard size={22} color={colors.primary} />
+            <View style={[styles.summaryBadgeLarge, { backgroundColor: badgeBg }]}>
+              <Clapperboard size={22} color={fg} />
             </View>
-            <Text style={[styles.summaryTitle, { color: colors.text }]} numberOfLines={2}>
+            <Text style={[styles.summaryTitle, { color: fg }]} numberOfLines={2}>
               {script?.title || '-'}
             </Text>
           </View>
-
-          {/* Separador sutil */}
-          <View style={{ height: 1, backgroundColor: colors.border, marginVertical: 16, opacity: 0.3 }} />
 
           {/* Información en columnas */}
           <View style={styles.summaryColumns}>
             {/* Columna 1: Número de personajes */}
             <View style={styles.summaryColumn}>
               <View style={{ alignItems: 'center' }}>
-                <View style={[styles.summaryBadgeSmall, { backgroundColor: colors.input, marginBottom: 8 }]}>
-                  <Users size={16} color={colors.primary} />
-                </View>
-                <Text style={[styles.summaryColumnLabel, { color: colors.textSecondary }]}>
+                <Text style={[styles.summaryColumnLabel, { color: fgSecondary }]}>
                   Personajes
                 </Text>
-                <Text style={[styles.summaryColumnValue, { color: colors.text }]}>
+                <Text style={[styles.summaryColumnValue, { color: fg }]}>
                   {characterCountDisplay}
                 </Text>
               </View>
@@ -333,13 +340,10 @@ export default function ScriptDetailScreen() {
             {/* Columna 2: Tu personaje */}
             <View style={styles.summaryColumn}>
               <View style={{ alignItems: 'center' }}>
-                <View style={[styles.summaryBadgeSmall, { backgroundColor: colors.input, marginBottom: 8 }]}>
-                  <User size={16} color={colors.primary} />
-                </View>
-                <Text style={[styles.summaryColumnLabel, { color: colors.textSecondary }]}>
+                <Text style={[styles.summaryColumnLabel, { color: fgSecondary }]}>
                   Tu personaje
                 </Text>
-                <Text style={[styles.summaryColumnValue, { color: colors.text }]} numberOfLines={1}>
+                <Text style={[styles.summaryColumnValue, { color: fg }]} numberOfLines={1}>
                   {userCharacter?.name || '-'}
                 </Text>
               </View>
@@ -348,41 +352,26 @@ export default function ScriptDetailScreen() {
 
           {/* Resto de personajes (si existen) */}
           {((characters || []).filter((c) => !c.is_user_character).length > 0) && (
-            <>
-              <View style={{ height: 1, backgroundColor: colors.border, marginVertical: 16, opacity: 0.3 }} />
-              <View style={{ alignItems: 'center' }}>
-                <Text style={[styles.summaryColumnLabel, { color: colors.textSecondary, marginBottom: 8 }]}>
-                  Otros personajes
+            <View style={{ alignItems: 'center', marginTop: 8 }}>
+              <Text style={[styles.summaryColumnLabel, { color: fgSecondary }]}>
+                Otros personajes
+              </Text>
+              {(characters || []).filter((c) => !c.is_user_character).map((c) => (
+                <Text
+                  key={c.id}
+                  style={{
+                    color: fg,
+                    fontSize: rf(13),
+                    marginTop: 2,
+                    textAlign: 'center'
+                  }}
+                  numberOfLines={1}
+                >
+                  {(c.name || '-')} · {getCharacterVoiceText(c)}
                 </Text>
-                {(characters || []).filter((c) => !c.is_user_character).map((c) => (
-                  <Text
-                    key={c.id}
-                    style={{
-                      color: colors.text,
-                      fontSize: rf(13),
-                      marginTop: 4,
-                      textAlign: 'center'
-                    }}
-                    numberOfLines={1}
-                  >
-                    {(c.name || '-')} · {getCharacterVoiceText(c)}
-                  </Text>
-                ))}
-              </View>
-            </>
+              ))}
+            </View>
           )}
-
-          {/* Opciones de modificación */}
-          <View style={{ marginTop: 16, borderTopWidth: 1, borderTopColor: colors.border, paddingTop: 16 }}>
-            <Text style={[styles.hintText, { color: colors.textSecondary, textAlign: 'center' }]}>
-              Modificar personajes y voces: abre
-              <Text style={[styles.hintLink, { color: colors.primary }]} onPress={goToCharacterConfig}> Configuración</Text>.
-            </Text>
-            <Text style={[styles.hintText, { color: colors.textSecondary, marginTop: 4, textAlign: 'center' }]}>
-              Modificar texto y emociones: vuelve a
-              <Text style={[styles.hintLink, { color: colors.primary }]} onPress={() => router.push({ pathname: '/scripts/[id]/review', params: { id: id as string, force: '1' } })}> Revisar Guion</Text>.
-            </Text>
-          </View>
         </View>
 
         {charactersLoadError && (
@@ -392,73 +381,81 @@ export default function ScriptDetailScreen() {
         )}
 
         {/* Nuevo texto de encabezado */}
-        <Text style={[styles.hintText, { color: colors.text, marginBottom: 16, textAlign: 'center', fontSize: rf(15), fontWeight: '700' }]}>
+        <Text style={[styles.hintText, { color: fg, marginBottom: 16, textAlign: 'center', fontSize: rf(15), fontWeight: '700' }]}>
           Elige entre los seis modos disponibles
         </Text>
 
-        <View style={[styles.actionsRow, { marginTop: 'auto' }]}>
-          <View style={styles.actionsColumn}>
-            {/* 1. Modo Estudio */}
-            <TouchableOpacity
-              style={styles.actionButton}
-              onPress={() => router.push(`/scripts/${id}/studio-v2`)}
-            >
-              <Play size={24} color="#FFFFFF" />
-              <Text style={styles.actionText}>ESTUDIO</Text>
-            </TouchableOpacity>
+        <View style={[styles.modesGrid, { marginTop: 'auto' }]}>
+          {/* 1. Modo Estudio */}
+          <ModeGlassCard
+            dark={isDark}
+            icon={<Play size={22} color={fg} />}
+            title="Estudio"
+            description="Ensaya o graba con réplica"
+            onPress={() => router.push(`/scripts/${id}/studio-v2`)}
+          />
 
-            {/* 2. Modo Análisis */}
-            <TouchableOpacity
-              style={styles.actionButton}
-              onPress={() => router.push(`/scripts/${id}/analysis`)}
-            >
-              <FileText size={24} color="#FFFFFF" />
-              <Text style={styles.actionText}>ANÁLISIS</Text>
-            </TouchableOpacity>
+          {/* 2. Modo Escena */}
+          <ModeGlassCard
+            dark={isDark}
+            icon={<GraduationCap size={22} color={fg} />}
+            title="Escena"
+            description="Descubre nuevas propuestas de actuación"
+            onPress={() => router.push(`/scripts/${id}/coach`)}
+          />
 
-            {/* 3. Modo Memoria */}
-            <TouchableOpacity
-              style={styles.actionButton}
-              onPress={() => router.push(`/scripts/${id}/memory`)}
-            >
-              <Brain size={24} color="#FFFFFF" />
-              <Text style={styles.actionText}>MEMORIA</Text>
-            </TouchableOpacity>
-          </View>
+          {/* 3. Modo Análisis */}
+          <ModeGlassCard
+            dark={isDark}
+            icon={<FileText size={22} color={fg} />}
+            title="Análisis"
+            description="Trabaja subtexto y objetivos del personaje"
+            onPress={() => router.push(`/scripts/${id}/analysis`)}
+          />
 
-          <View style={styles.actionsColumn}>
-            {/* 4. Modo Escena */}
-            <TouchableOpacity
-              style={styles.actionButton}
-              onPress={() => router.push(`/scripts/${id}/coach`)}
-            >
-              <GraduationCap size={24} color="#FFFFFF" />
-              <Text style={styles.actionText}>ESCENA</Text>
-            </TouchableOpacity>
+          {/* 4. Modo Coche */}
+          <ModeGlassCard
+            dark={isDark}
+            icon={<Car size={22} color={fg} />}
+            title="Coche"
+            description="Escucha la escena en bucle mientras conduces"
+            onPress={() => router.push(`/scripts/${id}/car`)}
+          />
 
-            {/* 5. Modo Coche */}
-            <TouchableOpacity
-              style={styles.actionButton}
-              onPress={() => router.push(`/scripts/${id}/car`)}
-            >
-              <Car size={24} color="#FFFFFF" />
-              <Text style={styles.actionText}>COCHE</Text>
-            </TouchableOpacity>
+          {/* 5. Modo Memoria */}
+          <ModeGlassCard
+            dark={isDark}
+            icon={<Brain size={22} color={fg} />}
+            title="Memoria"
+            description="Juegos de memorización interactivos"
+            onPress={() => router.push(`/scripts/${id}/memory`)}
+          />
 
-            {/* 6. Modo Casting */}
-            <TouchableOpacity
-              style={styles.actionButton}
-              onPress={() => router.push(`/scripts/${id}/casting`)}
-            >
-              <Clapperboard size={24} color="#FFFFFF" />
-              <Text style={styles.actionText}>CASTING</Text>
-            </TouchableOpacity>
-          </View>
+          {/* 6. Modo Casting */}
+          <ModeGlassCard
+            dark={isDark}
+            icon={<Clapperboard size={22} color={fg} />}
+            title="Casting"
+            description="Graba tu self-tape con réplica"
+            onPress={() => router.push(`/scripts/${id}/casting`)}
+          />
         </View>
-        <FixedFooterSpacer />
+
+        {/* Opciones de modificación */}
+        <View style={{ marginTop: 20 }}>
+          <Text style={[styles.hintText, { color: fgSecondary, textAlign: 'center' }]}>
+            Modificar personajes y voces: abre
+            <Text style={[styles.hintLink, { color: fg }]} onPress={goToCharacterConfig}> Configuración</Text>.
+          </Text>
+          <Text style={[styles.hintText, { color: fgSecondary, marginTop: 4, textAlign: 'center' }]}>
+            Modificar texto y emociones: vuelve a
+            <Text style={[styles.hintLink, { color: fg }]} onPress={() => router.push({ pathname: '/scripts/[id]/review', params: { id: id as string, force: '1' } })}> Revisar Guion</Text>.
+          </Text>
+        </View>
+        <FixedFooterSpacer variant="floating" />
       </ScrollView>
-      <FixedFooter />
-    </View>
+      <FixedFooter variant="floating" dark={isDark} />
+    </ImageBackground>
   );
 }
 
@@ -482,8 +479,10 @@ const styles = StyleSheet.create({
   backButton: {
     width: 40,
     height: 40,
+    borderRadius: 20,
     alignItems: 'center',
     justifyContent: 'center',
+    borderWidth: 1,
   },
   headerTitle: {
     flex: 1,
@@ -495,8 +494,10 @@ const styles = StyleSheet.create({
   deleteButton: {
     width: 40,
     height: 40,
+    borderRadius: 20,
     alignItems: 'center',
     justifyContent: 'center',
+    borderWidth: 1,
   },
   content: {
     flex: 1,
@@ -567,22 +568,15 @@ const styles = StyleSheet.create({
   },
   // Tarjeta unificada de resumen
   summaryCard: {
-    borderRadius: 12,
-    borderWidth: 1,
-    padding: rp(16),
-    marginBottom: 20,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
-    shadowRadius: 8,
-    elevation: 2,
+    paddingHorizontal: rp(16),
+    marginBottom: 16,
   },
   summaryTopRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 12,
+    gap: 10,
     justifyContent: 'center',
-    marginBottom: 8,
+    marginBottom: 12,
   },
   summaryBadgeLarge: {
     width: 44,
@@ -601,13 +595,6 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 12,
-  },
-  summaryBadgeSmall: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
-    alignItems: 'center',
-    justifyContent: 'center',
   },
   summaryColumns: {
     flex: 1,
@@ -629,8 +616,10 @@ const styles = StyleSheet.create({
     fontSize: rf(16),
     fontWeight: '700',
   },
-  actionsRow: {
+  modesGrid: {
     flexDirection: 'row',
+    flexWrap: 'wrap',
+    alignItems: 'flex-start',
     gap: 12,
     // el margen se aplica en el componente para empujar el menú al final
   },
@@ -716,29 +705,6 @@ const styles = StyleSheet.create({
     fontSize: rf(12),
     marginTop: 2,
   },
-  actionsColumn: {
-    flex: 1,
-    gap: 12,
-  },
-  actionButton: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 8,
-    paddingVertical: rp(16),
-    paddingHorizontal: rp(12),
-    borderRadius: 12,
-    backgroundColor: '#683a79',
-    shadowColor: '#683a79',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-    elevation: 4,
-    marginBottom: 12,
-    position: 'relative',
-    minHeight: rp(56),
-  },
   infoIcon: {
     position: 'absolute',
     top: 8,
@@ -762,12 +728,6 @@ const styles = StyleSheet.create({
     borderWidth: 2,
     shadowOpacity: 0,
     elevation: 0,
-  },
-  actionText: {
-    fontSize: rf(15),
-    fontWeight: '700',
-    color: '#FFFFFF',
-    textAlign: 'center',
   },
   actionTextSmall: {
     fontSize: rf(14),

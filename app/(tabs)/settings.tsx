@@ -1,9 +1,9 @@
 import React, { useMemo, useState, useEffect } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, Alert, Image, Switch, ScrollView, Platform, TextInput, ActivityIndicator } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, Alert, Image, Switch, ScrollView, Platform, TextInput, ActivityIndicator, Linking, ImageBackground } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ScreenHeader } from '@/components/ScreenHeader';
 import { useRouter } from 'expo-router';
-import { User, LogOut, Sun, Moon, ChevronDown, Smartphone, Camera, Pencil, Check, X } from 'lucide-react-native';
+import { User, LogOut, Sun, Moon, ChevronDown, Smartphone, Camera, Pencil, Check, X, Mail, MessageCircle, Lightbulb, Trash2 } from 'lucide-react-native';
 import { useAuth } from '@/contexts/AuthContext';
 import { useTheme } from '@/contexts/ThemeContext';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
@@ -21,6 +21,8 @@ export default function SettingsScreen() {
   const { mode, isDark, colors, setThemeMode } = useTheme();
   const insets = useSafeAreaInsets();
   const [showSignOutConfirm, setShowSignOutConfirm] = useState(false);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [deletingAccount, setDeletingAccount] = useState(false);
   const [localOnly, setLocalOnly] = useState(false);
   const [ttsProvider, setTtsProvider] = useState<'openai' | 'elevenlabs' | 'google' | 'system'>('openai');
   const [availableVoices, setAvailableVoices] = useState<any[]>([]);
@@ -264,12 +266,70 @@ export default function SettingsScreen() {
     }
   }
 
+  async function openMailto(url: string) {
+    const canOpen = await Linking.canOpenURL(url);
+    if (canOpen) {
+      await Linking.openURL(url);
+    } else {
+      Alert.alert(
+        'No hay app de correo',
+        'No se encontró una app de correo configurada. Escríbenos directamente a:\n\ninfo@scriptcue.es',
+        [{ text: 'OK' }]
+      );
+    }
+  }
+
+  async function handleDeleteAccount() {
+    setDeletingAccount(true);
+    try {
+      const userId = user?.id || 'desconocido';
+      const userEmail = user?.email || 'desconocido';
+      const userName = displayName || 'desconocido';
+
+      const subject = encodeURIComponent('Solicitud de eliminación de cuenta - ScriptCue');
+      const body = encodeURIComponent(
+        `Solicitud de eliminación de cuenta\n\n` +
+        `Usuario: ${userName}\n` +
+        `Email: ${userEmail}\n` +
+        `ID: ${userId}\n` +
+        `Fecha: ${new Date().toISOString()}\n\n` +
+        `Por favor, eliminen mi cuenta y todos mis datos asociados.`
+      );
+
+      const url = `mailto:info@scriptcue.es?subject=${subject}&body=${body}`;
+      const canOpen = await Linking.canOpenURL(url);
+      if (canOpen) {
+        await Linking.openURL(url);
+        Alert.alert(
+          'Solicitud enviada',
+          'Recibirás una confirmación cuando tu cuenta y datos hayan sido eliminados.',
+          [{ text: 'OK' }]
+        );
+      } else {
+        Alert.alert(
+          'No hay app de correo',
+          'No se encontró una app de correo configurada. Para eliminar tu cuenta, escríbenos directamente a:\n\ninfo@scriptcue.es',
+          [{ text: 'OK' }]
+        );
+      }
+    } catch (e: any) {
+      Alert.alert('Error', 'No se pudo enviar la solicitud. Escríbenos directamente a info@scriptcue.es');
+    } finally {
+      setDeletingAccount(false);
+    }
+  }
+
   return (
-    <SafeAreaView style={[styles.container, { backgroundColor: colors.surface }]} edges={['top', 'left', 'right']}>
-      <View style={{ flex: 1, backgroundColor: colors.background }}>
+    <ImageBackground
+      source={isDark ? require('@/assets/images/ui-dark-bg.png') : require('@/assets/images/ui-light-bg.png')}
+      resizeMode="cover"
+      style={styles.container}
+    >
+    <SafeAreaView style={[styles.container, { backgroundColor: 'transparent' }]} edges={['top', 'left', 'right']}>
+      <View style={{ flex: 1, backgroundColor: 'transparent' }}>
         <ScreenHeader title="Ajustes" />
 
-        <ScrollView style={styles.content} contentContainerStyle={{ paddingHorizontal: 12, paddingVertical: 20, paddingBottom: 100 + insets.bottom }}>
+        <ScrollView style={styles.content} contentContainerStyle={{ paddingHorizontal: 12, paddingVertical: 20, paddingBottom: 200 + insets.bottom }}>
           <ConfirmDialog
             visible={showSignOutConfirm}
             title="¿Cerrar sesión?"
@@ -449,6 +509,87 @@ export default function SettingsScreen() {
             </TouchableOpacity>
           </View>
 
+          {/* CONTACTO */}
+          <View style={styles.section}>
+            <Text style={[styles.sectionTitle, { color: colors.textSecondary }]}>Contacto</Text>
+
+            <TouchableOpacity
+              style={[styles.legalCard, { backgroundColor: colors.surface, borderColor: colors.border }]}
+              onPress={() => openMailto('mailto:info@scriptcue.es')}
+            >
+              <View style={{ flexDirection: 'row', alignItems: 'center', flex: 1, gap: rp(12) }}>
+                <Mail size={20} color={colors.primary} />
+                <View style={styles.legalCardContent}>
+                  <Text style={[styles.legalCardTitle, { color: colors.text }]}>Email</Text>
+                  <Text style={[styles.legalCardDesc, { color: colors.textSecondary }]}>info@scriptcue.es</Text>
+                </View>
+              </View>
+              <Text style={[styles.legalCardArrow, { color: colors.textSecondary }]}>›</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[styles.legalCard, { backgroundColor: colors.surface, borderColor: colors.border }]}
+              onPress={() => {
+                const subject = encodeURIComponent('Feedback - ScriptCue');
+                const body = encodeURIComponent('¡Hola!\n\nMe gustaría compartir el siguiente feedback sobre ScriptCue:\n\n');
+                openMailto(`mailto:info@scriptcue.es?subject=${subject}&body=${body}`);
+              }}
+            >
+              <View style={{ flexDirection: 'row', alignItems: 'center', flex: 1, gap: rp(12) }}>
+                <MessageCircle size={20} color={colors.primary} />
+                <View style={styles.legalCardContent}>
+                  <Text style={[styles.legalCardTitle, { color: colors.text }]}>Feedback</Text>
+                  <Text style={[styles.legalCardDesc, { color: colors.textSecondary }]}>Cuéntanos tu experiencia</Text>
+                </View>
+              </View>
+              <Text style={[styles.legalCardArrow, { color: colors.textSecondary }]}>›</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[styles.legalCard, { backgroundColor: colors.surface, borderColor: colors.border }]}
+              onPress={() => {
+                const subject = encodeURIComponent('Sugerencia de nueva función - ScriptCue');
+                const body = encodeURIComponent('¡Hola!\n\nMe gustaría sugerir la siguiente función para ScriptCue:\n\n');
+                openMailto(`mailto:info@scriptcue.es?subject=${subject}&body=${body}`);
+              }}
+            >
+              <View style={{ flexDirection: 'row', alignItems: 'center', flex: 1, gap: rp(12) }}>
+                <Lightbulb size={20} color={colors.primary} />
+                <View style={styles.legalCardContent}>
+                  <Text style={[styles.legalCardTitle, { color: colors.text }]}>Sugerir nueva función</Text>
+                  <Text style={[styles.legalCardDesc, { color: colors.textSecondary }]}>Propón ideas y mejoras</Text>
+                </View>
+              </View>
+              <Text style={[styles.legalCardArrow, { color: colors.textSecondary }]}>›</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[styles.legalCard, { backgroundColor: colors.surface, borderColor: isDark ? '#7F1D1D' : '#FEE2E2' }]}
+              onPress={() => setShowDeleteConfirm(true)}
+              disabled={deletingAccount}
+            >
+              <View style={{ flexDirection: 'row', alignItems: 'center', flex: 1, gap: rp(12) }}>
+                <Trash2 size={20} color={colors.error} />
+                <View style={styles.legalCardContent}>
+                  <Text style={[styles.legalCardTitle, { color: colors.error }]}>Eliminar mi cuenta</Text>
+                  <Text style={[styles.legalCardDesc, { color: colors.textSecondary }]}>Elimina tu cuenta y todos tus datos</Text>
+                </View>
+              </View>
+              {deletingAccount && <ActivityIndicator size="small" color={colors.error} />}
+            </TouchableOpacity>
+          </View>
+
+          <ConfirmDialog
+            visible={showDeleteConfirm}
+            title="¿Eliminar tu cuenta?"
+            message={"Esta acción es irreversible. Se eliminarán todos tus guiones, grabaciones y datos personales. Se enviará una solicitud de eliminación a nuestro equipo."}
+            confirmText="ELIMINAR"
+            cancelText="CANCELAR"
+            onConfirm={() => { setShowDeleteConfirm(false); handleDeleteAccount(); }}
+            onCancel={() => setShowDeleteConfirm(false)}
+            destructive
+          />
+
           <View style={styles.section}>
             <Text style={[styles.sectionTitle, { color: colors.textSecondary }]}>Aviso Legal</Text>
 
@@ -503,6 +644,7 @@ export default function SettingsScreen() {
         </ScrollView>
       </View>
     </SafeAreaView>
+    </ImageBackground>
   );
 }
 

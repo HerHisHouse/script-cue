@@ -428,12 +428,14 @@ export default function StudioV2Screen() {
         const hideInfo = await AsyncStorage.getItem('hideReorderInfo');
         // Snapshot the current order so Cancel can restore it
         setOriginalLines([...dialogueLines]);
-        if (hideInfo === 'true') {
-            setIsReordering(true);
-        } else {
-            setShowReorderInfoModal(true);
-        }
         setShowMenu(false);
+        if (hideInfo === 'true') {
+            // No info modal needed — wait for menu to close, then enter reorder mode
+            setTimeout(() => setIsReordering(true), 350);
+        } else {
+            // Show info modal after menu closes to avoid stacked Modal touch issues
+            setTimeout(() => setShowReorderInfoModal(true), 350);
+        }
     };
 
     const [originalLines, setOriginalLines] = useState<DialogueLine[]>([]);
@@ -2334,7 +2336,8 @@ export default function StudioV2Screen() {
                                 if (val && !showStageDirections) {
                                     const hidden = await AsyncStorage.getItem('hideStageDirectionsInfo');
                                     if (hidden !== 'true') {
-                                        setShowStageDirectionsInfo(true);
+                                        setShowMenu(false);
+                                        setTimeout(() => setShowStageDirectionsInfo(true), 350);
                                     }
                                 }
                                 setShowStageDirections(val);
@@ -2349,7 +2352,8 @@ export default function StudioV2Screen() {
                                 if (val && !showActions) {
                                     const hidden = await AsyncStorage.getItem('hideActionsInfoV2');
                                     if (hidden !== 'true') {
-                                        setShowActionsInfo(true);
+                                        setShowMenu(false);
+                                        setTimeout(() => setShowActionsInfo(true), 350);
                                     }
                                 }
                                 setShowActions(val);

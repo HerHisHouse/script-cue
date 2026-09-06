@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useCallback } from 'react'; // Force rebuild
-import { StyleSheet, View, Text, Pressable, FlatList, TouchableOpacity, Animated, Easing, Modal, TextInput, Alert, Share, useWindowDimensions, Keyboard, RefreshControl } from 'react-native';
+import { StyleSheet, View, Text, Pressable, FlatList, TouchableOpacity, Animated, Easing, Modal, TextInput, Alert, Share, useWindowDimensions, Keyboard, RefreshControl, ImageBackground } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { supabase } from '@/utils/supabase';
 import { ScriptCard } from '@/components/ScriptCard';
@@ -468,14 +468,25 @@ export default function IndexScreen() {
   );
 
   return (
-    <SafeAreaView style={[styles.container, { backgroundColor: colors.surface }]} edges={['top', 'left', 'right']}>
-      <View style={{ flex: 1, backgroundColor: colors.background }}>
+    <ImageBackground
+      source={isDark ? require('@/assets/images/ui-dark-bg.png') : require('@/assets/images/ui-light-bg.png')}
+      resizeMode="cover"
+      style={styles.container}
+    >
+    <SafeAreaView style={[styles.container, { backgroundColor: 'transparent' }]} edges={['top', 'left', 'right']}>
+      <View style={{ flex: 1, backgroundColor: 'transparent' }}>
       {/* Overlay global: cerrar header/search/add; los menús de guion usan backdrop local */}
       {(showHeaderMenu || showAddMenu) && (
         <Pressable
           accessibilityRole="button"
           accessibilityLabel="Cerrar menús"
-          style={styles.backdrop}
+          style={[
+            styles.backdrop,
+            // El menú "Opciones" (BottomSheetMenu) ya trae su propio scrim; este
+            // overlay adicional lo oscurecía por duplicado en modo claro, dejándolo
+            // más oscuro que el sheet de las tarjetas (que no pasa por aquí).
+            showHeaderMenu && !showAddMenu && !isDark && { backgroundColor: 'transparent' },
+          ]}
           onPress={() => {
             // Animación de cierre suave del menú de cabecera
             Animated.timing(headerMenuOpacity, {
@@ -494,6 +505,7 @@ export default function IndexScreen() {
       )}
       <ScreenHeader
         title={scriptSelectionMode ? `${selectedScriptIds.size} seleccionados` : "Guiones"}
+        style={{ backgroundColor: 'transparent', borderBottomWidth: 0 }}
         onLayout={(e) => setHeaderHeight(e.nativeEvent.layout.height)}
         leftAction={
           scriptSelectionMode ? (
@@ -568,7 +580,14 @@ export default function IndexScreen() {
               accessibilityRole="button"
               accessibilityLabel="Añadir guion"
               accessibilityHint={isAtLimit ? "Has alcanzado el límite de la versión beta" : "Abre el menú para importar o escanear"}
-              style={[styles.addButton, { backgroundColor: isAtLimit ? colors.surface : colors.primary }]}
+              style={[
+                styles.addButton,
+                isAtLimit
+                  ? { backgroundColor: colors.surface }
+                  : isDark
+                    ? { backgroundColor: 'rgba(124,106,247,0.14)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.2)' }
+                    : { backgroundColor: colors.primary },
+              ]}
               onPress={() => {
                 if (isAtLimit) {
                   Alert.alert(
@@ -777,7 +796,7 @@ export default function IndexScreen() {
         ) : (
           <FlatList
             style={{ flex: 1 }}
-            contentContainerStyle={viewMode === 'grid' ? { paddingVertical: 20, paddingBottom: 100 + bottomInset } : { ...styles.list, paddingBottom: 100 + bottomInset }}
+            contentContainerStyle={viewMode === 'grid' ? { paddingVertical: 20, paddingBottom: 200 + bottomInset } : { ...styles.list, paddingBottom: 200 + bottomInset }}
             columnWrapperStyle={viewMode === 'grid' && gridColumns > 1 ? { paddingHorizontal: gridPadding, justifyContent: 'space-between', marginBottom: gridGap } : undefined}
             data={filteredScripts}
             keyExtractor={(item) => item.id}
@@ -924,6 +943,7 @@ export default function IndexScreen() {
       />
       </View>
     </SafeAreaView>
+    </ImageBackground>
   );
 }
 

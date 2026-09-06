@@ -11,6 +11,7 @@ import {
   Animated,
   Modal,
   FlatList,
+  ImageBackground,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Users, CheckCircle, Check } from 'lucide-react-native';
@@ -185,8 +186,13 @@ export default function CommunityScreen() {
   // ─── CONFIRMACIÓN ─────────────────────────────────────────────────────────
   if (estado === 'confirmacion') {
     return (
-      <SafeAreaView style={[styles.container, { backgroundColor: colors.surface }]} edges={['top', 'left', 'right']}>
-        <View style={{ flex: 1, backgroundColor: colors.background }}>
+      <ImageBackground
+        source={isDark ? require('@/assets/images/ui-dark-bg.png') : require('@/assets/images/ui-light-bg.png')}
+        resizeMode="cover"
+        style={styles.container}
+      >
+      <SafeAreaView style={[styles.container, { backgroundColor: 'transparent' }]} edges={['top', 'left', 'right']}>
+        <View style={{ flex: 1, backgroundColor: 'transparent' }}>
           <ScreenHeader title="Comunidad" />
           <View style={styles.centeredContent}>
             <Animated.View
@@ -224,17 +230,23 @@ export default function CommunityScreen() {
           </View>
         </View>
       </SafeAreaView>
+      </ImageBackground>
     );
   }
 
   // ─── YA APUNTADO ──────────────────────────────────────────────────────────
   if (estado === 'ya-apuntado') {
     return (
-      <SafeAreaView style={[styles.container, { backgroundColor: colors.surface }]} edges={['top', 'left', 'right']}>
-        <View style={{ flex: 1, backgroundColor: colors.background }}>
+      <ImageBackground
+        source={isDark ? require('@/assets/images/ui-dark-bg.png') : require('@/assets/images/ui-light-bg.png')}
+        resizeMode="cover"
+        style={styles.container}
+      >
+      <SafeAreaView style={[styles.container, { backgroundColor: 'transparent' }]} edges={['top', 'left', 'right']}>
+        <View style={{ flex: 1, backgroundColor: 'transparent' }}>
           <ScreenHeader title="Comunidad" />
           <ScrollView
-            contentContainerStyle={[styles.scrollContent, { paddingBottom: 120 + insets.bottom }]}
+            contentContainerStyle={[styles.scrollContent, { paddingBottom: 220 + insets.bottom }]}
             showsVerticalScrollIndicator={false}
           >
             {/* Header */}
@@ -279,16 +291,22 @@ export default function CommunityScreen() {
           </ScrollView>
         </View>
       </SafeAreaView>
+      </ImageBackground>
     );
   }
 
   // ─── FORMULARIO ───────────────────────────────────────────────────────────
   return (
-    <SafeAreaView style={[styles.container, { backgroundColor: colors.surface }]} edges={['top', 'left', 'right']}>
-      <View style={{ flex: 1, backgroundColor: colors.background }}>
+    <ImageBackground
+      source={isDark ? require('@/assets/images/ui-dark-bg.png') : require('@/assets/images/ui-light-bg.png')}
+      resizeMode="cover"
+      style={styles.container}
+    >
+    <SafeAreaView style={[styles.container, { backgroundColor: 'transparent' }]} edges={['top', 'left', 'right']}>
+      <View style={{ flex: 1, backgroundColor: 'transparent' }}>
         <ScreenHeader title="Comunidad" />
         <ScrollView
-          contentContainerStyle={[styles.scrollContent, { paddingBottom: 120 + insets.bottom }]}
+          contentContainerStyle={[styles.scrollContent, { paddingBottom: 220 + insets.bottom }]}
           showsVerticalScrollIndicator={false}
           keyboardShouldPersistTaps="handled"
         >
@@ -475,6 +493,7 @@ export default function CommunityScreen() {
         </ScrollView>
       </View>
     </SafeAreaView>
+    </ImageBackground>
   );
 }
 
