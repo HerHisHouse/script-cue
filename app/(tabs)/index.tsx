@@ -480,7 +480,13 @@ export default function IndexScreen() {
         <Pressable
           accessibilityRole="button"
           accessibilityLabel="Cerrar menús"
-          style={styles.backdrop}
+          style={[
+            styles.backdrop,
+            // El menú "Opciones" (BottomSheetMenu) ya trae su propio scrim; este
+            // overlay adicional lo oscurecía por duplicado en modo claro, dejándolo
+            // más oscuro que el sheet de las tarjetas (que no pasa por aquí).
+            showHeaderMenu && !showAddMenu && !isDark && { backgroundColor: 'transparent' },
+          ]}
           onPress={() => {
             // Animación de cierre suave del menú de cabecera
             Animated.timing(headerMenuOpacity, {

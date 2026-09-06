@@ -2594,7 +2594,7 @@ export default function RecordingsScreen() {
       <View style={{ flex: 1, backgroundColor: 'transparent' }}>
         {(showHeaderMenu) && (
           <Pressable
-            style={styles.backdrop}
+            style={[styles.backdrop, !isDark && { backgroundColor: 'transparent' }]}
             accessibilityRole="button"
             accessibilityLabel="Cerrar menús"
             onPress={() => {
