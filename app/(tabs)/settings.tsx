@@ -1,5 +1,5 @@
 import React, { useMemo, useState, useEffect } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, Alert, Image, Switch, ScrollView, Platform, TextInput, ActivityIndicator, Linking } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, Alert, Image, Switch, ScrollView, Platform, TextInput, ActivityIndicator, Linking, ImageBackground } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ScreenHeader } from '@/components/ScreenHeader';
 import { useRouter } from 'expo-router';
@@ -320,8 +320,13 @@ export default function SettingsScreen() {
   }
 
   return (
-    <SafeAreaView style={[styles.container, { backgroundColor: colors.surface }]} edges={['top', 'left', 'right']}>
-      <View style={{ flex: 1, backgroundColor: colors.background }}>
+    <ImageBackground
+      source={isDark ? require('@/assets/images/ui-dark-bg.png') : require('@/assets/images/ui-light-bg.png')}
+      resizeMode="cover"
+      style={styles.container}
+    >
+    <SafeAreaView style={[styles.container, { backgroundColor: 'transparent' }]} edges={['top', 'left', 'right']}>
+      <View style={{ flex: 1, backgroundColor: 'transparent' }}>
         <ScreenHeader title="Ajustes" />
 
         <ScrollView style={styles.content} contentContainerStyle={{ paddingHorizontal: 12, paddingVertical: 20, paddingBottom: 200 + insets.bottom }}>
@@ -639,6 +644,7 @@ export default function SettingsScreen() {
         </ScrollView>
       </View>
     </SafeAreaView>
+    </ImageBackground>
   );
 }
 

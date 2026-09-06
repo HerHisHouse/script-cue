@@ -17,6 +17,7 @@ import {
   Animated,
   DeviceEventEmitter,
   Keyboard,
+  ImageBackground,
 } from 'react-native';
 import { Dimensions } from 'react-native';
 import { PinchGestureHandler, State } from 'react-native-gesture-handler';
@@ -2584,8 +2585,13 @@ export default function RecordingsScreen() {
   };
 
   return (
-    <SafeAreaView style={[styles.container, { backgroundColor: colors.surface }]} edges={['top', 'left', 'right']}>
-      <View style={{ flex: 1, backgroundColor: colors.background }}>
+    <ImageBackground
+      source={isDark ? require('@/assets/images/ui-dark-bg.png') : require('@/assets/images/ui-light-bg.png')}
+      resizeMode="cover"
+      style={styles.container}
+    >
+    <SafeAreaView style={[styles.container, { backgroundColor: 'transparent' }]} edges={['top', 'left', 'right']}>
+      <View style={{ flex: 1, backgroundColor: 'transparent' }}>
         {(showHeaderMenu) && (
           <Pressable
             style={styles.backdrop}
@@ -3408,6 +3414,7 @@ export default function RecordingsScreen() {
         />
       </View>
     </SafeAreaView>
+    </ImageBackground>
   );
 }
 

@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useCallback } from 'react'; // Force rebuild
-import { StyleSheet, View, Text, Pressable, FlatList, TouchableOpacity, Animated, Easing, Modal, TextInput, Alert, Share, useWindowDimensions, Keyboard, RefreshControl } from 'react-native';
+import { StyleSheet, View, Text, Pressable, FlatList, TouchableOpacity, Animated, Easing, Modal, TextInput, Alert, Share, useWindowDimensions, Keyboard, RefreshControl, ImageBackground } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { supabase } from '@/utils/supabase';
 import { ScriptCard } from '@/components/ScriptCard';
@@ -468,8 +468,13 @@ export default function IndexScreen() {
   );
 
   return (
-    <SafeAreaView style={[styles.container, { backgroundColor: colors.surface }]} edges={['top', 'left', 'right']}>
-      <View style={{ flex: 1, backgroundColor: colors.background }}>
+    <ImageBackground
+      source={isDark ? require('@/assets/images/ui-dark-bg.png') : require('@/assets/images/ui-light-bg.png')}
+      resizeMode="cover"
+      style={styles.container}
+    >
+    <SafeAreaView style={[styles.container, { backgroundColor: 'transparent' }]} edges={['top', 'left', 'right']}>
+      <View style={{ flex: 1, backgroundColor: 'transparent' }}>
       {/* Overlay global: cerrar header/search/add; los menús de guion usan backdrop local */}
       {(showHeaderMenu || showAddMenu) && (
         <Pressable
@@ -924,6 +929,7 @@ export default function IndexScreen() {
       />
       </View>
     </SafeAreaView>
+    </ImageBackground>
   );
 }
 

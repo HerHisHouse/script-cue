@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useCallback } from 'react';
-import { View, Text, StyleSheet, FlatList, TouchableOpacity, Modal, TextInput, Alert, Pressable, ActivityIndicator, RefreshControl, Keyboard } from 'react-native';
+import { View, Text, StyleSheet, FlatList, TouchableOpacity, Modal, TextInput, Alert, Pressable, ActivityIndicator, RefreshControl, Keyboard, ImageBackground } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAuth } from '@/contexts/AuthContext';
 import { useTheme } from '@/contexts/ThemeContext';
@@ -21,7 +21,7 @@ type ListItem =
   | { type: 'recording'; data: Recording };
 
 export default function ProjectsScreen() {
-  const { colors } = useTheme();
+  const { colors, isDark } = useTheme();
   const { user } = useAuth();
   const router = useRouter();
   const insets = useSafeAreaInsets();
@@ -492,8 +492,13 @@ export default function ProjectsScreen() {
   };
 
   return (
-    <SafeAreaView style={[styles.container, { backgroundColor: colors.surface }]} edges={['top', 'left', 'right']}>
-      <View style={{ flex: 1, backgroundColor: colors.background }}>
+    <ImageBackground
+      source={isDark ? require('@/assets/images/ui-dark-bg.png') : require('@/assets/images/ui-light-bg.png')}
+      resizeMode="cover"
+      style={styles.container}
+    >
+    <SafeAreaView style={[styles.container, { backgroundColor: 'transparent' }]} edges={['top', 'left', 'right']}>
+      <View style={{ flex: 1, backgroundColor: 'transparent' }}>
       <ScreenHeader
         title={selectionMode ? `${selectedItems.size} seleccionados` : (currentProjectId ? breadcrumbs[breadcrumbs.length - 1].name : "Proyectos")}
         leftAction={
@@ -798,6 +803,7 @@ export default function ProjectsScreen() {
       </Modal>
       </View>
     </SafeAreaView>
+    </ImageBackground>
   );
 }
 
