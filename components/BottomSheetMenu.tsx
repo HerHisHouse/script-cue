@@ -116,9 +116,16 @@ export function BottomSheetMenu({ visible, onClose, title, children, backgroundC
   const isHex = bgColor.startsWith('#');
   // Leve transparencia (90% de opacidad)
   const transparentBg = (isHex && bgColor.length === 7) ? `${bgColor}E6` : bgColor;
-  const glassOverlayTint = isDark ? 'rgba(128,128,128,0.25)' : 'rgba(235,230,245,0.22)';
+  // Velo de marca (morado), no gris — y más intenso que en la tab bar porque aquí
+  // el blur no tiene un degradado morado detrás (Guiones/Proyectos/Grabaciones usan
+  // un fondo plano, ver nota en el componente), así que necesita más "punch" propio.
+  const glassOverlayTint = isDark ? 'rgba(124,106,247,0.14)' : 'rgba(124,106,247,0.10)';
   const glassTitleColor = isDark ? '#FFFFFF' : '#2A1B47';
   const glassHandleColor = isDark ? 'rgba(255,255,255,0.35)' : 'rgba(42,27,71,0.35)';
+  // El scrim al 60% negro oscurecía todo lo que el blur iba a mostrar, dejándolo plano.
+  // Se aligera solo en la variante glass; las pantallas con backgroundColor sólido propio
+  // (casting.tsx, car.tsx) conservan el scrim original de siempre.
+  const backdropColor = useGlass ? 'rgba(0,0,0,0.32)' : 'rgba(0,0,0,0.6)';
 
   return (
     <Modal
@@ -129,7 +136,7 @@ export function BottomSheetMenu({ visible, onClose, title, children, backgroundC
       supportedOrientations={['portrait', 'landscape', 'landscape-left', 'landscape-right']}
     >
       {/* Backdrop */}
-      <Animated.View style={[styles.backdrop, { opacity }]} pointerEvents={isClosing ? 'none' : 'auto'}>
+      <Animated.View style={[styles.backdrop, { backgroundColor: backdropColor, opacity }]} pointerEvents={isClosing ? 'none' : 'auto'}>
         <Pressable style={StyleSheet.absoluteFill} onPress={onClose} />
       </Animated.View>
 
@@ -143,7 +150,7 @@ export function BottomSheetMenu({ visible, onClose, title, children, backgroundC
         <View style={[styles.clip, { paddingBottom: Math.max(insets.bottom, 20) }]}>
           {useGlass ? (
             <>
-              <BlurView intensity={isDark ? 70 : 65} tint={isDark ? 'dark' : 'light'} style={StyleSheet.absoluteFill} />
+              <BlurView intensity={isDark ? 55 : 50} tint={isDark ? 'dark' : 'light'} style={StyleSheet.absoluteFill} />
               <View style={[StyleSheet.absoluteFill, { backgroundColor: glassOverlayTint }]} />
             </>
           ) : (
@@ -183,7 +190,6 @@ const styles = StyleSheet.create({
   backdrop: {
     position: 'absolute',
     inset: 0,
-    backgroundColor: 'rgba(0,0,0,0.6)',
   },
   bottomSheet: {
     position: 'absolute',
