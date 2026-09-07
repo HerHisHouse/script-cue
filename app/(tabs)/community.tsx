@@ -14,7 +14,7 @@ import {
   ImageBackground,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Users, CheckCircle, Check } from 'lucide-react-native';
+import { Users, CheckCircle, Check, Search } from 'lucide-react-native';
 import { useAuth } from '@/contexts/AuthContext';
 import { useTheme } from '@/contexts/ThemeContext';
 import { supabase } from '@/utils/supabase';
@@ -95,6 +95,7 @@ export default function CommunityScreen() {
   const [ciudad, setCiudad] = useState<string[]>([]);
   const [cityModalVisible, setCityModalVisible] = useState(false);
   const [citySearch, setCitySearch] = useState('');
+  const citySearchInputRef = useRef<TextInput>(null);
   const [loading, setLoading] = useState(false);
   const [userIntereses, setUserIntereses] = useState<string[]>([]);
 
@@ -433,58 +434,98 @@ export default function CommunityScreen() {
           </View>
 
           {/* City Selector Modal */}
-          <Modal visible={cityModalVisible} animationType="slide" presentationStyle="pageSheet" onRequestClose={() => setCityModalVisible(false)} supportedOrientations={['portrait', 'landscape', 'landscape-left', 'landscape-right']}>
-            <SafeAreaView style={{ flex: 1, backgroundColor: colors.background }}>
-              <View style={{ padding: 16, borderBottomWidth: 1, borderBottomColor: colors.border, flexDirection: 'row', alignItems: 'center' }}>
-                <TextInput
-                  style={{
-                    flex: 1,
-                    backgroundColor: colors.input,
-                    color: colors.text,
-                    paddingHorizontal: 16,
-                    paddingVertical: 12,
-                    borderRadius: 10,
-                    marginRight: 12,
-                    fontSize: 16,
-                  }}
-                  placeholder="Buscar ciudad..."
-                  placeholderTextColor={colors.placeholder}
-                  value={citySearch}
-                  onChangeText={setCitySearch}
-                  autoFocus
-                />
-                <TouchableOpacity onPress={() => setCityModalVisible(false)}>
-                  <Text style={{ color: PURPLE, fontWeight: '600', fontSize: 16 }}>Hecho</Text>
-                </TouchableOpacity>
-              </View>
-              <FlatList
-                data={PROVINCES.filter(p => p.toLowerCase().includes(citySearch.toLowerCase()))}
-                keyExtractor={item => item}
-                renderItem={({ item }) => {
-                  const isSelected = ciudad.includes(item);
-                  return (
-                    <TouchableOpacity
-                      style={{
-                        padding: 16,
-                        flexDirection: 'row',
-                        alignItems: 'center',
-                        justifyContent: 'space-between',
-                        borderBottomWidth: 1,
-                        borderBottomColor: colors.border
-                      }}
-                      onPress={() => {
-                        setCiudad(prev => 
-                          prev.includes(item) ? prev.filter(c => c !== item) : [...prev, item]
-                        );
-                      }}
-                    >
-                      <Text style={{ color: colors.text, fontSize: 16 }}>{item}</Text>
-                      {isSelected && <Check size={20} color={PURPLE} />}
-                    </TouchableOpacity>
-                  );
-                }}
-              />
-            </SafeAreaView>
+          <Modal
+            visible={cityModalVisible}
+            animationType="slide"
+            presentationStyle="pageSheet"
+            onRequestClose={() => setCityModalVisible(false)}
+            onShow={() => setTimeout(() => citySearchInputRef.current?.focus(), 250)}
+            supportedOrientations={['portrait', 'landscape', 'landscape-left', 'landscape-right']}
+          >
+            <ImageBackground
+              source={isDark ? require('@/assets/images/ui-dark-bg.png') : require('@/assets/images/ui-light-bg.png')}
+              resizeMode="cover"
+              style={{ flex: 1 }}
+            >
+              <SafeAreaView style={{ flex: 1, backgroundColor: 'transparent' }}>
+                <View style={{ paddingHorizontal: 16, paddingTop: 16, paddingBottom: 12, flexDirection: 'row', alignItems: 'center' }}>
+                  <View
+                    style={[
+                      styles.citySearchBox,
+                      {
+                        backgroundColor: isDark ? 'rgba(124,106,247,0.08)' : 'rgba(255,255,255,0.55)',
+                        borderColor: isDark ? 'rgba(167,139,250,0.25)' : 'rgba(124,106,247,0.15)',
+                      },
+                      !isDark && {
+                        shadowColor: '#1a1625',
+                        shadowOffset: { width: 0, height: 8 },
+                        shadowOpacity: 0.28,
+                        shadowRadius: 16,
+                        elevation: 8,
+                      },
+                    ]}
+                  >
+                    <Search size={18} color={isDark ? '#a0a0c0' : '#5c5678'} />
+                    <TextInput
+                      ref={citySearchInputRef}
+                      style={{ flex: 1, color: isDark ? '#ffffff' : '#2a2447', fontSize: 16, paddingVertical: 0 }}
+                      placeholder="Buscar ciudad..."
+                      placeholderTextColor={isDark ? '#a0a0c0' : '#5c5678'}
+                      value={citySearch}
+                      onChangeText={setCitySearch}
+                      returnKeyType="search"
+                    />
+                  </View>
+                  <TouchableOpacity onPress={() => setCityModalVisible(false)} style={{ marginLeft: 12 }}>
+                    <Text style={{ color: PURPLE, fontWeight: '700', fontSize: 16 }}>Hecho</Text>
+                  </TouchableOpacity>
+                </View>
+
+                <View
+                  style={[
+                    styles.cityListCard,
+                    {
+                      backgroundColor: isDark ? 'rgba(124,106,247,0.08)' : 'rgba(255,255,255,0.55)',
+                      borderColor: isDark ? 'rgba(167,139,250,0.25)' : 'rgba(124,106,247,0.15)',
+                    },
+                    !isDark && {
+                      shadowColor: '#1a1625',
+                      shadowOffset: { width: 0, height: 8 },
+                      shadowOpacity: 0.28,
+                      shadowRadius: 16,
+                      elevation: 8,
+                    },
+                  ]}
+                >
+                  <FlatList
+                    data={PROVINCES.filter(p => p.toLowerCase().includes(citySearch.toLowerCase()))}
+                    keyExtractor={item => item}
+                    ItemSeparatorComponent={() => (
+                      <View style={[styles.cityDivider, { backgroundColor: isDark ? 'rgba(167,139,250,0.25)' : 'rgba(124,106,247,0.15)' }]} />
+                    )}
+                    renderItem={({ item }) => {
+                      const isSelected = ciudad.includes(item);
+                      return (
+                        <TouchableOpacity
+                          style={styles.cityRow}
+                          activeOpacity={0.7}
+                          onPress={() => {
+                            setCiudad(prev =>
+                              prev.includes(item) ? prev.filter(c => c !== item) : [...prev, item]
+                            );
+                          }}
+                        >
+                          <Text style={{ color: isSelected ? PURPLE : (isDark ? '#ffffff' : '#2a2447'), fontSize: 16, fontWeight: isSelected ? '600' : '400' }}>
+                            {item}
+                          </Text>
+                          {isSelected && <Check size={20} color={PURPLE} />}
+                        </TouchableOpacity>
+                      );
+                    }}
+                  />
+                </View>
+              </SafeAreaView>
+            </ImageBackground>
           </Modal>
 
           {/* Submit button */}
@@ -528,6 +569,35 @@ export default function CommunityScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
+  },
+  citySearchBox: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    borderRadius: 20,
+    borderWidth: 1,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+  },
+  cityListCard: {
+    flex: 1,
+    marginHorizontal: 16,
+    marginBottom: 16,
+    borderRadius: 20,
+    borderWidth: 1,
+    overflow: 'hidden',
+  },
+  cityRow: {
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  cityDivider: {
+    height: 1,
+    marginHorizontal: 16,
   },
   scrollContent: {
     paddingBottom: 40,

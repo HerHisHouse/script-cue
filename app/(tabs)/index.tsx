@@ -659,16 +659,31 @@ export default function IndexScreen() {
       </BottomSheetMenu>
 
       {showSearch && (
-        <View style={[styles.searchContainer, { borderColor: colors.border, backgroundColor: colors.surface }]}>
-          <View style={styles.searchRow}>
-            <Search size={18} color={colors.textSecondary} />
+        <View style={styles.searchContainer}>
+          <View
+            style={[
+              styles.searchRow,
+              {
+                backgroundColor: isDark ? 'rgba(124,106,247,0.08)' : 'rgba(255,255,255,0.55)',
+                borderColor: isDark ? 'rgba(167,139,250,0.25)' : 'rgba(124,106,247,0.15)',
+              },
+              !isDark && {
+                shadowColor: '#1a1625',
+                shadowOffset: { width: 0, height: 8 },
+                shadowOpacity: 0.28,
+                shadowRadius: 16,
+                elevation: 8,
+              },
+            ]}
+          >
+            <Search size={18} color={isDark ? '#a0a0c0' : '#5c5678'} />
             <TextInput
               autoFocus
-              style={[styles.searchInput, { color: colors.text }]}
+              style={[styles.searchInput, { color: isDark ? '#ffffff' : '#2a2447' }]}
               value={searchText}
               onChangeText={setSearchText}
               placeholder="Buscar por título"
-              placeholderTextColor={colors.textSecondary}
+              placeholderTextColor={isDark ? '#a0a0c0' : '#5c5678'}
               blurOnSubmit={true}
               returnKeyType="search"
               onSubmitEditing={() => Keyboard.dismiss()}
@@ -681,7 +696,7 @@ export default function IndexScreen() {
             }}
             style={styles.closeSearchButton}
           >
-            <Text style={{ color: colors.textSecondary, fontSize: rf(24), fontWeight: '300' }}>×</Text>
+            <Text style={{ color: isDark ? '#a0a0c0' : '#5c5678', fontSize: rf(24), fontWeight: '300' }}>×</Text>
           </TouchableOpacity>
         </View>
       )}
@@ -957,7 +972,6 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     padding: rp(12),
-    borderBottomWidth: 1,
     gap: rp(12),
   },
   searchRow: {
@@ -965,6 +979,10 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
+    borderRadius: 20,
+    borderWidth: 1,
+    paddingHorizontal: rp(16),
+    paddingVertical: rp(12),
   },
   searchInput: {
     flex: 1,

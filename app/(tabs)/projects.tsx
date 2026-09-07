@@ -1,5 +1,6 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import { View, Text, StyleSheet, FlatList, TouchableOpacity, Modal, TextInput, Alert, Pressable, ActivityIndicator, RefreshControl, Keyboard, ImageBackground } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { BlurView } from 'expo-blur';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAuth } from '@/contexts/AuthContext';
@@ -14,6 +15,8 @@ import { Project, Script, Recording } from '@/types/database';
 import { BETA_LIMITS, isUserBetaLimited } from '@/constants/betaLimits';
 import { BottomSheetMenu } from '@/components/BottomSheetMenu';
 import { BottomSheetOption } from '@/components/BottomSheetOption';
+
+const VIEW_MODE_STORAGE_KEY = 'proyectos_view_mode';
 
 // Unified type for the list
 type ListItem =
@@ -36,6 +39,10 @@ export default function ProjectsScreen() {
 
   // UI State
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
+  const changeViewMode = useCallback((mode: 'grid' | 'list') => {
+    setViewMode(mode);
+    AsyncStorage.setItem(VIEW_MODE_STORAGE_KEY, mode).catch(() => {});
+  }, []);
   const [showSearch, setShowSearch] = useState(false);
   const [searchText, setSearchText] = useState('');
   const [selectionMode, setSelectionMode] = useState(false);
@@ -120,6 +127,13 @@ export default function ProjectsScreen() {
   useEffect(() => {
     loadContent();
   }, [loadContent]);
+
+  // Cargar la vista (lista/cuadrícula) guardada por el usuario
+  useEffect(() => {
+    AsyncStorage.getItem(VIEW_MODE_STORAGE_KEY).then((saved) => {
+      if (saved === 'grid' || saved === 'list') setViewMode(saved);
+    });
+  }, []);
 
   // Cerrar menús cuando se navega fuera de la pantalla
   useFocusEffect(
@@ -584,19 +598,34 @@ export default function ProjectsScreen() {
           Icon={viewMode === 'grid' ? List : Grid}
           onPress={() => {
             setShowMenu(false);
-            setTimeout(() => setViewMode(prev => prev === 'grid' ? 'list' : 'grid'), 300);
+            setTimeout(() => changeViewMode(viewMode === 'grid' ? 'list' : 'grid'), 300);
           }}
         />
       </BottomSheetMenu>
 
       {/* Search Bar */}
       {showSearch && (
-        <View style={[styles.searchBar, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-          <Search size={20} color={colors.textSecondary} />
+        <View
+          style={[
+            styles.searchBar,
+            {
+              backgroundColor: isDark ? 'rgba(124,106,247,0.08)' : 'rgba(255,255,255,0.55)',
+              borderColor: isDark ? 'rgba(167,139,250,0.25)' : 'rgba(124,106,247,0.15)',
+            },
+            !isDark && {
+              shadowColor: '#1a1625',
+              shadowOffset: { width: 0, height: 8 },
+              shadowOpacity: 0.28,
+              shadowRadius: 16,
+              elevation: 8,
+            },
+          ]}
+        >
+          <Search size={20} color={isDark ? '#a0a0c0' : '#5c5678'} />
           <TextInput
-            style={[styles.searchInput, { color: colors.text }]}
+            style={[styles.searchInput, { color: isDark ? '#ffffff' : '#2a2447' }]}
             placeholder="Buscar..."
-            placeholderTextColor={colors.placeholder}
+            placeholderTextColor={isDark ? '#a0a0c0' : '#5c5678'}
             value={searchText}
             onChangeText={setSearchText}
             autoFocus
@@ -605,7 +634,7 @@ export default function ProjectsScreen() {
             onSubmitEditing={() => Keyboard.dismiss()}
           />
           <TouchableOpacity onPress={() => { setSearchText(''); setShowSearch(false); }}>
-            <X size={20} color={colors.textSecondary} />
+            <X size={20} color={isDark ? '#a0a0c0' : '#5c5678'} />
           </TouchableOpacity>
         </View>
       )}
@@ -994,7 +1023,7 @@ const styles = StyleSheet.create({
     padding: 12,
     margin: 16,
     marginBottom: 0,
-    borderRadius: 12,
+    borderRadius: 20,
     borderWidth: 1,
     gap: 8,
   },

@@ -110,11 +110,19 @@ export default function FAQScreen() {
         >
         <SafeAreaView style={[styles.container, { backgroundColor: 'transparent' }]} edges={['top', 'left', 'right']}>
             <View style={[styles.header, { backgroundColor: 'transparent', borderBottomWidth: 0 }]}>
-                <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
-                    <ArrowLeft size={24} color={onBg} />
+                <TouchableOpacity
+                    onPress={() => router.back()}
+                    style={[
+                        styles.backButton,
+                        isDark
+                            ? { backgroundColor: 'rgba(124,106,247,0.14)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.2)' }
+                            : { backgroundColor: colors.primary },
+                    ]}
+                >
+                    <ArrowLeft size={20} color={isDark ? onBg : '#FFFFFF'} />
                 </TouchableOpacity>
                 <Text style={[styles.headerTitle, { color: onBg }]}>Preguntas Frecuentes</Text>
-                <View style={{ width: 24 }} />
+                <View style={{ width: 40 }} />
             </View>
 
             <ScrollView style={styles.content} contentContainerStyle={styles.scrollContent}>
@@ -213,7 +221,11 @@ const styles = StyleSheet.create({
         borderBottomWidth: 1,
     },
     backButton: {
-        padding: rp(4),
+        width: 40,
+        height: 40,
+        borderRadius: 20,
+        justifyContent: 'center',
+        alignItems: 'center',
     },
     headerTitle: {
         fontSize: rf(18),

@@ -8,8 +8,8 @@
     "scheme": "scriptcue",
     "userInterfaceStyle": "automatic",
     "splash": {
-      "image": "./assets/images/splash.png",
-      "resizeMode": "contain",
+      "image": "./assets/images/splash-dark.png",
+      "resizeMode": "cover",
       "backgroundColor": "#000000"
     },
     "newArchEnabled": true,

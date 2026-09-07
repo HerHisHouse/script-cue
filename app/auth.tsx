@@ -11,6 +11,7 @@ import {
   Platform,
   ScrollView,
   Image,
+  ImageBackground,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
@@ -20,6 +21,7 @@ import * as WebBrowser from 'expo-web-browser';
 import { supabase } from '@/utils/supabase';
 import { rf, rp } from '@/utils/responsive';
 import Svg, { Path } from 'react-native-svg';
+import { Eye, EyeOff } from 'lucide-react-native';
 
 // Configure WebBrowser for OAuth
 WebBrowser.maybeCompleteAuthSession();
@@ -28,6 +30,19 @@ export default function AuthScreen() {
   const router = useRouter();
   const { signIn, signUp } = useAuth();
   const { colors, isDark } = useTheme();
+  const onBg = isDark ? '#ffffff' : '#2a2447';
+  const onBg2 = isDark ? '#a0a0c0' : '#5c5678';
+  const cardBg = isDark ? 'rgba(124,106,247,0.08)' : 'rgba(255,255,255,0.55)';
+  const cardBorder = isDark ? 'rgba(167,139,250,0.25)' : 'rgba(124,106,247,0.15)';
+  const cardShadow = !isDark ? {
+    shadowColor: '#1a1625',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.28,
+    shadowRadius: 16,
+    elevation: 8,
+  } : null;
+  const fieldBg = isDark ? 'rgba(255,255,255,0.06)' : 'rgba(255,255,255,0.7)';
+  const fieldBorder = isDark ? 'rgba(255,255,255,0.14)' : 'rgba(124,106,247,0.18)';
   const [isSignUp, setIsSignUp] = useState(false);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -215,7 +230,12 @@ export default function AuthScreen() {
   }
 
   return (
-    <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
+    <ImageBackground
+      source={isDark ? require('@/assets/images/ui-dark-bg.png') : require('@/assets/images/ui-light-bg.png')}
+      resizeMode="cover"
+      style={styles.container}
+    >
+    <SafeAreaView style={[styles.container, { backgroundColor: 'transparent' }]}>
       <KeyboardAvoidingView
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
         style={styles.keyboardView}
@@ -228,33 +248,33 @@ export default function AuthScreen() {
           <View style={styles.header}>
             <View style={styles.logoContainer}>
               <Image
-                source={require('@/assets/images/logo.png')}
+                source={isDark ? require('@/assets/images/logo-android-blanco.png') : require('@/assets/images/logo.png')}
                 style={styles.logoImage}
                 resizeMode="contain"
               />
             </View>
-            <Text style={[styles.title, { color: colors.text }]}>ScriptCue</Text>
-            <Text style={[styles.subtitle, { color: colors.textSecondary }]}>Ensaya, memoriza e interpreta.{"\n"}Todo en un solo lugar.</Text>
+            <Text style={[styles.title, { color: onBg }]}>ScriptCue</Text>
+            <Text style={[styles.subtitle, { color: onBg2 }]}>Ensaya, memoriza e interpreta.{"\n"}Todo en un solo lugar.</Text>
           </View>
 
-          <View style={[styles.form, { backgroundColor: colors.surface }]}>
+          <View style={[styles.form, { ...cardShadow, backgroundColor: cardBg, borderWidth: 1, borderColor: cardBorder }]}>
             {isSignUp && (
               <View style={styles.inputContainer} accessible accessibilityLabel="Nombre de usuario" accessibilityHint="Solo letras, números y guiones bajos. 3 a 20 caracteres">
-                <Text style={[styles.label, { color: colors.textSecondary }]}>Nombre de usuario</Text>
+                <Text style={[styles.label, { color: onBg2 }]}>Nombre de usuario</Text>
                 <TextInput
                   style={[
                     styles.input,
                     (!isUsernameValid && username.length > 0) ? styles.inputError : null,
-                    { backgroundColor: colors.input, color: colors.text, borderColor: colors.border }
+                    { backgroundColor: fieldBg, color: onBg, borderColor: fieldBorder }
                   ]}
                   value={username}
                   onChangeText={setUsername}
                   placeholder="ej. actordevoz_01"
-                  placeholderTextColor={colors.placeholder}
+                  placeholderTextColor={onBg2}
                   autoCapitalize="none"
                   returnKeyType="next"
                 />
-                <Text style={[styles.helperText, { color: colors.textSecondary }]}>Solo letras, números y guiones bajos. 3–20 caracteres.</Text>
+                <Text style={[styles.helperText, { color: onBg2 }]}>Solo letras, números y guiones bajos. 3–20 caracteres.</Text>
                 {!isUsernameValid && username.length > 0 && (
                   <Text style={[styles.errorText, { color: colors.error }]}>Formato inválido para nombre de usuario.</Text>
                 )}
@@ -262,17 +282,17 @@ export default function AuthScreen() {
             )}
 
             <View style={styles.inputContainer} accessible accessibilityLabel="Correo electrónico" accessibilityHint="Ingresa un email válido">
-              <Text style={[styles.label, { color: colors.textSecondary }]}>Correo Electrónico</Text>
+              <Text style={[styles.label, { color: onBg2 }]}>Correo Electrónico</Text>
               <TextInput
                 style={[
                   styles.input,
                   (!isEmailValid && email.length > 0) ? styles.inputError : null,
-                  { backgroundColor: colors.input, color: colors.text, borderColor: colors.border }
+                  { backgroundColor: fieldBg, color: onBg, borderColor: fieldBorder }
                 ]}
                 value={email}
                 onChangeText={setEmail}
                 placeholder="tu@email.com"
-                placeholderTextColor={colors.placeholder}
+                placeholderTextColor={onBg2}
                 keyboardType="email-address"
                 autoCapitalize="none"
                 returnKeyType={isSignUp ? 'next' : 'done'}
@@ -283,28 +303,30 @@ export default function AuthScreen() {
             </View>
 
             <View style={styles.inputContainer} accessible accessibilityLabel="Contraseña" accessibilityHint="Mínimo 8 caracteres, incluir mayúsculas y números">
-              <Text style={[styles.label, { color: colors.textSecondary }]}>Contraseña</Text>
-              <TextInput
-                style={[
-                  styles.input,
-                  (isSignUp && !isPasswordValid && password.length > 0) ? styles.inputError : null,
-                  { backgroundColor: colors.input, color: colors.text, borderColor: colors.border }
-                ]}
-                value={password}
-                onChangeText={setPassword}
-                placeholder="••••••••"
-                placeholderTextColor={colors.placeholder}
-                secureTextEntry={!showPassword}
-                autoCapitalize="none"
-                returnKeyType={isSignUp ? 'next' : 'done'}
-              />
-              <View style={styles.inputInlineActions}>
+              <Text style={[styles.label, { color: onBg2 }]}>Contraseña</Text>
+              <View style={styles.passwordFieldWrapper}>
+                <TextInput
+                  style={[
+                    styles.input,
+                    styles.inputWithIcon,
+                    (isSignUp && !isPasswordValid && password.length > 0) ? styles.inputError : null,
+                    { backgroundColor: fieldBg, color: onBg, borderColor: fieldBorder }
+                  ]}
+                  value={password}
+                  onChangeText={setPassword}
+                  placeholder="••••••••"
+                  placeholderTextColor={onBg2}
+                  secureTextEntry={!showPassword}
+                  autoCapitalize="none"
+                  returnKeyType={isSignUp ? 'next' : 'done'}
+                />
                 <TouchableOpacity
+                  style={styles.eyeButton}
                   accessibilityRole="button"
                   accessibilityLabel={showPassword ? 'Ocultar contraseña' : 'Mostrar contraseña'}
                   onPress={() => setShowPassword(!showPassword)}
                 >
-                  <Text style={[styles.visibilityToggle, { color: colors.primary }]}>{showPassword ? 'Ocultar' : 'Mostrar'}</Text>
+                  {showPassword ? <EyeOff size={20} color={onBg2} /> : <Eye size={20} color={onBg2} />}
                 </TouchableOpacity>
               </View>
               {isSignUp && !isPasswordValid && password.length > 0 && (
@@ -313,45 +335,60 @@ export default function AuthScreen() {
             </View>
 
             {!isSignUp && (
-              <TouchableOpacity
-                onPress={() => router.push('/forgot-password')}
-                style={{ alignSelf: 'flex-end', marginTop: rp(8), marginBottom: rp(16) }}
-              >
-                <Text style={{
-                  fontFamily: 'Inter',
-                  fontSize: rf(13),
-                  color: colors.primary,
-                  textDecorationLine: 'underline',
-                }}>
-                  ¿Olvidaste tu contraseña?
-                </Text>
-              </TouchableOpacity>
+              <>
+                <TouchableOpacity
+                  onPress={() => router.push('/forgot-password')}
+                  style={{ alignSelf: 'flex-end', marginTop: rp(8) }}
+                >
+                  <Text style={{
+                    fontFamily: 'Inter',
+                    fontSize: rf(13),
+                    color: colors.primary,
+                    textDecorationLine: 'underline',
+                  }}>
+                    ¿Olvidaste tu contraseña?
+                  </Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={[styles.switchButton, { marginTop: rp(8), marginBottom: rp(8) }]}
+                  onPress={() => setIsSignUp(true)}
+                  accessibilityRole="button"
+                  accessibilityLabel="Cambiar a crear cuenta"
+                >
+                  <Text style={[styles.switchText, { color: colors.primary }]}>
+                    ¿No tienes cuenta? Regístrate
+                  </Text>
+                </TouchableOpacity>
+              </>
             )}
 
             {isSignUp && (
               <View style={styles.inputContainer} accessible accessibilityLabel="Confirmar contraseña" accessibilityHint="Debe coincidir con la contraseña">
-                <Text style={[styles.label, { color: colors.textSecondary }]}>Confirmar Contraseña</Text>
-                <TextInput
-                  style={[
-                    styles.input,
-                    (!doPasswordsMatch && confirmPassword.length > 0) ? styles.inputError : null,
-                    { backgroundColor: colors.input, color: colors.text, borderColor: colors.border }
-                  ]}
-                  value={confirmPassword}
-                  onChangeText={setConfirmPassword}
-                  placeholder="••••••••"
-                  placeholderTextColor={colors.placeholder}
-                  secureTextEntry={!showConfirmPassword}
-                  autoCapitalize="none"
-                  returnKeyType="done"
-                />
-                <View style={styles.inputInlineActions}>
+                <Text style={[styles.label, { color: onBg2 }]}>Confirmar Contraseña</Text>
+                <View style={styles.passwordFieldWrapper}>
+                  <TextInput
+                    style={[
+                      styles.input,
+                      styles.inputWithIcon,
+                      (!doPasswordsMatch && confirmPassword.length > 0) ? styles.inputError : null,
+                      { backgroundColor: fieldBg, color: onBg, borderColor: fieldBorder }
+                    ]}
+                    value={confirmPassword}
+                    onChangeText={setConfirmPassword}
+                    placeholder="••••••••"
+                    placeholderTextColor={onBg2}
+                    secureTextEntry={!showConfirmPassword}
+                    autoCapitalize="none"
+                    returnKeyType="done"
+                  />
                   <TouchableOpacity
+                    style={styles.eyeButton}
                     accessibilityRole="button"
                     accessibilityLabel={showConfirmPassword ? 'Ocultar confirmación' : 'Mostrar confirmación'}
                     onPress={() => setShowConfirmPassword(!showConfirmPassword)}
                   >
-                    <Text style={[styles.visibilityToggle, { color: colors.primary }]}>{showConfirmPassword ? 'Ocultar' : 'Mostrar'}</Text>
+                    {showConfirmPassword ? <EyeOff size={20} color={onBg2} /> : <Eye size={20} color={onBg2} />}
                   </TouchableOpacity>
                 </View>
                 {!doPasswordsMatch && confirmPassword.length > 0 && (
@@ -369,10 +406,10 @@ export default function AuthScreen() {
                   accessibilityRole="checkbox"
                   accessibilityState={{ checked: acceptedTerms }}
                 >
-                  <View style={[styles.checkbox, { borderColor: colors.border }, acceptedTerms && { backgroundColor: colors.primary, borderColor: colors.primary }]}>
+                  <View style={[styles.checkbox, { borderColor: cardBorder }, acceptedTerms && { backgroundColor: colors.primary, borderColor: colors.primary }]}>
                     {acceptedTerms && <Text style={styles.checkmark}>✓</Text>}
                   </View>
-                  <Text style={[styles.checkboxText, { color: colors.text }]}>
+                  <Text style={[styles.checkboxText, { color: onBg }]}>
                     He leído y acepto los{' '}
                     <Text
                       style={[styles.link, { color: colors.primary }]}
@@ -392,10 +429,10 @@ export default function AuthScreen() {
                   accessibilityRole="checkbox"
                   accessibilityState={{ checked: acceptedPrivacy }}
                 >
-                  <View style={[styles.checkbox, { borderColor: colors.border }, acceptedPrivacy && { backgroundColor: colors.primary, borderColor: colors.primary }]}>
+                  <View style={[styles.checkbox, { borderColor: cardBorder }, acceptedPrivacy && { backgroundColor: colors.primary, borderColor: colors.primary }]}>
                     {acceptedPrivacy && <Text style={styles.checkmark}>✓</Text>}
                   </View>
-                  <Text style={[styles.checkboxText, { color: colors.text }]}>
+                  <Text style={[styles.checkboxText, { color: onBg }]}>
                     He leído y acepto la{' '}
                     <Text
                       style={[styles.link, { color: colors.primary }]}
@@ -415,10 +452,10 @@ export default function AuthScreen() {
                   accessibilityRole="checkbox"
                   accessibilityState={{ checked: acceptedAI }}
                 >
-                  <View style={[styles.checkbox, { borderColor: colors.border }, acceptedAI && { backgroundColor: colors.primary, borderColor: colors.primary }]}>
+                  <View style={[styles.checkbox, { borderColor: cardBorder }, acceptedAI && { backgroundColor: colors.primary, borderColor: colors.primary }]}>
                     {acceptedAI && <Text style={styles.checkmark}>✓</Text>}
                   </View>
-                  <Text style={[styles.checkboxText, { color: colors.text }]}>
+                  <Text style={[styles.checkboxText, { color: onBg }]}>
                     Acepto el{' '}
                     <Text
                       style={[styles.link, { color: colors.primary }]}
@@ -439,7 +476,9 @@ export default function AuthScreen() {
             <TouchableOpacity
               style={[
                 styles.submitButton,
-                { backgroundColor: colors.primary },
+                isDark
+                  ? { backgroundColor: 'rgba(124,106,247,0.80)', borderWidth: 1.5, borderColor: 'rgba(255,255,255,0.5)' }
+                  : { backgroundColor: colors.primary },
                 !canSubmit && styles.submitButtonDisabled
               ]}
               onPress={handleSubmit}
@@ -458,14 +497,14 @@ export default function AuthScreen() {
 
             {/* Divider */}
             <View style={styles.divider}>
-              <View style={[styles.dividerLine, { backgroundColor: colors.border }]} />
-              <Text style={[styles.dividerText, { color: colors.textSecondary }]}>O continúa con</Text>
-              <View style={[styles.dividerLine, { backgroundColor: colors.border }]} />
+              <View style={[styles.dividerLine, { backgroundColor: cardBorder }]} />
+              <Text style={[styles.dividerText, { color: onBg2 }]}>O continúa con</Text>
+              <View style={[styles.dividerLine, { backgroundColor: cardBorder }]} />
             </View>
 
             {/* Google Sign In Button */}
             <TouchableOpacity
-              style={[styles.googleButton, { backgroundColor: colors.surface, borderColor: colors.border }]}
+              style={[styles.googleButton, { ...cardShadow, backgroundColor: cardBg, borderColor: cardBorder }]}
               onPress={signInWithGoogle}
               disabled={loading}
               accessibilityRole="button"
@@ -487,33 +526,35 @@ export default function AuthScreen() {
                   <Path fill="#34A853" d="M46 24c0-1.4-.1-2.7-.4-4H24v8.5h12.4c-.5 2.7-2.1 5-4.4 6.5l6.7 5.2c3.9-3.6 6.3-8.9 6.3-16.2z" />
                 </Svg>
               </View>
-              <Text style={[styles.googleButtonText, { color: colors.text }]}>
+              <Text style={[styles.googleButtonText, { color: onBg }]}>
                 Continuar con Google
               </Text>
             </TouchableOpacity>
 
-            <TouchableOpacity
-              style={styles.switchButton}
-              onPress={() => setIsSignUp(!isSignUp)}
-              accessibilityRole="button"
-              accessibilityLabel={isSignUp ? 'Cambiar a iniciar sesión' : 'Cambiar a crear cuenta'}
-            >
-              <Text style={[styles.switchText, { color: colors.primary }]}>
-                {isSignUp ? '¿Ya tienes cuenta? Inicia sesión' : '¿No tienes cuenta? Regístrate'}
-              </Text>
-            </TouchableOpacity>
+            {isSignUp && (
+              <TouchableOpacity
+                style={styles.switchButton}
+                onPress={() => setIsSignUp(false)}
+                accessibilityRole="button"
+                accessibilityLabel="Cambiar a iniciar sesión"
+              >
+                <Text style={[styles.switchText, { color: colors.primary }]}>
+                  ¿Ya tienes cuenta? Inicia sesión
+                </Text>
+              </TouchableOpacity>
+            )}
           </View>
         </ScrollView>
       </KeyboardAvoidingView>
 
     </SafeAreaView>
+    </ImageBackground>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#F9FAFB',
   },
   keyboardView: {
     flex: 1,
@@ -551,14 +592,8 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
   form: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 16,
+    borderRadius: 20,
     padding: rp(24),
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.1,
-    shadowRadius: 12,
-    elevation: 4,
   },
   inputContainer: {
     marginBottom: 20,
@@ -592,15 +627,20 @@ const styles = StyleSheet.create({
     fontSize: rf(12),
     color: '#EF4444',
   },
-  inputInlineActions: {
-    marginTop: 8,
-    flexDirection: 'row',
-    justifyContent: 'flex-end',
+  passwordFieldWrapper: {
+    position: 'relative',
+    justifyContent: 'center',
   },
-  visibilityToggle: {
-    fontSize: rf(14),
-    color: '#3B82F6',
-    fontWeight: '500',
+  inputWithIcon: {
+    paddingRight: rp(48),
+  },
+  eyeButton: {
+    position: 'absolute',
+    right: rp(12),
+    height: 48,
+    width: rp(32),
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   submitButton: {
     backgroundColor: '#3B82F6',

@@ -97,23 +97,40 @@ const SearchBar = React.memo(function SearchBar({
   setSearchText,
   searching,
   colors,
+  isDark,
   onClose,
 }: {
   searchText: string;
   setSearchText: (t: string) => void;
   searching: boolean;
   colors: ReturnType<typeof useTheme>['colors'];
+  isDark: boolean;
   onClose: () => void;
 }) {
+  const onBg = isDark ? '#ffffff' : '#2a2447';
+  const onBg2 = isDark ? '#a0a0c0' : '#5c5678';
+  const cardBg = isDark ? 'rgba(124,106,247,0.08)' : 'rgba(255,255,255,0.55)';
+  const cardBorder = isDark ? 'rgba(167,139,250,0.25)' : 'rgba(124,106,247,0.15)';
   return (
-    <View style={[styles.searchContainer, { backgroundColor: colors.surface, borderBottomColor: colors.border }]}
-    >
-      <View style={styles.searchRow}>
-        <Search size={20} color={colors.textSecondary} />
+    <View style={styles.searchContainer}>
+      <View
+        style={[
+          styles.searchRow,
+          { backgroundColor: cardBg, borderColor: cardBorder },
+          !isDark && {
+            shadowColor: '#1a1625',
+            shadowOffset: { width: 0, height: 8 },
+            shadowOpacity: 0.28,
+            shadowRadius: 16,
+            elevation: 8,
+          },
+        ]}
+      >
+        <Search size={20} color={onBg2} />
         <TextInput
-          style={[styles.searchInput, { color: colors.text }]}
+          style={[styles.searchInput, { color: onBg }]}
           placeholder="Nombre de archivo…"
-          placeholderTextColor={colors.placeholder}
+          placeholderTextColor={onBg2}
           value={searchText}
           onChangeText={setSearchText}
           autoFocus
@@ -131,7 +148,7 @@ const SearchBar = React.memo(function SearchBar({
         onPress={onClose}
         style={styles.closeSearchButton}
       >
-        <Text style={{ color: colors.textSecondary, fontSize: rf(24), fontWeight: '300' }}>×</Text>
+        <Text style={{ color: onBg2, fontSize: rf(24), fontWeight: '300' }}>×</Text>
       </TouchableOpacity>
     </View>
   );
@@ -780,11 +797,20 @@ export default function RecordingsScreen() {
     }
   }, [loadRecordings]);
 
+  // Refs para que el efecto de foco no se dispare cada vez que handleRefresh/checkPendingJobs
+  // cambian de identidad (p.ej. por el debounce de búsqueda), ya que react-navigation
+  // re-ejecuta useFocusEffect cuando el callback cambia estando la pantalla enfocada,
+  // lo que cerraba la búsqueda avanzada a mitad de escritura.
+  const handleRefreshRef = useRef(handleRefresh);
+  handleRefreshRef.current = handleRefresh;
+  const checkPendingJobsRef = useRef(checkPendingJobs);
+  checkPendingJobsRef.current = checkPendingJobs;
+
   // Auto-refresh when the screen gains focus
   useFocusEffect(
     useCallback(() => {
-      handleRefresh();
-      checkPendingJobs();
+      handleRefreshRef.current();
+      checkPendingJobsRef.current();
       return () => {
         // Cleanup: cerrar todos los menús cuando se pierde el foco
         setShowHeaderMenu(false);
@@ -794,7 +820,7 @@ export default function RecordingsScreen() {
         // y controlamos el stop del audio de forma más precisa o aceptamos que siga sonando si se queda en segundo plano (si es deseado)
         // Por ahora, solo cerramos los menús. El playerVisible se queda si el modal está abierto.
       };
-    }, [handleRefresh, checkPendingJobs])
+    }, [])
   );
 
   // Mantener loopModeRef actualizado y aplicar al sound actual
@@ -2337,14 +2363,6 @@ export default function RecordingsScreen() {
     }
   }
 
-  if (loading) {
-    return (
-      <View style={[styles.centerContainer, { backgroundColor: colors.background }]}>
-        <ActivityIndicator size="large" color={colors.primary} />
-      </View>
-    );
-  }
-
   const RecordingCard = ({ item }: { item: Recording }) => {
     const isSelected = selectedIds.has(item.id);
     const gridItemWidth = Math.floor((windowWidth - gridPadding * 2 - gridGap * (gridColumns - 1)) / gridColumns);
@@ -2882,18 +2900,24 @@ export default function RecordingsScreen() {
 
 
 
+        {showSearch && (
+          <SearchBar
+            searchText={searchText}
+            setSearchText={setSearchText}
+            searching={searching}
+            colors={colors}
+            isDark={isDark}
+            onClose={() => { setShowSearch(false); setSearchText(''); }}
+          />
+        )}
+
         {recordings.length === 0 ? (
           <View style={{ flex: 1 }}>
-            {showSearch && (
-              <SearchBar
-                searchText={searchText}
-                setSearchText={setSearchText}
-                searching={searching}
-                colors={colors}
-                onClose={() => { setShowSearch(false); setSearchText(''); }}
-              />
-            )}
-            {searchText ? (
+            {loading ? (
+              <View style={styles.centerContainer}>
+                <ActivityIndicator size="large" color={colors.primary} />
+              </View>
+            ) : searchText ? (
               <View style={styles.emptyState}>
                 <Text style={[styles.emptyTitle, { color: colors.text }]}>
                   No se encontraron grabaciones
@@ -2967,15 +2991,6 @@ export default function RecordingsScreen() {
                 onRefresh={handleRefresh}
                 ListHeaderComponent={
                   <>
-                    {showSearch && (
-                      <SearchBar
-                        searchText={searchText}
-                        setSearchText={setSearchText}
-                        searching={searching}
-                        colors={colors}
-                        onClose={() => { setShowSearch(false); setSearchText(''); }}
-                      />
-                    )}
                     {isLocalOnly && (
                       <View style={[styles.localModeBanner, { 
                         backgroundColor: colors.warning + '15',
@@ -3539,7 +3554,6 @@ const styles = StyleSheet.create({
     gap: 12,
     paddingHorizontal: rp(20),
     paddingVertical: rp(12),
-    borderBottomWidth: 1,
     position: 'relative',
     zIndex: 1000,
   },
@@ -3549,6 +3563,10 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 12,
     flex: 1,
+    borderRadius: 20,
+    borderWidth: 1,
+    paddingHorizontal: rp(16),
+    paddingVertical: rp(12),
   },
   searchInput: {
     flex: 1,

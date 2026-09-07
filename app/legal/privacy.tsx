@@ -8,7 +8,7 @@ import { rf, rp } from '@/utils/responsive';
 
 export default function PrivacyScreen() {
     const router = useRouter();
-    const { isDark } = useTheme();
+    const { colors, isDark } = useTheme();
     const onBg = isDark ? '#ffffff' : '#2a2447';
     const onBg2 = isDark ? '#a0a0c0' : '#5c5678';
 
@@ -23,8 +23,16 @@ export default function PrivacyScreen() {
             <SafeAreaView style={[styles.container, { backgroundColor: 'transparent' }]}>
                 <View style={[styles.header, { backgroundColor: 'transparent', borderBottomWidth: 0 }]}>
                     <Text style={[styles.title, { color: onBg }]}>Política de Privacidad</Text>
-                    <TouchableOpacity onPress={() => router.back()} style={styles.closeButton}>
-                        <X size={24} color={onBg} />
+                    <TouchableOpacity
+                        onPress={() => router.back()}
+                        style={[
+                            styles.closeButton,
+                            isDark
+                                ? { backgroundColor: 'rgba(124,106,247,0.14)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.2)' }
+                                : { backgroundColor: colors.primary },
+                        ]}
+                    >
+                        <X size={20} color={isDark ? onBg : '#FFFFFF'} />
                     </TouchableOpacity>
                 </View>
 
@@ -197,7 +205,11 @@ const styles = StyleSheet.create({
         fontWeight: '700',
     },
     closeButton: {
-        padding: rp(8),
+        width: 40,
+        height: 40,
+        borderRadius: 20,
+        justifyContent: 'center',
+        alignItems: 'center',
     },
     content: {
         flex: 1,
