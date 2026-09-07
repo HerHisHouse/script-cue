@@ -2350,6 +2350,11 @@ export default function RecordingsScreen() {
     const gridItemWidth = Math.floor((windowWidth - gridPadding * 2 - gridGap * (gridColumns - 1)) / gridColumns);
     const gridIconSize = gridColumns <= 2 ? 72 : gridColumns === 3 ? 56 : gridColumns === 4 ? 52 : 48;
     const isOpen = showRecordingMenu === item.id;
+    // Mismo lenguaje visual glass que ScriptCard (pantalla Guiones)
+    const cardTitleColor = isDark ? '#ffffff' : '#2a2447';
+    const cardSecondaryColor = isDark ? '#a0a0c0' : '#5c5678';
+    const cardIconColor = isDark ? '#FFFFFF' : colors.primary;
+    const cardIconBg = isDark ? 'rgba(167,139,250,0.15)' : 'rgba(124,106,247,0.12)';
     const menuOpacity = React.useRef(new Animated.Value(0)).current;
     const menuScale = React.useRef(new Animated.Value(0.98)).current;
 
@@ -2365,9 +2370,19 @@ export default function RecordingsScreen() {
       <TouchableOpacity
         style={[
           viewMode === 'list' ? styles.recordingCard : styles.gridCard,
-          { backgroundColor: isSelected ? colors.input : colors.surface },
+          {
+            backgroundColor: isSelected ? colors.input : (isDark ? 'rgba(124,106,247,0.08)' : 'rgba(255,255,255,0.55)'),
+            borderColor: isSelected ? colors.primary : (isDark ? 'rgba(167,139,250,0.25)' : 'rgba(124,106,247,0.15)'),
+            borderWidth: isSelected ? 2 : 1,
+          },
+          !isDark && {
+            shadowColor: '#1a1625',
+            shadowOffset: { width: 0, height: 8 },
+            shadowOpacity: 0.28,
+            shadowRadius: 16,
+            elevation: 8,
+          },
           viewMode === 'grid' ? { width: gridItemWidth } : null,
-          isSelected && { borderColor: colors.primary, borderWidth: 2 },
           showRecordingMenu === item.id ? { zIndex: 1002 } : null
         ]}
         onPress={() => {
@@ -2388,24 +2403,24 @@ export default function RecordingsScreen() {
       >
         {viewMode === 'list' ? (
           <>
-            <View style={[styles.iconContainer, { backgroundColor: item.type === 'video' ? '#8B5CF6' : colors.primary }]}>
+            <View style={[styles.iconContainer, { backgroundColor: cardIconBg }]}>
               {item.type === 'video' ? (
-                <VideoIcon size={20} color="#FFFFFF" />
+                <VideoIcon size={20} color={cardIconColor} />
               ) : (
-                <Play size={20} color="#FFFFFF" fill="#FFFFFF" />
+                <Play size={20} color={cardIconColor} fill={cardIconColor} />
               )}
             </View>
             <View style={styles.recordingInfo}>
-              <Text style={[styles.recordingTitle, { color: colors.text }]} numberOfLines={1}>
+              <Text style={[styles.recordingTitle, { color: cardTitleColor }]} numberOfLines={1}>
                 {item.title || 'Sin título'}
               </Text>
               <View style={styles.recordingMeta}>
-                <Clock size={14} color={colors.textSecondary} />
-                <Text style={[styles.recordingDuration, { color: colors.textSecondary }]}>
+                <Clock size={14} color={cardSecondaryColor} />
+                <Text style={[styles.recordingDuration, { color: cardSecondaryColor }]}>
                   {formatDuration(item.duration_seconds)}
                 </Text>
               </View>
-              <Text style={[styles.recordingDate, { color: colors.textSecondary }]}>
+              <Text style={[styles.recordingDate, { color: cardSecondaryColor }]}>
                 {new Date(item.created_at).toLocaleDateString('es-ES', {
                   day: 'numeric',
                   month: 'long',
@@ -2423,14 +2438,14 @@ export default function RecordingsScreen() {
                     {isLocalFile ? (
                       <View style={styles.storageTag}>
                         <Text style={styles.storageTagIcon}>📱</Text>
-                        <Text style={[styles.storageTagText, { color: colors.textSecondary }]}>
+                        <Text style={[styles.storageTagText, { color: cardSecondaryColor }]}>
                           Local
                         </Text>
                       </View>
                     ) : (
                       <View style={styles.storageTag}>
                         <Text style={styles.storageTagIcon}>☁️</Text>
-                        <Text style={[styles.storageTagText, { color: colors.textSecondary }]}>
+                        <Text style={[styles.storageTagText, { color: cardSecondaryColor }]}>
                           Nube
                         </Text>
                       </View>
@@ -2457,10 +2472,10 @@ export default function RecordingsScreen() {
             ) : (
               <View style={styles.actions}>
                 <TouchableOpacity
-                  style={[styles.menuButton, { backgroundColor: colors.input }]}
+                  style={styles.menuButton}
                   onPress={() => setShowRecordingMenu(showRecordingMenu === item.id ? null : item.id)}
                 >
-                  <MoreVertical size={20} color={colors.text} />
+                  <MoreVertical size={20} color={cardSecondaryColor} />
                 </TouchableOpacity>
               </View>
             )}
@@ -2470,30 +2485,30 @@ export default function RecordingsScreen() {
             <View style={[
               styles.gridIconContainer,
               {
-                backgroundColor: item.type === 'video' ? '#8B5CF6' : colors.primary,
+                backgroundColor: cardIconBg,
                 width: gridIconSize,
                 height: gridIconSize,
                 borderRadius: 10
               }
             ]}>
               {item.type === 'video' ? (
-                <VideoIcon size={Math.round(gridIconSize * 0.53)} color="#FFFFFF" />
+                <VideoIcon size={Math.round(gridIconSize * 0.53)} color={cardIconColor} />
               ) : (
-                <Play size={Math.round(gridIconSize * 0.53)} color="#FFFFFF" fill="#FFFFFF" />
+                <Play size={Math.round(gridIconSize * 0.53)} color={cardIconColor} fill={cardIconColor} />
               )}
             </View>
-            <Text style={[styles.gridTitle, { color: colors.text }]} numberOfLines={2}>
+            <Text style={[styles.gridTitle, { color: cardTitleColor }]} numberOfLines={2}>
               {item.title || 'Sin título'}
             </Text>
-            <Text style={[styles.gridDate, { color: colors.textSecondary }]} numberOfLines={1}>
+            <Text style={[styles.gridDate, { color: cardSecondaryColor }]} numberOfLines={1}>
               {new Date(item.created_at).toLocaleDateString('es-ES', {
                 day: 'numeric',
                 month: 'short',
               })}
             </Text>
             <View style={styles.gridMeta}>
-              <Clock size={12} color={colors.textSecondary} />
-              <Text style={[styles.gridDuration, { color: colors.textSecondary }]}>
+              <Clock size={12} color={cardSecondaryColor} />
+              <Text style={[styles.gridDuration, { color: cardSecondaryColor }]}>
                 {formatDuration(item.duration_seconds)}
               </Text>
             </View>
@@ -2515,10 +2530,10 @@ export default function RecordingsScreen() {
               </View>
             ) : (
               <TouchableOpacity
-                style={[styles.gridMenuButton, { backgroundColor: colors.input }]}
+                style={styles.gridMenuButton}
                 onPress={() => setShowRecordingMenu(showRecordingMenu === item.id ? null : item.id)}
               >
-                <MoreVertical size={18} color={colors.text} />
+                <MoreVertical size={18} color={cardSecondaryColor} />
               </TouchableOpacity>
             )}
           </View>
@@ -2614,6 +2629,7 @@ export default function RecordingsScreen() {
 
         <ScreenHeader
           title={selectionMode ? `${selectedIds.size} seleccionados` : "Grabaciones"}
+          style={{ backgroundColor: 'transparent', borderBottomWidth: 0 }}
           onLayout={(e) => setHeaderHeight(e.nativeEvent.layout.height)}
           leftAction={
             selectionMode ? (
@@ -2872,16 +2888,45 @@ export default function RecordingsScreen() {
                 onClose={() => { setShowSearch(false); setSearchText(''); }}
               />
             )}
-            <View style={styles.emptyState}>
-              <Text style={[styles.emptyTitle, { color: colors.text }]}>
-                {searchText ? 'No se encontraron grabaciones' : 'No hay grabaciones'}
-              </Text>
-              <Text style={[styles.emptyText, { color: colors.textSecondary, textAlign: 'center', paddingHorizontal: 40 }]}>
-                {searchText
-                  ? 'Intenta con otro término de búsqueda'
-                  : 'Tus sesiones grabadas en el Modo Estudio y Casting aparecerán aquí.'}
-              </Text>
-            </View>
+            {searchText ? (
+              <View style={styles.emptyState}>
+                <Text style={[styles.emptyTitle, { color: colors.text }]}>
+                  No se encontraron grabaciones
+                </Text>
+                <Text style={[styles.emptyText, { color: colors.textSecondary, textAlign: 'center', paddingHorizontal: 40 }]}>
+                  Intenta con otro término de búsqueda
+                </Text>
+              </View>
+            ) : (
+              <View style={styles.emptyState}>
+                <View
+                  style={[
+                    styles.emptyCard,
+                    {
+                      backgroundColor: isDark ? 'rgba(124,106,247,0.08)' : 'rgba(255,255,255,0.55)',
+                      borderColor: isDark ? 'rgba(167,139,250,0.25)' : 'rgba(124,106,247,0.15)',
+                    },
+                    !isDark && {
+                      shadowColor: '#1a1625',
+                      shadowOffset: { width: 0, height: 8 },
+                      shadowOpacity: 0.28,
+                      shadowRadius: 16,
+                      elevation: 8,
+                    },
+                  ]}
+                >
+                  <View style={[styles.emptyIconCircle, { backgroundColor: isDark ? 'rgba(167,139,250,0.15)' : 'rgba(124,106,247,0.12)' }]}>
+                    <FileAudio size={30} color={isDark ? '#FFFFFF' : colors.primary} />
+                  </View>
+                  <Text style={[styles.emptyTitle, { color: isDark ? '#FFFFFF' : '#2a2447', textAlign: 'center' }]}>
+                    No hay grabaciones
+                  </Text>
+                  <Text style={[styles.emptyText, { color: isDark ? '#a0a0c0' : '#5c5678', textAlign: 'center' }]}>
+                    Tus sesiones grabadas en el Modo Estudio y Casting aparecerán aquí.
+                  </Text>
+                </View>
+              </View>
+            )}
           </View>
         ) : (
           <PinchGestureHandler
@@ -3573,6 +3618,22 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingHorizontal: rp(40),
   },
+  emptyCard: {
+    width: '100%',
+    borderRadius: 24,
+    borderWidth: 1,
+    paddingVertical: rp(32),
+    paddingHorizontal: rp(24),
+    alignItems: 'center',
+  },
+  emptyIconCircle: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: rp(16),
+  },
   emptyTitle: {
     fontSize: rf(22),
     fontWeight: '600',
@@ -3595,14 +3656,9 @@ const styles = StyleSheet.create({
   recordingCard: {
     flexDirection: 'row',
     alignItems: 'center',
-    borderRadius: 12,
+    borderRadius: 20,
     padding: rp(16),
     marginBottom: 12,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
-    shadowRadius: 8,
-    elevation: 2,
     gap: 12,
     position: 'relative',
     overflow: 'visible',
@@ -3610,13 +3666,8 @@ const styles = StyleSheet.create({
   gridCard: {
     flex: 1,
     margin: 4,
-    borderRadius: 12,
+    borderRadius: 20,
     padding: rp(12),
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
-    shadowRadius: 8,
-    elevation: 2,
     position: 'relative',
     overflow: 'visible',
     // Dynamic sizing in JSX for responsive columns
