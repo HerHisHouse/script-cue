@@ -716,7 +716,7 @@ export default function IndexScreen() {
             isAtLimit
               ? { backgroundColor: colors.surface }
               : isDark
-                ? { backgroundColor: 'rgba(124,106,247,0.35)', borderWidth: 1.5, borderColor: 'rgba(255,255,255,0.5)' }
+                ? { backgroundColor: 'rgba(124,106,247,0.80)', borderWidth: 1.5, borderColor: 'rgba(255,255,255,0.5)' }
                 : { backgroundColor: colors.primary },
           ]}
           onPress={() => {
@@ -772,7 +772,7 @@ export default function IndexScreen() {
               style={[
                 styles.emptyCta,
                 isDark
-                  ? { backgroundColor: 'rgba(124,106,247,0.35)', borderWidth: 1.5, borderColor: 'rgba(255,255,255,0.5)' }
+                  ? { backgroundColor: 'rgba(124,106,247,0.80)', borderWidth: 1.5, borderColor: 'rgba(255,255,255,0.5)' }
                   : { backgroundColor: colors.primary },
               ]}
               onPress={() => setShowAddMenu(true)}

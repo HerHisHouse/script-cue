@@ -1,8 +1,8 @@
 import React, { useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Linking } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Linking, ImageBackground } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
-import { ArrowLeft, ChevronDown, ChevronUp, Mail } from 'lucide-react-native';
+import { ArrowLeft, ChevronDown, Mail } from 'lucide-react-native';
 import { useTheme } from '@/contexts/ThemeContext';
 import { rf, rp } from '@/utils/responsive';
 
@@ -77,8 +77,20 @@ const faqs: FAQ[] = [
 
 export default function FAQScreen() {
     const router = useRouter();
-    const { colors } = useTheme();
+    const { colors, isDark } = useTheme();
     const [expandedIndex, setExpandedIndex] = useState<number | null>(null);
+
+    const onBg = isDark ? '#ffffff' : '#2a2447';
+    const onBg2 = isDark ? '#a0a0c0' : '#5c5678';
+    const cardBg = isDark ? 'rgba(124,106,247,0.08)' : 'rgba(255,255,255,0.55)';
+    const cardBorder = isDark ? 'rgba(167,139,250,0.25)' : 'rgba(124,106,247,0.15)';
+    const cardShadow = !isDark ? {
+        shadowColor: '#1a1625',
+        shadowOffset: { width: 0, height: 8 },
+        shadowOpacity: 0.28,
+        shadowRadius: 16,
+        elevation: 8,
+    } : null;
 
     const categories = Array.from(new Set(faqs.map(faq => faq.category)));
 
@@ -91,19 +103,24 @@ export default function FAQScreen() {
     };
 
     return (
-        <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]} edges={['top', 'left', 'right']}>
-            <View style={[styles.header, { backgroundColor: colors.surface, borderBottomColor: colors.border }]}>
+        <ImageBackground
+            source={isDark ? require('@/assets/images/ui-dark-bg.png') : require('@/assets/images/ui-light-bg.png')}
+            resizeMode="cover"
+            style={styles.container}
+        >
+        <SafeAreaView style={[styles.container, { backgroundColor: 'transparent' }]} edges={['top', 'left', 'right']}>
+            <View style={[styles.header, { backgroundColor: 'transparent', borderBottomWidth: 0 }]}>
                 <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
-                    <ArrowLeft size={24} color={colors.text} />
+                    <ArrowLeft size={24} color={onBg} />
                 </TouchableOpacity>
-                <Text style={[styles.headerTitle, { color: colors.text }]}>Preguntas Frecuentes</Text>
+                <Text style={[styles.headerTitle, { color: onBg }]}>Preguntas Frecuentes</Text>
                 <View style={{ width: 24 }} />
             </View>
 
             <ScrollView style={styles.content} contentContainerStyle={styles.scrollContent}>
                 {categories.map((category) => (
                     <View key={category} style={styles.categorySection}>
-                        <Text style={[styles.categoryTitle, { color: colors.textSecondary }]}>{category}</Text>
+                        <Text style={[styles.categoryTitle, { color: onBg2 }]}>{category}</Text>
 
                         {faqs
                             .filter(faq => faq.category === category)
@@ -112,44 +129,47 @@ export default function FAQScreen() {
                                 const isExpanded = expandedIndex === globalIndex;
 
                                 return (
-                                    <TouchableOpacity
+                                    <View
                                         key={globalIndex}
                                         style={[
                                             styles.faqCard,
-                                            { backgroundColor: colors.surface, borderColor: colors.border }
+                                            { ...cardShadow, backgroundColor: cardBg, borderColor: cardBorder }
                                         ]}
-                                        onPress={() => toggleFAQ(globalIndex)}
-                                        activeOpacity={0.7}
                                     >
-                                        <View style={styles.faqHeader}>
-                                            <Text style={[styles.faqQuestion, { color: colors.text }]}>
+                                        <TouchableOpacity
+                                            style={styles.faqHeader}
+                                            onPress={() => toggleFAQ(globalIndex)}
+                                            activeOpacity={0.7}
+                                        >
+                                            <Text style={[styles.faqQuestion, { color: onBg }]}>
                                                 {faq.question}
                                             </Text>
-                                            {isExpanded ? (
-                                                <ChevronUp size={20} color={colors.primary} />
-                                            ) : (
-                                                <ChevronDown size={20} color={colors.textSecondary} />
-                                            )}
-                                        </View>
+                                            <ChevronDown
+                                                size={20}
+                                                color={onBg2}
+                                                style={{ transform: [{ rotate: isExpanded ? '180deg' : '0deg' }] }}
+                                            />
+                                        </TouchableOpacity>
 
                                         {isExpanded && (
                                             <View style={styles.faqAnswerContainer}>
-                                                <Text style={[styles.faqAnswer, { color: colors.textSecondary }]}>
+                                                <View style={[styles.faqDivider, { backgroundColor: cardBorder }]} />
+                                                <Text style={[styles.faqAnswer, { color: onBg2 }]}>
                                                     {faq.answer}
                                                 </Text>
                                             </View>
                                         )}
-                                    </TouchableOpacity>
+                                    </View>
                                 );
                             })}
                     </View>
                 ))}
 
-                <View style={[styles.contactCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-                    <Text style={[styles.contactTitle, { color: colors.text }]}>
+                <View style={[styles.contactCard, { ...cardShadow, backgroundColor: cardBg, borderColor: cardBorder }]}>
+                    <Text style={[styles.contactTitle, { color: onBg }]}>
                         ¿No encuentras lo que buscas?
                     </Text>
-                    <Text style={[styles.contactText, { color: colors.textSecondary }]}>
+                    <Text style={[styles.contactText, { color: onBg2 }]}>
                         Si tienes más preguntas, no dudes en contactarnos:
                     </Text>
 
@@ -176,6 +196,7 @@ export default function FAQScreen() {
                 </View>
             </ScrollView>
         </SafeAreaView>
+        </ImageBackground>
     );
 }
 
@@ -216,7 +237,7 @@ const styles = StyleSheet.create({
         marginBottom: rp(12),
     },
     faqCard: {
-        borderRadius: 12,
+        borderRadius: 20,
         borderWidth: 1,
         marginBottom: rp(12),
         overflow: 'hidden',
@@ -238,12 +259,17 @@ const styles = StyleSheet.create({
         paddingBottom: rp(16),
         paddingTop: 0,
     },
+    faqDivider: {
+        height: 1,
+        opacity: 0.6,
+        marginBottom: rp(12),
+    },
     faqAnswer: {
         fontSize: rf(14),
         lineHeight: rf(20),
     },
     contactCard: {
-        borderRadius: 12,
+        borderRadius: 20,
         borderWidth: 1,
         padding: rp(20),
         marginTop: rp(20),

@@ -1,5 +1,5 @@
 import React from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ImageBackground } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, Stack } from 'expo-router';
 import { useTheme } from '@/contexts/ThemeContext';
@@ -8,27 +8,34 @@ import { rf, rp } from '@/utils/responsive';
 
 export default function TermsScreen() {
     const router = useRouter();
-    const { colors } = useTheme();
+    const { isDark } = useTheme();
+    const onBg = isDark ? '#ffffff' : '#2a2447';
+    const onBg2 = isDark ? '#a0a0c0' : '#5c5678';
 
     return (
         <>
             <Stack.Screen options={{ headerShown: false }} />
-            <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
-                <View style={[styles.header, { borderBottomColor: colors.border }]}>
-                    <Text style={[styles.title, { color: colors.text }]}>Términos y Condiciones</Text>
+            <ImageBackground
+                source={isDark ? require('@/assets/images/ui-dark-bg.png') : require('@/assets/images/ui-light-bg.png')}
+                resizeMode="cover"
+                style={styles.container}
+            >
+            <SafeAreaView style={[styles.container, { backgroundColor: 'transparent' }]}>
+                <View style={[styles.header, { backgroundColor: 'transparent', borderBottomWidth: 0 }]}>
+                    <Text style={[styles.title, { color: onBg }]}>Términos y Condiciones</Text>
                     <TouchableOpacity onPress={() => router.back()} style={styles.closeButton}>
-                        <X size={24} color={colors.text} />
+                        <X size={24} color={onBg} />
                     </TouchableOpacity>
                 </View>
 
                 <ScrollView style={styles.content} contentContainerStyle={styles.contentContainer}>
-                    <Text style={[styles.paragraph, { color: colors.text }]}>
+                    <Text style={[styles.paragraph, { color: onBg2 }]}>
                         Te doy la bienvenida a Script Cue.{'\n'}
                         Al crear una cuenta y utilizar nuestros servicios, aceptas estos Términos y Condiciones de Uso. Por favor, léelos cuidadosamente. Si no estás de acuerdo, no debes utilizar la Aplicación.
                     </Text>
 
-                    <Text style={[styles.sectionTitle, { color: colors.text }]}>1. Objeto de la Aplicación</Text>
-                    <Text style={[styles.paragraph, { color: colors.text }]}>
+                    <Text style={[styles.sectionTitle, { color: onBg }]}>1. Objeto de la Aplicación</Text>
+                    <Text style={[styles.paragraph, { color: onBg2 }]}>
                         La Aplicación ofrece herramientas para:{'\n'}
                         • la práctica e interpretación de guiones,{'\n'}
                         • la grabación de audio y vídeo,{'\n'}
@@ -39,8 +46,8 @@ export default function TermsScreen() {
                         La Aplicación no sustituye a un coach profesional, escuela de interpretación ni asesoramiento especializado.
                     </Text>
 
-                    <Text style={[styles.sectionTitle, { color: colors.text }]}>2. Registro y Cuenta</Text>
-                    <Text style={[styles.paragraph, { color: colors.text }]}>
+                    <Text style={[styles.sectionTitle, { color: onBg }]}>2. Registro y Cuenta</Text>
+                    <Text style={[styles.paragraph, { color: onBg2 }]}>
                         Para utilizar la Aplicación debes:{'\n'}
                         • ser mayor de 14 años (o edad legal mínima de tu país),{'\n'}
                         • proporcionar información veraz,{'\n'}
@@ -48,8 +55,8 @@ export default function TermsScreen() {
                         Eres responsable de toda actividad que ocurra bajo tu cuenta.
                     </Text>
 
-                    <Text style={[styles.sectionTitle, { color: colors.text }]}>3. Uso Permitido</Text>
-                    <Text style={[styles.paragraph, { color: colors.text }]}>
+                    <Text style={[styles.sectionTitle, { color: onBg }]}>3. Uso Permitido</Text>
+                    <Text style={[styles.paragraph, { color: onBg2 }]}>
                         El usuario se compromete a:{'\n'}
                         • Usar la Aplicación únicamente para fines personales y legítimos.{'\n'}
                         • No cargar contenido ilegal, ofensivo o que infrinja derechos de terceros.{'\n'}
@@ -58,8 +65,8 @@ export default function TermsScreen() {
                         El uso con fines comerciales requiere un acuerdo previo por escrito.
                     </Text>
 
-                    <Text style={[styles.sectionTitle, { color: colors.text }]}>4. Grabaciones de Audio y Vídeo</Text>
-                    <Text style={[styles.paragraph, { color: colors.text }]}>
+                    <Text style={[styles.sectionTitle, { color: onBg }]}>4. Grabaciones de Audio y Vídeo</Text>
+                    <Text style={[styles.paragraph, { color: onBg2 }]}>
                         La Aplicación permite grabar:{'\n'}
                         • Voz.{'\n'}
                         • Interpretación en vídeo.{'\n'}
@@ -74,8 +81,8 @@ export default function TermsScreen() {
                         4. La Aplicación no comparte grabaciones con terceros.
                     </Text>
 
-                    <Text style={[styles.sectionTitle, { color: colors.text }]}>5. Procesamiento mediante Inteligencia Artificial</Text>
-                    <Text style={[styles.paragraph, { color: colors.text }]}>
+                    <Text style={[styles.sectionTitle, { color: onBg }]}>5. Procesamiento mediante Inteligencia Artificial</Text>
+                    <Text style={[styles.paragraph, { color: onBg2 }]}>
                         Algunas funciones usan IA para:{'\n'}
                         • Generar réplicas de personajes.{'\n'}
                         • Analizar interpretaciones.{'\n'}
@@ -87,15 +94,15 @@ export default function TermsScreen() {
                         • El contenido generado por IA solo debe considerarse un complemento creativo, no asesoramiento profesional.
                     </Text>
 
-                    <Text style={[styles.sectionTitle, { color: colors.text }]}>6. Propiedad Intelectual</Text>
-                    <Text style={[styles.paragraph, { color: colors.text }]}>
+                    <Text style={[styles.sectionTitle, { color: onBg }]}>6. Propiedad Intelectual</Text>
+                    <Text style={[styles.paragraph, { color: onBg2 }]}>
                         Los elementos de la App (diseño, código, funcionalidades, logos, etc.) son propiedad de Script Cue.{'\n\n'}
                         Los guiones, grabaciones y materiales importados por el usuario son propiedad del usuario.{'\n'}
                         El usuario es responsable de tener autorización para importar cualquier guion que no sea de su autoría.
                     </Text>
 
-                    <Text style={[styles.sectionTitle, { color: colors.text }]}>7. Almacenamiento y Seguridad</Text>
-                    <Text style={[styles.paragraph, { color: colors.text }]}>
+                    <Text style={[styles.sectionTitle, { color: onBg }]}>7. Almacenamiento y Seguridad</Text>
+                    <Text style={[styles.paragraph, { color: onBg2 }]}>
                         La Aplicación utiliza proveedores externos como Supabase para almacenar datos.{'\n\n'}
                         Nos comprometemos a:{'\n'}
                         • Adoptar medidas razonables de seguridad.{'\n'}
@@ -104,8 +111,8 @@ export default function TermsScreen() {
                         El usuario acepta este riesgo inherente al uso de servicios en línea.
                     </Text>
 
-                    <Text style={[styles.sectionTitle, { color: colors.text }]}>8. Limitaciones de Responsabilidad</Text>
-                    <Text style={[styles.paragraph, { color: colors.text }]}>
+                    <Text style={[styles.sectionTitle, { color: onBg }]}>8. Limitaciones de Responsabilidad</Text>
+                    <Text style={[styles.paragraph, { color: onBg2 }]}>
                         La Aplicación se ofrece "tal cual es".{'\n\n'}
                         No garantizamos que:{'\n'}
                         • Esté libre de errores.{'\n'}
@@ -123,27 +130,27 @@ export default function TermsScreen() {
                         • Interrupciones del servicio por mantenimiento o fuerza mayor.
                     </Text>
 
-                    <Text style={[styles.sectionTitle, { color: colors.text }]}>8.1 Indemnización</Text>
-                    <Text style={[styles.paragraph, { color: colors.text }]}>
+                    <Text style={[styles.sectionTitle, { color: onBg }]}>8.1 Indemnización</Text>
+                    <Text style={[styles.paragraph, { color: onBg2 }]}>
                         El usuario acepta indemnizar y eximir a Script Cue de cualquier reclamo derivado de:{'\n'}
                         • Contenido que el usuario suba que infrinja derechos de terceros.{'\n'}
                         • Uso de la App para violar leyes aplicables.{'\n'}
                         • Compartir grabaciones sin autorización de otros actores.
                     </Text>
 
-                    <Text style={[styles.sectionTitle, { color: colors.text }]}>8.2 Severabilidad</Text>
-                    <Text style={[styles.paragraph, { color: colors.text }]}>
+                    <Text style={[styles.sectionTitle, { color: onBg }]}>8.2 Severabilidad</Text>
+                    <Text style={[styles.paragraph, { color: onBg2 }]}>
                         Si alguna cláusula es inválida, el resto permanece en vigor.
                     </Text>
 
-                    <Text style={[styles.sectionTitle, { color: colors.text }]}>8.3 Ley Aplicable</Text>
-                    <Text style={[styles.paragraph, { color: colors.text }]}>
+                    <Text style={[styles.sectionTitle, { color: onBg }]}>8.3 Ley Aplicable</Text>
+                    <Text style={[styles.paragraph, { color: onBg2 }]}>
                         Estos términos se rigen por las leyes de España.{'\n'}
                         Cualquier disputa se resolverá en los tribunales de Madrid.
                     </Text>
 
-                    <Text style={[styles.sectionTitle, { color: colors.text }]}>9. Suspensión o Eliminación de Cuenta</Text>
-                    <Text style={[styles.paragraph, { color: colors.text }]}>
+                    <Text style={[styles.sectionTitle, { color: onBg }]}>9. Suspensión o Eliminación de Cuenta</Text>
+                    <Text style={[styles.paragraph, { color: onBg2 }]}>
                         Podemos suspender o eliminar cuentas que:{'\n'}
                         • Violen estos términos,{'\n'}
                         • Abusen del sistema,{'\n'}
@@ -151,26 +158,27 @@ export default function TermsScreen() {
                         El usuario puede solicitar eliminar su cuenta y todos sus datos en cualquier momento.
                     </Text>
 
-                    <Text style={[styles.sectionTitle, { color: colors.text }]}>10. Modificaciones</Text>
-                    <Text style={[styles.paragraph, { color: colors.text }]}>
+                    <Text style={[styles.sectionTitle, { color: onBg }]}>10. Modificaciones</Text>
+                    <Text style={[styles.paragraph, { color: onBg2 }]}>
                         Podemos actualizar estos Términos en cualquier momento.{'\n'}
                         Notificaremos los cambios dentro de la Aplicación.{'\n'}
                         El uso continuado implica la aceptación de los nuevos términos.
                     </Text>
 
-                    <Text style={[styles.sectionTitle, { color: colors.text }]}>11. Contacto</Text>
-                    <Text style={[styles.paragraph, { color: colors.text }]}>
+                    <Text style={[styles.sectionTitle, { color: onBg }]}>11. Contacto</Text>
+                    <Text style={[styles.paragraph, { color: onBg2 }]}>
                         Para consultas o soporte:{'\n\n'}
                         Email: info@scriptcue.es{'\n'}
                         Responsable: Alex Díaz
                     </Text>
 
-                    <Text style={[styles.sectionTitle, { color: colors.text }]}>12. Aceptación</Text>
-                    <Text style={[styles.paragraph, { color: colors.text }]}>
+                    <Text style={[styles.sectionTitle, { color: onBg }]}>12. Aceptación</Text>
+                    <Text style={[styles.paragraph, { color: onBg2 }]}>
                         Al hacer clic en "Acepto los Términos y Condiciones" durante el registro, confirmas que has leído, comprendido y aceptado este documento.
                     </Text>
                 </ScrollView>
             </SafeAreaView>
+            </ImageBackground>
         </>
     );
 }

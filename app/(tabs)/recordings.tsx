@@ -2697,9 +2697,14 @@ export default function RecordingsScreen() {
                     });
                   }
                 }}
-                style={styles.headerMenuButton}
+                style={[
+                  styles.headerMenuButton,
+                  isDark
+                    ? { backgroundColor: 'rgba(124,106,247,0.14)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.2)' }
+                    : { backgroundColor: colors.primary },
+                ]}
               >
-                <MoreVertical size={20} color={colors.text} />
+                <MoreVertical size={20} color={isDark ? colors.text : "#FFFFFF"} />
               </TouchableOpacity>
             )
           }
@@ -3485,7 +3490,11 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
   headerMenuButton: {
-    padding: rp(4),
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   processingBanner: {
     flexDirection: 'row',

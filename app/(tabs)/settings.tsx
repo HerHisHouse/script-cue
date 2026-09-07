@@ -35,6 +35,12 @@ export default function SettingsScreen() {
   const [pitchValue, setPitchValue] = useState<number>(1.0);
   const [rotationEnabled, setRotationEnabled] = useState(false);
 
+  // Secciones agrupadas en acordeón (General/Contacto/Ayuda/Aviso Legal) — solo una abierta a la vez
+  const [expandedSection, setExpandedSection] = useState<'general' | 'contacto' | 'ayuda' | 'legal' | null>(null);
+  const toggleSection = (key: 'general' | 'contacto' | 'ayuda' | 'legal') => {
+    setExpandedSection((prev) => (prev === key ? null : key));
+  };
+
   // Profile editing state
   const [editingName, setEditingName] = useState(false);
   const [nameInput, setNameInput] = useState('');
@@ -319,6 +325,19 @@ export default function SettingsScreen() {
     }
   }
 
+  // Mismo lenguaje visual glass que el resto de pantallas rediseñadas
+  const onBg = isDark ? '#ffffff' : '#2a2447';
+  const onBg2 = isDark ? '#a0a0c0' : '#5c5678';
+  const cardBg = isDark ? 'rgba(124,106,247,0.08)' : 'rgba(255,255,255,0.55)';
+  const cardBorder = isDark ? 'rgba(167,139,250,0.25)' : 'rgba(124,106,247,0.15)';
+  const cardShadow = !isDark ? {
+    shadowColor: '#1a1625',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.28,
+    shadowRadius: 16,
+    elevation: 8,
+  } : null;
+
   return (
     <ImageBackground
       source={isDark ? require('@/assets/images/ui-dark-bg.png') : require('@/assets/images/ui-light-bg.png')}
@@ -327,7 +346,7 @@ export default function SettingsScreen() {
     >
     <SafeAreaView style={[styles.container, { backgroundColor: 'transparent' }]} edges={['top', 'left', 'right']}>
       <View style={{ flex: 1, backgroundColor: 'transparent' }}>
-        <ScreenHeader title="Ajustes" />
+        <ScreenHeader title="Ajustes" style={{ backgroundColor: 'transparent', borderBottomWidth: 0 }} />
 
         <ScrollView style={styles.content} contentContainerStyle={{ paddingHorizontal: 12, paddingVertical: 20, paddingBottom: 200 + insets.bottom }}>
           <ConfirmDialog
@@ -340,11 +359,11 @@ export default function SettingsScreen() {
             onCancel={() => setShowSignOutConfirm(false)}
             destructive
           />
-          {/* CUENTA */}
+          {/* PERFIL */}
           <View style={styles.section}>
-            <Text style={[styles.sectionTitle, { color: colors.textSecondary }]}>Cuenta</Text>
+            <Text style={[styles.sectionTitle, { color: onBg2, textAlign: 'center' }]}>Perfil</Text>
 
-            <View style={[styles.profileCard, { backgroundColor: colors.surface }]}>
+            <View style={[styles.profileCard, { ...cardShadow, backgroundColor: cardBg, borderWidth: 1, borderColor: cardBorder }]}>
               {/* Avatar con botón de edición */}
               <TouchableOpacity
                 style={styles.avatarWrapper}
@@ -361,13 +380,13 @@ export default function SettingsScreen() {
                       style={styles.avatarImage}
                     />
                   ) : (
-                    <User size={28} color={colors.primary} />
+                    <User size={44} color={colors.primary} />
                   )}
                 </View>
                 {/* Botón de cámara superpuesto */}
                 {!uploadingAvatar && (
                   <View style={[styles.avatarCameraBtn, { backgroundColor: colors.primary }]}>
-                    <Camera size={12} color="#fff" />
+                    <Camera size={15} color="#fff" />
                   </View>
                 )}
               </TouchableOpacity>
@@ -380,7 +399,7 @@ export default function SettingsScreen() {
                       style={[
                         styles.nameInput,
                         {
-                          color: colors.text,
+                          color: onBg,
                           borderColor: colors.primary,
                           backgroundColor: colors.input,
                         }
@@ -406,12 +425,12 @@ export default function SettingsScreen() {
                       onPress={() => setEditingName(false)}
                       style={[styles.nameActionBtn, { backgroundColor: isDark ? '#374151' : '#E5E7EB' }]}
                     >
-                      <X size={16} color={colors.text} />
+                      <X size={16} color={onBg} />
                     </TouchableOpacity>
                   </View>
                 ) : (
                   <View style={styles.nameDisplayRow}>
-                    <Text style={[styles.profileName, { color: colors.text }]}>
+                    <Text style={[styles.profileName, { color: onBg }]}>
                       {displayName}
                     </Text>
                     <TouchableOpacity onPress={startEditName} style={styles.editNameBtn}>
@@ -419,164 +438,189 @@ export default function SettingsScreen() {
                     </TouchableOpacity>
                   </View>
                 )}
-                <Text style={[styles.profileEmail, { color: colors.textSecondary }]}>{user?.email}</Text>
+                <Text style={[styles.profileEmail, { color: onBg2 }]}>{user?.email}</Text>
               </View>
             </View>
           </View>
 
-          <View style={styles.section}>
-            <Text style={[styles.sectionTitle, { color: colors.textSecondary }]}>General</Text>
-            <View style={[styles.storageCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-              <View style={styles.storageRow}>
-                <View style={{ flex: 1 }}>
-                  <Text style={[styles.storageTitle, { color: colors.text }]}>Rotación de pantalla</Text>
-                  <Text style={[styles.storageDesc, { color: colors.textSecondary }]}>Permitir que la pantalla gire al rotar el dispositivo.</Text>
-                </View>
-                <Switch
-                  value={rotationEnabled}
-                  onValueChange={toggleRotation}
-                  trackColor={{ false: isDark ? '#374151' : '#9CA3AF', true: colors.primary }}
-                  thumbColor={Platform.OS === 'android' ? '#FFFFFF' : undefined}
-                  ios_backgroundColor={isDark ? '#374151' : '#9CA3AF'}
-                />
-              </View>
-            </View>
-          </View>
-
-          <View style={styles.section}>
-            <Text style={[styles.sectionTitle, { color: colors.textSecondary }]}>Apariencia</Text>
-
-            <View style={[styles.themeCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-              <TouchableOpacity
-                style={[styles.themeOption, mode === 'light' && { backgroundColor: colors.input }]}
-                onPress={() => setThemeMode('light')}
-              >
-                <Sun size={24} color={mode === 'light' ? colors.primary : colors.textSecondary} />
-                <Text style={[styles.themeOptionText, { color: mode === 'light' ? colors.primary : colors.textSecondary }]}>Claro</Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={[styles.themeOption, mode === 'dark' && { backgroundColor: colors.input }]}
-                onPress={() => setThemeMode('dark')}
-              >
-                <Moon size={24} color={mode === 'dark' ? colors.primary : colors.textSecondary} />
-                <Text style={[styles.themeOptionText, { color: mode === 'dark' ? colors.primary : colors.textSecondary }]}>Oscuro</Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={[styles.themeOption, mode === 'auto' && { backgroundColor: colors.input }]}
-                onPress={() => setThemeMode('auto')}
-              >
-                <Smartphone size={24} color={mode === 'auto' ? colors.primary : colors.textSecondary} />
-                <Text style={[styles.themeOptionText, { color: mode === 'auto' ? colors.primary : colors.textSecondary }]}>Sistema</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-
-          <View style={styles.section}>
-            <Text style={[styles.sectionTitle, { color: colors.textSecondary }]}>Almacenamiento</Text>
-
-            <View style={[styles.storageCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-              <View style={styles.storageRow}>
-                <View style={{ flex: 1 }}>
-                  <Text style={[styles.storageTitle, { color: colors.text }]}>Guardar solo en mi dispositivo</Text>
-                  <Text style={[styles.storageDesc, { color: colors.textSecondary }]}>Las nuevas grabaciones no se subirán a la nube. Solo podrás verlas en este dispositivo.</Text>
-                </View>
-                <Switch
-                  value={localOnly}
-                  onValueChange={toggleLocalOnly}
-                  trackColor={{ false: isDark ? '#374151' : '#9CA3AF', true: colors.primary }}
-                  thumbColor={Platform.OS === 'android' ? '#FFFFFF' : undefined}
-                  ios_backgroundColor={isDark ? '#374151' : '#9CA3AF'}
-                />
-              </View>
-            </View>
-          </View>
-
-
-          <View style={styles.section}>
-            <Text style={[styles.sectionTitle, { color: colors.textSecondary }]}>Ayuda</Text>
-
+          {/* GENERAL */}
+          <View
+            style={[
+              styles.accordionCard,
+              { ...cardShadow, backgroundColor: cardBg, borderColor: cardBorder },
+            ]}
+          >
             <TouchableOpacity
-              style={[styles.legalCard, { backgroundColor: colors.surface, borderColor: colors.border }]}
-              onPress={() => router.push('/faqs')}
+              style={styles.accordionHeader}
+              activeOpacity={0.7}
+              onPress={() => toggleSection('general')}
             >
-              <View style={styles.legalCardContent}>
-                <Text style={[styles.legalCardTitle, { color: colors.text }]}>Preguntas Frecuentes</Text>
-                <Text style={[styles.legalCardDesc, { color: colors.textSecondary }]}>Aprende cómo usar la app</Text>
-              </View>
-              <Text style={[styles.legalCardArrow, { color: colors.textSecondary }]}>›</Text>
+              <Text style={[styles.accordionTitle, { color: onBg }]}>General</Text>
+              <ChevronDown
+                size={20}
+                color={onBg2}
+                style={{ transform: [{ rotate: expandedSection === 'general' ? '180deg' : '0deg' }] }}
+              />
             </TouchableOpacity>
+
+            {expandedSection === 'general' && (
+              <View style={styles.accordionBody}>
+                <View style={styles.storageRow}>
+                  <View style={{ flex: 1 }}>
+                    <Text style={[styles.storageTitle, { color: onBg }]}>Rotación de pantalla</Text>
+                    <Text style={[styles.storageDesc, { color: onBg2 }]}>Permitir que la pantalla gire al rotar el dispositivo.</Text>
+                  </View>
+                  <Switch
+                    value={rotationEnabled}
+                    onValueChange={toggleRotation}
+                    trackColor={{ false: isDark ? '#374151' : '#9CA3AF', true: colors.primary }}
+                    thumbColor={Platform.OS === 'android' ? '#FFFFFF' : undefined}
+                    ios_backgroundColor={isDark ? '#374151' : '#9CA3AF'}
+                  />
+                </View>
+
+                <View style={[styles.rowDivider, { backgroundColor: cardBorder }]} />
+
+                <Text style={[styles.subLabel, { color: onBg2 }]}>Apariencia</Text>
+                <View style={styles.themeRow}>
+                  <TouchableOpacity
+                    style={[styles.themeOption, mode === 'light' && { backgroundColor: colors.input }]}
+                    onPress={() => setThemeMode('light')}
+                  >
+                    <Sun size={24} color={mode === 'light' ? colors.primary : onBg2} />
+                    <Text style={[styles.themeOptionText, { color: mode === 'light' ? colors.primary : onBg2 }]}>Claro</Text>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    style={[styles.themeOption, mode === 'dark' && { backgroundColor: colors.input }]}
+                    onPress={() => setThemeMode('dark')}
+                  >
+                    <Moon size={24} color={mode === 'dark' ? colors.primary : onBg2} />
+                    <Text style={[styles.themeOptionText, { color: mode === 'dark' ? colors.primary : onBg2 }]}>Oscuro</Text>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    style={[styles.themeOption, mode === 'auto' && { backgroundColor: colors.input }]}
+                    onPress={() => setThemeMode('auto')}
+                  >
+                    <Smartphone size={24} color={mode === 'auto' ? colors.primary : onBg2} />
+                    <Text style={[styles.themeOptionText, { color: mode === 'auto' ? colors.primary : onBg2 }]}>Sistema</Text>
+                  </TouchableOpacity>
+                </View>
+
+                <View style={[styles.rowDivider, { backgroundColor: cardBorder }]} />
+
+                <View style={styles.storageRow}>
+                  <View style={{ flex: 1 }}>
+                    <Text style={[styles.storageTitle, { color: onBg }]}>Guardar solo en mi dispositivo</Text>
+                    <Text style={[styles.storageDesc, { color: onBg2 }]}>Las nuevas grabaciones no se subirán a la nube. Solo podrás verlas en este dispositivo.</Text>
+                  </View>
+                  <Switch
+                    value={localOnly}
+                    onValueChange={toggleLocalOnly}
+                    trackColor={{ false: isDark ? '#374151' : '#9CA3AF', true: colors.primary }}
+                    thumbColor={Platform.OS === 'android' ? '#FFFFFF' : undefined}
+                    ios_backgroundColor={isDark ? '#374151' : '#9CA3AF'}
+                  />
+                </View>
+              </View>
+            )}
           </View>
 
           {/* CONTACTO */}
-          <View style={styles.section}>
-            <Text style={[styles.sectionTitle, { color: colors.textSecondary }]}>Contacto</Text>
-
+          <View
+            style={[
+              styles.accordionCard,
+              { ...cardShadow, backgroundColor: cardBg, borderColor: cardBorder },
+            ]}
+          >
             <TouchableOpacity
-              style={[styles.legalCard, { backgroundColor: colors.surface, borderColor: colors.border }]}
-              onPress={() => openMailto('mailto:info@scriptcue.es')}
+              style={styles.accordionHeader}
+              activeOpacity={0.7}
+              onPress={() => toggleSection('contacto')}
             >
-              <View style={{ flexDirection: 'row', alignItems: 'center', flex: 1, gap: rp(12) }}>
-                <Mail size={20} color={colors.primary} />
-                <View style={styles.legalCardContent}>
-                  <Text style={[styles.legalCardTitle, { color: colors.text }]}>Email</Text>
-                  <Text style={[styles.legalCardDesc, { color: colors.textSecondary }]}>info@scriptcue.es</Text>
-                </View>
-              </View>
-              <Text style={[styles.legalCardArrow, { color: colors.textSecondary }]}>›</Text>
+              <Text style={[styles.accordionTitle, { color: onBg }]}>Contacto</Text>
+              <ChevronDown
+                size={20}
+                color={onBg2}
+                style={{ transform: [{ rotate: expandedSection === 'contacto' ? '180deg' : '0deg' }] }}
+              />
             </TouchableOpacity>
 
-            <TouchableOpacity
-              style={[styles.legalCard, { backgroundColor: colors.surface, borderColor: colors.border }]}
-              onPress={() => {
-                const subject = encodeURIComponent('Feedback - ScriptCue');
-                const body = encodeURIComponent('¡Hola!\n\nMe gustaría compartir el siguiente feedback sobre ScriptCue:\n\n');
-                openMailto(`mailto:info@scriptcue.es?subject=${subject}&body=${body}`);
-              }}
-            >
-              <View style={{ flexDirection: 'row', alignItems: 'center', flex: 1, gap: rp(12) }}>
-                <MessageCircle size={20} color={colors.primary} />
-                <View style={styles.legalCardContent}>
-                  <Text style={[styles.legalCardTitle, { color: colors.text }]}>Feedback</Text>
-                  <Text style={[styles.legalCardDesc, { color: colors.textSecondary }]}>Cuéntanos tu experiencia</Text>
-                </View>
-              </View>
-              <Text style={[styles.legalCardArrow, { color: colors.textSecondary }]}>›</Text>
-            </TouchableOpacity>
+            {expandedSection === 'contacto' && (
+              <View style={styles.accordionBody}>
+                <TouchableOpacity
+                  style={styles.settingsRow}
+                  onPress={() => openMailto('mailto:info@scriptcue.es')}
+                >
+                  <View style={styles.settingsRowLeft}>
+                    <Mail size={20} color={colors.primary} />
+                    <View style={styles.legalCardContent}>
+                      <Text style={[styles.legalCardTitle, { color: onBg }]}>Email</Text>
+                      <Text style={[styles.legalCardDesc, { color: onBg2 }]}>info@scriptcue.es</Text>
+                    </View>
+                  </View>
+                  <Text style={[styles.legalCardArrow, { color: onBg2 }]}>›</Text>
+                </TouchableOpacity>
 
-            <TouchableOpacity
-              style={[styles.legalCard, { backgroundColor: colors.surface, borderColor: colors.border }]}
-              onPress={() => {
-                const subject = encodeURIComponent('Sugerencia de nueva función - ScriptCue');
-                const body = encodeURIComponent('¡Hola!\n\nMe gustaría sugerir la siguiente función para ScriptCue:\n\n');
-                openMailto(`mailto:info@scriptcue.es?subject=${subject}&body=${body}`);
-              }}
-            >
-              <View style={{ flexDirection: 'row', alignItems: 'center', flex: 1, gap: rp(12) }}>
-                <Lightbulb size={20} color={colors.primary} />
-                <View style={styles.legalCardContent}>
-                  <Text style={[styles.legalCardTitle, { color: colors.text }]}>Sugerir nueva función</Text>
-                  <Text style={[styles.legalCardDesc, { color: colors.textSecondary }]}>Propón ideas y mejoras</Text>
-                </View>
-              </View>
-              <Text style={[styles.legalCardArrow, { color: colors.textSecondary }]}>›</Text>
-            </TouchableOpacity>
+                <View style={[styles.rowDivider, { backgroundColor: cardBorder }]} />
 
-            <TouchableOpacity
-              style={[styles.legalCard, { backgroundColor: colors.surface, borderColor: isDark ? '#7F1D1D' : '#FEE2E2' }]}
-              onPress={() => setShowDeleteConfirm(true)}
-              disabled={deletingAccount}
-            >
-              <View style={{ flexDirection: 'row', alignItems: 'center', flex: 1, gap: rp(12) }}>
-                <Trash2 size={20} color={colors.error} />
-                <View style={styles.legalCardContent}>
-                  <Text style={[styles.legalCardTitle, { color: colors.error }]}>Eliminar mi cuenta</Text>
-                  <Text style={[styles.legalCardDesc, { color: colors.textSecondary }]}>Elimina tu cuenta y todos tus datos</Text>
-                </View>
+                <TouchableOpacity
+                  style={styles.settingsRow}
+                  onPress={() => {
+                    const subject = encodeURIComponent('Feedback - ScriptCue');
+                    const body = encodeURIComponent('¡Hola!\n\nMe gustaría compartir el siguiente feedback sobre ScriptCue:\n\n');
+                    openMailto(`mailto:info@scriptcue.es?subject=${subject}&body=${body}`);
+                  }}
+                >
+                  <View style={styles.settingsRowLeft}>
+                    <MessageCircle size={20} color={colors.primary} />
+                    <View style={styles.legalCardContent}>
+                      <Text style={[styles.legalCardTitle, { color: onBg }]}>Feedback</Text>
+                      <Text style={[styles.legalCardDesc, { color: onBg2 }]}>Cuéntanos tu experiencia</Text>
+                    </View>
+                  </View>
+                  <Text style={[styles.legalCardArrow, { color: onBg2 }]}>›</Text>
+                </TouchableOpacity>
+
+                <View style={[styles.rowDivider, { backgroundColor: cardBorder }]} />
+
+                <TouchableOpacity
+                  style={styles.settingsRow}
+                  onPress={() => {
+                    const subject = encodeURIComponent('Sugerencia de nueva función - ScriptCue');
+                    const body = encodeURIComponent('¡Hola!\n\nMe gustaría sugerir la siguiente función para ScriptCue:\n\n');
+                    openMailto(`mailto:info@scriptcue.es?subject=${subject}&body=${body}`);
+                  }}
+                >
+                  <View style={styles.settingsRowLeft}>
+                    <Lightbulb size={20} color={colors.primary} />
+                    <View style={styles.legalCardContent}>
+                      <Text style={[styles.legalCardTitle, { color: onBg }]}>Sugerir nueva función</Text>
+                      <Text style={[styles.legalCardDesc, { color: onBg2 }]}>Propón ideas y mejoras</Text>
+                    </View>
+                  </View>
+                  <Text style={[styles.legalCardArrow, { color: onBg2 }]}>›</Text>
+                </TouchableOpacity>
+
+                <View style={[styles.rowDivider, { backgroundColor: cardBorder }]} />
+
+                <TouchableOpacity
+                  style={styles.settingsRow}
+                  onPress={() => setShowDeleteConfirm(true)}
+                  disabled={deletingAccount}
+                >
+                  <View style={styles.settingsRowLeft}>
+                    <Trash2 size={20} color={colors.error} />
+                    <View style={styles.legalCardContent}>
+                      <Text style={[styles.legalCardTitle, { color: colors.error }]}>Eliminar mi cuenta</Text>
+                      <Text style={[styles.legalCardDesc, { color: onBg2 }]}>Elimina tu cuenta y todos tus datos</Text>
+                    </View>
+                  </View>
+                  {deletingAccount && <ActivityIndicator size="small" color={colors.error} />}
+                </TouchableOpacity>
               </View>
-              {deletingAccount && <ActivityIndicator size="small" color={colors.error} />}
-            </TouchableOpacity>
+            )}
           </View>
 
           <ConfirmDialog
@@ -590,54 +634,103 @@ export default function SettingsScreen() {
             destructive
           />
 
-          <View style={styles.section}>
-            <Text style={[styles.sectionTitle, { color: colors.textSecondary }]}>Aviso Legal</Text>
-
+          {/* AYUDA */}
+          <View
+            style={[
+              styles.accordionCard,
+              { ...cardShadow, backgroundColor: cardBg, borderColor: cardBorder },
+            ]}
+          >
             <TouchableOpacity
-              style={[styles.legalCard, { backgroundColor: colors.surface, borderColor: colors.border }]}
-              onPress={() => router.push('/legal/terms')}
+              style={styles.accordionHeader}
+              activeOpacity={0.7}
+              onPress={() => toggleSection('ayuda')}
             >
-              <View style={styles.legalCardContent}>
-                <Text style={[styles.legalCardTitle, { color: colors.text }]}>Términos y Condiciones</Text>
-                <Text style={[styles.legalCardDesc, { color: colors.textSecondary }]}>Lee nuestros términos de uso</Text>
-              </View>
-              <Text style={[styles.legalCardArrow, { color: colors.textSecondary }]}>›</Text>
+              <Text style={[styles.accordionTitle, { color: onBg }]}>Ayuda</Text>
+              <ChevronDown
+                size={20}
+                color={onBg2}
+                style={{ transform: [{ rotate: expandedSection === 'ayuda' ? '180deg' : '0deg' }] }}
+              />
             </TouchableOpacity>
 
-            <TouchableOpacity
-              style={[styles.legalCard, { backgroundColor: colors.surface, borderColor: colors.border }]}
-              onPress={() => router.push('/legal/privacy')}
-            >
-              <View style={styles.legalCardContent}>
-                <Text style={[styles.legalCardTitle, { color: colors.text }]}>Política de Privacidad</Text>
-                <Text style={[styles.legalCardDesc, { color: colors.textSecondary }]}>Cómo protegemos tus datos</Text>
+            {expandedSection === 'ayuda' && (
+              <View style={styles.accordionBody}>
+                <TouchableOpacity style={styles.settingsRow} onPress={() => router.push('/faqs')}>
+                  <View style={styles.legalCardContent}>
+                    <Text style={[styles.legalCardTitle, { color: onBg }]}>Preguntas Frecuentes</Text>
+                    <Text style={[styles.legalCardDesc, { color: onBg2 }]}>Aprende cómo usar la app</Text>
+                  </View>
+                  <Text style={[styles.legalCardArrow, { color: onBg2 }]}>›</Text>
+                </TouchableOpacity>
               </View>
-              <Text style={{ color: colors.textSecondary }}>›</Text>
+            )}
+          </View>
+
+          {/* AVISO LEGAL */}
+          <View
+            style={[
+              styles.accordionCard,
+              { ...cardShadow, backgroundColor: cardBg, borderColor: cardBorder },
+            ]}
+          >
+            <TouchableOpacity
+              style={styles.accordionHeader}
+              activeOpacity={0.7}
+              onPress={() => toggleSection('legal')}
+            >
+              <Text style={[styles.accordionTitle, { color: onBg }]}>Aviso Legal</Text>
+              <ChevronDown
+                size={20}
+                color={onBg2}
+                style={{ transform: [{ rotate: expandedSection === 'legal' ? '180deg' : '0deg' }] }}
+              />
             </TouchableOpacity>
 
-            <TouchableOpacity
-              style={[styles.legalCard, { backgroundColor: colors.surface, borderColor: colors.border }]}
-              onPress={() => router.push('/legal/ai-usage')}
-            >
-              <View style={styles.legalCardContent}>
-                <Text style={[styles.legalCardTitle, { color: colors.text }]}>Uso de Inteligencia Artificial</Text>
-                <Text style={[styles.legalCardDesc, { color: colors.textSecondary }]}>Información sobre el uso de IA</Text>
+            {expandedSection === 'legal' && (
+              <View style={styles.accordionBody}>
+                <TouchableOpacity style={styles.settingsRow} onPress={() => router.push('/legal/terms')}>
+                  <View style={styles.legalCardContent}>
+                    <Text style={[styles.legalCardTitle, { color: onBg }]}>Términos y Condiciones</Text>
+                    <Text style={[styles.legalCardDesc, { color: onBg2 }]}>Lee nuestros términos de uso</Text>
+                  </View>
+                  <Text style={[styles.legalCardArrow, { color: onBg2 }]}>›</Text>
+                </TouchableOpacity>
+
+                <View style={[styles.rowDivider, { backgroundColor: cardBorder }]} />
+
+                <TouchableOpacity style={styles.settingsRow} onPress={() => router.push('/legal/privacy')}>
+                  <View style={styles.legalCardContent}>
+                    <Text style={[styles.legalCardTitle, { color: onBg }]}>Política de Privacidad</Text>
+                    <Text style={[styles.legalCardDesc, { color: onBg2 }]}>Cómo protegemos tus datos</Text>
+                  </View>
+                  <Text style={{ color: onBg2 }}>›</Text>
+                </TouchableOpacity>
+
+                <View style={[styles.rowDivider, { backgroundColor: cardBorder }]} />
+
+                <TouchableOpacity style={styles.settingsRow} onPress={() => router.push('/legal/ai-usage')}>
+                  <View style={styles.legalCardContent}>
+                    <Text style={[styles.legalCardTitle, { color: onBg }]}>Uso de Inteligencia Artificial</Text>
+                    <Text style={[styles.legalCardDesc, { color: onBg2 }]}>Información sobre el uso de IA</Text>
+                  </View>
+                </TouchableOpacity>
               </View>
-            </TouchableOpacity>
+            )}
           </View>
 
           <View style={styles.section}>
-            <Text style={[styles.sectionTitle, { color: colors.textSecondary }]}>Acerca de</Text>
-            <View style={[styles.infoCard, { backgroundColor: colors.surface }]}>
+            <Text style={[styles.sectionTitle, { color: onBg2 }]}>Acerca de</Text>
+            <View style={[styles.infoCard, { ...cardShadow, backgroundColor: cardBg, borderWidth: 1, borderColor: cardBorder }]}>
               <Image source={require('../../assets/images/icon.png')} style={{ width: 24, height: 24, borderRadius: 6 }} />
               <View style={styles.infoText}>
-                <Text style={[styles.appName, { color: colors.text }]}>{appName}</Text>
-                <Text style={[styles.appVersion, { color: colors.textSecondary }]}>{appVersion}</Text>
+                <Text style={[styles.appName, { color: onBg }]}>{appName}</Text>
+                <Text style={[styles.appVersion, { color: onBg2 }]}>{appVersion}</Text>
               </View>
             </View>
           </View>
 
-          <TouchableOpacity style={[styles.signOutButton, { backgroundColor: colors.surface, borderColor: isDark ? '#7F1D1D' : '#FEE2E2' }]} onPress={() => setShowSignOutConfirm(true)}>
+          <TouchableOpacity style={[styles.signOutButton, { ...cardShadow, backgroundColor: cardBg, borderColor: isDark ? '#7F1D1D' : '#FEE2E2' }]} onPress={() => setShowSignOutConfirm(true)}>
             <LogOut size={20} color={colors.error} />
             <Text style={[styles.signOutText, { color: colors.error }]}>Cerrar Sesión</Text>
           </TouchableOpacity>
@@ -661,12 +754,54 @@ const styles = StyleSheet.create({
     fontSize: rf(28),
     fontWeight: '700',
   },
-  themeCard: {
-    borderRadius: 12,
-    padding: rp(8),
+  accordionCard: {
+    borderRadius: 20,
     borderWidth: 1,
+    marginBottom: rp(16),
+  },
+  accordionHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    padding: rp(16),
+  },
+  accordionTitle: {
+    fontSize: rf(15),
+    fontWeight: '700',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
+  accordionBody: {
+    paddingHorizontal: rp(16),
+    paddingBottom: rp(16),
+  },
+  rowDivider: {
+    height: 1,
+    opacity: 0.6,
+    marginVertical: rp(8),
+  },
+  subLabel: {
+    fontSize: rf(13),
+    fontWeight: '600',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+    marginBottom: rp(10),
+  },
+  themeRow: {
     flexDirection: 'row',
     gap: rp(8),
+  },
+  settingsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: rp(8),
+  },
+  settingsRowLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
+    gap: rp(12),
   },
   themeOption: {
     flex: 1,
@@ -742,61 +877,59 @@ const styles = StyleSheet.create({
     marginBottom: rp(12),
   },
   profileCard: {
-    flexDirection: 'row',
-    borderRadius: 12,
-    padding: rp(16),
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
-    shadowRadius: 8,
-    elevation: 2,
+    flexDirection: 'column',
+    alignItems: 'center',
+    borderRadius: 20,
+    padding: rp(24),
   },
   avatarContainer: {
-    width: 56,
-    height: 56,
-    borderRadius: 28,
+    width: 100,
+    height: 100,
+    borderRadius: 50,
     alignItems: 'center',
     justifyContent: 'center',
     overflow: 'hidden',
   },
   avatarImage: {
-    width: 56,
-    height: 56,
-    borderRadius: 28,
+    width: 100,
+    height: 100,
+    borderRadius: 50,
   },
   avatarWrapper: {
     position: 'relative',
-    marginRight: rp(16),
-    width: 56,
-    height: 56,
+    marginBottom: rp(14),
+    width: 100,
+    height: 100,
   },
   avatarCameraBtn: {
     position: 'absolute',
-    bottom: 0,
-    right: 0,
-    width: 20,
-    height: 20,
-    borderRadius: 10,
+    bottom: 2,
+    right: 2,
+    width: 28,
+    height: 28,
+    borderRadius: 14,
     alignItems: 'center',
     justifyContent: 'center',
-    borderWidth: 1.5,
+    borderWidth: 2,
     borderColor: '#fff',
   },
   profileInfo: {
-    flex: 1,
-    justifyContent: 'center',
+    alignItems: 'center',
   },
   profileName: {
-    fontSize: rf(18),
-    fontWeight: '600',
+    fontSize: rf(24),
+    fontWeight: '700',
     marginBottom: 4,
+    textAlign: 'center',
   },
   profileEmail: {
     fontSize: rf(14),
+    textAlign: 'center',
   },
   nameDisplayRow: {
     flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'center',
     gap: rp(6),
     marginBottom: 4,
   },
@@ -806,6 +939,7 @@ const styles = StyleSheet.create({
   nameEditRow: {
     flexDirection: 'row',
     alignItems: 'center',
+    alignSelf: 'stretch',
     gap: rp(6),
     marginBottom: 4,
   },
@@ -829,13 +963,8 @@ const styles = StyleSheet.create({
   infoCard: {
     flexDirection: 'row',
     alignItems: 'center',
-    borderRadius: 12,
+    borderRadius: 20,
     padding: rp(16),
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
-    shadowRadius: 8,
-    elevation: 2,
   },
   infoText: {
     marginLeft: rp(12),
@@ -847,11 +976,6 @@ const styles = StyleSheet.create({
   },
   appVersion: {
     fontSize: rf(13),
-  },
-  storageCard: {
-    borderRadius: 12,
-    padding: rp(16),
-    borderWidth: 1,
   },
   storageRow: {
     flexDirection: 'row',
@@ -926,7 +1050,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    borderRadius: 12,
+    borderRadius: 20,
     padding: rp(16),
     marginTop: 'auto',
     borderWidth: 1,
@@ -935,15 +1059,6 @@ const styles = StyleSheet.create({
   signOutText: {
     fontSize: rf(16),
     fontWeight: '600',
-  },
-  legalCard: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    padding: rp(16),
-    borderRadius: 12,
-    borderWidth: 1,
-    marginBottom: rp(12),
   },
   legalCardContent: {
     flex: 1,

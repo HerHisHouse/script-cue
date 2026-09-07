@@ -1,5 +1,6 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import { View, Text, StyleSheet, FlatList, TouchableOpacity, Modal, TextInput, Alert, Pressable, ActivityIndicator, RefreshControl, Keyboard, ImageBackground } from 'react-native';
+import { BlurView } from 'expo-blur';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAuth } from '@/contexts/AuthContext';
 import { useTheme } from '@/contexts/ThemeContext';
@@ -425,7 +426,13 @@ export default function ProjectsScreen() {
 
   // Render
   const renderItem = ({ item }: { item: ListItem }) => {
-    let icon = <Folder size={24} color={colors.primary} />;
+    // Mismo lenguaje visual glass que ScriptCard (pantalla Guiones)
+    const cardTitleColor = isDark ? '#ffffff' : '#2a2447';
+    const cardSecondaryColor = isDark ? '#a0a0c0' : '#5c5678';
+    const cardIconColor = isDark ? '#FFFFFF' : colors.primary;
+    const cardIconBg = isDark ? 'rgba(167,139,250,0.15)' : 'rgba(124,106,247,0.12)';
+
+    let IconCmp = Folder;
     let title = '';
     let subtitle = '';
 
@@ -433,11 +440,11 @@ export default function ProjectsScreen() {
       title = (item.data as Project).name;
       subtitle = 'Carpeta';
     } else if (item.type === 'script') {
-      icon = <FileText size={24} color={colors.text} />;
+      IconCmp = FileText;
       title = (item.data as Script).title;
       subtitle = 'Guion';
     } else if (item.type === 'recording') {
-      icon = <Mic size={24} color={colors.error} />;
+      IconCmp = Mic;
       title = (item.data as Recording).title || 'Grabación sin título';
       subtitle = 'Grabación';
     }
@@ -449,15 +456,23 @@ export default function ProjectsScreen() {
         style={[
           styles.itemCard,
           {
-            backgroundColor: isSelected ? colors.input : colors.surface,
-            borderColor: isSelected ? colors.primary : colors.border,
+            backgroundColor: isSelected ? colors.input : (isDark ? 'rgba(124,106,247,0.08)' : 'rgba(255,255,255,0.55)'),
+            borderColor: isSelected ? colors.primary : (isDark ? 'rgba(167,139,250,0.25)' : 'rgba(124,106,247,0.15)'),
+            borderWidth: isSelected ? 2 : 1,
             width: viewMode === 'grid' ? '48%' : '100%',
             flexDirection: viewMode === 'grid' ? 'column' : 'row',
             alignItems: viewMode === 'grid' ? 'center' : 'center',
             padding: rp(16),
             marginBottom: 8,
             marginRight: viewMode === 'grid' ? '2%' : 0,
-          }
+          },
+          !isDark && {
+            shadowColor: '#1a1625',
+            shadowOffset: { width: 0, height: 8 },
+            shadowOpacity: 0.28,
+            shadowRadius: 16,
+            elevation: 8,
+          },
         ]}
         onPress={() => openItem(item)}
         onLongPress={() => {
@@ -467,17 +482,19 @@ export default function ProjectsScreen() {
           }
         }}
       >
-        <View style={[styles.itemIcon, viewMode === 'grid' && { marginBottom: 8, marginRight: 0 }]}>{icon}</View>
+        <View style={[styles.itemIcon, { backgroundColor: cardIconBg }, viewMode === 'grid' && { marginBottom: 8, marginRight: 0 }]}>
+          <IconCmp size={24} color={cardIconColor} />
+        </View>
         <View style={[styles.itemInfo, viewMode === 'grid' && { alignItems: 'center' }]}>
-          <Text style={[styles.itemTitle, { color: colors.text, textAlign: viewMode === 'grid' ? 'center' : 'left' }]} numberOfLines={1}>{title}</Text>
-          <Text style={[styles.itemSubtitle, { color: colors.textSecondary, textAlign: viewMode === 'grid' ? 'center' : 'left' }]}>{subtitle}</Text>
+          <Text style={[styles.itemTitle, { color: cardTitleColor, textAlign: viewMode === 'grid' ? 'center' : 'left' }]} numberOfLines={1}>{title}</Text>
+          <Text style={[styles.itemSubtitle, { color: cardSecondaryColor, textAlign: viewMode === 'grid' ? 'center' : 'left' }]}>{subtitle}</Text>
         </View>
         {!selectionMode && (
           <TouchableOpacity
             style={[styles.itemOptions, viewMode === 'grid' && { position: 'absolute', top: 8, right: 8 }]}
             onPress={() => setOptionsModal({ visible: true, item })}
           >
-            <MoreVertical size={20} color={colors.textSecondary} />
+            <MoreVertical size={20} color={cardSecondaryColor} />
           </TouchableOpacity>
         )}
         {selectionMode && (
@@ -501,6 +518,7 @@ export default function ProjectsScreen() {
       <View style={{ flex: 1, backgroundColor: 'transparent' }}>
       <ScreenHeader
         title={selectionMode ? `${selectedItems.size} seleccionados` : (currentProjectId ? breadcrumbs[breadcrumbs.length - 1].name : "Proyectos")}
+        style={{ backgroundColor: 'transparent', borderBottomWidth: 0 }}
         leftAction={
           selectionMode ? (
             <TouchableOpacity onPress={() => { setSelectionMode(false); setSelectedItems(new Set()); }}>
@@ -520,24 +538,19 @@ export default function ProjectsScreen() {
               </TouchableOpacity>
             </View>
           ) : (
-            <>
-              <Pressable
-                accessibilityRole="button"
-                accessibilityLabel="Opciones"
-                style={{ padding: rp(4) }}
-                onPress={() => setShowMenu(!showMenu)}
-              >
-                <MoreVertical size={20} color={colors.text} />
-              </Pressable>
-              <Pressable
-                accessibilityRole="button"
-                accessibilityLabel="Nueva carpeta"
-                style={[styles.fab, { backgroundColor: colors.primary }]}
-                onPress={() => setShowNewFolderModal(true)}
-              >
-                <Plus size={22} color="#FFFFFF" />
-              </Pressable>
-            </>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Opciones"
+              style={[
+                styles.headerIconButton,
+                isDark
+                  ? { backgroundColor: 'rgba(124,106,247,0.14)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.2)' }
+                  : { backgroundColor: colors.primary },
+              ]}
+              onPress={() => setShowMenu(!showMenu)}
+            >
+              <MoreVertical size={20} color={isDark ? colors.text : "#FFFFFF"} />
+            </Pressable>
           )
         }
       />
@@ -629,16 +642,64 @@ export default function ProjectsScreen() {
           key={viewMode} // Force re-render on mode change
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); loadContent(); }} />}
           ListEmptyComponent={
-            <View style={styles.emptyState}>
-              <Text style={[styles.emptyTitle, { color: colors.text }]}>
-                {searchText ? 'No se encontraron resultados' : 'No hay proyectos'}
-              </Text>
-              <Text style={[styles.emptyText, { color: colors.textSecondary, paddingHorizontal: 40 }]}>
-                {searchText ? 'Intenta con otro término de búsqueda' : 'Puedes organizar tus proyectos por carpetas y enviar los guiones y grabaciones dentro'}
-              </Text>
-            </View>
+            searchText ? (
+              <View style={styles.emptyState}>
+                <Text style={[styles.emptyTitle, { color: colors.text }]}>
+                  No se encontraron resultados
+                </Text>
+                <Text style={[styles.emptyText, { color: colors.textSecondary, paddingHorizontal: 40 }]}>
+                  Intenta con otro término de búsqueda
+                </Text>
+              </View>
+            ) : (
+              <View style={styles.emptyState}>
+                <View
+                  style={[
+                    styles.emptyCard,
+                    {
+                      backgroundColor: isDark ? 'rgba(124,106,247,0.08)' : 'rgba(255,255,255,0.55)',
+                      borderColor: isDark ? 'rgba(167,139,250,0.25)' : 'rgba(124,106,247,0.15)',
+                    },
+                    !isDark && {
+                      shadowColor: '#1a1625',
+                      shadowOffset: { width: 0, height: 8 },
+                      shadowOpacity: 0.28,
+                      shadowRadius: 16,
+                      elevation: 8,
+                    },
+                  ]}
+                >
+                  <View style={[styles.emptyIconCircle, { backgroundColor: isDark ? 'rgba(167,139,250,0.15)' : 'rgba(124,106,247,0.12)' }]}>
+                    <Folder size={30} color={isDark ? '#FFFFFF' : colors.primary} />
+                  </View>
+                  <Text style={[styles.emptyTitle, { color: isDark ? '#FFFFFF' : '#2a2447', textAlign: 'center' }]}>
+                    No hay proyectos
+                  </Text>
+                  <Text style={[styles.emptyText, { color: isDark ? '#a0a0c0' : '#5c5678', textAlign: 'center' }]}>
+                    Puedes organizar tus proyectos por carpetas y enviar los guiones y grabaciones dentro.
+                  </Text>
+                </View>
+              </View>
+            )
           }
         />
+      )}
+
+      {/* FAB "Nueva carpeta" — esquina inferior derecha, por encima de la tab bar, igual que en Guiones */}
+      {!selectionMode && (
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="Nueva carpeta"
+          style={[
+            styles.fab,
+            isDark
+              ? { backgroundColor: 'rgba(124,106,247,0.80)', borderWidth: 1.5, borderColor: 'rgba(255,255,255,0.5)' }
+              : { backgroundColor: colors.primary },
+          ]}
+          onPress={() => setShowNewFolderModal(true)}
+        >
+          <Plus size={26} color="#FFFFFF" />
+        </Pressable>
       )}
 
       {/* New Folder Modal */}
@@ -649,29 +710,73 @@ export default function ProjectsScreen() {
         onRequestClose={() => setShowNewFolderModal(false)}
        supportedOrientations={['portrait', 'landscape', 'landscape-left', 'landscape-right']}>
         <View style={styles.modalOverlay}>
-          <View style={[styles.modalContent, { backgroundColor: colors.surface }]}>
-            <Text style={[styles.modalTitle, { color: colors.text }]}>Nueva Carpeta</Text>
-            <TextInput
-              style={[styles.input, { color: colors.text, borderColor: colors.border, backgroundColor: colors.input }]}
-              placeholder="Nombre de la carpeta"
-              placeholderTextColor={colors.placeholder}
-              value={newFolderName}
-              onChangeText={setNewFolderName}
-              autoFocus
-            />
-            <View style={styles.modalButtons}>
-              <TouchableOpacity
-                style={[styles.modalButton, { backgroundColor: colors.input }]}
-                onPress={() => setShowNewFolderModal(false)}
-              >
-                <Text style={{ color: colors.text }}>Cancelar</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[styles.modalButton, { backgroundColor: colors.primary }]}
-                onPress={handleCreateFolder}
-              >
-                <Text style={{ color: '#fff' }}>Crear</Text>
-              </TouchableOpacity>
+          <View
+            style={[
+              styles.modalShadowWrapper,
+              !isDark && {
+                shadowColor: '#1a1625',
+                shadowOffset: { width: 0, height: 8 },
+                shadowOpacity: 0.28,
+                shadowRadius: 16,
+                elevation: 8,
+              },
+            ]}
+          >
+            <View
+              style={[
+                styles.modalClip,
+                { borderColor: isDark ? 'rgba(167,139,250,0.25)' : 'rgba(124,106,247,0.15)' },
+              ]}
+            >
+              <BlurView intensity={isDark ? 55 : 65} tint={isDark ? 'dark' : 'light'} style={StyleSheet.absoluteFill} />
+              <View
+                style={[
+                  StyleSheet.absoluteFill,
+                  { backgroundColor: isDark ? 'rgba(124,106,247,0.14)' : 'rgba(235,230,245,0.5)' },
+                ]}
+              />
+              <View style={styles.modalContent}>
+                <Text style={[styles.modalTitle, { color: isDark ? '#FFFFFF' : '#2a2447' }]}>Nueva Carpeta</Text>
+                <TextInput
+                  style={[
+                    styles.input,
+                    {
+                      color: isDark ? '#FFFFFF' : '#2a2447',
+                      borderColor: isDark ? 'rgba(255,255,255,0.2)' : 'rgba(124,106,247,0.25)',
+                      backgroundColor: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(255,255,255,0.6)',
+                    },
+                  ]}
+                  placeholder="Nombre de la carpeta"
+                  placeholderTextColor={isDark ? 'rgba(255,255,255,0.4)' : 'rgba(42,27,71,0.4)'}
+                  value={newFolderName}
+                  onChangeText={setNewFolderName}
+                  autoFocus
+                />
+                <View style={styles.modalButtons}>
+                  <TouchableOpacity
+                    style={[
+                      styles.modalButton,
+                      isDark
+                        ? { backgroundColor: 'rgba(255,255,255,0.1)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.2)' }
+                        : { backgroundColor: 'rgba(124,106,247,0.12)' },
+                    ]}
+                    onPress={() => setShowNewFolderModal(false)}
+                  >
+                    <Text style={{ color: isDark ? '#FFFFFF' : '#2a2447', fontWeight: '600' }}>Cancelar</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[
+                      styles.modalButton,
+                      isDark
+                        ? { backgroundColor: 'rgba(124,106,247,0.80)', borderWidth: 1.5, borderColor: 'rgba(255,255,255,0.5)' }
+                        : { backgroundColor: colors.primary },
+                    ]}
+                    onPress={handleCreateFolder}
+                  >
+                    <Text style={{ color: '#fff', fontWeight: '700' }}>Crear</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
             </View>
           </View>
         </View>
@@ -820,10 +925,15 @@ const styles = StyleSheet.create({
     padding: rp(16),
   },
   itemCard: {
-    borderRadius: 12,
+    borderRadius: 20,
     borderWidth: 1,
   },
   itemIcon: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    alignItems: 'center',
+    justifyContent: 'center',
     marginRight: 16,
   },
   itemInfo: {
@@ -897,16 +1007,27 @@ const styles = StyleSheet.create({
     padding: rp(4),
   },
   fab: {
+    position: 'absolute',
+    bottom: rp(100),
+    right: rp(20),
+    width: rp(56),
+    height: rp(56),
+    borderRadius: rp(28),
+    justifyContent: 'center',
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 20,
+    zIndex: 999,
+  },
+  headerIconButton: {
     width: 40,
     height: 40,
     borderRadius: 20,
-    alignItems: 'center',
     justifyContent: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.25,
-    shadowRadius: 3.84,
-    elevation: 5,
+    alignItems: 'center',
   },
   checkbox: {
     width: 20,
@@ -933,6 +1054,22 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingHorizontal: rp(40),
   },
+  emptyCard: {
+    width: '100%',
+    borderRadius: 24,
+    borderWidth: 1,
+    paddingVertical: rp(32),
+    paddingHorizontal: rp(24),
+    alignItems: 'center',
+  },
+  emptyIconCircle: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: rp(16),
+  },
   emptyTitle: {
     fontSize: rf(22),
     fontWeight: '600',
@@ -949,8 +1086,15 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     padding: rp(20),
   },
+  modalShadowWrapper: {
+    borderRadius: 24,
+  },
+  modalClip: {
+    borderRadius: 24,
+    overflow: 'hidden',
+    borderWidth: 1,
+  },
   modalContent: {
-    borderRadius: 12,
     padding: rp(20),
     gap: rp(16),
   },

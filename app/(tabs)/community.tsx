@@ -103,7 +103,6 @@ export default function CommunityScreen() {
 
   // Color constants
   const PURPLE = '#a78bfa';
-  const PURPLE_DARK = '#7c3aed';
 
   useEffect(() => {
     if (!user) return;
@@ -193,7 +192,7 @@ export default function CommunityScreen() {
       >
       <SafeAreaView style={[styles.container, { backgroundColor: 'transparent' }]} edges={['top', 'left', 'right']}>
         <View style={{ flex: 1, backgroundColor: 'transparent' }}>
-          <ScreenHeader title="Comunidad" />
+          <ScreenHeader title="Comunidad" style={{ backgroundColor: 'transparent', borderBottomWidth: 0 }} />
           <View style={styles.centeredContent}>
             <Animated.View
               style={{
@@ -244,7 +243,7 @@ export default function CommunityScreen() {
       >
       <SafeAreaView style={[styles.container, { backgroundColor: 'transparent' }]} edges={['top', 'left', 'right']}>
         <View style={{ flex: 1, backgroundColor: 'transparent' }}>
-          <ScreenHeader title="Comunidad" />
+          <ScreenHeader title="Comunidad" style={{ backgroundColor: 'transparent', borderBottomWidth: 0 }} />
           <ScrollView
             contentContainerStyle={[styles.scrollContent, { paddingBottom: 220 + insets.bottom }]}
             showsVerticalScrollIndicator={false}
@@ -270,11 +269,27 @@ export default function CommunityScreen() {
             <View style={styles.section}>
               <Text style={[styles.sectionTitle, { color: colors.textSecondary }]}>Tus intereses:</Text>
               {userIntereses.map((interes) => (
-                <View key={interes} style={[styles.interesRow, { backgroundColor: `${PURPLE}12`, borderColor: `${PURPLE}30` }]}>
+                <View
+                  key={interes}
+                  style={[
+                    styles.interesRow,
+                    {
+                      backgroundColor: isDark ? 'rgba(124,106,247,0.08)' : 'rgba(255,255,255,0.55)',
+                      borderColor: isDark ? 'rgba(167,139,250,0.25)' : 'rgba(124,106,247,0.15)',
+                    },
+                    !isDark && {
+                      shadowColor: '#1a1625',
+                      shadowOffset: { width: 0, height: 4 },
+                      shadowOpacity: 0.18,
+                      shadowRadius: 8,
+                      elevation: 4,
+                    },
+                  ]}
+                >
                   <View style={[styles.checkDot, { backgroundColor: PURPLE }]}>
                     <Check size={10} color="#fff" />
                   </View>
-                  <Text style={[styles.interesText, { color: colors.text }]}>
+                  <Text style={[styles.interesText, { color: isDark ? '#ffffff' : '#2a2447' }]}>
                     {LABEL_MAP[interes] || interes}
                   </Text>
                 </View>
@@ -304,7 +319,7 @@ export default function CommunityScreen() {
     >
     <SafeAreaView style={[styles.container, { backgroundColor: 'transparent' }]} edges={['top', 'left', 'right']}>
       <View style={{ flex: 1, backgroundColor: 'transparent' }}>
-        <ScreenHeader title="Comunidad" />
+        <ScreenHeader title="Comunidad" style={{ backgroundColor: 'transparent', borderBottomWidth: 0 }} />
         <ScrollView
           contentContainerStyle={[styles.scrollContent, { paddingBottom: 220 + insets.bottom }]}
           showsVerticalScrollIndicator={false}
@@ -352,9 +367,16 @@ export default function CommunityScreen() {
                       styles.optionCard,
                       {
                         backgroundColor: isSelected
-                          ? (isDark ? `${PURPLE}18` : `${PURPLE}10`)
-                          : colors.surface,
-                        borderColor: isSelected ? PURPLE : colors.border,
+                          ? (isDark ? `${PURPLE}30` : `${PURPLE}18`)
+                          : (isDark ? 'rgba(124,106,247,0.08)' : 'rgba(255,255,255,0.55)'),
+                        borderColor: isSelected ? PURPLE : (isDark ? 'rgba(167,139,250,0.25)' : 'rgba(124,106,247,0.15)'),
+                      },
+                      !isDark && !isSelected && {
+                        shadowColor: '#1a1625',
+                        shadowOffset: { width: 0, height: 8 },
+                        shadowOpacity: 0.28,
+                        shadowRadius: 16,
+                        elevation: 8,
                       },
                     ]}
                     onPress={() => toggleOpcion(opcion.id)}
@@ -365,7 +387,7 @@ export default function CommunityScreen() {
                         styles.optionCheck,
                         {
                           backgroundColor: isSelected ? PURPLE : 'transparent',
-                          borderColor: isSelected ? PURPLE : colors.border,
+                          borderColor: isSelected ? PURPLE : (isDark ? 'rgba(255,255,255,0.3)' : 'rgba(124,106,247,0.3)'),
                         },
                       ]}
                     >
@@ -376,8 +398,8 @@ export default function CommunityScreen() {
                     <View style={styles.optionLeft}>
                       <Text style={styles.optionIcon}>{opcion.icon}</Text>
                       <View style={styles.optionTextContainer}>
-                        <Text style={[styles.optionTexto, { color: colors.text }]}>{opcion.texto}</Text>
-                        <Text style={[styles.optionSubtexto, { color: colors.textSecondary }]}>{opcion.subtexto}</Text>
+                        <Text style={[styles.optionTexto, { color: isDark ? '#ffffff' : '#2a2447' }]}>{opcion.texto}</Text>
+                        <Text style={[styles.optionSubtexto, { color: isDark ? '#a0a0c0' : '#5c5678' }]}>{opcion.subtexto}</Text>
                       </View>
                     </View>
                   </TouchableOpacity>
@@ -470,9 +492,13 @@ export default function CommunityScreen() {
             <TouchableOpacity
               style={[
                 styles.submitButton,
+                isDark
+                  ? { backgroundColor: 'rgba(124,106,247,0.80)', borderWidth: 1.5, borderColor: 'rgba(255,255,255,0.5)' }
+                  : { backgroundColor: colors.primary },
                 {
-                  backgroundColor: (selectedOptions.length === 0 || ciudad.length === 0) ? colors.border : PURPLE_DARK,
-                  opacity: loading ? 0.7 : 1,
+                  opacity: loading
+                    ? 0.7
+                    : (selectedOptions.length === 0 || ciudad.length === 0) ? 0.5 : 1,
                 },
               ]}
               onPress={handleSubmit}
@@ -482,7 +508,9 @@ export default function CommunityScreen() {
               {loading ? (
                 <ActivityIndicator size="small" color="#fff" />
               ) : (
-                <Text style={styles.submitButtonText}>Avísame cuando esté disponible</Text>
+                <Text style={styles.submitButtonText}>
+                  Avísame cuando esté disponible
+                </Text>
               )}
             </TouchableOpacity>
 
@@ -576,7 +604,7 @@ const styles = StyleSheet.create({
     gap: rp(10),
   },
   optionCard: {
-    borderRadius: 12,
+    borderRadius: 20,
     borderWidth: 1.5,
     padding: rp(14),
     flexDirection: 'row',
@@ -682,7 +710,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: rp(10),
     padding: rp(12),
-    borderRadius: 10,
+    borderRadius: 16,
     borderWidth: 1,
     marginBottom: rp(8),
   },

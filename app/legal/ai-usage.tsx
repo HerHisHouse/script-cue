@@ -1,5 +1,5 @@
 import React from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ImageBackground } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, Stack } from 'expo-router';
 import { useTheme } from '@/contexts/ThemeContext';
@@ -8,32 +8,48 @@ import { rf, rp } from '@/utils/responsive';
 
 export default function AIUsageScreen() {
     const router = useRouter();
-    const { colors } = useTheme();
+    const { colors, isDark } = useTheme();
+    const onBg = isDark ? '#ffffff' : '#2a2447';
+    const onBg2 = isDark ? '#a0a0c0' : '#5c5678';
+    const cardBg = isDark ? 'rgba(124,106,247,0.08)' : 'rgba(255,255,255,0.55)';
+    const cardBorder = isDark ? 'rgba(167,139,250,0.25)' : 'rgba(124,106,247,0.15)';
+    const cardShadow = !isDark ? {
+        shadowColor: '#1a1625',
+        shadowOffset: { width: 0, height: 8 },
+        shadowOpacity: 0.28,
+        shadowRadius: 16,
+        elevation: 8,
+    } : null;
 
     return (
         <>
             <Stack.Screen options={{ headerShown: false }} />
-            <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
-                <View style={[styles.header, { borderBottomColor: colors.border }]}>
+            <ImageBackground
+                source={isDark ? require('@/assets/images/ui-dark-bg.png') : require('@/assets/images/ui-light-bg.png')}
+                resizeMode="cover"
+                style={styles.container}
+            >
+            <SafeAreaView style={[styles.container, { backgroundColor: 'transparent' }]}>
+                <View style={[styles.header, { backgroundColor: 'transparent', borderBottomWidth: 0 }]}>
                     <View style={styles.headerContent}>
                         <Sparkles size={24} color={colors.primary} />
-                        <Text style={[styles.title, { color: colors.text }]}>Uso de ScriptCue</Text>
+                        <Text style={[styles.title, { color: onBg }]}>Uso de ScriptCue</Text>
                     </View>
                     <TouchableOpacity onPress={() => router.back()} style={styles.closeButton}>
-                        <X size={24} color={colors.text} />
+                        <X size={24} color={onBg} />
                     </TouchableOpacity>
                 </View>
 
                 <ScrollView style={styles.content} contentContainerStyle={styles.contentContainer}>
-                    <View style={[styles.banner, { backgroundColor: colors.primary + '15', borderColor: colors.primary }]}>
+                    <View style={[styles.banner, { ...cardShadow, backgroundColor: cardBg, borderColor: colors.primary }]}>
                         <Sparkles size={32} color={colors.primary} />
                         <Text style={[styles.bannerText, { color: colors.primary }]}>
                             Esta aplicación utiliza ScriptCue como herramienta creativa y educativa
                         </Text>
                     </View>
 
-                    <Text style={[styles.sectionTitle, { color: colors.text }]}>¿Cómo usamos ScriptCue?</Text>
-                    <Text style={[styles.paragraph, { color: colors.text }]}>
+                    <Text style={[styles.sectionTitle, { color: onBg }]}>¿Cómo usamos ScriptCue?</Text>
+                    <Text style={[styles.paragraph, { color: onBg2 }]}>
                         Esta aplicación utiliza nuestros modelos para:{'\n\n'}
                         • Generar respuestas de personajes{'\n'}
                         • Analizar interpretaciones{'\n'}
@@ -42,8 +58,8 @@ export default function AIUsageScreen() {
                         • Ofrecer retroalimentación personalizada
                     </Text>
 
-                    <Text style={[styles.sectionTitle, { color: colors.text }]}>Importante: Limitaciones de ScriptCue</Text>
-                    <Text style={[styles.paragraph, { color: colors.text }]}>
+                    <Text style={[styles.sectionTitle, { color: onBg }]}>Importante: Limitaciones de ScriptCue</Text>
+                    <Text style={[styles.paragraph, { color: onBg2 }]}>
                         Los resultados generados por ScriptCue:{'\n\n'}
                         • <Text style={styles.bold}>Pueden contener imprecisiones</Text>{'\n'}
                         ScriptCue no es perfecto y puede cometer errores en sus análisis o sugerencias.{'\n\n'}
@@ -53,16 +69,16 @@ export default function AIUsageScreen() {
                         Utiliza ScriptCue como una herramienta complementaria para tu práctica, no como única fuente de aprendizaje.
                     </Text>
 
-                    <Text style={[styles.sectionTitle, { color: colors.text }]}>Tu control sobre ScriptCue</Text>
-                    <Text style={[styles.paragraph, { color: colors.text }]}>
+                    <Text style={[styles.sectionTitle, { color: onBg }]}>Tu control sobre ScriptCue</Text>
+                    <Text style={[styles.paragraph, { color: onBg2 }]}>
                         • Todas las funciones de ScriptCue requieren tu acción explícita{'\n'}
                         • Puedes elegir cuándo y cómo usar las herramientas de ScriptCue{'\n'}
                         • Tus grabaciones nunca se usan para entrenar modelos externos{'\n'}
                         • Los análisis se realizan solo cuando tú lo solicitas
                     </Text>
 
-                    <Text style={[styles.sectionTitle, { color: colors.text }]}>Responsabilidad del usuario</Text>
-                    <Text style={[styles.paragraph, { color: colors.text }]}>
+                    <Text style={[styles.sectionTitle, { color: onBg }]}>Responsabilidad del usuario</Text>
+                    <Text style={[styles.paragraph, { color: onBg2 }]}>
                         El usuario acepta que:{'\n'}
                         • Verifica la precisión del contenido generado por ScriptCue antes de usarlo.{'\n'}
                         • ScriptCue puede:{'\n'}
@@ -76,27 +92,28 @@ export default function AIUsageScreen() {
                         {'  '}- Daños emocionales derivados del feedback automático.
                     </Text>
 
-                    <Text style={[styles.sectionTitle, { color: colors.text }]}>Privacidad y Seguridad</Text>
-                    <Text style={[styles.paragraph, { color: colors.text }]}>
+                    <Text style={[styles.sectionTitle, { color: onBg }]}>Privacidad y Seguridad</Text>
+                    <Text style={[styles.paragraph, { color: onBg2 }]}>
                         • Tus datos personales están protegidos{'\n'}
                         • No compartimos tu información con terceros{'\n'}
                         • Los análisis de ScriptCue se procesan de forma segura{'\n'}
                         • Conservas todos los derechos sobre tus grabaciones
                     </Text>
 
-                    <View style={[styles.disclaimer, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-                        <Text style={[styles.disclaimerTitle, { color: colors.text }]}>Disclaimer</Text>
-                        <Text style={[styles.disclaimerText, { color: colors.textSecondary }]}>
+                    <View style={[styles.disclaimer, { ...cardShadow, backgroundColor: cardBg, borderColor: cardBorder }]}>
+                        <Text style={[styles.disclaimerTitle, { color: onBg }]}>Disclaimer</Text>
+                        <Text style={[styles.disclaimerText, { color: onBg2 }]}>
                             Al usar las funciones de ScriptCue en esta aplicación, reconoces que entiendes sus limitaciones y que la usarás como una herramienta complementaria, no como sustituto del aprendizaje profesional.
                         </Text>
                     </View>
 
-                    <Text style={[styles.contact, { color: colors.textSecondary }]}>
+                    <Text style={[styles.contact, { color: onBg2 }]}>
                         ¿Preguntas sobre el uso de ScriptCue?{'\n'}
                         Contacta con nosotros: info@scriptcue.es
                     </Text>
                 </ScrollView>
             </SafeAreaView>
+            </ImageBackground>
         </>
     );
 }
@@ -138,7 +155,7 @@ const styles = StyleSheet.create({
         alignItems: 'center',
         gap: rp(16),
         padding: rp(20),
-        borderRadius: 12,
+        borderRadius: 20,
         borderWidth: 2,
         marginBottom: rp(24),
     },
@@ -164,7 +181,7 @@ const styles = StyleSheet.create({
     },
     disclaimer: {
         padding: rp(20),
-        borderRadius: 12,
+        borderRadius: 20,
         borderWidth: 1,
         marginTop: rp(24),
         marginBottom: rp(24),
