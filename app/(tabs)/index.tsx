@@ -7,7 +7,7 @@ import { SendToModal } from '@/components/SendToModal';
 import { useAuth } from '@/contexts/AuthContext';
 import { useTheme } from '@/contexts/ThemeContext';
 import { Script } from '@/types/database';
-import { Plus, EyeOff, RefreshCw, Upload, Camera, ChevronRight, Search, Grid3x3, List, Circle, MoreVertical, Trash2, CheckSquare, Square, MinusSquare, Info, AlertCircle, ArrowUpAZ, Clock, Calendar, Check, X } from 'lucide-react-native';
+import { Plus, EyeOff, RefreshCw, Upload, Camera, ChevronRight, Search, Grid3x3, List, Circle, MoreVertical, Trash2, CheckSquare, Square, MinusSquare, Info, AlertCircle, ArrowUpAZ, Clock, Calendar, Check, X, FileText } from 'lucide-react-native';
 import { ScreenHeader } from '@/components/ScreenHeader';
 import { useRouter, useFocusEffect } from 'expo-router';
 import { MENU_ITEM_PADDING_V, HEADER_HORIZONTAL_PADDING, MENU_SECTION_PADDING_V } from '@/utils/ui';
@@ -43,10 +43,7 @@ export default function IndexScreen() {
   const [openScriptMenuId, setOpenScriptMenuId] = useState<string | null>(null);
   const [isSortExpanded, setIsSortExpanded] = useState(false);
   const [fabFocused, setFabFocused] = useState(false);
-  const menuOpacity = React.useRef(new Animated.Value(0)).current;
-  const menuScale = React.useRef(new Animated.Value(0.9)).current;
   const headerMenuOpacity = React.useRef(new Animated.Value(0)).current;
-  const [headerHeight, setHeaderHeight] = useState(0);
   // Enviar a... estado
   const [sendModalVisible, setSendModalVisible] = useState(false);
   const [sendScriptId, setSendScriptId] = useState<string | null>(null);
@@ -434,27 +431,6 @@ export default function IndexScreen() {
     }).catch(() => {});
   }, []);
 
-  // Animación de entrada/salida del menú (fade + scale)
-  useEffect(() => {
-    const config = {
-      duration: 300,
-      easing: Easing.bezier(0.4, 0, 0.2, 1),
-      useNativeDriver: true,
-    } as const;
-
-    if (showAddMenu) {
-      Animated.parallel([
-        Animated.timing(menuOpacity, { toValue: 1, ...config }),
-        Animated.timing(menuScale, { toValue: 1, ...config }),
-      ]).start();
-    } else {
-      Animated.parallel([
-        Animated.timing(menuOpacity, { toValue: 0, ...config }),
-        Animated.timing(menuScale, { toValue: 0.9, ...config }),
-      ]).start();
-    }
-  }, [showAddMenu, menuOpacity, menuScale]);
-
   // Cerrar menús cuando se navega fuera de la pantalla
   useFocusEffect(
     useCallback(() => {
@@ -482,10 +458,10 @@ export default function IndexScreen() {
           accessibilityLabel="Cerrar menús"
           style={[
             styles.backdrop,
-            // El menú "Opciones" (BottomSheetMenu) ya trae su propio scrim; este
-            // overlay adicional lo oscurecía por duplicado en modo claro, dejándolo
-            // más oscuro que el sheet de las tarjetas (que no pasa por aquí).
-            showHeaderMenu && !showAddMenu && !isDark && { backgroundColor: 'transparent' },
+            // "Opciones" y "Añadir guion" son BottomSheetMenu y ya traen su propio scrim; este
+            // overlay adicional los oscurecía por duplicado en modo claro, dejándolos más
+            // oscuros que el sheet de las tarjetas (que no pasa por aquí).
+            (showHeaderMenu || showAddMenu) && !isDark && { backgroundColor: 'transparent' },
           ]}
           onPress={() => {
             // Animación de cierre suave del menú de cabecera
@@ -506,7 +482,6 @@ export default function IndexScreen() {
       <ScreenHeader
         title={scriptSelectionMode ? `${selectedScriptIds.size} seleccionados` : "Guiones"}
         style={{ backgroundColor: 'transparent', borderBottomWidth: 0 }}
-        onLayout={(e) => setHeaderHeight(e.nativeEvent.layout.height)}
         leftAction={
           scriptSelectionMode ? (
             <TouchableOpacity onPress={() => { setScriptSelectionMode(false); setSelectedScriptIds(new Set()); }}>
@@ -552,7 +527,12 @@ export default function IndexScreen() {
             <Pressable
               accessibilityRole="button"
               accessibilityLabel="Opciones de encabezado"
-              style={styles.headerIconButton}
+              style={[
+                styles.headerIconButton,
+                isDark
+                  ? { backgroundColor: 'rgba(124,106,247,0.14)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.2)' }
+                  : { backgroundColor: colors.primary },
+              ]}
               onPress={() => {
                 if (!showHeaderMenu) {
                   setShowHeaderMenu(true);
@@ -574,33 +554,7 @@ export default function IndexScreen() {
                 }
               }}
             >
-              <MoreVertical size={20} color={colors.text} />
-            </Pressable>
-            <Pressable
-              accessibilityRole="button"
-              accessibilityLabel="Añadir guion"
-              accessibilityHint={isAtLimit ? "Has alcanzado el límite de la versión beta" : "Abre el menú para importar o escanear"}
-              style={[
-                styles.addButton,
-                isAtLimit
-                  ? { backgroundColor: colors.surface }
-                  : isDark
-                    ? { backgroundColor: 'rgba(124,106,247,0.14)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.2)' }
-                    : { backgroundColor: colors.primary },
-              ]}
-              onPress={() => {
-                if (isAtLimit) {
-                  Alert.alert(
-                    "Límite alcanzado",
-                    "Has alcanzado el límite máximo de guiones permitidos en la versión beta.",
-                    [{ text: "Entendido", style: "cancel" }]
-                  );
-                } else {
-                  setShowAddMenu((v) => !v);
-                }
-              }}
-            >
-              <Plus size={22} color={isAtLimit ? colors.textSecondary : "#FFFFFF"} />
+              <MoreVertical size={20} color={isDark ? colors.text : "#FFFFFF"} />
             </Pressable>
           </>
           )
@@ -609,8 +563,8 @@ export default function IndexScreen() {
 
       {isUserBetaLimited(user) && (
         <View style={{ backgroundColor: isAtLimit ? 'rgba(239, 68, 68, 0.1)' : 'rgba(59, 130, 246, 0.1)', paddingHorizontal: 16, paddingVertical: 12, flexDirection: 'row', alignItems: 'center', gap: 12, borderBottomWidth: 1, borderBottomColor: isAtLimit ? 'rgba(239, 68, 68, 0.2)' : 'rgba(59, 130, 246, 0.2)' }}>
-          {isAtLimit ? <AlertCircle size={20} color="#EF4444" /> : <Info size={20} color={colors.primary} />}
-          <Text style={{ flex: 1, color: isAtLimit ? "#EF4444" : colors.primary, fontSize: rf(13), fontWeight: isAtLimit ? '600' : '400' }}>
+          {isAtLimit ? <AlertCircle size={20} color="#EF4444" /> : <Info size={20} color={isDark ? "#FFFFFF" : "#000000"} />}
+          <Text style={{ flex: 1, color: isAtLimit ? "#EF4444" : (isDark ? "#FFFFFF" : "#000000"), fontSize: rf(13), fontWeight: isAtLimit ? '600' : '400' }}>
             {isAtLimit ? `Has alcanzado el límite máximo de ${BETA_LIMITS.MAX_SCRIPTS} guiones permitidos para la beta.` : `Estás usando la versión beta. Límite de guiones: ${scripts.length}/${BETA_LIMITS.MAX_SCRIPTS}`}
           </Text>
         </View>
@@ -732,39 +686,53 @@ export default function IndexScreen() {
         </View>
       )}
 
-      {/* Overlay específico ya no es necesario; el overlay global superior gestiona los cierres */}
+      {/* Menú "Añadir guion" — mismo componente que el sheet de Opciones (glass, ancho completo,
+          se desliza desde abajo) para tener exactamente el mismo formato/tono/comportamiento */}
+      <BottomSheetMenu
+        visible={showAddMenu}
+        onClose={() => setShowAddMenu(false)}
+        title="Añadir guion"
+      >
+        <BottomSheetOption
+          label="Importar guion"
+          Icon={Upload}
+          onPress={() => { setShowAddMenu(false); router.push('/import-script'); }}
+        />
+        <BottomSheetOption
+          label="Escanear guion"
+          Icon={Camera}
+          onPress={() => { setShowAddMenu(false); router.push('/scan-script'); }}
+        />
+      </BottomSheetMenu>
 
-      {/* Menú desplegable tipo card con animación (overlay absoluto para no empujar la lista) */}
-      {(
-        <Animated.View
+      {/* FAB "Añadir guion" — esquina inferior derecha, por encima de la tab bar */}
+      {!scriptSelectionMode && (
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="Añadir guion"
+          accessibilityHint={isAtLimit ? "Has alcanzado el límite de la versión beta" : "Abre el menú para importar o escanear"}
           style={[
-            styles.addMenu,
-            { backgroundColor: colors.surface, borderColor: colors.border },
-            { opacity: menuOpacity, transform: [{ scale: menuScale }], top: headerHeight + 16 },
+            styles.fab,
+            isAtLimit
+              ? { backgroundColor: colors.surface }
+              : isDark
+                ? { backgroundColor: 'rgba(124,106,247,0.14)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.2)' }
+                : { backgroundColor: colors.primary },
           ]}
-          pointerEvents={showAddMenu ? 'auto' : 'none'}
+          onPress={() => {
+            if (isAtLimit) {
+              Alert.alert(
+                "Límite alcanzado",
+                "Has alcanzado el límite máximo de guiones permitidos en la versión beta.",
+                [{ text: "Entendido", style: "cancel" }]
+              );
+            } else {
+              setShowAddMenu((v) => !v);
+            }
+          }}
         >
-          <View style={styles.addOptionsRow}>
-            <TouchableOpacity
-              accessibilityRole="button"
-              accessibilityLabel="Importar guion desde PDF"
-              style={[styles.addOption, { borderColor: colors.border }]}
-              onPress={() => { setShowAddMenu(false); router.push('/import-script'); }}
-            >
-              <Upload size={22} color={colors.text} />
-              <Text style={[styles.addOptionText, { color: colors.text }]}>Importar guion</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              accessibilityRole="button"
-              accessibilityLabel="Escanear guion con la cámara"
-              style={[styles.addOption, { borderColor: colors.border }]}
-              onPress={() => { setShowAddMenu(false); router.push('/scan-script'); }}
-            >
-              <Camera size={22} color={colors.text} />
-              <Text style={[styles.addOptionText, { color: colors.text }]}>Escanear guion</Text>
-            </TouchableOpacity>
-          </View>
-        </Animated.View>
+          <Plus size={26} color={isAtLimit ? colors.textSecondary : "#FFFFFF"} />
+        </Pressable>
       )}
 
       {loading ? (
@@ -773,12 +741,46 @@ export default function IndexScreen() {
         </View>
       ) : scripts.length === 0 ? (
         <View style={styles.emptyState}>
-          <Text style={[styles.emptyTitle, { color: colors.text }]}>
-            No hay guiones
-          </Text>
-          <Text style={[styles.emptyText, { color: colors.textSecondary, paddingHorizontal: 40 }]}>
-            Para empezar a practicar con tu primer guion pulsa el botón de "+".
-          </Text>
+          <View
+            style={[
+              styles.emptyCard,
+              {
+                backgroundColor: isDark ? 'rgba(124,106,247,0.08)' : 'rgba(255,255,255,0.55)',
+                borderColor: isDark ? 'rgba(167,139,250,0.25)' : 'rgba(124,106,247,0.15)',
+              },
+              !isDark && {
+                shadowColor: '#1a1625',
+                shadowOffset: { width: 0, height: 8 },
+                shadowOpacity: 0.28,
+                shadowRadius: 16,
+                elevation: 8,
+              },
+            ]}
+          >
+            <View style={[styles.emptyIconCircle, { backgroundColor: isDark ? 'rgba(167,139,250,0.15)' : 'rgba(124,106,247,0.12)' }]}>
+              <FileText size={30} color={isDark ? '#FFFFFF' : colors.primary} />
+            </View>
+            <Text style={[styles.emptyTitle, { color: isDark ? '#FFFFFF' : '#2a2447' }]}>
+              Aún no tienes guiones
+            </Text>
+            <Text style={[styles.emptyText, { color: isDark ? '#a0a0c0' : '#5c5678' }]}>
+              Importa o escanea un guion para empezar a ensayar con réplica en tiempo real.
+            </Text>
+            <TouchableOpacity
+              accessibilityRole="button"
+              accessibilityLabel="Añadir guion"
+              style={[
+                styles.emptyCta,
+                isDark
+                  ? { backgroundColor: 'rgba(124,106,247,0.14)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.2)' }
+                  : { backgroundColor: colors.primary },
+              ]}
+              onPress={() => setShowAddMenu(true)}
+            >
+              <Plus size={18} color="#FFFFFF" />
+              <Text style={styles.emptyCtaText}>Añadir guion</Text>
+            </TouchableOpacity>
+          </View>
         </View>
       ) : (() => {
         const filteredScripts = getSortedScripts(
@@ -981,8 +983,11 @@ const styles = StyleSheet.create({
     zIndex: 10,
   },
   headerIconButton: {
-    padding: rp(4),
-    borderRadius: 8,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   addButton: {
     width: 40,
@@ -1010,34 +1015,6 @@ const styles = StyleSheet.create({
   fabFocused: {
     transform: [{ scale: 1.1 }],
   },
-  addMenu: {
-    position: 'absolute',
-    right: rp(16),
-    borderRadius: 12,
-    borderWidth: 1,
-    padding: rp(8),
-    elevation: 5,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.25,
-    shadowRadius: 3.84,
-    zIndex: 1000,
-    minWidth: 200,
-  },
-  addOptionsRow: {
-    flexDirection: 'column',
-  },
-  addOption: {
-    flexDirection: 'column',
-    alignItems: 'center',
-    padding: rp(12),
-    gap: rp(12),
-    borderBottomWidth: 1,
-  },
-  addOptionText: {
-    fontSize: rf(16),
-    fontWeight: '500',
-  },
   centerContainer: {
     flex: 1,
     justifyContent: 'center',
@@ -1050,10 +1027,41 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingHorizontal: rp(40),
   },
+  emptyCard: {
+    width: '100%',
+    borderRadius: 24,
+    borderWidth: 1,
+    paddingVertical: rp(32),
+    paddingHorizontal: rp(24),
+    alignItems: 'center',
+  },
+  emptyIconCircle: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: rp(16),
+  },
+  emptyCta: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginTop: rp(20),
+    paddingVertical: rp(12),
+    paddingHorizontal: rp(20),
+    borderRadius: 24,
+  },
+  emptyCtaText: {
+    color: '#FFFFFF',
+    fontSize: rf(15),
+    fontWeight: '700',
+  },
   emptyTitle: {
     fontSize: rf(22),
     fontWeight: '600',
     marginBottom: 8,
+    textAlign: 'center',
   },
   emptyText: {
     fontSize: rf(16),
