@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, TextInput, ActivityIndicator, Alert, ScrollView, Platform } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, TextInput, ActivityIndicator, Alert, ScrollView, Platform, ImageBackground } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, useLocalSearchParams } from 'expo-router';
@@ -68,6 +68,19 @@ export default function ImportScriptScreen() {
   const { scriptId, openConfig } = useLocalSearchParams();
   const { user, profile, refreshProfile } = useAuth();
   const { colors, isDark } = useTheme();
+  const onBg = isDark ? '#ffffff' : '#2a2447';
+  const onBg2 = isDark ? '#a0a0c0' : '#5c5678';
+  const cardBg = isDark ? 'rgba(124,106,247,0.08)' : 'rgba(255,255,255,0.55)';
+  const cardBorder = isDark ? 'rgba(167,139,250,0.25)' : 'rgba(124,106,247,0.15)';
+  const cardShadow = !isDark ? {
+    shadowColor: '#1a1625',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.28,
+    shadowRadius: 16,
+    elevation: 8,
+  } : null;
+  const fieldBg = isDark ? 'rgba(255,255,255,0.06)' : 'rgba(255,255,255,0.7)';
+  const fieldBorder = isDark ? 'rgba(255,255,255,0.14)' : 'rgba(124,106,247,0.18)';
   const [title, setTitle] = useState('');
   const [file, setFile] = useState<any>(null);
   const [uploading, setUploading] = useState(false);
@@ -830,7 +843,12 @@ export default function ImportScriptScreen() {
   }
 
   return (
-    <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
+    <ImageBackground
+      source={isDark ? require('@/assets/images/ui-dark-bg.png') : require('@/assets/images/ui-light-bg.png')}
+      resizeMode="cover"
+      style={styles.container}
+    >
+    <SafeAreaView style={[styles.container, { backgroundColor: 'transparent' }]}>
       {uploading && (
         <View style={[styles.backdrop, { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.95)', alignItems: 'center', justifyContent: 'center', zIndex: 2000 }]}>
           <ActivityIndicator size="large" color={colors.primary} style={{ marginBottom: 20 }} />
@@ -844,32 +862,40 @@ export default function ImportScriptScreen() {
           </Text>
         </View>
       )}
-      <View style={[styles.header, { backgroundColor: colors.background, borderBottomColor: colors.border }]}>
-        <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
-          <ArrowLeft size={24} color={colors.text} />
+      <View style={[styles.header, { backgroundColor: 'transparent', borderBottomWidth: 0 }]}>
+        <TouchableOpacity
+          onPress={() => router.back()}
+          style={[
+            styles.backButton,
+            isDark
+              ? { backgroundColor: 'rgba(124,106,247,0.14)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.2)' }
+              : { backgroundColor: colors.primary },
+          ]}
+        >
+          <ArrowLeft size={20} color={isDark ? onBg : '#FFFFFF'} />
         </TouchableOpacity>
-        <Text style={[styles.title, { color: colors.text }]}>Importar Guion</Text>
+        <Text style={[styles.title, { color: onBg }]}>Importar Guion</Text>
         <View style={{ width: 40 }} />
       </View>
 
       <ScrollView ref={scrollRef} style={styles.content}>
         <View style={styles.form}>
-          <Text style={[styles.label, { color: colors.text }]}>Título del Guion</Text>
+          <Text style={[styles.label, { color: onBg }]}>Título del Guion</Text>
           <TextInput
-            style={[styles.input, { backgroundColor: colors.input, color: colors.text, borderColor: colors.border }]}
+            style={[styles.input, { backgroundColor: fieldBg, color: onBg, borderColor: fieldBorder }]}
             value={title}
             onChangeText={setTitle}
             placeholder="Se autorellena al importar un guion"
-            placeholderTextColor={colors.placeholder}
+            placeholderTextColor={onBg2}
           />
 
           {!showConfigOnly && (
             <>
-              <Text style={[styles.label, { color: colors.text }]}>Archivo PDF o DOCX</Text>
+              <Text style={[styles.label, { color: onBg }]}>Archivo PDF o DOCX</Text>
               <TouchableOpacity
                 style={[
                   styles.scanButton,
-                  { backgroundColor: colors.surface, borderColor: colors.border },
+                  { ...cardShadow, backgroundColor: cardBg, borderColor: cardBorder },
                   ...(file ? [styles.uploadButtonSuccess] : [])
                 ]}
                 onPress={pickDocument}
@@ -884,13 +910,13 @@ export default function ImportScriptScreen() {
               </TouchableOpacity>
 
               <View style={styles.divider}>
-                <View style={[styles.dividerLine, { backgroundColor: colors.border }]} />
-                <Text style={[styles.dividerText, { color: colors.textSecondary }]}>o</Text>
-                <View style={[styles.dividerLine, { backgroundColor: colors.border }]} />
+                <View style={[styles.dividerLine, { backgroundColor: cardBorder }]} />
+                <Text style={[styles.dividerText, { color: onBg2 }]}>o</Text>
+                <View style={[styles.dividerLine, { backgroundColor: cardBorder }]} />
               </View>
 
               <TouchableOpacity
-                style={[styles.scanButton, { backgroundColor: colors.surface, borderColor: colors.border }]}
+                style={[styles.scanButton, { ...cardShadow, backgroundColor: cardBg, borderColor: cardBorder }]}
                 onPress={() => router.push('/scan-script')}
               >
                 <Camera size={24} color={colors.primary} />
@@ -904,19 +930,19 @@ export default function ImportScriptScreen() {
           {showConfigOnly && (
             <>
               <View onLayout={(e) => setConfigSectionY(e.nativeEvent.layout.y)}>
-                <Text style={[styles.sectionTitle, { color: colors.text }]}>Configuración de Personajes</Text>
+                <Text style={[styles.sectionTitle, { color: onBg }]}>Configuración de Personajes</Text>
               </View>
 
               <View style={[styles.labelWithInfo, { marginTop: 12, marginBottom: 8 }]}>
-                <Text style={[styles.label, { color: colors.text, marginTop: 0, marginBottom: 0 }]}>
+                <Text style={[styles.label, { color: onBg, marginTop: 0, marginBottom: 0 }]}>
                   Personajes Detectados ({characters.length})
                 </Text>
               </View>
 
               {characters.map((char, index) => (
-                <View key={char.id} style={[styles.characterCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+                <View key={char.id} style={[styles.characterCard, { ...cardShadow, backgroundColor: cardBg, borderColor: cardBorder }]}>
                   <View style={styles.characterHeader}>
-                    <Text style={[styles.characterNumber, { color: colors.text }]}>Personaje {index + 1}</Text>
+                    <Text style={[styles.characterNumber, { color: onBg }]}>Personaje {index + 1}</Text>
                     {char.isMyCharacter && (
                       <View style={[styles.myCharacterBadge, { backgroundColor: isDark ? '#1E3A8A' : '#EFF6FF' }]}>
                         <Text style={[styles.myCharacterBadgeText, { color: colors.primary }]}>Mi personaje</Text>
@@ -938,19 +964,19 @@ export default function ImportScriptScreen() {
                       }}
                       style={{ padding: 4 }}
                     >
-                      <X size={20} color={colors.textSecondary} />
+                      <X size={20} color={onBg2} />
                     </TouchableOpacity>
                   </View>
 
                   <View style={styles.labelWithInfo}>
-                    <Text style={[styles.label, { color: colors.text }]}>Nombre</Text>
+                    <Text style={[styles.label, { color: onBg }]}>Nombre</Text>
                   </View>
                   <TextInput
-                    style={[styles.input, { backgroundColor: colors.input, color: colors.text, borderColor: colors.border }]}
+                    style={[styles.input, { backgroundColor: fieldBg, color: onBg, borderColor: fieldBorder }]}
                     value={char.name}
                     onChangeText={(text) => updateCharacter(index, { name: text.toUpperCase() })}
                     placeholder="PERSONAJE"
-                    placeholderTextColor={colors.placeholder}
+                    placeholderTextColor={onBg2}
                     autoCapitalize="characters"
                   />
 
@@ -962,18 +988,18 @@ export default function ImportScriptScreen() {
                       styles.checkboxBox,
                       char.isMyCharacter
                         ? { backgroundColor: colors.primary, borderColor: colors.primary }
-                        : { borderColor: colors.border }
+                        : { borderColor: cardBorder }
                     ]}>
                       {char.isMyCharacter && <Check size={16} color="#FFFFFF" />}
                     </View>
-                    <Text style={[styles.checkboxLabel, { color: colors.text }]}>Este es mi personaje</Text>
+                    <Text style={[styles.checkboxLabel, { color: onBg }]}>Este es mi personaje</Text>
                   </TouchableOpacity>
 
                   {!char.isMyCharacter && (
                     <>
                       {/* Operador de voces - PRIMERO */}
                       <View style={[styles.labelWithInfo, { marginTop: 12 }]}>
-                        <Text style={[styles.label, { color: colors.text, marginTop: 0, marginBottom: 0 }]}>Tipo de voz</Text>
+                        <Text style={[styles.label, { color: onBg, marginTop: 0, marginBottom: 0 }]}>Tipo de voz</Text>
                         <TouchableOpacity
                           onPress={() => Alert.alert(
                             'Tipo de Voz',
@@ -987,23 +1013,23 @@ export default function ImportScriptScreen() {
                       </View>
 
                       <TouchableOpacity
-                        style={[styles.picker, { backgroundColor: colors.surface, borderColor: colors.border }]}
+                        style={[styles.picker, { backgroundColor: fieldBg, borderColor: fieldBorder }]}
                         onPress={() => setOpenOperatorIndex(openOperatorIndex === index ? null : index)}
                       >
-                        <Text style={[styles.pickerText, { color: colors.text }]}>
+                        <Text style={[styles.pickerText, { color: onBg }]}>
                           {VOICE_PROVIDERS_CONFIG.find(p => p.value === (char.provider || 'system'))?.label ?? '🔊 Estándar'}
                         </Text>
-                        <ChevronDown size={20} color={colors.textSecondary} />
+                        <ChevronDown size={20} color={onBg2} />
                       </TouchableOpacity>
                       {openOperatorIndex === index && (
-                        <View style={[styles.pickerOptions, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+                        <View style={[styles.pickerOptions, { ...cardShadow, backgroundColor: cardBg, borderColor: cardBorder }]}>
                           {VOICE_PROVIDERS_CONFIG.map((provConfig) => {
                             const prov = provConfig.value;
                             const isSelected = (char.provider || 'system') === prov;
                             return (
                               <TouchableOpacity
                                 key={prov}
-                                style={styles.pickerOption}
+                                style={[styles.pickerOption, { borderBottomColor: cardBorder }]}
                                 onPress={() => {
                                   // Al cambiar de provider, limpiar la voz seleccionada
                                   updateCharacter(index, {
@@ -1017,11 +1043,11 @@ export default function ImportScriptScreen() {
                               >
                                 <Text style={[
                                   styles.pickerOptionText,
-                                  isSelected ? styles.pickerOptionTextSelected : { color: colors.textSecondary }
+                                  isSelected ? styles.pickerOptionTextSelected : { color: onBg2 }
                                 ]}>
                                   {provConfig.label}
                                 </Text>
-                                <Text style={{ color: colors.textSecondary, fontSize: 12, marginTop: 2 }}>
+                                <Text style={{ color: onBg2, fontSize: 12, marginTop: 2 }}>
                                   {provConfig.subtitle}
                                 </Text>
                               </TouchableOpacity>
@@ -1031,7 +1057,7 @@ export default function ImportScriptScreen() {
                       )}
 
                       {/* Selector de voz - DESPUÉS del operador */}
-                      <Text style={[styles.label, { color: colors.text, marginTop: 12 }]}>Voz del personaje</Text>
+                      <Text style={[styles.label, { color: onBg, marginTop: 12 }]}>Voz del personaje</Text>
                       <VoiceSelector
                         selectedVoiceId={char.voiceId || char.systemVoiceId}
                         provider={(char.voiceProvider || char.provider || 'openai') as 'openai' | 'elevenlabs' | 'azure' | 'hume' | 'system'}
@@ -1055,7 +1081,7 @@ export default function ImportScriptScreen() {
 
                       {/* Color */}
                       <View style={[styles.labelWithInfo, { marginTop: 12 }]}>
-                        <Text style={[styles.label, { color: colors.text }]}>Color</Text>
+                        <Text style={[styles.label, { color: onBg }]}>Color</Text>
                         <TouchableOpacity
                           onPress={() => Alert.alert(
                             'Color del personaje',
@@ -1068,21 +1094,21 @@ export default function ImportScriptScreen() {
                         </TouchableOpacity>
                       </View>
                       <TouchableOpacity
-                        style={[styles.picker, { backgroundColor: colors.surface, borderColor: colors.border }]}
+                        style={[styles.picker, { backgroundColor: fieldBg, borderColor: fieldBorder }]}
                         onPress={() => setOpenColorIndex(openColorIndex === index ? null : index)}
                       >
                         <View style={{ flexDirection: 'row', alignItems: 'center' }}>
                           <View style={[styles.colorDot, { backgroundColor: char.color }]} />
-                          <Text style={[styles.pickerText, { color: colors.text }]}>
+                          <Text style={[styles.pickerText, { color: onBg }]}>
                             {CHARACTER_COLORS.find(c => c.value === char.color)?.label || 'Seleccionar color'}
                           </Text>
                         </View>
-                        <ChevronDown size={20} color={colors.textSecondary} />
+                        <ChevronDown size={20} color={onBg2} />
                       </TouchableOpacity>
 
                       {openColorIndex === index && (
                         <ScrollView
-                          style={[styles.pickerOptions, { backgroundColor: colors.surface, borderColor: colors.border, maxHeight: 180 }]}
+                          style={[styles.pickerOptions, { ...cardShadow, backgroundColor: cardBg, borderColor: cardBorder, maxHeight: 180 }]}
                           nestedScrollEnabled={true}
                         >
                           {CHARACTER_COLORS.filter(colorOption => {
@@ -1096,7 +1122,7 @@ export default function ImportScriptScreen() {
                             return (
                               <TouchableOpacity
                                 key={colorOption.value}
-                                style={styles.pickerOption}
+                                style={[styles.pickerOption, { borderBottomColor: cardBorder }]}
                                 onPress={() => {
                                   updateCharacter(index, { color: colorOption.value });
                                   setOpenColorIndex(null);
@@ -1106,7 +1132,7 @@ export default function ImportScriptScreen() {
                                   <View style={[styles.colorDot, { backgroundColor: colorOption.value }]} />
                                   <Text style={[
                                     styles.pickerOptionText,
-                                    isSelected ? styles.pickerOptionTextSelected : { color: colors.textSecondary }
+                                    isSelected ? styles.pickerOptionTextSelected : { color: onBg2 }
                                   ]}>
                                     {colorOption.label}
                                   </Text>
@@ -1129,7 +1155,7 @@ export default function ImportScriptScreen() {
               ))}
 
               <TouchableOpacity
-                style={[styles.uploadButton, { backgroundColor: colors.surface, borderColor: colors.border, marginTop: 16, marginBottom: 24 }]}
+                style={[styles.uploadButton, { ...cardShadow, backgroundColor: cardBg, borderColor: cardBorder, marginTop: 16, marginBottom: 24 }]}
                 onPress={() => {
                   setCharacters([
                     ...characters,
@@ -1155,7 +1181,9 @@ export default function ImportScriptScreen() {
           <TouchableOpacity
             style={[
               styles.submitButton,
-              { backgroundColor: colors.primary },
+              isDark
+                ? { backgroundColor: 'rgba(124,106,247,0.80)', borderWidth: 1.5, borderColor: 'rgba(255,255,255,0.5)' }
+                : { backgroundColor: colors.primary },
               ...(uploading ? [styles.submitButtonDisabled] : [])
             ]}
             onPress={handleUpload}
@@ -1175,7 +1203,7 @@ export default function ImportScriptScreen() {
                 <Info size={rp(18)} color={colors.primary} />
                 <Text style={[styles.importAlertTitle, { color: colors.primary }]}>Formato recomendado</Text>
               </View>
-              <Text style={[styles.importAlertText, { color: colors.textSecondary }]}>
+              <Text style={[styles.importAlertText, { color: onBg2 }]}>
                 Para un análisis más preciso del texto, es mejor que el guion tenga un formato estándar de "guion cinematográfico". Con personajes y diálogos. De momento no sirven convocatorias de publicidad con actings.
               </Text>
               <TouchableOpacity
@@ -1185,14 +1213,15 @@ export default function ImportScriptScreen() {
                   await AsyncStorage.setItem('hide_import_script_alert', 'true');
                 }}
               >
-                <View style={[styles.importAlertCheckboxBox, { borderColor: colors.border }]} />
-                <Text style={[styles.importAlertCheckboxLabel, { color: colors.textSecondary }]}>No volver a mostrar</Text>
+                <View style={[styles.importAlertCheckboxBox, { borderColor: cardBorder }]} />
+                <Text style={[styles.importAlertCheckboxLabel, { color: onBg2 }]}>No volver a mostrar</Text>
               </TouchableOpacity>
             </View>
           )}
         </View>
       </ScrollView>
     </SafeAreaView>
+    </ImageBackground>
   );
 }
 
@@ -1211,6 +1240,7 @@ const styles = StyleSheet.create({
   backButton: {
     width: 40,
     height: 40,
+    borderRadius: 20,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -1250,7 +1280,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    borderRadius: 8,
+    borderRadius: 20,
     paddingVertical: rp(16),
     marginBottom: 8,
     borderWidth: 2,
@@ -1283,7 +1313,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    borderRadius: 8,
+    borderRadius: 20,
     paddingVertical: rp(16),
     marginBottom: 8,
     borderWidth: 2,
@@ -1317,7 +1347,7 @@ const styles = StyleSheet.create({
   },
   pickerOptions: {
     backgroundColor: '#FFFFFF',
-    borderRadius: 8,
+    borderRadius: 20,
     marginTop: 8,
     marginBottom: 12,
     borderWidth: 1,
@@ -1340,7 +1370,7 @@ const styles = StyleSheet.create({
   },
   characterCard: {
     backgroundColor: '#FFFFFF',
-    borderRadius: 12,
+    borderRadius: 20,
     padding: rp(16),
     marginBottom: 16,
     borderWidth: 1,

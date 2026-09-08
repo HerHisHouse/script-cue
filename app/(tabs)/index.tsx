@@ -1,13 +1,14 @@
 import React, { useEffect, useState, useCallback } from 'react'; // Force rebuild
 import { StyleSheet, View, Text, Pressable, FlatList, TouchableOpacity, Animated, Easing, Modal, TextInput, Alert, Share, useWindowDimensions, Keyboard, RefreshControl, ImageBackground } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { BlurView } from 'expo-blur';
 import { supabase } from '@/utils/supabase';
 import { ScriptCard } from '@/components/ScriptCard';
 import { SendToModal } from '@/components/SendToModal';
 import { useAuth } from '@/contexts/AuthContext';
 import { useTheme } from '@/contexts/ThemeContext';
 import { Script } from '@/types/database';
-import { Plus, EyeOff, RefreshCw, Upload, Camera, ChevronRight, Search, Grid3x3, List, Circle, MoreVertical, Trash2, CheckSquare, Square, MinusSquare, Info, AlertCircle, ArrowUpAZ, Clock, Calendar, Check, X, FileText } from 'lucide-react-native';
+import { Plus, EyeOff, RefreshCw, Upload, Camera, ChevronRight, Search, Grid3x3, List, Circle, MoreVertical, Trash2, CheckSquare, Square, MinusSquare, Info, AlertCircle, ArrowUpAZ, Clock, Calendar, Check, X, FileText, Send } from 'lucide-react-native';
 import { ScreenHeader } from '@/components/ScreenHeader';
 import { useRouter, useFocusEffect } from 'expo-router';
 import { MENU_ITEM_PADDING_V, HEADER_HORIZONTAL_PADDING, MENU_SECTION_PADDING_V } from '@/utils/ui';
@@ -16,6 +17,7 @@ import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 import { Platform } from 'react-native';
 import logger from '@/utils/logger';
 import { deleteScript } from '@/utils/scripts';
+import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { rf, rp } from '@/utils/responsive';
 import { BETA_LIMITS, isUserBetaLimited } from '@/constants/betaLimits';
 import { BottomSheetMenu } from '@/components/BottomSheetMenu';
@@ -48,12 +50,14 @@ export default function IndexScreen() {
   const [sendModalVisible, setSendModalVisible] = useState(false);
   const [sendScriptId, setSendScriptId] = useState<string | null>(null);
   const [bulkScriptIds, setBulkScriptIds] = useState<string[]>([]);
+  const [sendSuccessMessage, setSendSuccessMessage] = useState<string | null>(null);
   const [renameModalVisible, setRenameModalVisible] = useState(false);
   const [renameScriptId, setRenameScriptId] = useState<string | null>(null);
   const [renameScriptTitle, setRenameScriptTitle] = useState('');
   // Eliminación masiva
   const [bulkDeleteModalVisible, setBulkDeleteModalVisible] = useState(false);
   const [bulkDeleteLoading, setBulkDeleteLoading] = useState(false);
+  const [deleteScriptId, setDeleteScriptId] = useState<string | null>(null);
   // Duplicar
   const [duplicateLoading, setDuplicateLoading] = useState(false);
   // Ordenar
@@ -162,7 +166,7 @@ export default function IndexScreen() {
       setScriptSelectionMode(false);
       setSelectedScriptIds(new Set());
 
-      Alert.alert('Éxito', `Se ha copiado a "${target.name}" correctamente.`);
+      setSendSuccessMessage(`Se ha copiado a "${target.name}" correctamente.`);
 
       await loadScripts();
     } catch (e: any) {
@@ -194,9 +198,21 @@ export default function IndexScreen() {
     }
   }
 
+  async function performDeleteScript() {
+    if (!deleteScriptId) return;
+    const id = deleteScriptId;
+    setDeleteScriptId(null);
+    try {
+      await deleteScript(id);
+      await loadScripts();
+    } catch (e: any) {
+      Alert.alert('Error', e?.message || 'No se pudo eliminar');
+    }
+  }
+
   async function performBulkDelete() {
     const ids = Array.from(selectedScriptIds);
-    if (ids.length === 0) return;
+    if (ids.length === 0 || bulkDeleteLoading) return;
     setBulkDeleteLoading(true);
     try {
       const errors: string[] = [];
@@ -851,12 +867,7 @@ export default function IndexScreen() {
                     await Share.share({ message: `Guion: ${item.title || '(Sin título)'}\nID: ${item.id}` });
                   }}
                   onDuplicate={() => performDuplicateScript(item.id)}
-                  onDelete={() => {
-                    Alert.alert('Eliminar guion', '¿Seguro que quieres eliminar este guion? Esta acción no se puede deshacer.', [
-                      { text: 'Cancelar', style: 'cancel' },
-                      { text: 'Eliminar', style: 'destructive', onPress: async () => { try { await deleteScript(item.id); await loadScripts(); } catch (e: any) { Alert.alert('Error', e?.message || 'No se pudo eliminar'); } } },
-                    ]);
-                  }}
+                  onDelete={() => setDeleteScriptId(item.id)}
                   onMenuOpenChange={(open) => setOpenScriptMenuId(open ? item.id : (openScriptMenuId === item.id ? null : openScriptMenuId))}
                 />
               </View>
@@ -866,32 +877,57 @@ export default function IndexScreen() {
       })()}
 
       {scriptSelectionMode && selectedScriptIds.size > 0 && (
-        <View style={[styles.selectionBar, { backgroundColor: colors.surface, borderTopWidth: 1, borderTopColor: colors.border }]}>
-          <View style={styles.selectionHeader}>
-            <Text style={[styles.selectionCount, { color: colors.text }]}>
-              {selectedScriptIds.size} {selectedScriptIds.size === 1 ? 'seleccionado' : 'seleccionados'}
-            </Text>
-          </View>
-          <View style={styles.selectionActions}>
-            <TouchableOpacity
-              style={[styles.selectionActionButton, { backgroundColor: colors.error }]}
-              onPress={() => setBulkDeleteModalVisible(true)}
-            >
-              <Trash2 size={18} color="#FFFFFF" />
-              <Text style={styles.selectionActionText}>Eliminar</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={[styles.selectionActionButton, { backgroundColor: colors.primary }]}
-              onPress={openSendModalBulk}
-            >
-              <Text style={styles.selectionActionText}>Enviar a...</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={[styles.selectionActionButton, { backgroundColor: colors.input, borderWidth: 1, borderColor: colors.border }]}
-              onPress={() => { setScriptSelectionMode(false); setSelectedScriptIds(new Set()); }}
-            >
-              <Text style={[styles.selectionActionText, { color: colors.text }]}>Cancelar</Text>
-            </TouchableOpacity>
+        <View
+          style={[
+            styles.selectionBarWrapper,
+            !isDark && {
+              shadowColor: '#1a1625',
+              shadowOffset: { width: 0, height: 8 },
+              shadowOpacity: 0.28,
+              shadowRadius: 16,
+              elevation: 8,
+            },
+          ]}
+        >
+          <View
+            style={[
+              styles.selectionBarClip,
+              { borderColor: isDark ? 'rgba(167,139,250,0.25)' : 'rgba(124,106,247,0.15)' },
+            ]}
+          >
+            <BlurView intensity={isDark ? 55 : 65} tint={isDark ? 'dark' : 'light'} style={StyleSheet.absoluteFill} />
+            <View
+              style={[
+                StyleSheet.absoluteFill,
+                { backgroundColor: isDark ? 'rgba(124,106,247,0.14)' : 'rgba(235,230,245,0.5)' },
+              ]}
+            />
+            <View style={styles.selectionBarContent}>
+              <TouchableOpacity
+                style={[
+                  styles.selectionPill,
+                  isDark
+                    ? { backgroundColor: 'rgba(124,106,247,0.80)', borderWidth: 1.5, borderColor: 'rgba(255,255,255,0.5)' }
+                    : { backgroundColor: colors.primary },
+                ]}
+                onPress={openSendModalBulk}
+              >
+                <Send size={16} color="#FFFFFF" />
+                <Text style={styles.selectionPillText}>Enviar a...</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[
+                  styles.selectionPill,
+                  isDark
+                    ? { backgroundColor: 'rgba(239,68,68,0.85)', borderWidth: 1.5, borderColor: 'rgba(255,255,255,0.5)' }
+                    : { backgroundColor: colors.error },
+                ]}
+                onPress={() => setBulkDeleteModalVisible(true)}
+              >
+                <Trash2 size={16} color="#FFFFFF" />
+                <Text style={styles.selectionPillText}>Eliminar</Text>
+              </TouchableOpacity>
+            </View>
           </View>
         </View>
       )}
@@ -929,25 +965,27 @@ export default function IndexScreen() {
         </View>
       </Modal>
 
-      {/* Modal Confirmación Eliminación Masiva */}
-      <Modal visible={bulkDeleteModalVisible} transparent animationType="fade" onRequestClose={() => setBulkDeleteModalVisible(false)} supportedOrientations={['portrait', 'landscape', 'landscape-left', 'landscape-right']}>
-        <View style={styles.modalOverlay}>
-          <View style={[styles.modalContent, { backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border }]}>
-            <Text style={[styles.modalTitle, { color: colors.text }]}>Eliminar seleccionados</Text>
-            <Text style={{ color: colors.textSecondary }}>
-              ¿Seguro que quieres eliminar {selectedScriptIds.size} guion{selectedScriptIds.size === 1 ? '' : 'es'}? Esta acción no se puede deshacer.
-            </Text>
-            <View style={{ flexDirection: 'row', gap: 12, marginTop: 8 }}>
-              <TouchableOpacity disabled={bulkDeleteLoading} style={[styles.modalButton, { backgroundColor: colors.input, borderWidth: 1, borderColor: colors.border }]} onPress={() => setBulkDeleteModalVisible(false)}>
-                <Text style={[styles.modalButtonText, { color: colors.text }]}>Cancelar</Text>
-              </TouchableOpacity>
-              <TouchableOpacity disabled={bulkDeleteLoading} style={[styles.modalButton, { backgroundColor: colors.error }]} onPress={performBulkDelete}>
-                <Text style={[styles.modalButtonText, { color: '#FFFFFF' }]}>{bulkDeleteLoading ? 'Eliminando…' : 'Eliminar'}</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-        </View>
-      </Modal>
+      <ConfirmDialog
+        visible={!!deleteScriptId}
+        title="Eliminar guion"
+        message="¿Seguro que quieres eliminar este guion? Esta acción no se puede deshacer."
+        confirmText="Eliminar"
+        cancelText="Cancelar"
+        onConfirm={performDeleteScript}
+        onCancel={() => setDeleteScriptId(null)}
+        destructive
+      />
+
+      <ConfirmDialog
+        visible={bulkDeleteModalVisible}
+        title="Eliminar seleccionados"
+        message={`¿Seguro que quieres eliminar ${selectedScriptIds.size} guion${selectedScriptIds.size === 1 ? '' : 'es'}? Esta acción no se puede deshacer.`}
+        confirmText={bulkDeleteLoading ? 'Eliminando…' : 'Eliminar'}
+        cancelText="Cancelar"
+        onConfirm={performBulkDelete}
+        onCancel={() => setBulkDeleteModalVisible(false)}
+        destructive
+      />
       {/* Modal Enviar a... */}
       <SendToModal
         visible={sendModalVisible}
@@ -957,6 +995,16 @@ export default function IndexScreen() {
           setBulkScriptIds([]);
         }}
         onMove={performSendScript}
+      />
+
+      <ConfirmDialog
+        visible={!!sendSuccessMessage}
+        title="Éxito"
+        message={sendSuccessMessage || ''}
+        confirmText="OK"
+        onConfirm={() => setSendSuccessMessage(null)}
+        onCancel={() => setSendSuccessMessage(null)}
+        singleButton
       />
       </View>
     </SafeAreaView>
@@ -1090,31 +1138,36 @@ const styles = StyleSheet.create({
   list: {
     padding: rp(16),
   },
-  selectionBar: {
+  selectionBarWrapper: {
     position: 'absolute',
-    bottom: 0,
-    left: 0,
-    right: 0,
-    flexDirection: 'column',
-    padding: rp(16),
-    paddingBottom: Platform.OS === 'ios' ? rp(32) : rp(16),
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: -2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 8,
-    elevation: 8,
+    left: 16,
+    right: 16,
+    bottom: rp(100),
+    borderRadius: 28,
   },
-  selectionText: {
+  selectionBarClip: {
+    borderRadius: 28,
+    overflow: 'hidden',
+    borderWidth: 1,
+  },
+  selectionBarContent: {
+    flexDirection: 'row',
+    gap: 12,
+    padding: rp(10),
+  },
+  selectionPill: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    paddingVertical: rp(12),
+    borderRadius: 20,
+  },
+  selectionPillText: {
     color: '#FFFFFF',
-    fontSize: rf(16),
+    fontSize: rf(14),
     fontWeight: '600',
-  },
-  selectionActions: {
-    flexDirection: 'column',
-    gap: rp(16),
-  },
-  selectionButton: {
-    padding: rp(8),
   },
   modalOverlay: {
     flex: 1,
@@ -1140,34 +1193,6 @@ const styles = StyleSheet.create({
   },
   modalButtonText: {
     fontSize: rf(16),
-    fontWeight: '600',
-  },
-  selectionHeader: {
-    marginBottom: rp(12),
-  },
-  selectionCount: {
-    fontSize: rf(16),
-    fontWeight: '700',
-    letterSpacing: 0.5,
-  },
-  selectionActionButton: {
-    flex: 1,
-    flexDirection: 'column',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: rp(8),
-    paddingVertical: rp(14),
-    paddingHorizontal: rp(16),
-    borderRadius: 12,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
-  },
-  selectionActionText: {
-    color: '#FFFFFF',
-    fontSize: rf(15),
     fontWeight: '600',
   },
   closeSearchButton: {

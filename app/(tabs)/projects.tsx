@@ -9,12 +9,13 @@ import { supabase } from '@/utils/supabase';
 import { useRouter, useFocusEffect } from 'expo-router';
 import { Folder, FileText, Mic, Plus, MoreVertical, Search, CheckSquare, List, Grid, ArrowLeft, X, Trash2, Send, Edit3, ChevronRight, Check } from 'lucide-react-native';
 import { ScreenHeader } from '@/components/ScreenHeader';
-import { SendToModal } from '@/components/SendToModal';
+import { SendToModal, SEND_TO_ROOT_ID } from '@/components/SendToModal';
 import { rf, rp } from '@/utils/responsive';
 import { Project, Script, Recording } from '@/types/database';
 import { BETA_LIMITS, isUserBetaLimited } from '@/constants/betaLimits';
 import { BottomSheetMenu } from '@/components/BottomSheetMenu';
 import { BottomSheetOption } from '@/components/BottomSheetOption';
+import { ConfirmDialog } from '@/components/ConfirmDialog';
 
 const VIEW_MODE_STORAGE_KEY = 'proyectos_view_mode';
 
@@ -55,7 +56,11 @@ export default function ProjectsScreen() {
   const [showNewFolderModal, setShowNewFolderModal] = useState(false);
   const [newFolderName, setNewFolderName] = useState('');
   const [sendToModal, setSendToModal] = useState<{ visible: boolean; item: ListItem | null }>({ visible: false, item: null });
+  const [bulkSendIds, setBulkSendIds] = useState<string[]>([]);
+  const [sendSuccessMessage, setSendSuccessMessage] = useState<string | null>(null);
   const [optionsModal, setOptionsModal] = useState<{ visible: boolean; item: ListItem | null }>({ visible: false, item: null });
+  const [deleteTarget, setDeleteTarget] = useState<ListItem | null>(null);
+  const [showBulkDeleteConfirm, setShowBulkDeleteConfirm] = useState(false);
   const [renameModal, setRenameModal] = useState<{ visible: boolean; item: ListItem | null; newName: string }>({ visible: false, item: null, newName: '' });
 
   // Load Data
@@ -259,41 +264,33 @@ export default function ProjectsScreen() {
     }
   };
 
-  const handleBulkDelete = async () => {
-    Alert.alert(
-      'Eliminar seleccionados',
-      `¿Estás seguro de eliminar ${selectedItems.size} elementos ? `,
-      [
-        { text: 'Cancelar', style: 'cancel' },
-        {
-          text: 'Eliminar',
-          style: 'destructive',
-          onPress: async () => {
-            setLoading(true);
-            try {
-              // Group by type for efficient deletion
-              const toDelete = items.filter(i => selectedItems.has(i.data.id));
-              const folders = toDelete.filter(i => i.type === 'folder').map(i => i.data.id);
-              const scripts = toDelete.filter(i => i.type === 'script').map(i => i.data.id);
-              const recordings = toDelete.filter(i => i.type === 'recording').map(i => i.data.id);
+  const handleBulkDelete = () => {
+    setShowBulkDeleteConfirm(true);
+  };
 
-              if (folders.length) await supabase.from('projects').delete().in('id', folders);
-              if (scripts.length) await supabase.from('scripts').delete().in('id', scripts);
-              if (recordings.length) await supabase.from('recordings').delete().in('id', recordings);
+  const performBulkDelete = async () => {
+    setShowBulkDeleteConfirm(false);
+    setLoading(true);
+    try {
+      // Group by type for efficient deletion
+      const toDelete = items.filter(i => selectedItems.has(i.data.id));
+      const folders = toDelete.filter(i => i.type === 'folder').map(i => i.data.id);
+      const scripts = toDelete.filter(i => i.type === 'script').map(i => i.data.id);
+      const recordings = toDelete.filter(i => i.type === 'recording').map(i => i.data.id);
 
-              setSelectionMode(false);
-              setSelectedItems(new Set());
-              loadContent();
-            } catch (e) {
-              console.error(e);
-              Alert.alert('Error', 'No se pudieron eliminar algunos elementos.');
-            } finally {
-              setLoading(false);
-            }
-          }
-        }
-      ]
-    );
+      if (folders.length) await supabase.from('projects').delete().in('id', folders);
+      if (scripts.length) await supabase.from('scripts').delete().in('id', scripts);
+      if (recordings.length) await supabase.from('recordings').delete().in('id', recordings);
+
+      setSelectionMode(false);
+      setSelectedItems(new Set());
+      loadContent();
+    } catch (e) {
+      console.error(e);
+      Alert.alert('Error', 'No se pudieron eliminar algunos elementos.');
+    } finally {
+      setLoading(false);
+    }
   };
 
   const handleCreateFolder = async () => {
@@ -318,38 +315,59 @@ export default function ProjectsScreen() {
     }
   };
 
+  const openSendModalBulk = () => {
+    const ids = Array.from(selectedItems);
+    if (ids.length === 0) return;
+    setBulkSendIds(ids);
+    setSendToModal({ visible: true, item: null });
+  };
+
   const handleMove = async (target: { projectId: string; folderId: string | null; name: string }) => {
-    const item = sendToModal.item;
-    if (!item || !user) return;
+    const targets = bulkSendIds.length > 0
+      ? items.filter(i => bulkSendIds.includes(i.data.id))
+      : (sendToModal.item ? [sendToModal.item] : []);
+    if (targets.length === 0 || !user) return;
 
     try {
-      const table = item.type === 'script' ? 'scripts' : item.type === 'recording' ? 'recordings' : 'projects';
-      const id = item.data.id;
+      let skipped = 0;
+      for (const item of targets) {
+        const id = item.data.id;
 
-      // Logic for moving folders (projects)
-      if (item.type === 'folder') {
-        if (id === target.projectId) {
-          Alert.alert('Error', 'No puedes mover una carpeta dentro de sí misma.');
-          return;
+        // Logic for moving folders (projects)
+        if (item.type === 'folder') {
+          if (id === target.projectId) {
+            skipped++;
+            continue;
+          }
+          const newParentId = target.projectId === SEND_TO_ROOT_ID ? null : target.projectId;
+          const { error } = await supabase
+            .from('projects')
+            .update({ parent_id: newParentId }) // newParentId null = carpeta principal de Proyectos
+            .eq('id', id)
+            .eq('user_id', user.id);
+          if (error) throw error;
+        } else {
+          // Logic for scripts and recordings
+          const table = item.type === 'script' ? 'scripts' : 'recordings';
+          const { error } = await supabase
+            .from(table)
+            .update({ project_id: target.projectId })
+            .eq('id', id)
+            .eq('user_id', user.id);
+          if (error) throw error;
         }
-        const { error } = await supabase
-          .from('projects')
-          .update({ parent_id: target.projectId }) // target.projectId is the new parent
-          .eq('id', id)
-          .eq('user_id', user.id);
-        if (error) throw error;
-      } else {
-        // Logic for scripts and recordings
-        const { error } = await supabase
-          .from(table)
-          .update({ project_id: target.projectId })
-          .eq('id', id)
-          .eq('user_id', user.id);
-        if (error) throw error;
       }
 
       setSendToModal({ visible: false, item: null });
-      Alert.alert('Éxito', 'Elemento movido correctamente.');
+      setBulkSendIds([]);
+      setSelectionMode(false);
+      setSelectedItems(new Set());
+
+      if (skipped > 0 && targets.length === skipped) {
+        Alert.alert('Error', 'No puedes mover una carpeta dentro de sí misma.');
+      } else {
+        setSendSuccessMessage(targets.length - skipped > 1 ? `${targets.length - skipped} elementos movidos correctamente.` : 'Elemento movido correctamente.');
+      }
       loadContent();
     } catch (error) {
       console.error('Error moving item:', error);
@@ -357,37 +375,31 @@ export default function ProjectsScreen() {
     }
   };
 
-  const handleDelete = async (item: ListItem) => {
-    Alert.alert(
-      'Eliminar',
-      '¿Estás seguro? Esta acción no se puede deshacer.',
-      [
-        { text: 'Cancelar', style: 'cancel' },
-        {
-          text: 'Eliminar',
-          style: 'destructive',
-          onPress: async () => {
-            try {
-              const table = item.type === 'folder' ? 'projects' : item.type === 'script' ? 'scripts' : 'recordings';
-              // If folder, we should probably check if empty or cascade delete. 
-              // Supabase might handle cascade if configured, otherwise we might need manual cleanup.
-              // For now assuming simple delete.
-              const { error } = await supabase
-                .from(table)
-                .delete()
-                .eq('id', item.data.id);
+  const handleDelete = (item: ListItem) => {
+    setDeleteTarget(item);
+  };
 
-              if (error) throw error;
-              setOptionsModal({ visible: false, item: null });
-              loadContent();
-            } catch (e) {
-              console.error('Delete error:', e);
-              Alert.alert('Error', 'No se pudo eliminar.');
-            }
-          }
-        }
-      ]
-    );
+  const performDelete = async () => {
+    const item = deleteTarget;
+    if (!item) return;
+    setDeleteTarget(null);
+    try {
+      const table = item.type === 'folder' ? 'projects' : item.type === 'script' ? 'scripts' : 'recordings';
+      // If folder, we should probably check if empty or cascade delete.
+      // Supabase might handle cascade if configured, otherwise we might need manual cleanup.
+      // For now assuming simple delete.
+      const { error } = await supabase
+        .from(table)
+        .delete()
+        .eq('id', item.data.id);
+
+      if (error) throw error;
+      setOptionsModal({ visible: false, item: null });
+      loadContent();
+    } catch (e) {
+      console.error('Delete error:', e);
+      Alert.alert('Error', 'No se pudo eliminar.');
+    }
   };
 
   // Navigation
@@ -521,6 +533,17 @@ export default function ProjectsScreen() {
       </TouchableOpacity>
     );
   };
+
+  // La opción "Carpeta principal de Proyectos" solo tiene sentido cuando
+  // TODO lo que se está enviando son carpetas (los archivos nunca pueden
+  // vivir en la raíz de Proyectos).
+  const sendTargets = bulkSendIds.length > 0
+    ? items.filter(i => bulkSendIds.includes(i.data.id))
+    : (sendToModal.item ? [sendToModal.item] : []);
+  const sendAllowRoot = sendTargets.length > 0 && sendTargets.every(t => t.type === 'folder');
+  // Las carpetas se mueven (desaparecen de su ubicación actual), los guiones y
+  // grabaciones se copian, así que el texto del botón debe reflejarlo.
+  const sendConfirmLabel = sendAllowRoot ? 'Enviar aquí' : 'Copiar aquí';
 
   return (
     <ImageBackground
@@ -865,12 +888,102 @@ export default function ProjectsScreen() {
         />
       </BottomSheetMenu>
 
+      {selectionMode && selectedItems.size > 0 && (
+        <View
+          style={[
+            styles.selectionBarWrapper,
+            !isDark && {
+              shadowColor: '#1a1625',
+              shadowOffset: { width: 0, height: 8 },
+              shadowOpacity: 0.28,
+              shadowRadius: 16,
+              elevation: 8,
+            },
+          ]}
+        >
+          <View
+            style={[
+              styles.selectionBarClip,
+              { borderColor: isDark ? 'rgba(167,139,250,0.25)' : 'rgba(124,106,247,0.15)' },
+            ]}
+          >
+            <BlurView intensity={isDark ? 55 : 65} tint={isDark ? 'dark' : 'light'} style={StyleSheet.absoluteFill} />
+            <View
+              style={[
+                StyleSheet.absoluteFill,
+                { backgroundColor: isDark ? 'rgba(124,106,247,0.14)' : 'rgba(235,230,245,0.5)' },
+              ]}
+            />
+            <View style={styles.selectionBarContent}>
+              <TouchableOpacity
+                style={[
+                  styles.selectionPill,
+                  isDark
+                    ? { backgroundColor: 'rgba(124,106,247,0.80)', borderWidth: 1.5, borderColor: 'rgba(255,255,255,0.5)' }
+                    : { backgroundColor: colors.primary },
+                ]}
+                onPress={openSendModalBulk}
+              >
+                <Send size={16} color="#FFFFFF" />
+                <Text style={styles.selectionPillText}>Enviar a...</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[
+                  styles.selectionPill,
+                  isDark
+                    ? { backgroundColor: 'rgba(239,68,68,0.85)', borderWidth: 1.5, borderColor: 'rgba(255,255,255,0.5)' }
+                    : { backgroundColor: colors.error },
+                ]}
+                onPress={handleBulkDelete}
+              >
+                <Trash2 size={16} color="#FFFFFF" />
+                <Text style={styles.selectionPillText}>Eliminar</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      )}
+
+      <ConfirmDialog
+        visible={!!deleteTarget}
+        title="Eliminar"
+        message="¿Estás seguro? Esta acción no se puede deshacer."
+        confirmText="Eliminar"
+        cancelText="Cancelar"
+        onConfirm={performDelete}
+        onCancel={() => setDeleteTarget(null)}
+        destructive
+      />
+
+      <ConfirmDialog
+        visible={showBulkDeleteConfirm}
+        title="Eliminar seleccionados"
+        message={`¿Estás seguro de eliminar ${selectedItems.size} elemento${selectedItems.size === 1 ? '' : 's'}? Esta acción no se puede deshacer.`}
+        confirmText="Eliminar"
+        cancelText="Cancelar"
+        onConfirm={performBulkDelete}
+        onCancel={() => setShowBulkDeleteConfirm(false)}
+        destructive
+      />
+
       {/* Send To Modal */}
       <SendToModal
         visible={sendToModal.visible}
-        onClose={() => setSendToModal({ visible: false, item: null })}
+        onClose={() => { setSendToModal({ visible: false, item: null }); setBulkSendIds([]); }}
         onMove={handleMove}
         currentProjectId={currentProjectId}
+        allowRoot={sendAllowRoot}
+        confirmLabel={sendConfirmLabel}
+      />
+
+      <ConfirmDialog
+        visible={!!sendSuccessMessage}
+        title="Éxito"
+        message={sendSuccessMessage || ''}
+        confirmText="OK"
+        onConfirm={() => setSendSuccessMessage(null)}
+        onCancel={() => setSendSuccessMessage(null)}
+        singleButton
       />
 
       {/* Rename Modal */}
@@ -949,6 +1062,37 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
+  },
+  selectionBarWrapper: {
+    position: 'absolute',
+    left: 16,
+    right: 16,
+    bottom: rp(100),
+    borderRadius: 28,
+  },
+  selectionBarClip: {
+    borderRadius: 28,
+    overflow: 'hidden',
+    borderWidth: 1,
+  },
+  selectionBarContent: {
+    flexDirection: 'row',
+    gap: 12,
+    padding: rp(10),
+  },
+  selectionPill: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    paddingVertical: rp(12),
+    borderRadius: 20,
+  },
+  selectionPillText: {
+    color: '#FFFFFF',
+    fontSize: rf(14),
+    fontWeight: '600',
   },
   listContent: {
     padding: rp(16),

@@ -8,7 +8,6 @@ import {
   Pressable,
 } from 'react-native';
 import { BlurView } from 'expo-blur';
-import { AlertTriangle } from 'lucide-react-native';
 import { useTheme } from '@/contexts/ThemeContext';
 import { rf, rp } from '@/utils/responsive';
 
@@ -21,6 +20,9 @@ interface ConfirmDialogProps {
   onConfirm: () => void;
   onCancel: () => void;
   destructive?: boolean;
+  // Modo aviso: oculta el botón de cancelar y deja solo un botón (p.ej. "OK")
+  // que llama a onConfirm. Útil para mensajes informativos, no confirmaciones.
+  singleButton?: boolean;
 }
 
 export function ConfirmDialog({
@@ -32,11 +34,15 @@ export function ConfirmDialog({
   onConfirm,
   onCancel,
   destructive = false,
+  singleButton = false,
 }: ConfirmDialogProps) {
   const { colors, isDark } = useTheme();
   const onBg = isDark ? '#ffffff' : '#2a2447';
   const onBg2 = isDark ? '#a0a0c0' : '#5c5678';
   const accentColor = destructive ? colors.error : colors.primary;
+  const pillStyle = isDark
+    ? { backgroundColor: 'rgba(255,255,255,0.1)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.2)' as const }
+    : { backgroundColor: 'rgba(124,106,247,0.12)' };
 
   return (
     <Modal
@@ -73,40 +79,24 @@ export function ConfirmDialog({
               ]}
             />
             <View style={styles.dialog}>
-              <View style={styles.iconContainer}>
-                <AlertTriangle size={48} color={accentColor} />
-              </View>
-
               <Text style={[styles.title, { color: onBg }]}>{title}</Text>
               <Text style={[styles.message, { color: onBg2 }]}>{message}</Text>
 
               <View style={styles.buttons}>
-                <TouchableOpacity
-                  style={[
-                    styles.button,
-                    isDark
-                      ? { backgroundColor: 'rgba(255,255,255,0.1)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.2)' }
-                      : { backgroundColor: 'rgba(124,106,247,0.12)' },
-                  ]}
-                  onPress={onCancel}
-                >
-                  <Text style={[styles.cancelText, { color: onBg }]}>{cancelText}</Text>
-                </TouchableOpacity>
+                {!singleButton && (
+                  <TouchableOpacity
+                    style={[styles.button, pillStyle]}
+                    onPress={onCancel}
+                  >
+                    <Text style={[styles.buttonText, { color: onBg }]}>{cancelText}</Text>
+                  </TouchableOpacity>
+                )}
 
                 <TouchableOpacity
-                  style={[
-                    styles.button,
-                    isDark
-                      ? {
-                        backgroundColor: destructive ? 'rgba(239,68,68,0.85)' : 'rgba(124,106,247,0.80)',
-                        borderWidth: 1.5,
-                        borderColor: 'rgba(255,255,255,0.5)',
-                      }
-                      : { backgroundColor: accentColor },
-                  ]}
+                  style={[styles.button, pillStyle]}
                   onPress={onConfirm}
                 >
-                  <Text style={styles.confirmText}>{confirmText}</Text>
+                  <Text style={[styles.buttonText, { color: accentColor }]}>{confirmText}</Text>
                 </TouchableOpacity>
               </View>
             </View>
@@ -138,21 +128,15 @@ const styles = StyleSheet.create({
   dialog: {
     padding: rp(24),
   },
-  iconContainer: {
-    alignItems: 'center',
-    marginBottom: rp(16),
-  },
   title: {
-    fontSize: rf(20),
+    fontSize: rf(18),
     fontWeight: '700',
-    textAlign: 'center',
     marginBottom: rp(8),
   },
   message: {
-    fontSize: rf(16),
-    textAlign: 'center',
-    lineHeight: 24,
-    marginBottom: rp(24),
+    fontSize: rf(15),
+    lineHeight: 21,
+    marginBottom: rp(20),
   },
   buttons: {
     flexDirection: 'row',
@@ -160,18 +144,13 @@ const styles = StyleSheet.create({
   },
   button: {
     flex: 1,
-    paddingVertical: rp(14),
-    borderRadius: 12,
+    paddingVertical: rp(12),
+    borderRadius: 100,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  cancelText: {
-    fontSize: rf(16),
+  buttonText: {
+    fontSize: rf(15),
     fontWeight: '600',
-  },
-  confirmText: {
-    fontSize: rf(16),
-    fontWeight: '600',
-    color: '#FFFFFF',
   },
 });

@@ -20,6 +20,7 @@ import {
   ImageBackground,
 } from 'react-native';
 import { Dimensions } from 'react-native';
+import { BlurView } from 'expo-blur';
 import { PinchGestureHandler, State } from 'react-native-gesture-handler';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Play, Pause, Trash2, Clock, FileAudio, MoreVertical, Edit2, Share2, Search, Grid3x3, List, Send, ChevronRight, Circle, SkipBack, SkipForward, Volume2, VolumeX, Repeat, X, Maximize2, Minimize2, Video as VideoIcon, Cast, Waves, Music, Clapperboard, CheckSquare, Square, MinusSquare, Gauge, Download, Filter, ArrowUpAZ, Check, Calendar } from 'lucide-react-native';
@@ -160,6 +161,7 @@ export default function RecordingsScreen() {
   const { colors, isDark } = useTheme();
   const params = useLocalSearchParams<{ pendingJobId?: string }>();
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [showBulkDeleteConfirm, setShowBulkDeleteConfirm] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<Recording | null>(null);
   const [deleting, setDeleting] = useState(false);
   const [recordings, setRecordings] = useState<Recording[]>([]);
@@ -348,6 +350,7 @@ export default function RecordingsScreen() {
   const [sendModalVisible, setSendModalVisible] = useState(false);
   const [sendRecordingId, setSendRecordingId] = useState<string | null>(null);
   const [bulkRecordingIds, setBulkRecordingIds] = useState<string[]>([]);
+  const [sendSuccessMessage, setSendSuccessMessage] = useState<string | null>(null);
 
   // Compartir selección (caducidad configurable)
   const [shareModalVisible, setShareModalVisible] = useState(false);
@@ -422,7 +425,7 @@ export default function RecordingsScreen() {
       setSelectionMode(false);
       setSelectedIds(new Set());
 
-      Alert.alert('Éxito', `Se ha copiado a "${target.name}" correctamente.`);
+      setSendSuccessMessage(`Se ha copiado a "${target.name}" correctamente.`);
 
       // Forzar refresco
       await handleRefresh();
@@ -2237,72 +2240,64 @@ export default function RecordingsScreen() {
   }
 
 
-  async function handleBulkDelete() {
+  function handleBulkDelete() {
+    setShowBulkDeleteConfirm(true);
+  }
+
+  async function performBulkDelete() {
+    setShowBulkDeleteConfirm(false);
     const count = selectedIds.size;
-    Alert.alert(
-      'Eliminar grabaciones',
-      `¿Eliminar ${count} grabación(es)?`,
-      [
-        { text: 'Cancelar', style: 'cancel' },
-        {
-          text: 'Eliminar',
-          style: 'destructive',
-          onPress: async () => {
-            try {
-              // Delete all selected recordings silently
-              const idsArray = Array.from(selectedIds);
-              for (const id of idsArray) {
-                const recording = recordings.find(r => r.id === id);
-                if (!recording || !user) continue;
+    try {
+      // Delete all selected recordings silently
+      const idsArray = Array.from(selectedIds);
+      for (const id of idsArray) {
+        const recording = recordings.find(r => r.id === id);
+        if (!recording || !user) continue;
 
-                // Delete from Supabase
-                const { error: dbError } = await supabase
-                  .from('recordings')
-                  .delete()
-                  .eq('id', id)
-                  .eq('user_id', user.id);
+        // Delete from Supabase
+        const { error: dbError } = await supabase
+          .from('recordings')
+          .delete()
+          .eq('id', id)
+          .eq('user_id', user.id);
 
-                if (dbError) {
-                  console.error('Error deleting recording from DB:', dbError);
-                  continue;
-                }
+        if (dbError) {
+          console.error('Error deleting recording from DB:', dbError);
+          continue;
+        }
 
-                // Delete from storage if it's a remote file
-                if (recording.audio_url) {
-                  let storagePath = recording.audio_url;
-                  if (storagePath.startsWith('file://') || storagePath.startsWith('/')) {
-                    storagePath = '';
-                  } else if (storagePath.includes('/recordings/')) {
-                    storagePath = storagePath.split('/recordings/')[1];
-                  }
+        // Delete from storage if it's a remote file
+        if (recording.audio_url) {
+          let storagePath = recording.audio_url;
+          if (storagePath.startsWith('file://') || storagePath.startsWith('/')) {
+            storagePath = '';
+          } else if (storagePath.includes('/recordings/')) {
+            storagePath = storagePath.split('/recordings/')[1];
+          }
 
-                  if (storagePath) {
-                    const { error: storageError } = await supabase.storage
-                      .from('recordings')
-                      .remove([storagePath]);
+          if (storagePath) {
+            const { error: storageError } = await supabase.storage
+              .from('recordings')
+              .remove([storagePath]);
 
-                    if (storageError) {
-                      console.error('Error deleting from storage:', storageError);
-                    }
-                  }
-                }
-              }
-
-              // Show single success message
-              Alert.alert('Éxito', `Se eliminaron ${count} grabación(es)`);
-
-              // Refresh and exit selection mode
-              await loadRecordings(true);
-              setSelectionMode(false);
-              setSelectedIds(new Set());
-            } catch (error) {
-              console.error('Bulk delete error:', error);
-              Alert.alert('Error', 'No se pudieron eliminar todas las grabaciones');
+            if (storageError) {
+              console.error('Error deleting from storage:', storageError);
             }
-          },
-        },
-      ]
-    );
+          }
+        }
+      }
+
+      // Show single success message
+      Alert.alert('Éxito', `Se eliminaron ${count} grabación(es)`);
+
+      // Refresh and exit selection mode
+      await loadRecordings(true);
+      setSelectionMode(false);
+      setSelectedIds(new Set());
+    } catch (error) {
+      console.error('Bulk delete error:', error);
+      Alert.alert('Error', 'No se pudieron eliminar todas las grabaciones');
+    }
   }
 
   // Eliminado: acción de ocultar múltiples
@@ -3408,6 +3403,16 @@ export default function RecordingsScreen() {
           onMove={performSendRecording}
         />
 
+        <ConfirmDialog
+          visible={!!sendSuccessMessage}
+          title="Éxito"
+          message={sendSuccessMessage || ''}
+          confirmText="OK"
+          onConfirm={() => setSendSuccessMessage(null)}
+          onCancel={() => setSendSuccessMessage(null)}
+          singleButton
+        />
+
         {/* Compartir selección */}
         <Modal
           visible={shareModalVisible}
@@ -3467,6 +3472,62 @@ export default function RecordingsScreen() {
           </View>
         </Modal>
 
+        {selectionMode && selectedIds.size > 0 && (
+          <View
+            style={[
+              styles.selectionBarWrapper,
+              !isDark && {
+                shadowColor: '#1a1625',
+                shadowOffset: { width: 0, height: 8 },
+                shadowOpacity: 0.28,
+                shadowRadius: 16,
+                elevation: 8,
+              },
+            ]}
+          >
+            <View
+              style={[
+                styles.selectionBarClip,
+                { borderColor: isDark ? 'rgba(167,139,250,0.25)' : 'rgba(124,106,247,0.15)' },
+              ]}
+            >
+              <BlurView intensity={isDark ? 55 : 65} tint={isDark ? 'dark' : 'light'} style={StyleSheet.absoluteFill} />
+              <View
+                style={[
+                  StyleSheet.absoluteFill,
+                  { backgroundColor: isDark ? 'rgba(124,106,247,0.14)' : 'rgba(235,230,245,0.5)' },
+                ]}
+              />
+              <View style={styles.selectionBarContent}>
+                <TouchableOpacity
+                  style={[
+                    styles.selectionPill,
+                    isDark
+                      ? { backgroundColor: 'rgba(124,106,247,0.80)', borderWidth: 1.5, borderColor: 'rgba(255,255,255,0.5)' }
+                      : { backgroundColor: colors.primary },
+                  ]}
+                  onPress={openSendModalBulk}
+                >
+                  <Send size={16} color="#FFFFFF" />
+                  <Text style={styles.selectionPillText}>Enviar a...</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[
+                    styles.selectionPill,
+                    isDark
+                      ? { backgroundColor: 'rgba(239,68,68,0.85)', borderWidth: 1.5, borderColor: 'rgba(255,255,255,0.5)' }
+                      : { backgroundColor: colors.error },
+                  ]}
+                  onPress={handleBulkDelete}
+                >
+                  <Trash2 size={16} color="#FFFFFF" />
+                  <Text style={styles.selectionPillText}>Eliminar</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          </View>
+        )}
+
         <ConfirmDialog
           visible={showDeleteConfirm}
           title="Eliminar grabación"
@@ -3475,6 +3536,17 @@ export default function RecordingsScreen() {
           cancelText="Cancelar"
           onConfirm={confirmDelete}
           onCancel={() => setShowDeleteConfirm(false)}
+          destructive
+        />
+
+        <ConfirmDialog
+          visible={showBulkDeleteConfirm}
+          title="Eliminar grabaciones"
+          message={`¿Eliminar ${selectedIds.size} grabación(es)? Esta acción no se puede deshacer.`}
+          confirmText="Eliminar"
+          cancelText="Cancelar"
+          onConfirm={performBulkDelete}
+          onCancel={() => setShowBulkDeleteConfirm(false)}
           destructive
         />
       </View>
@@ -3491,6 +3563,37 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
+  },
+  selectionBarWrapper: {
+    position: 'absolute',
+    left: 16,
+    right: 16,
+    bottom: rp(100),
+    borderRadius: 28,
+  },
+  selectionBarClip: {
+    borderRadius: 28,
+    overflow: 'hidden',
+    borderWidth: 1,
+  },
+  selectionBarContent: {
+    flexDirection: 'row',
+    gap: 12,
+    padding: rp(10),
+  },
+  selectionPill: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    paddingVertical: rp(12),
+    borderRadius: 20,
+  },
+  selectionPillText: {
+    color: '#FFFFFF',
+    fontSize: rf(14),
+    fontWeight: '600',
   },
   header: {
     flexDirection: 'row',
