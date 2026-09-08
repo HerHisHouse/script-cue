@@ -13,18 +13,27 @@ import {
   Pressable,
   Platform,
   Share,
-  Image,
   Animated,
   DeviceEventEmitter,
   Keyboard,
   ImageBackground,
+  ScrollView,
+  useWindowDimensions,
 } from 'react-native';
 import { Dimensions } from 'react-native';
+import * as ScreenOrientation from 'expo-screen-orientation';
 import { BlurView } from 'expo-blur';
 import { PinchGestureHandler, State } from 'react-native-gesture-handler';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Play, Pause, Trash2, Clock, FileAudio, MoreVertical, Edit2, Share2, Search, Grid3x3, List, Send, ChevronRight, Circle, SkipBack, SkipForward, Volume2, VolumeX, Repeat, X, Maximize2, Minimize2, Video as VideoIcon, Cast, Waves, Music, Clapperboard, CheckSquare, Square, MinusSquare, Gauge, Download, Filter, ArrowUpAZ, Check, Calendar } from 'lucide-react-native';
-import { AudioVisualizer } from '@/components/AudioVisualizer';
+import { Headphones, Trash2, Clock, FileAudio, MoreVertical, Edit2, Share2, Search, Grid3x3, List, Send, ChevronRight, ChevronDown, Circle, X, Maximize2, Minimize2, Video as VideoIcon, CheckSquare, Square, MinusSquare, Download, Filter, ArrowUpAZ, Check, Calendar } from 'lucide-react-native';
+import { PlayerDisc } from '@/components/player/PlayerDisc';
+import { PlayerVideoFrame } from '@/components/player/PlayerVideoFrame';
+import { AnimatedWaveform } from '@/components/player/AnimatedWaveform';
+import { PlayerVideoProgressBar } from '@/components/player/PlayerVideoProgressBar';
+import { LinearGradient } from 'expo-linear-gradient';
+import { PlayerControlsCapsule } from '@/components/player/PlayerControlsCapsule';
+import { PlayerTransportRow } from '@/components/player/PlayerTransportRow';
+import { PlaylistSheet, PlaylistTrack } from '@/components/player/PlaylistSheet';
 import { SendToModal } from '@/components/SendToModal';
 import { ScreenHeader } from '@/components/ScreenHeader';
 import { MENU_ITEM_PADDING_H, MENU_ITEM_PADDING_V, MENU_SECTION_PADDING_V, HEADER_HORIZONTAL_PADDING } from '@/utils/ui';
@@ -190,10 +199,15 @@ export default function RecordingsScreen() {
   const volumeRampingRef = useRef<boolean>(false);
   const [loopMode, setLoopMode] = useState<'all' | 'one' | 'off'>('off');
   const loopModeRef = useRef(loopMode);
+  // Copias siempre-actualizadas de queue/currentIndex, para leerlas de forma fiable
+  // desde listeners/intervalos (closures) sin depender de un re-render.
+  const queueRef = useRef<Recording[]>([]);
+  const currentIndexRef = useRef<number>(0);
+  useEffect(() => { queueRef.current = queue; }, [queue]);
+  useEffect(() => { currentIndexRef.current = currentIndex; }, [currentIndex]);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [playbackRate, setPlaybackRate] = useState(1.0); // Velocidad de reproducción (0.50x - 2x)
   const [showSpeedMenu, setShowSpeedMenu] = useState(false); // Mostrar menú de velocidad
-  const progressBarWidthRef = useRef<number>(0);
   const volumeBarWidthRef = useRef<number>(0);
   const loopAnim = useRef(new Animated.Value(1)).current;
   const modalOpacity = useRef(new Animated.Value(0)).current;
@@ -208,7 +222,9 @@ export default function RecordingsScreen() {
   const hideControlsTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Animation visibility toggle
-  const [showAnimation, setShowAnimation] = useState(true);
+  const [playlistVisible, setPlaylistVisible] = useState(false);
+  // Dimensiones reactivas (se actualizan al rotar), usadas por el vídeo en pantalla completa.
+  const { width: liveWindowWidth, height: liveWindowHeight } = useWindowDimensions();
 
   const [showHeaderMenu, setShowHeaderMenu] = useState(false);
   const [headerHeight, setHeaderHeight] = useState(0);
@@ -1052,8 +1068,19 @@ export default function RecordingsScreen() {
       // Reset TrackPlayer queue
       await TrackPlayer.reset();
 
-      // Prepare tracks from the queue (audio only)
-      const audioRecordings = currentQueue.filter(r => r.type !== 'video');
+      // Prepare tracks from the queue (audio only). TrackPlayer no sabe nada de vídeos,
+      // así que si la cola mezcla audio y vídeo, solo le pasamos la racha de audios
+      // consecutivos a partir de la pista actual (hasta el próximo vídeo o el final).
+      // Así TrackPlayer nunca puede "saltarse" un vídeo intercalado en su avance nativo;
+      // cuando esa racha se agota, el listener de PlaybackQueueEnded decide qué sigue
+      // (incluido arrancar el vídeo) usando la cola completa real.
+      const hasVideoInQueue = currentQueue.some(r => r.type === 'video');
+      let audioRecordings = currentQueue.filter(r => r.type !== 'video');
+      if (hasVideoInQueue) {
+        let runEnd = index;
+        while (runEnd < currentQueue.length && currentQueue[runEnd].type !== 'video') runEnd++;
+        audioRecordings = currentQueue.slice(index, runEnd);
+      }
       const tracks = [];
       const failedRecordings = [];
 
@@ -1117,11 +1144,13 @@ export default function RecordingsScreen() {
         await TrackPlayer.skip(audioIndex);
       }
 
-      // Set repeat mode
+      // Set repeat mode. Con cola mixta, "repetir todo" no se delega en TrackPlayer
+      // (solo conoce la racha de audios, no toda la cola) — lo gestiona el listener
+      // de PlaybackQueueEnded, que sí ve la cola completa y decide si vuelve al principio.
       const currentLoop = loopModeRef.current;
       if (currentLoop === 'one') {
         await setTrackPlayerRepeatMode('track');
-      } else if (currentLoop === 'all') {
+      } else if (currentLoop === 'all' && !hasVideoInQueue) {
         await setTrackPlayerRepeatMode('queue');
       } else {
         await setTrackPlayerRepeatMode('off');
@@ -1706,6 +1735,11 @@ export default function RecordingsScreen() {
       TrackPlayer.addEventListener(TrackPlayerEvent.RemotePrevious, () => {
         playbackCallbacksRef.current.playPrevious();
       }),
+      // Se dispara cuando TrackPlayer agota su racha de audios consecutivos:
+      // decide qué toca a continuación usando la cola completa (puede ser un vídeo).
+      TrackPlayer.addEventListener(TrackPlayerEvent.PlaybackQueueEnded, () => {
+        handleQueueEnded();
+      }),
     ];
 
     return () => {
@@ -1753,12 +1787,11 @@ export default function RecordingsScreen() {
       useNativeDriver: true,
     }).start();
 
-    // Auto-hide after 5 seconds ONLY if playing
-    if (isPlaying) {
-      hideControlsTimerRef.current = setTimeout(() => {
-        hideControls();
-      }, 5000);
-    }
+    // Auto-ocultar a los 5s, tanto en reproducción como en pausa (pantalla completa
+    // de vídeo): solo reaparecen al volver a tocar la pantalla.
+    hideControlsTimerRef.current = setTimeout(() => {
+      hideControls();
+    }, 5000);
   }
 
   function hideControls() {
@@ -1863,26 +1896,12 @@ export default function RecordingsScreen() {
     }
   }, [playerVisible]);
 
-  // Handle controls visibility based on playback state
+  // Handle controls visibility based on playback state: tanto al empezar a
+  // reproducir como al pausar, se muestran los controles y se reprograma el
+  // auto-ocultado a los 5s (no se quedan fijos indefinidamente en pausa).
   useEffect(() => {
     if (!playerVisible) return;
-
-    if (isPlaying) {
-      // When playing starts, show controls and schedule auto-hide
-      showControls();
-    } else {
-      // When paused, show controls and keep them visible
-      if (hideControlsTimerRef.current) {
-        clearTimeout(hideControlsTimerRef.current);
-        hideControlsTimerRef.current = null;
-      }
-      setControlsVisible(true);
-      Animated.timing(controlsOpacity, {
-        toValue: 1,
-        duration: 200,
-        useNativeDriver: true,
-      }).start();
-    }
+    showControls();
   }, [isPlaying, playerVisible]);
 
   // Listener opcional del volumen del dispositivo (si el módulo está disponible)
@@ -2006,6 +2025,27 @@ export default function RecordingsScreen() {
 
     const prev = (currentIndex - 1 + queue.length) % queue.length;
     loadAndPlay(prev);
+  }
+
+  // Cuando TrackPlayer agota su racha de audios consecutivos (p.ej. porque a
+  // continuación toca un vídeo, o porque se llegó al final de la cola), decide
+  // qué reproducir después usando la cola completa real (con vídeos incluidos).
+  async function handleQueueEnded() {
+    const q = queueRef.current;
+    const idx = currentIndexRef.current;
+    if (q.length === 0) return;
+    const loop = loopModeRef.current;
+    if (loop === 'one') return; // TrackPlayer/vídeo ya repiten la propia pista
+
+    let nextIndex = idx + 1;
+    if (nextIndex >= q.length) {
+      if (loop === 'all') {
+        nextIndex = 0;
+      } else {
+        return; // fin de la cola, nada más que reproducir
+      }
+    }
+    loadAndPlay(nextIndex, q);
   }
 
   async function handleDelete(id: string) {
@@ -2420,7 +2460,7 @@ export default function RecordingsScreen() {
               {item.type === 'video' ? (
                 <VideoIcon size={20} color={cardIconColor} />
               ) : (
-                <Play size={20} color={cardIconColor} fill={cardIconColor} />
+                <Headphones size={20} color={cardIconColor} />
               )}
             </View>
             <View style={styles.recordingInfo}>
@@ -2507,7 +2547,7 @@ export default function RecordingsScreen() {
               {item.type === 'video' ? (
                 <VideoIcon size={Math.round(gridIconSize * 0.53)} color={cardIconColor} />
               ) : (
-                <Play size={Math.round(gridIconSize * 0.53)} color={cardIconColor} fill={cardIconColor} />
+                <Headphones size={Math.round(gridIconSize * 0.53)} color={cardIconColor} />
               )}
             </View>
             <Text style={[styles.gridTitle, { color: cardTitleColor }]} numberOfLines={2}>
@@ -2611,6 +2651,85 @@ export default function RecordingsScreen() {
       </TouchableOpacity>
     );
   };
+
+  // Reproductor rediseñado: valores derivados de la pista actual, calculados
+  // una vez por render y reutilizados en todo el bloque del modal del reproductor.
+  const currentTrack = queue[currentIndex];
+  const isVideoTrack = currentTrack?.type === 'video';
+  const playerProgress = durationMillis ? positionMillis / durationMillis : 0;
+  const playerHeaderTint = isDark ? '#FFFFFF' : '#241d3d';
+  const videoFrameHeight = Math.min(1450 * (windowWidth / 1284), Dimensions.get('window').height * 0.42);
+  const waveformWidth = windowWidth - rp(48);
+
+  // Al entrar en pantalla completa de vídeo, se libera el bloqueo de orientación de la
+  // app para que el usuario pueda girar el móvil y ver el vídeo en horizontal (16:9).
+  // Al salir, se restaura el ajuste global de rotación ("Rotación de pantalla" en Ajustes).
+  useEffect(() => {
+    if (isVideoTrack && isFullscreen) {
+      ScreenOrientation.unlockAsync().catch(() => {});
+      return () => {
+        ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.PORTRAIT_UP).catch(() => {});
+        getSettings().then((s) => {
+          if (s.rotationEnabled) {
+            ScreenOrientation.unlockAsync().catch(() => {});
+          }
+        }).catch(() => {});
+      };
+    }
+  }, [isVideoTrack, isFullscreen]);
+
+  async function reorderQueue(newOrder: Recording[]) {
+    // No-op si el orden no cambió realmente (p.ej. un arrastre que vuelve a soltarse
+    // en el mismo sitio) para no interrumpir la reproducción sin necesidad.
+    const unchanged = newOrder.length === queue.length && newOrder.every((r, i) => r.id === queue[i]?.id);
+    if (unchanged) return;
+
+    const activeId = queue[currentIndex]?.id;
+    const foundIndex = activeId ? newOrder.findIndex((r) => r.id === activeId) : -1;
+    const resolvedIndex = foundIndex >= 0 ? foundIndex : Math.min(currentIndex, newOrder.length - 1);
+
+    setQueue(newOrder);
+    setCurrentIndex(resolvedIndex);
+
+    const activeTrack = newOrder[resolvedIndex];
+    // Si la pista activa es un vídeo, no usa TrackPlayer — no hay cola nativa que
+    // resincronizar, y su propio avance automático ya lee la cola/índice actuales.
+    if (!activeTrack || activeTrack.type === 'video') return;
+
+    // Resincroniza SOLO la cola "por venir" de TrackPlayer (sin tocar la pista que ya
+    // está sonando, para no reiniciarla) con la racha de audios consecutivos que sigue
+    // a la pista activa en el nuevo orden, hasta el próximo vídeo o el final. Antes se
+    // recargaba la pista actual entera con loadAndPlay, lo que la reiniciaba desde 0.
+    try {
+      if (await isTrackPlayerReady()) {
+        let runEnd = resolvedIndex + 1;
+        while (runEnd < newOrder.length && newOrder[runEnd].type !== 'video') runEnd++;
+        const upcoming = newOrder.slice(resolvedIndex + 1, runEnd);
+
+        await TrackPlayer.removeUpcomingTracks();
+        if (upcoming.length > 0) {
+          const tracks = [];
+          for (const rec of upcoming) {
+            const url = await getPlayableUrlForRecording(rec);
+            if (url) {
+              tracks.push({
+                id: rec.id,
+                url,
+                title: rec.title || 'Grabación',
+                artist: 'Script Cue',
+                artwork: require('../../assets/images/icon.png'),
+              });
+            }
+          }
+          if (tracks.length > 0) {
+            await TrackPlayer.add(tracks);
+          }
+        }
+      }
+    } catch (e) {
+      console.log('[reorderQueue] Error resincronizando la cola de TrackPlayer:', e);
+    }
+  }
 
   return (
     <ImageBackground
@@ -3024,7 +3143,7 @@ export default function RecordingsScreen() {
           </PinchGestureHandler>
         )}
 
-        {/* Reproductor modal */}
+        {/* Reproductor modal (rediseño completo: disco/vídeo, waveform, cápsula de controles y playlist) */}
         <Modal
           visible={playerVisible}
           transparent
@@ -3032,22 +3151,59 @@ export default function RecordingsScreen() {
           onRequestClose={closePlayer}
           supportedOrientations={['portrait', 'landscape']}
         >
-          <View style={styles.playerOverlay}>
-            <Animated.View style={{ flex: 1, opacity: modalOpacity, transform: [{ scale: modalScale }] }}>
-              <View style={{ flex: 1, backgroundColor: '#151718' }}>
-                {/* Player Module - Top Section */}
-                <TouchableOpacity
-                  activeOpacity={1}
-                  onPress={toggleControls}
-                  style={[
-                    styles.playerModule,
-                    isFullscreen && styles.playerModuleFullscreen,
-                    Platform.OS === 'ios' ? { paddingTop: insets.top + 12 } : { paddingTop: insets.top }
-                  ]}
+          <Animated.View style={{ flex: 1, opacity: modalOpacity, transform: [{ scale: modalScale }] }}>
+            <ImageBackground
+              source={isDark ? require('@/assets/images/ui-dark-bg.png') : require('@/assets/images/ui-light-bg.png')}
+              resizeMode="cover"
+              style={{ flex: 1 }}
+            >
+              <View
+                style={{
+                  flex: 1,
+                  paddingTop: isVideoTrack && isFullscreen ? 0 : insets.top,
+                  paddingLeft: isVideoTrack && isFullscreen ? 0 : insets.left,
+                  paddingRight: isVideoTrack && isFullscreen ? 0 : insets.right,
+                }}
+              >
+                {/* Header: chevron (cerrar) | REPRODUCIENDO AHORA | expandir (solo vídeo) — oculto en pantalla completa de vídeo */}
+                {!(isVideoTrack && isFullscreen) && (
+                  <View style={styles.playerHeaderBar}>
+                    <Pressable onPress={closePlayer} hitSlop={16} accessibilityLabel="Cerrar reproductor">
+                      <ChevronDown size={26} color={playerHeaderTint} />
+                    </Pressable>
+                    <Text style={[styles.playerHeaderLabel, { color: isDark ? 'rgba(255,255,255,0.65)' : 'rgba(36,29,61,0.55)' }]}>
+                      REPRODUCIENDO AHORA
+                    </Text>
+                    {isVideoTrack ? (
+                      <Pressable
+                        onPress={() => setIsFullscreen(!isFullscreen)}
+                        hitSlop={16}
+                        accessibilityLabel={isFullscreen ? 'Salir de pantalla completa' : 'Pantalla completa'}
+                      >
+                        {isFullscreen ? <Minimize2 size={22} color={playerHeaderTint} /> : <Maximize2 size={22} color={playerHeaderTint} />}
+                      </Pressable>
+                    ) : (
+                      <View style={{ width: 26 }} />
+                    )}
+                  </View>
+                )}
+
+                <ScrollView
+                  contentContainerStyle={{
+                    flexGrow: 1,
+                    paddingBottom: isVideoTrack && isFullscreen ? 0 : Math.max(insets.bottom, rp(12)),
+                  }}
+                  bounces={false}
+                  showsVerticalScrollIndicator={false}
+                  scrollEnabled={!(isVideoTrack && isFullscreen)}
                 >
-                  {/* Video Player (if video type) - Background layer */}
-                  {queue[currentIndex]?.type === 'video' && (
-                    <View style={styles.visualizerContainer} pointerEvents="none">
+                  {/* Disco (audio) o frame de vídeo a sangre, pegado bajo el header */}
+                  {isVideoTrack ? (
+                    <View style={{ position: 'relative' }}>
+                    <PlayerVideoFrame
+                      height={isFullscreen ? liveWindowHeight : videoFrameHeight}
+                      width={isFullscreen ? liveWindowWidth : windowWidth}
+                    >
                       {videoUrlLoading && (
                         <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
                           <ActivityIndicator size="large" color="#fff" />
@@ -3097,265 +3253,226 @@ export default function RecordingsScreen() {
                           }}
                         />
                       )}
-                    </View>
-                  )}
-
-                  {/* Audio Visualizer Container - Background layer */}
-                  {queue[currentIndex]?.type !== 'video' && (
-                    <View style={styles.visualizerContainer} pointerEvents="none">
-                      {showAnimation ? (
-                        <AudioVisualizer isPlaying={isPlaying} color={colors.primary} height={isFullscreen ? 80 : 60} barCount={isFullscreen ? 60 : 30} />
-                      ) : (
-                        <View style={styles.staticImageContainer}>
-                          <Music size={80} color="rgba(59, 130, 246, 0.3)" strokeWidth={1.5} />
-                        </View>
-                      )}
-                    </View>
-                  )}
-
-                  {/* All player controls - Always rendered but with opacity */}
-                  <Animated.View
-                    style={[
-                      { opacity: controlsOpacity, paddingHorizontal: rp(16) },
-                      isFullscreen && { flex: 1, justifyContent: 'space-between', paddingHorizontal: rp(24) }
-                    ]}
-                    pointerEvents="box-none"
-                  >
-                    <View style={styles.playerHeader}>
-                      <Text style={[styles.playerTitle, { color: '#FFFFFF' }]} numberOfLines={1}>
-                        {queue[currentIndex]?.title || 'Sin título'}
-                      </Text>
-                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
-                        {/* Chromecast Button */}
-                        <TouchableOpacity
-                          accessibilityRole="button"
-                          accessibilityLabel="Chromecast"
-                          onPress={() => {
-                            // TODO: Implement Chromecast functionality
-                            Alert.alert('Chromecast', 'Funcionalidad de Chromecast próximamente');
-                          }}
-                          style={styles.headerIconButton}
-                        >
-                          <Cast size={22} color="#FFFFFF" />
-                        </TouchableOpacity>
-
-                        {/* Toggle Animation Button */}
-                        <TouchableOpacity
-                          accessibilityRole="button"
-                          accessibilityLabel={showAnimation ? 'Ocultar animación' : 'Mostrar animación'}
-                          onPress={() => setShowAnimation(!showAnimation)}
-                          style={styles.headerIconButton}
-                        >
-                          <Waves size={22} color={showAnimation ? colors.primary : 'rgba(255,255,255,0.5)'} />
-                        </TouchableOpacity>
-
-                        {/* Close Button */}
-                        <TouchableOpacity
-                          accessibilityRole="button"
-                          accessibilityLabel="Cerrar reproductor"
-                          onPress={closePlayer}
-                          style={styles.closeButton}
-                        >
-                          <X size={24} color="#FFFFFF" />
-                        </TouchableOpacity>
-                      </View>
-                    </View>
-                    <Text style={[styles.playerMeta, { color: 'rgba(255,255,255,0.6)' }]}>
-                      {(() => {
-                        const r = queue[currentIndex];
-                        if (!r) return '';
-                        const dateStr = new Date(r.created_at).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' });
-                        return `${formatDuration(r.duration_seconds || 0)} • ${dateStr}`;
-                      })()}
-                    </Text>
-
-                    {/* Center Controls Container - Groups play controls and secondary controls */}
-                    <View style={isFullscreen ? { flex: 1, justifyContent: 'space-between' } : {}}>
-                      {/* Play/Pause/Skip Controls - Centered wrapper */}
-                      <View style={isFullscreen ? { flex: 1, justifyContent: 'center' } : {}}>
-                        <View style={[styles.controlsOverlay, { position: 'relative', backgroundColor: 'transparent' }]}>
-                          <View style={styles.controlsRow}>
-                            <Pressable
-                              style={({ pressed }) => [styles.controlButton, { opacity: pressed ? 0.7 : 1 }]}
-                              onPress={(e) => { e.stopPropagation(); playPrev(); }}
-                              accessibilityLabel="Anterior"
-                            >
-                              <SkipBack size={28} color="#FFFFFF" />
-                            </Pressable>
-                            <Pressable
-                              style={({ pressed }) => [[styles.playPauseButton, { backgroundColor: colors.primary }], { opacity: pressed ? 0.8 : 1 }]}
-                              onPress={(e) => { e.stopPropagation(); togglePlayPause(); }}
-                              accessibilityLabel={isPlaying ? 'Pausar' : 'Reproducir'}
-                            >
-                              {isMediaLoading ? (
-                                <ActivityIndicator size="small" color="#FFFFFF" />
-                              ) : isPlaying ? (
-                                <Pause size={32} color="#FFFFFF" />
-                              ) : (
-                                <Play size={32} color="#FFFFFF" />
-                              )}
-                            </Pressable>
-                            <Pressable
-                              style={({ pressed }) => [styles.controlButton, { opacity: pressed ? 0.7 : 1 }]}
-                              onPress={(e) => { e.stopPropagation(); playNext(); }}
-                              accessibilityLabel="Siguiente"
-                            >
-                              <SkipForward size={28} color="#FFFFFF" />
-                            </Pressable>
-                          </View>
-                        </View>
-                      </View>
-
-                      {/* Secondary Controls: Speaker, Speed, Loop, Expand (Right Aligned) */}
-                      <View style={styles.secondaryControlsRow}>
-                        <Pressable style={({ hovered, pressed }) => [styles.controlButton, { transform: [{ scale: hovered || pressed ? 1.05 : 1 }], opacity: hovered ? 0.95 : 1 }]} onPress={toggleMute} accessibilityLabel={muted ? 'Reanudar sonido' : 'Silenciar'}>
-                          {muted ? <VolumeX size={20} color="#FFFFFF" /> : <Volume2 size={20} color="#FFFFFF" />}
-                        </Pressable>
-
+                    </PlayerVideoFrame>
+                    {isFullscreen ? (
+                      <>
+                        {/* Toca en cualquier punto del vídeo para mostrar/ocultar los controles */}
                         <Pressable
-                          style={({ hovered, pressed }) => [styles.controlButton, { transform: [{ scale: hovered || pressed ? 1.05 : 1 }], opacity: hovered ? 0.95 : 1 }]}
-                          onPress={() => setShowSpeedMenu(!showSpeedMenu)}
-                          accessibilityLabel={`Velocidad: ${playbackRate.toFixed(2)}x`}
+                          style={StyleSheet.absoluteFill}
+                          onPress={toggleControls}
+                          accessibilityLabel="Mostrar u ocultar controles"
+                        />
+                        <Animated.View
+                          style={[StyleSheet.absoluteFill, { opacity: controlsOpacity }]}
+                          pointerEvents={controlsVisible ? 'box-none' : 'none'}
                         >
-                          <View style={{ position: 'relative', alignItems: 'center', justifyContent: 'center' }}>
-                            <Gauge size={18} color={playbackRate !== 1.0 ? colors.primary : 'rgba(255,255,255,0.5)'} />
-                            {playbackRate !== 1.0 && (
-                              <View style={[styles.speedBadge, { backgroundColor: colors.primary }]}>
-                                <Text style={styles.speedBadgeText}>{playbackRate.toFixed(2)}x</Text>
-                              </View>
-                            )}
+                          <Pressable
+                            onPress={() => setIsFullscreen(false)}
+                            hitSlop={16}
+                            accessibilityLabel="Salir de pantalla completa"
+                            style={[styles.fullscreenExitButton, { top: insets.top + 12, right: insets.right + 16 }]}
+                          >
+                            <Minimize2 size={20} color="#FFFFFF" />
+                          </Pressable>
+                          <View style={styles.fullscreenTransportWrap} pointerEvents="box-none">
+                            <PlayerTransportRow
+                              isPlaying={isPlaying}
+                              isLoading={isMediaLoading}
+                              onPlayPause={togglePlayPause}
+                              onPrevious={playPrev}
+                              onNext={playNext}
+                              isDark
+                            />
                           </View>
-                        </Pressable>
-
-                        <Pressable style={({ hovered, pressed }) => [styles.loopWrapper, { transform: [{ scale: hovered || pressed ? 1.08 : 1 }], opacity: hovered ? 0.95 : 1 }]} onPress={cycleLoopMode} accessibilityLabel="Modo de bucle">
-                          <Animated.View style={{ transform: [{ scale: loopAnim }], position: 'relative' }}>
-                            <Repeat size={18} color={loopMode === 'off' ? 'rgba(255,255,255,0.5)' : colors.primary} />
-                            {loopMode === 'one' && (
-                              <View style={[styles.loopBadge, { backgroundColor: colors.primary }]}>
-                                <Text style={styles.loopBadgeText}>1</Text>
-                              </View>
-                            )}
-                          </Animated.View>
-                        </Pressable>
-
-                        <Pressable style={({ hovered, pressed }) => [styles.controlButton, { transform: [{ scale: hovered || pressed ? 1.05 : 1 }], opacity: hovered ? 0.95 : 1 }]} onPress={() => setIsFullscreen(!isFullscreen)} accessibilityLabel={isFullscreen ? 'Salir de pantalla completa' : 'Pantalla completa'}>
-                          {isFullscreen ? <Minimize2 size={20} color="#FFFFFF" /> : <Maximize2 size={20} color="#FFFFFF" />}
-                        </Pressable>
-                      </View>
-
-                      {/* Speed Selection Menu */}
-                      {showSpeedMenu && (
-                        <View style={styles.speedMenuContainer}>
-                          {[0.50, 0.75, 1.0, 1.25, 1.50, 1.75, 2.0].map((rate) => (
-                            <Pressable
-                              key={rate}
-                              style={({ pressed }) => [
-                                styles.speedMenuItem,
-                                { backgroundColor: playbackRate === rate ? colors.primary : 'rgba(255,255,255,0.1)' },
-                                pressed && { opacity: 0.7 }
-                              ]}
-                              onPress={() => {
-                                setPlaybackRate(rate);
-                                setShowSpeedMenu(false);
-
-                                // Apply to TrackPlayer if available
-                                isTrackPlayerReady().then((ready) => {
-                                  if (ready) {
-                                    TrackPlayer.setRate(rate).catch((err: any) => console.warn('Could not set TrackPlayer rate:', err));
-                                  }
-                                });
-
-                                // Apply to expo-av sound if available
-                                if (sound) {
-                                  sound.setRateAsync(rate, true).catch((err: any) => console.warn('Could not set sound rate:', err));
-                                }
-
-                                // Apply to video if available
-                                if (videoRef.current) {
-                                  videoRef.current.setRateAsync(rate, true).catch((err: any) => console.warn('Could not set video rate:', err));
-                                }
-                              }}
-                            >
-                              <Text style={[styles.speedMenuText, { color: playbackRate === rate ? '#FFFFFF' : 'rgba(255,255,255,0.7)' }]}>
-                                {rate.toFixed(2)}x
-                              </Text>
-                            </Pressable>
-                          ))}
-                        </View>
-                      )}
-                    </View>
-
-                    {/* Progress Bar (Bottom) */}
-                    <View style={[styles.progressRow, { width: '100%' }]}>
-                      <Text style={[styles.timeText, { color: '#FFFFFF' }]}>{formatDuration(Math.floor((positionMillis || 0) / 1000))}</Text>
-                      <Pressable
-                        style={[styles.progressBar, { backgroundColor: 'rgba(255,255,255,0.2)' }]}
-                        onPress={(e) => {
-                          const { locationX } = e.nativeEvent as any;
-                          const w = progressBarWidthRef.current || 1;
-                          const ratio = Math.max(0, Math.min(1, locationX / w));
-                          seekToRatio(ratio);
-                        }}
-                        onLayout={(e) => { progressBarWidthRef.current = e.nativeEvent.layout.width; }}
+                          <View
+                            style={[
+                              styles.videoBottomBar,
+                              {
+                                paddingBottom: Math.max(insets.bottom, 14),
+                                paddingLeft: insets.left + 20,
+                                paddingRight: insets.right + 20,
+                              },
+                            ]}
+                            pointerEvents="box-none"
+                          >
+                            <LinearGradient
+                              colors={['transparent', 'rgba(0,0,0,0.65)']}
+                              style={StyleSheet.absoluteFill}
+                              pointerEvents="none"
+                            />
+                            <PlayerVideoProgressBar
+                              progress={playerProgress}
+                              currentLabel={formatDuration(Math.floor((positionMillis || 0) / 1000))}
+                              durationLabel={formatDuration(Math.floor((durationMillis || 0) / 1000))}
+                              width={Math.max(0, liveWindowWidth - (insets.left + 20) - (insets.right + 20))}
+                              onSeek={seekToRatio}
+                            />
+                          </View>
+                        </Animated.View>
+                      </>
+                    ) : (
+                      <View
+                        style={[styles.videoBottomBar, { paddingBottom: 14, paddingLeft: 16, paddingRight: 16 }]}
+                        pointerEvents="box-none"
                       >
-                        <View style={[styles.progressFill, { width: durationMillis ? `${(positionMillis / durationMillis) * 100}%` : '0%', backgroundColor: colors.primary }]}>
-                          <View style={styles.progressThumb} />
-                        </View>
-                      </Pressable>
-                      <Text style={[styles.timeText, { color: '#FFFFFF' }]}>{formatDuration(Math.floor((durationMillis || 0) / 1000))}</Text>
+                        <LinearGradient
+                          colors={['transparent', 'rgba(0,0,0,0.65)']}
+                          style={StyleSheet.absoluteFill}
+                          pointerEvents="none"
+                        />
+                        <PlayerVideoProgressBar
+                          progress={playerProgress}
+                          currentLabel={formatDuration(Math.floor((positionMillis || 0) / 1000))}
+                          durationLabel={formatDuration(Math.floor((durationMillis || 0) / 1000))}
+                          width={Math.max(0, windowWidth - 32)}
+                          onSeek={seekToRatio}
+                        />
+                      </View>
+                    )}
                     </View>
-                  </Animated.View>
-                </TouchableOpacity>
+                  ) : (
+                    <View style={{ alignItems: 'center', paddingTop: rp(24) }}>
+                      <PlayerDisc
+                        progress={playerProgress}
+                        filename={currentTrack?.title || 'Sin título'}
+                        isDark={isDark}
+                        size={Math.min(windowWidth * 0.72, 300)}
+                      />
+                    </View>
+                  )}
 
-                {!isFullscreen && (
-                  <View style={[styles.playlistContainer, { backgroundColor: colors.surface }]}>
-                    <Text style={[styles.playlistTitle, { color: colors.textSecondary }]}>Playlist</Text>
-                    <FlatList
-                      data={queue}
-                      keyExtractor={(r) => r.id}
-                      renderItem={({ item, index }) => (
-                        <Pressable
-                          style={({ hovered, pressed }) => [
-                            styles.playlistRow,
-                            {
-                              borderColor: index === currentIndex ? colors.primary : colors.border,
-                              backgroundColor: colors.surface,
-                              transform: [{ scale: hovered || pressed ? 1.02 : 1 }],
-                              opacity: hovered ? 0.97 : 1
-                            }
-                          ]}
-                          onPress={() => loadAndPlay(index, queue)}
-                        >
-                          {Boolean((item as any).thumbnail_url) ? (
-                            <Image source={{ uri: (item as any).thumbnail_url }} style={styles.playlistThumb} />
-                          ) : (
-                            <View style={[styles.playlistThumb, { backgroundColor: colors.input, alignItems: 'center', justifyContent: 'center' }]}>
-                              {item.type === 'video' ? (
-                                <VideoIcon size={18} color={colors.primary} />
-                              ) : (
-                                <FileAudio size={18} color={colors.primary} />
-                              )}
-                            </View>
-                          )}
-                          <View style={{ flex: 1 }}>
-                            <Text style={[styles.playlistItemTitle, { color: colors.text }]} numberOfLines={1}>
-                              {item.title || 'Sin título'}
-                            </Text>
-                            <Text style={[styles.playlistItemMeta, { color: colors.textSecondary }]} numberOfLines={1}>
-                              {formatDuration(item.duration_seconds || 0)}
-                            </Text>
+                  {/* En pantalla completa de vídeo se ocultan título/waveform/controles, solo header + vídeo */}
+                  {!(isVideoTrack && isFullscreen) && (
+                    <>
+                      {/* Título + subtítulo (fecha · duración) */}
+                      <View style={{ paddingHorizontal: rp(24), alignItems: 'center', marginTop: rp(20) }}>
+                        <Text style={[styles.playerTitle, { color: playerHeaderTint }]} numberOfLines={1}>
+                          {currentTrack?.title || 'Sin título'}
+                        </Text>
+                        <Text style={[styles.playerMeta, { color: isDark ? 'rgba(255,255,255,0.6)' : 'rgba(36,29,61,0.6)' }]}>
+                          {(() => {
+                            if (!currentTrack) return '';
+                            const dateStr = new Date(currentTrack.created_at).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' });
+                            return `${dateStr} · ${formatDuration(currentTrack.duration_seconds || 0)}`;
+                          })()}
+                        </Text>
+                      </View>
+
+                      {/* Waveform + tiempos: solo para audio, en vídeo el progreso va superpuesto sobre el propio vídeo */}
+                      {!isVideoTrack && (
+                        <View style={{ marginTop: rp(20), alignItems: 'center' }}>
+                          <AnimatedWaveform
+                            progress={playerProgress}
+                            isDark={isDark}
+                            width={waveformWidth}
+                            seed={currentTrack?.id}
+                            onSeek={seekToRatio}
+                          />
+                          <View style={[styles.progressRow, { width: waveformWidth, marginTop: rp(8) }]}>
+                            <Text style={[styles.timeText, { color: playerHeaderTint }]}>{formatDuration(Math.floor((positionMillis || 0) / 1000))}</Text>
+                            <View style={{ flex: 1 }} />
+                            <Text style={[styles.timeText, { color: playerHeaderTint }]}>{formatDuration(Math.floor((durationMillis || 0) / 1000))}</Text>
                           </View>
-                        </Pressable>
+                        </View>
                       )}
-                      style={styles.playlistList}
-                      showsVerticalScrollIndicator={false}
-                      contentContainerStyle={{ paddingBottom: insets.bottom + 20 }}
-                    />
-                  </View>
-                )}
+
+                      {/* Cápsula de controles secundarios */}
+                      <View style={{ marginTop: rp(24), paddingHorizontal: rp(40) }}>
+                        <PlayerControlsCapsule
+                          isDark={isDark}
+                          onShare={() => { if (currentTrack) handleShare(currentTrack); }}
+                          playbackRate={playbackRate}
+                          onPressSpeed={() => setShowSpeedMenu(!showSpeedMenu)}
+                          loopMode={loopMode}
+                          onCycleLoop={cycleLoopMode}
+                          onOpenPlaylist={() => setPlaylistVisible(true)}
+                        />
+
+                        {/* Menú de velocidad (misma lógica real de antes) */}
+                        {showSpeedMenu && (
+                          <View style={styles.speedMenuContainer}>
+                            {[0.50, 0.75, 1.0, 1.25, 1.50, 1.75, 2.0].map((rate) => (
+                              <Pressable
+                                key={rate}
+                                style={({ pressed }) => [
+                                  styles.speedMenuItem,
+                                  { backgroundColor: playbackRate === rate ? colors.primary : (isDark ? 'rgba(255,255,255,0.1)' : 'rgba(124,106,247,0.12)') },
+                                  pressed && { opacity: 0.7 }
+                                ]}
+                                onPress={() => {
+                                  setPlaybackRate(rate);
+                                  setShowSpeedMenu(false);
+
+                                  // Apply to TrackPlayer if available
+                                  isTrackPlayerReady().then((ready) => {
+                                    if (ready) {
+                                      TrackPlayer.setRate(rate).catch((err: any) => console.warn('Could not set TrackPlayer rate:', err));
+                                    }
+                                  });
+
+                                  // Apply to expo-av sound if available
+                                  if (sound) {
+                                    sound.setRateAsync(rate, true).catch((err: any) => console.warn('Could not set sound rate:', err));
+                                  }
+
+                                  // Apply to video if available
+                                  if (videoRef.current) {
+                                    videoRef.current.setRateAsync(rate, true).catch((err: any) => console.warn('Could not set video rate:', err));
+                                  }
+                                }}
+                              >
+                                <Text style={[styles.speedMenuText, { color: playbackRate === rate ? '#FFFFFF' : playerHeaderTint }]}>
+                                  {rate.toFixed(2)}x
+                                </Text>
+                              </Pressable>
+                            ))}
+                          </View>
+                        )}
+                      </View>
+
+                      {/* Fila de transporte principal */}
+                      <View style={{ marginTop: rp(28), marginBottom: rp(24) }}>
+                        <PlayerTransportRow
+                          isPlaying={isPlaying}
+                          isLoading={isMediaLoading}
+                          onPlayPause={togglePlayPause}
+                          onPrevious={playPrev}
+                          onNext={playNext}
+                          isDark={isDark}
+                        />
+                      </View>
+                    </>
+                  )}
+                </ScrollView>
               </View>
-            </Animated.View>
-          </View>
+            </ImageBackground>
+          </Animated.View>
+
+          {/* Anidado dentro del propio Modal del reproductor: un <Modal> hermano
+              a nivel de la pantalla no se presenta correctamente sobre un Modal
+              ya abierto en iOS, hay que anidarlo para que se muestre por encima. */}
+          <PlaylistSheet
+            visible={playlistVisible}
+            onClose={() => setPlaylistVisible(false)}
+            isDark={isDark}
+            tracks={queue.map((r, index): PlaylistTrack => ({
+              id: r.id,
+              name: r.title || 'Sin título',
+              duration: formatDuration(r.duration_seconds || 0),
+              kind: r.type === 'video' ? 'video' : 'audio',
+              isPlaying: index === currentIndex,
+            }))}
+            onReorder={(newOrder) => {
+              const byId = new Map(queue.map((r) => [r.id, r]));
+              const reordered = newOrder.map((t) => byId.get(t.id)).filter((r): r is Recording => Boolean(r));
+              reorderQueue(reordered);
+            }}
+            onSelectTrack={(id) => {
+              const index = queue.findIndex((r) => r.id === id);
+              if (index >= 0) loadAndPlay(index, queue);
+              setPlaylistVisible(false);
+            }}
+          />
         </Modal>
 
         <Modal
@@ -3977,201 +4094,67 @@ const styles = StyleSheet.create({
   },
 
   // Fullscreen overlay for player modal
-  playerOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.5)',
-    justifyContent: 'flex-end',
-  },
-  playerModule: {
-    backgroundColor: '#151718',
-    paddingTop: rp(12),
-    paddingBottom: rp(16),
-    borderBottomLeftRadius: 24,
-    borderBottomRightRadius: 24,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 12,
-    elevation: 10,
-    zIndex: 10,
-  },
-  playerModuleFullscreen: {
-    flex: 1,
-    borderBottomLeftRadius: 0,
-    borderBottomRightRadius: 0,
-    justifyContent: 'space-between', // Changed from 'center' to spread content
-    paddingTop: rp(20), // More top padding
-    paddingBottom: rp(20), // Balanced bottom padding
-  },
-  visualizerContainer: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    width: '100%',
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-  },
-  staticImageContainer: {
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  controlsOverlay: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: 'rgba(0, 0, 0, 0.3)',
-    borderRadius: 12,
-  },
-  // Player modal styles
-  playerContainer: {
-    flex: 1,
-  },
-  playerHeader: {
+  playerHeaderBar: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    marginBottom: 2,
-    marginTop: 0,
+    paddingHorizontal: rp(20),
+    paddingVertical: rp(12),
+  },
+  playerHeaderLabel: {
+    fontSize: rf(12),
+    fontWeight: '700',
+    letterSpacing: 1.5,
+  },
+  fullscreenExitButton: {
+    position: 'absolute',
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(0,0,0,0.45)',
+  },
+  fullscreenTransportWrap: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    top: 0,
+    bottom: 0,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  videoBottomBar: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: 0,
+    paddingTop: 28,
+    justifyContent: 'center',
   },
   playerTitle: {
     fontSize: rf(18),
     fontWeight: '700',
-    flex: 1,
-    marginRight: 12,
-  },
-  closeButton: {
-    padding: rp(8),
-    backgroundColor: 'rgba(255,255,255,0.1)',
-    borderRadius: 20,
-  },
-  headerIconButton: {
-    padding: rp(6),
-    backgroundColor: 'rgba(255,255,255,0.1)',
-    borderRadius: 18,
+    textAlign: 'center',
   },
   playerMeta: {
     fontSize: rf(13),
-    marginBottom: 12,
-  },
-  controlsRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 32,
-    marginBottom: 0,
-  },
-  controlButton: {
-    padding: rp(12),
-  },
-  playPauseButton: {
-    width: 64,
-    height: 64,
-    borderRadius: 32,
-    alignItems: 'center',
-    justifyContent: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.4,
-    shadowRadius: 6,
-    elevation: 6,
+    textAlign: 'center',
+    marginTop: 4,
   },
   progressRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 12,
-    marginBottom: 12,
   },
   timeText: {
     fontSize: rf(12),
     fontVariant: ['tabular-nums'],
-    width: 40,
-    textAlign: 'center',
-  },
-  progressBar: {
-    flex: 1,
-    height: 4,
-    borderRadius: 2,
-    justifyContent: 'center',
-  },
-  progressFill: {
-    height: '100%',
-    borderRadius: 2,
-    position: 'relative',
-  },
-  progressThumb: {
-    width: 14,
-    height: 14,
-    borderRadius: 7,
-    backgroundColor: '#FFFFFF',
-    position: 'absolute',
-    right: -7,
-    top: -5,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.3,
-    shadowRadius: 2,
-    elevation: 3,
-  },
-  secondaryControlsRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'flex-end',
-    gap: 8,
-    paddingRight: 0,
-    marginBottom: 12,
-  },
-  loopWrapper: {
-    padding: rp(8),
-  },
-  loopBadge: {
-    position: 'absolute',
-    top: -4,
-    right: -4,
-    width: 14,
-    height: 14,
-    borderRadius: 7,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 1,
-    borderColor: '#151718',
-  },
-  loopBadgeText: {
-    color: '#FFFFFF',
-    fontSize: rf(9),
-    fontWeight: 'bold',
-  },
-  speedBadge: {
-    position: 'absolute',
-    bottom: -6,
-    left: '50%',
-    transform: [{ translateX: -15 }],
-    paddingHorizontal: 3,
-    paddingVertical: 1,
-    borderRadius: 4,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 0.5,
-    borderColor: '#151718',
-    minWidth: 30,
-  },
-  speedBadgeText: {
-    color: '#FFFFFF',
-    fontSize: rf(6.5),
-    fontWeight: 'bold',
-    letterSpacing: -0.3,
   },
   speedMenuContainer: {
     flexDirection: 'row',
     gap: 6,
     paddingHorizontal: rp(8),
-    paddingVertical: rp(8),
+    paddingTop: rp(12),
     justifyContent: 'center',
     alignItems: 'center',
   },
@@ -4186,43 +4169,6 @@ const styles = StyleSheet.create({
   speedMenuText: {
     fontSize: rf(11),
     fontWeight: '600',
-  },
-  playlistContainer: {
-    flex: 1,
-    paddingTop: rp(24),
-    paddingHorizontal: rp(20),
-  },
-  playlistTitle: {
-    fontSize: rf(14),
-    fontWeight: '600',
-    marginBottom: 16,
-    textTransform: 'uppercase',
-    letterSpacing: 0.5,
-  },
-  playlistList: {
-    flex: 1,
-  },
-  playlistRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    padding: rp(12),
-    borderRadius: 12,
-    marginBottom: 8,
-    borderWidth: 1,
-  },
-  playlistThumb: {
-    width: 40,
-    height: 40,
-    borderRadius: 8,
-    marginRight: 12,
-  },
-  playlistItemTitle: {
-    fontSize: rf(15),
-    fontWeight: '500',
-    marginBottom: 2,
-  },
-  playlistItemMeta: {
-    fontSize: rf(12),
   },
   modalOverlay: {
     flex: 1,
