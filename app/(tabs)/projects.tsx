@@ -725,10 +725,12 @@ export default function ProjectsScreen() {
                     <Folder size={30} color={isDark ? '#FFFFFF' : colors.primary} />
                   </View>
                   <Text style={[styles.emptyTitle, { color: isDark ? '#FFFFFF' : '#2a2447', textAlign: 'center' }]}>
-                    No hay proyectos
+                    {currentProjectId ? 'No hay archivos' : 'No hay proyectos'}
                   </Text>
                   <Text style={[styles.emptyText, { color: isDark ? '#a0a0c0' : '#5c5678', textAlign: 'center' }]}>
-                    Puedes organizar tus proyectos por carpetas y enviar los guiones y grabaciones dentro.
+                    {currentProjectId
+                      ? 'Puedes enviar guiones y grabaciones aquí o crear nuevas carpetas.'
+                      : 'Puedes organizar tus proyectos por carpetas y enviar los guiones y grabaciones dentro.'}
                   </Text>
                 </View>
               </View>
