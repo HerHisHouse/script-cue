@@ -3365,32 +3365,79 @@ export default function RecordingsScreen() {
           onRequestClose={() => setRenameModalVisible(false)}
          supportedOrientations={['portrait', 'landscape', 'landscape-left', 'landscape-right']}>
           <View style={styles.modalOverlay}>
-            <View style={[styles.modalContent, { backgroundColor: colors.surface }]}>
-              <Text style={[styles.modalTitle, { color: colors.text }]}>Renombrar archivo</Text>
-              <View style={styles.modalInputRow}>
-                <TextInput
-                  style={[styles.modalInput, { flex: 1, backgroundColor: colors.input, color: colors.text, borderColor: colors.border }]}
-                  value={newFilename}
-                  onChangeText={setNewFilename}
-                  placeholder="Nuevo nombre (sin extensión)"
-                  placeholderTextColor={colors.placeholder}
-                  autoFocus
+            <View
+              style={[
+                styles.renameModalShadowWrapper,
+                !isDark && {
+                  shadowColor: '#1a1625',
+                  shadowOffset: { width: 0, height: 8 },
+                  shadowOpacity: 0.28,
+                  shadowRadius: 16,
+                  elevation: 8,
+                },
+              ]}
+            >
+              <View
+                style={[
+                  styles.renameModalClip,
+                  { borderColor: isDark ? 'rgba(167,139,250,0.25)' : 'rgba(124,106,247,0.15)' },
+                ]}
+              >
+                <BlurView intensity={isDark ? 55 : 65} tint={isDark ? 'dark' : 'light'} style={StyleSheet.absoluteFill} />
+                <View
+                  style={[
+                    StyleSheet.absoluteFill,
+                    { backgroundColor: isDark ? 'rgba(124,106,247,0.14)' : 'rgba(235,230,245,0.5)' },
+                  ]}
                 />
-                <Text style={[styles.modalExtSuffix, { color: colors.text }]}>.{renameExt}</Text>
-              </View>
-              <View style={styles.modalButtons}>
-                <TouchableOpacity
-                  style={[styles.modalButton, { backgroundColor: colors.border }]}
-                  onPress={() => setRenameModalVisible(false)}
-                >
-                  <Text style={[styles.modalButtonText, { color: colors.text }]}>Cancelar</Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={[styles.modalButton, { backgroundColor: colors.primary }]}
-                  onPress={saveRename}
-                >
-                  <Text style={[styles.modalButtonText, { color: '#FFFFFF' }]}>Guardar</Text>
-                </TouchableOpacity>
+                <View style={styles.renameModalContent}>
+                  <Text style={[styles.modalTitle, { color: isDark ? '#FFFFFF' : '#2a2447' }]}>Renombrar archivo</Text>
+                  <View style={styles.modalInputRow}>
+                    <TextInput
+                      style={[
+                        styles.modalInput,
+                        {
+                          flex: 1,
+                          color: isDark ? '#FFFFFF' : '#2a2447',
+                          borderColor: isDark ? 'rgba(255,255,255,0.2)' : 'rgba(124,106,247,0.25)',
+                          backgroundColor: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(255,255,255,0.6)',
+                        },
+                      ]}
+                      value={newFilename}
+                      onChangeText={setNewFilename}
+                      placeholder="Nuevo nombre (sin extensión)"
+                      placeholderTextColor={isDark ? 'rgba(255,255,255,0.4)' : 'rgba(42,27,71,0.4)'}
+                      autoFocus
+                    />
+                    <Text style={[styles.modalExtSuffix, { color: isDark ? '#FFFFFF' : '#2a2447' }]}>.{renameExt}</Text>
+                  </View>
+                  <View style={styles.modalButtons}>
+                    <TouchableOpacity
+                      style={[
+                        styles.modalButton,
+                        { flex: 1 },
+                        isDark
+                          ? { backgroundColor: 'rgba(255,255,255,0.1)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.2)' }
+                          : { backgroundColor: 'rgba(124,106,247,0.12)' },
+                      ]}
+                      onPress={() => setRenameModalVisible(false)}
+                    >
+                      <Text style={[styles.modalButtonText, { color: isDark ? '#FFFFFF' : '#2a2447' }]}>Cancelar</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={[
+                        styles.modalButton,
+                        { flex: 1 },
+                        isDark
+                          ? { backgroundColor: 'rgba(124,106,247,0.80)', borderWidth: 1.5, borderColor: 'rgba(255,255,255,0.5)' }
+                          : { backgroundColor: colors.primary },
+                      ]}
+                      onPress={saveRename}
+                    >
+                      <Text style={[styles.modalButtonText, { color: '#FFFFFF' }]}>Guardar</Text>
+                    </TouchableOpacity>
+                  </View>
+                </View>
               </View>
             </View>
           </View>
@@ -4194,6 +4241,19 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.1,
     shadowRadius: 12,
     elevation: 8,
+  },
+  renameModalShadowWrapper: {
+    width: '100%',
+    maxWidth: 400,
+    borderRadius: 24,
+  },
+  renameModalClip: {
+    borderRadius: 24,
+    overflow: 'hidden',
+    borderWidth: 1,
+  },
+  renameModalContent: {
+    padding: rp(24),
   },
   modalTitle: {
     fontSize: rf(20),

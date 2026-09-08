@@ -996,56 +996,100 @@ export default function ProjectsScreen() {
         onRequestClose={() => setRenameModal({ visible: false, item: null, newName: '' })}
        supportedOrientations={['portrait', 'landscape', 'landscape-left', 'landscape-right']}>
         <View style={styles.modalOverlay}>
-          <View style={[styles.modalContent, { backgroundColor: colors.surface }]}>
-            <Text style={[styles.modalTitle, { color: colors.text }]}>Renombrar</Text>
-            <TextInput
-              style={[styles.input, { color: colors.text, borderColor: colors.border, backgroundColor: colors.input }]}
-              placeholder="Nuevo nombre"
-              placeholderTextColor={colors.placeholder}
-              value={renameModal.newName}
-              onChangeText={(text) => setRenameModal({ ...renameModal, newName: text })}
-              autoFocus
-            />
-            <View style={styles.modalButtons}>
-              <TouchableOpacity
-                style={[styles.modalButton, { backgroundColor: colors.input }]}
-                onPress={() => setRenameModal({ visible: false, item: null, newName: '' })}
-              >
-                <Text style={{ color: colors.text }}>Cancelar</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[styles.modalButton, { backgroundColor: colors.primary }]}
-                onPress={async () => {
-                  const item = renameModal.item;
-                  const newName = renameModal.newName.trim();
+          <View
+            style={[
+              styles.modalShadowWrapper,
+              !isDark && {
+                shadowColor: '#1a1625',
+                shadowOffset: { width: 0, height: 8 },
+                shadowOpacity: 0.28,
+                shadowRadius: 16,
+                elevation: 8,
+              },
+            ]}
+          >
+            <View
+              style={[
+                styles.modalClip,
+                { borderColor: isDark ? 'rgba(167,139,250,0.25)' : 'rgba(124,106,247,0.15)' },
+              ]}
+            >
+              <BlurView intensity={isDark ? 55 : 65} tint={isDark ? 'dark' : 'light'} style={StyleSheet.absoluteFill} />
+              <View
+                style={[
+                  StyleSheet.absoluteFill,
+                  { backgroundColor: isDark ? 'rgba(124,106,247,0.14)' : 'rgba(235,230,245,0.5)' },
+                ]}
+              />
+              <View style={styles.modalContent}>
+                <Text style={[styles.modalTitle, { color: isDark ? '#FFFFFF' : '#2a2447' }]}>Renombrar</Text>
+                <TextInput
+                  style={[
+                    styles.input,
+                    {
+                      color: isDark ? '#FFFFFF' : '#2a2447',
+                      borderColor: isDark ? 'rgba(255,255,255,0.2)' : 'rgba(124,106,247,0.25)',
+                      backgroundColor: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(255,255,255,0.6)',
+                    },
+                  ]}
+                  placeholder="Nuevo nombre"
+                  placeholderTextColor={isDark ? 'rgba(255,255,255,0.4)' : 'rgba(42,27,71,0.4)'}
+                  value={renameModal.newName}
+                  onChangeText={(text) => setRenameModal({ ...renameModal, newName: text })}
+                  autoFocus
+                />
+                <View style={styles.modalButtons}>
+                  <TouchableOpacity
+                    style={[
+                      styles.modalButton,
+                      isDark
+                        ? { backgroundColor: 'rgba(255,255,255,0.1)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.2)' }
+                        : { backgroundColor: 'rgba(124,106,247,0.12)' },
+                    ]}
+                    onPress={() => setRenameModal({ visible: false, item: null, newName: '' })}
+                  >
+                    <Text style={{ color: isDark ? '#FFFFFF' : '#2a2447', fontWeight: '600' }}>Cancelar</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[
+                      styles.modalButton,
+                      isDark
+                        ? { backgroundColor: 'rgba(124,106,247,0.80)', borderWidth: 1.5, borderColor: 'rgba(255,255,255,0.5)' }
+                        : { backgroundColor: colors.primary },
+                    ]}
+                    onPress={async () => {
+                      const item = renameModal.item;
+                      const newName = renameModal.newName.trim();
 
-                  if (!item || !newName) {
-                    Alert.alert('Error', 'Por favor ingresa un nombre válido');
-                    return;
-                  }
+                      if (!item || !newName) {
+                        Alert.alert('Error', 'Por favor ingresa un nombre válido');
+                        return;
+                      }
 
-                  try {
-                    const table = item.type === 'folder' ? 'projects' : item.type === 'script' ? 'scripts' : 'recordings';
-                    const field = item.type === 'folder' ? 'name' : 'title';
+                      try {
+                        const table = item.type === 'folder' ? 'projects' : item.type === 'script' ? 'scripts' : 'recordings';
+                        const field = item.type === 'folder' ? 'name' : 'title';
 
-                    const { error } = await supabase
-                      .from(table)
-                      .update({ [field]: newName })
-                      .eq('id', item.data.id);
+                        const { error } = await supabase
+                          .from(table)
+                          .update({ [field]: newName })
+                          .eq('id', item.data.id);
 
-                    if (error) throw error;
+                        if (error) throw error;
 
-                    setRenameModal({ visible: false, item: null, newName: '' });
-                    loadContent();
-                    Alert.alert('Éxito', 'Elemento renombrado correctamente');
-                  } catch (error) {
-                    console.error('Rename error:', error);
-                    Alert.alert('Error', 'No se pudo renombrar el elemento');
-                  }
-                }}
-              >
-                <Text style={{ color: '#fff' }}>Renombrar</Text>
-              </TouchableOpacity>
+                        setRenameModal({ visible: false, item: null, newName: '' });
+                        loadContent();
+                        Alert.alert('Éxito', 'Elemento renombrado correctamente');
+                      } catch (error) {
+                        console.error('Rename error:', error);
+                        Alert.alert('Error', 'No se pudo renombrar el elemento');
+                      }
+                    }}
+                  >
+                    <Text style={{ color: '#fff', fontWeight: '700' }}>Renombrar</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
             </View>
           </View>
         </View>

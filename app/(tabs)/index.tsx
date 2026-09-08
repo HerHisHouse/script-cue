@@ -935,31 +935,74 @@ export default function IndexScreen() {
       {/* Modal Renombrar guion */}
       <Modal visible={renameModalVisible} transparent animationType="fade" onRequestClose={() => setRenameModalVisible(false)} supportedOrientations={['portrait', 'landscape', 'landscape-left', 'landscape-right']}>
         <View style={styles.modalOverlay}>
-          <View style={[styles.modalContent, { backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border }]}>
-            <Text style={[styles.modalTitle, { color: colors.text }]}>Renombrar guion</Text>
-            <TextInput
-              style={[{
-                borderWidth: 1,
-                borderColor: colors.border,
-                borderRadius: 8,
-                padding: 12,
-                color: colors.text,
-                fontSize: rf(16),
-                backgroundColor: colors.input
-              }]}
-              value={renameScriptTitle}
-              onChangeText={setRenameScriptTitle}
-              placeholder="Nuevo título"
-              placeholderTextColor={colors.textSecondary}
-              autoFocus
-            />
-            <View style={{ flexDirection: 'row', gap: 12 }}>
-              <TouchableOpacity style={[styles.modalButton, { backgroundColor: colors.input, borderWidth: 1, borderColor: colors.border }]} onPress={() => { setRenameModalVisible(false); setRenameScriptId(null); }}>
-                <Text style={[styles.modalButtonText, { color: colors.text }]}>Cancelar</Text>
-              </TouchableOpacity>
-              <TouchableOpacity style={[styles.modalButton, { backgroundColor: colors.primary }]} onPress={performRenameScript}>
-                <Text style={[styles.modalButtonText, { color: '#FFFFFF' }]}>Guardar</Text>
-              </TouchableOpacity>
+          <View
+            style={[
+              styles.modalShadowWrapper,
+              !isDark && {
+                shadowColor: '#1a1625',
+                shadowOffset: { width: 0, height: 8 },
+                shadowOpacity: 0.28,
+                shadowRadius: 16,
+                elevation: 8,
+              },
+            ]}
+          >
+            <View
+              style={[
+                styles.modalClip,
+                { borderColor: isDark ? 'rgba(167,139,250,0.25)' : 'rgba(124,106,247,0.15)' },
+              ]}
+            >
+              <BlurView intensity={isDark ? 55 : 65} tint={isDark ? 'dark' : 'light'} style={StyleSheet.absoluteFill} />
+              <View
+                style={[
+                  StyleSheet.absoluteFill,
+                  { backgroundColor: isDark ? 'rgba(124,106,247,0.14)' : 'rgba(235,230,245,0.5)' },
+                ]}
+              />
+              <View style={styles.modalContent}>
+                <Text style={[styles.modalTitle, { color: isDark ? '#FFFFFF' : '#2a2447' }]}>Renombrar guion</Text>
+                <TextInput
+                  style={[{
+                    borderWidth: 1,
+                    borderColor: isDark ? 'rgba(255,255,255,0.2)' : 'rgba(124,106,247,0.25)',
+                    borderRadius: 8,
+                    padding: 12,
+                    color: isDark ? '#FFFFFF' : '#2a2447',
+                    fontSize: rf(16),
+                    backgroundColor: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(255,255,255,0.6)',
+                  }]}
+                  value={renameScriptTitle}
+                  onChangeText={setRenameScriptTitle}
+                  placeholder="Nuevo título"
+                  placeholderTextColor={isDark ? 'rgba(255,255,255,0.4)' : 'rgba(42,27,71,0.4)'}
+                  autoFocus
+                />
+                <View style={{ flexDirection: 'row', gap: 12 }}>
+                  <TouchableOpacity
+                    style={[
+                      styles.modalButton,
+                      isDark
+                        ? { backgroundColor: 'rgba(255,255,255,0.1)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.2)' }
+                        : { backgroundColor: 'rgba(124,106,247,0.12)' },
+                    ]}
+                    onPress={() => { setRenameModalVisible(false); setRenameScriptId(null); }}
+                  >
+                    <Text style={[styles.modalButtonText, { color: isDark ? '#FFFFFF' : '#2a2447' }]}>Cancelar</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[
+                      styles.modalButton,
+                      isDark
+                        ? { backgroundColor: 'rgba(124,106,247,0.80)', borderWidth: 1.5, borderColor: 'rgba(255,255,255,0.5)' }
+                        : { backgroundColor: colors.primary },
+                    ]}
+                    onPress={performRenameScript}
+                  >
+                    <Text style={[styles.modalButtonText, { color: '#FFFFFF' }]}>Guardar</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
             </View>
           </View>
         </View>
@@ -1175,8 +1218,15 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     padding: rp(20),
   },
+  modalShadowWrapper: {
+    borderRadius: 24,
+  },
+  modalClip: {
+    borderRadius: 24,
+    overflow: 'hidden',
+    borderWidth: 1,
+  },
   modalContent: {
-    borderRadius: 12,
     padding: rp(20),
     gap: rp(16),
   },
