@@ -14,8 +14,11 @@ import {
     KeyboardAvoidingView,
     Keyboard,
     useColorScheme,
+    ImageBackground,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { BlurView } from 'expo-blur';
+import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter, useLocalSearchParams, Stack, useFocusEffect } from 'expo-router';
 import { useTheme } from '@/contexts/ThemeContext';
 import { useAuth } from '@/contexts/AuthContext';
@@ -74,7 +77,17 @@ import { trackEvent } from '@/utils/analytics';
 export default function StudioV2Screen() {
     const router = useRouter();
     const { id } = useLocalSearchParams();
-    const { colors } = useTheme();
+    const { colors, isDark } = useTheme();
+    // Paleta "sobre imagen de fondo" del diseño glass, igual que en Importar Guion / Revisar guion
+    const onBg = isDark ? '#ffffff' : '#2a2447';
+    const onBg2 = isDark ? '#a0a0c0' : '#5c5678';
+    const cardBg = isDark ? 'rgba(124,106,247,0.08)' : 'rgba(255,255,255,0.55)';
+    const cardBorder = isDark ? 'rgba(167,139,250,0.25)' : 'rgba(124,106,247,0.15)';
+    const fieldBg = isDark ? 'rgba(255,255,255,0.06)' : 'rgba(255,255,255,0.7)';
+    const glassHeaderBtn = isDark
+        ? { backgroundColor: 'rgba(124,106,247,0.14)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.2)' }
+        : { backgroundColor: colors.primary };
+    const studioBg = () => (isDark ? require('@/assets/images/ui-dark-bg.png') : require('@/assets/images/ui-light-bg.png'));
     const modalScrollRef = useRef<ScrollView>(null);
     const [keyboardVisible, setKeyboardVisible] = useState(false);
 
@@ -2112,15 +2125,23 @@ export default function StudioV2Screen() {
 
     if (loading || isProcessing) {
         return (
-            <View style={[styles.container, styles.center, { backgroundColor: colors.background }]}>
-                <ActivityIndicator size="large" color={colors.primary} />
-                {isProcessing && <Text style={{ marginTop: 10, color: colors.text, textAlign: 'center', paddingHorizontal: 20 }}>Procesando audio. Estamos mezclando tu voz con la réplica, dependiendo de si la escena es larga o de tu conexión puede tardar varios minutos.</Text>}
-            </View>
+            <ImageBackground source={studioBg()} resizeMode="cover" style={styles.container}>
+                <View style={[styles.center, { flex: 1 }]}>
+                    <ActivityIndicator size="large" color={colors.primary} />
+                    {isProcessing && <Text style={{ marginTop: 10, color: onBg, textAlign: 'center', paddingHorizontal: 20 }}>Procesando audio. Estamos mezclando tu voz con la réplica, dependiendo de si la escena es larga o de tu conexión puede tardar varios minutos.</Text>}
+                </View>
+            </ImageBackground>
         );
     }
 
     const currentLine = activeLines[currentIndex];
     const progressText = `Línea ${currentIndex + 1} / ${activeLines.length}`;
+
+    // Degradado de la tarjeta de diálogo: sutil arriba, se intensifica hacia abajo,
+    // siempre con el color del propio personaje (o el morado de acento para acción).
+    const dialogueCardGradient = (charColor: string) => (
+        isDark ? [`${charColor}1A`, `${charColor}4D`] : [`${charColor}12`, `${charColor}30`]
+    );
 
     // Helper function to render text with colored stage directions
     const renderTextWithStageDirections = (text: string) => {
@@ -2171,23 +2192,24 @@ export default function StudioV2Screen() {
     };
 
     return (
+        <ImageBackground source={studioBg()} resizeMode="cover" style={styles.container}>
         <GestureHandlerRootView style={{ flex: 1 }}>
-            <SafeAreaView style={[styles.container, { backgroundColor: colors.surface }]}>
-                <View style={{ flex: 1, backgroundColor: colors.background }}>
+            <SafeAreaView style={[styles.container, { backgroundColor: 'transparent' }]}>
+                <View style={{ flex: 1, backgroundColor: 'transparent' }}>
                     {/* Hide System Header */}
                     <Stack.Screen options={{ headerShown: false }} />
 
                     {/* Custom Header Restored */}
-                    <View style={[styles.header, { backgroundColor: colors.surface, borderBottomColor: colors.border }]}>
-                        <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
-                            <ArrowLeft size={24} color={colors.text} />
+                    <View style={[styles.header, { backgroundColor: 'transparent', borderBottomWidth: 0 }]}>
+                        <TouchableOpacity onPress={() => router.back()} style={[styles.backButton, glassHeaderBtn]}>
+                            <ArrowLeft size={20} color={isDark ? onBg : '#FFFFFF'} />
                         </TouchableOpacity>
 
                         <View style={styles.headerCenter}>
-                            <Text style={[styles.headerTitle, { color: colors.text }]} numberOfLines={1}>
+                            <Text style={[styles.headerTitle, { color: onBg }]} numberOfLines={1}>
                                 Modo Estudio
                             </Text>
-                            <Text style={[styles.headerSubtitle, { color: colors.textSecondary }]} numberOfLines={1}>
+                            <Text style={[styles.headerSubtitle, { color: onBg2 }]} numberOfLines={1}>
                                 {scriptTitle}
                             </Text>
                             {/* Mode badges row - below script title */}
@@ -2222,10 +2244,10 @@ export default function StudioV2Screen() {
                                 <TouchableOpacity
                                     onPress={cancelReorder}
                                     disabled={isUpdating}
-                                    style={[styles.cancelRecordingButton, { backgroundColor: colors.border, opacity: isUpdating ? 0.5 : 1 }]}
+                                    style={[styles.cancelRecordingButton, { backgroundColor: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(124,106,247,0.12)', opacity: isUpdating ? 0.5 : 1 }]}
                                 >
-                                    <X size={16} color={colors.text} />
-                                    <Text style={[styles.cancelRecordingText, { color: colors.text }]}>Cancelar</Text>
+                                    <X size={16} color={onBg} />
+                                    <Text style={[styles.cancelRecordingText, { color: onBg }]}>Cancelar</Text>
                                 </TouchableOpacity>
                                 {/* Save */}
                                 <TouchableOpacity
@@ -2267,13 +2289,13 @@ export default function StudioV2Screen() {
                                 {/* Add Line Button */}
                                 <TouchableOpacity
                                     onPress={() => setShowAddLineModal(true)}
-                                    style={[styles.menuButton, { marginRight: 8 }]}
+                                    style={[styles.menuButton, glassHeaderBtn, { marginRight: 8 }]}
                                 >
-                                    <Plus size={24} color={colors.text} />
+                                    <Plus size={20} color={isDark ? onBg : '#FFFFFF'} />
                                 </TouchableOpacity>
 
-                                <TouchableOpacity onPress={() => setShowMenu(true)} style={styles.menuButton}>
-                                    <MoreVertical size={24} color={colors.text} />
+                                <TouchableOpacity onPress={() => setShowMenu(true)} style={[styles.menuButton, glassHeaderBtn]}>
+                                    <MoreVertical size={20} color={isDark ? onBg : '#FFFFFF'} />
                                 </TouchableOpacity>
                             </>
                         )}
@@ -2312,7 +2334,7 @@ export default function StudioV2Screen() {
                             }}
                         />
 
-                        <View style={{ height: 1, backgroundColor: colors.border, opacity: 0.5, marginVertical: 8 }} />
+                        <View style={{ height: 1, backgroundColor: cardBorder, marginVertical: 8 }} />
 
                         <BottomSheetToggle
                             label="Ocultar mis líneas"
@@ -2333,10 +2355,13 @@ export default function StudioV2Screen() {
                             Icon={MessageSquare}
                             value={showStageDirections}
                             onValueChange={async (val) => {
+                                // Cerrar siempre el menú al pulsar: si se deja el visible=true colgado
+                                // (solo se cerraba dentro del if de abajo), el backdrop invisible del
+                                // BottomSheetMenu se queda bloqueando la cabecera aunque no se vea nada.
+                                setShowMenu(false);
                                 if (val && !showStageDirections) {
                                     const hidden = await AsyncStorage.getItem('hideStageDirectionsInfo');
                                     if (hidden !== 'true') {
-                                        setShowMenu(false);
                                         setTimeout(() => setShowStageDirectionsInfo(true), 350);
                                     }
                                 }
@@ -2349,10 +2374,10 @@ export default function StudioV2Screen() {
                             Icon={Clapperboard}
                             value={showActions}
                             onValueChange={async (val) => {
+                                setShowMenu(false);
                                 if (val && !showActions) {
                                     const hidden = await AsyncStorage.getItem('hideActionsInfoV2');
                                     if (hidden !== 'true') {
-                                        setShowMenu(false);
                                         setTimeout(() => setShowActionsInfo(true), 350);
                                     }
                                 }
@@ -2369,13 +2394,15 @@ export default function StudioV2Screen() {
                         onRequestClose={() => setShowHeadphoneAlert(false)}
                      supportedOrientations={['portrait', 'landscape', 'landscape-left', 'landscape-right']}>
                         <View style={styles.modalOverlay}>
-                            <View style={[styles.modalContent, { backgroundColor: colors.surface }]}>
+                            <View style={styles.modalContent}>
+                                <BlurView intensity={isDark ? 55 : 75} tint={isDark ? 'dark' : 'light'} style={StyleSheet.absoluteFill} />
+                                <View style={[StyleSheet.absoluteFill, { backgroundColor: isDark ? 'rgba(124,106,247,0.40)' : 'rgba(235,230,245,0.40)' }]} />
                                 <View style={styles.modalHeader}>
                                     <Headphones size={32} color={colors.primary} />
-                                    <Text style={[styles.modalTitle, { color: colors.text }]}>Recomendación</Text>
+                                    <Text style={[styles.modalTitle, { color: onBg }]}>Recomendación</Text>
                                 </View>
 
-                                <Text style={[styles.modalText, { color: colors.textSecondary }]}>
+                                <Text style={[styles.modalText, { color: onBg }]}>
                                     Para una mejor calidad de grabación y evitar eco, te recomendamos usar auriculares.
                                 </Text>
 
@@ -2383,18 +2410,18 @@ export default function StudioV2Screen() {
                                     style={styles.checkboxContainer}
                                     onPress={() => setDontShowHeadphoneAgain(!dontShowHeadphoneAgain)}
                                 >
-                                    <View style={[styles.checkbox, { borderColor: colors.textSecondary, backgroundColor: dontShowHeadphoneAgain ? colors.primary : 'transparent' }]}>
+                                    <View style={[styles.checkbox, { borderColor: cardBorder, backgroundColor: dontShowHeadphoneAgain ? colors.primary : 'transparent' }]}>
                                         {dontShowHeadphoneAgain && <Check size={12} color="#FFFFFF" />}
                                     </View>
-                                    <Text style={[styles.checkboxText, { color: colors.textSecondary }]}>No volver a mostrar</Text>
+                                    <Text style={[styles.checkboxText, { color: onBg2 }]}>No volver a mostrar</Text>
                                 </TouchableOpacity>
 
                                 <View style={styles.modalButtons}>
                                     <TouchableOpacity
-                                        style={[styles.modalButton, { backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border }]}
+                                        style={[styles.modalButton, { backgroundColor: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(124,106,247,0.12)' }]}
                                         onPress={() => setShowHeadphoneAlert(false)}
                                     >
-                                        <Text style={[styles.modalButtonText, { color: colors.text }]}>Cancelar</Text>
+                                        <Text style={[styles.modalButtonText, { color: onBg }]}>Cancelar</Text>
                                     </TouchableOpacity>
 
                                     <TouchableOpacity
@@ -2416,24 +2443,26 @@ export default function StudioV2Screen() {
                         onRequestClose={() => setShowStageDirectionsInfo(false)}
                      supportedOrientations={['portrait', 'landscape', 'landscape-left', 'landscape-right']}>
                         <View style={styles.modalOverlay}>
-                            <View style={[styles.modalContent, { backgroundColor: colors.surface }]}>
+                            <View style={styles.modalContent}>
+                                <BlurView intensity={isDark ? 55 : 75} tint={isDark ? 'dark' : 'light'} style={StyleSheet.absoluteFill} />
+                                <View style={[StyleSheet.absoluteFill, { backgroundColor: isDark ? 'rgba(124,106,247,0.40)' : 'rgba(235,230,245,0.40)' }]} />
                                 <View style={styles.modalHeader}>
                                     <MessageSquare size={32} color={colors.primary} />
-                                    <Text style={[styles.modalTitle, { color: colors.text }]}>Acotaciones</Text>
+                                    <Text style={[styles.modalTitle, { color: onBg }]}>Acotaciones</Text>
                                 </View>
 
-                                <Text style={[styles.modalText, { color: colors.textSecondary }]}>
-                                    Al activar "Acotaciones" se mostrarán en las tarjetas para ofrecer más información sobre la escena. Si quieres que desaparezcan vuelve a pulsar para desactivarlas.
+                                <Text style={[styles.modalText, { color: onBg }]}>
+                                    Al activar &quot;Acotaciones&quot; se mostrarán en las tarjetas para ofrecer más información sobre la escena. Si quieres que desaparezcan vuelve a pulsar para desactivarlas.
                                 </Text>
 
                                 <TouchableOpacity
                                     style={styles.checkboxContainer}
                                     onPress={() => setDontShowStageDirectionsAgain(!dontShowStageDirectionsAgain)}
                                 >
-                                    <View style={[styles.checkbox, { borderColor: colors.textSecondary, backgroundColor: dontShowStageDirectionsAgain ? colors.primary : 'transparent' }]}>
+                                    <View style={[styles.checkbox, { borderColor: cardBorder, backgroundColor: dontShowStageDirectionsAgain ? colors.primary : 'transparent' }]}>
                                         {dontShowStageDirectionsAgain && <Check size={12} color="#FFFFFF" />}
                                     </View>
-                                    <Text style={[styles.checkboxText, { color: colors.textSecondary }]}>No volver a mostrar este mensaje</Text>
+                                    <Text style={[styles.checkboxText, { color: onBg2 }]}>No volver a mostrar este mensaje</Text>
                                 </TouchableOpacity>
 
                                 <View style={styles.modalButtons}>
@@ -2462,24 +2491,26 @@ export default function StudioV2Screen() {
                         onRequestClose={() => setShowActionsInfo(false)}
                      supportedOrientations={['portrait', 'landscape', 'landscape-left', 'landscape-right']}>
                         <View style={styles.modalOverlay}>
-                            <View style={[styles.modalContent, { backgroundColor: colors.surface }]}>
+                            <View style={styles.modalContent}>
+                                <BlurView intensity={isDark ? 55 : 75} tint={isDark ? 'dark' : 'light'} style={StyleSheet.absoluteFill} />
+                                <View style={[StyleSheet.absoluteFill, { backgroundColor: isDark ? 'rgba(124,106,247,0.40)' : 'rgba(235,230,245,0.40)' }]} />
                                 <View style={styles.modalHeader}>
                                     <Clapperboard size={32} color={colors.primary} />
-                                    <Text style={[styles.modalTitle, { color: colors.text }]}>Acciones</Text>
+                                    <Text style={[styles.modalTitle, { color: onBg }]}>Acciones</Text>
                                 </View>
 
-                                <Text style={[styles.modalText, { color: colors.textSecondary }]}>
-                                    Al activar "Acciones" se mostrarán las tarjetas de acción extraídas del guion para ofrecer más información sobre la escena. Si quieres que desaparezcan vuelve a pulsar para desactivarlas.
+                                <Text style={[styles.modalText, { color: onBg }]}>
+                                    Al activar &quot;Acciones&quot; se mostrarán las tarjetas de acción extraídas del guion para ofrecer más información sobre la escena. Si quieres que desaparezcan vuelve a pulsar para desactivarlas.
                                 </Text>
 
                                 <TouchableOpacity
                                     style={styles.checkboxContainer}
                                     onPress={() => setDontShowActionsAgain(!dontShowActionsAgain)}
                                 >
-                                    <View style={[styles.checkbox, { borderColor: colors.textSecondary, backgroundColor: dontShowActionsAgain ? colors.primary : 'transparent' }]}>
+                                    <View style={[styles.checkbox, { borderColor: cardBorder, backgroundColor: dontShowActionsAgain ? colors.primary : 'transparent' }]}>
                                         {dontShowActionsAgain && <Check size={12} color="#FFFFFF" />}
                                     </View>
-                                    <Text style={[styles.checkboxText, { color: colors.textSecondary }]}>No volver a mostrar este mensaje</Text>
+                                    <Text style={[styles.checkboxText, { color: onBg2 }]}>No volver a mostrar este mensaje</Text>
                                 </TouchableOpacity>
 
                                 <View style={styles.modalButtons}>
@@ -2507,28 +2538,30 @@ export default function StudioV2Screen() {
                         onRequestClose={() => setShowReorderInfoModal(false)}
                      supportedOrientations={['portrait', 'landscape', 'landscape-left', 'landscape-right']}>
                         <View style={styles.modalOverlay}>
-                            <View style={[styles.modalContent, { backgroundColor: colors.surface }]}>
+                            <View style={styles.modalContent}>
+                                <BlurView intensity={isDark ? 55 : 75} tint={isDark ? 'dark' : 'light'} style={StyleSheet.absoluteFill} />
+                                <View style={[StyleSheet.absoluteFill, { backgroundColor: isDark ? 'rgba(124,106,247,0.40)' : 'rgba(235,230,245,0.40)' }]} />
                                 <View style={styles.modalHeader}>
-                                    <Text style={[styles.modalTitle, { color: colors.text }]}>Modificar orden</Text>
+                                    <Text style={[styles.modalTitle, { color: onBg }]}>Modificar orden</Text>
                                     <TouchableOpacity onPress={() => setShowReorderInfoModal(false)} style={styles.closeButton}>
-                                        <X size={24} color={colors.text} />
+                                        <X size={24} color={onBg} />
                                     </TouchableOpacity>
                                 </View>
-                                <Text style={[styles.modalText, { color: colors.text }]}>
+                                <Text style={[styles.modalText, { color: onBg }]}>
                                     Para modificar el orden, mantén pulsada una tarjeta y arrástrala a la nueva posición.
                                 </Text>
-                                <Text style={[styles.modalText, { color: colors.text, marginTop: 10 }]}>
-                                    Pulsa "Guardar" cuando termines para aplicar los cambios.
+                                <Text style={[styles.modalText, { color: onBg, marginTop: 10 }]}>
+                                    Pulsa &quot;Guardar&quot; cuando termines para aplicar los cambios.
                                 </Text>
 
                                 <TouchableOpacity
                                     style={styles.checkboxContainer}
                                     onPress={() => setDontShowReorderInfoAgain(!dontShowReorderInfoAgain)}
                                 >
-                                    <View style={[styles.checkbox, { borderColor: colors.textSecondary, backgroundColor: dontShowReorderInfoAgain ? colors.primary : 'transparent' }]}>
+                                    <View style={[styles.checkbox, { borderColor: cardBorder, backgroundColor: dontShowReorderInfoAgain ? colors.primary : 'transparent' }]}>
                                         {dontShowReorderInfoAgain && <Check size={12} color="#FFFFFF" />}
                                     </View>
-                                    <Text style={[styles.checkboxText, { color: colors.textSecondary }]}>No volver a mostrar este mensaje</Text>
+                                    <Text style={[styles.checkboxText, { color: onBg2 }]}>No volver a mostrar este mensaje</Text>
                                 </TouchableOpacity>
 
                                 <View style={styles.modalButtons}>
@@ -2566,27 +2599,28 @@ export default function StudioV2Screen() {
                                     style={[
                                         styles.modalContent,
                                         {
-                                            backgroundColor: colors.surface,
                                             width: '90%',
                                             maxHeight: keyboardVisible ? '90%' : '80%',
                                             marginBottom: keyboardVisible ? 20 : 0,
                                         }
                                     ]}
                                 >
+                                    <BlurView intensity={isDark ? 55 : 75} tint={isDark ? 'dark' : 'light'} style={StyleSheet.absoluteFill} />
+                                    <View style={[StyleSheet.absoluteFill, { backgroundColor: isDark ? 'rgba(124,106,247,0.40)' : 'rgba(235,230,245,0.40)' }]} />
                                     <View style={styles.modalHeader}>
-                                        <Text style={[styles.modalTitle, { color: colors.text }]}>Añadir Nueva Línea</Text>
+                                        <Text style={[styles.modalTitle, { color: onBg }]}>Añadir Nueva Línea</Text>
                                         <TouchableOpacity onPress={closeAddLineModal} style={styles.closeButton}>
-                                            <X size={24} color={colors.text} />
+                                            <X size={24} color={onBg} />
                                         </TouchableOpacity>
                                     </View>
 
-                                <ScrollView 
+                                <ScrollView
                                     ref={modalScrollRef}
-                                    contentContainerStyle={{ paddingBottom: 40, paddingHorizontal: 20 }} 
+                                    contentContainerStyle={{ paddingBottom: 40, paddingHorizontal: 20 }}
                                     style={{ width: '100%' }}
                                     keyboardShouldPersistTaps="handled"
                                 >
-                                    <Text style={[styles.modalSubtitle, { color: colors.text, marginBottom: 12 }]}>
+                                    <Text style={[styles.modalSubtitle, { color: onBg, marginBottom: 12 }]}>
                                         1. Selecciona el Personaje:
                                     </Text>
 
@@ -2597,7 +2631,7 @@ export default function StudioV2Screen() {
                                                 style={[
                                                     styles.characterOption,
                                                     {
-                                                        borderColor: selectedCharacter?.id === char.id ? char.color : colors.border,
+                                                        borderColor: selectedCharacter?.id === char.id ? char.color : cardBorder,
                                                         backgroundColor: selectedCharacter?.id === char.id ? `${char.color}20` : 'transparent'
                                                     }
                                                 ]}
@@ -2608,7 +2642,7 @@ export default function StudioV2Screen() {
                                                         {char.name.charAt(0).toUpperCase()}
                                                     </Text>
                                                 </View>
-                                                <Text style={[styles.characterNameOption, { color: colors.text }]}>
+                                                <Text style={[styles.characterNameOption, { color: onBg }]}>
                                                     {char.name}
                                                 </Text>
                                             </TouchableOpacity>
@@ -2617,17 +2651,18 @@ export default function StudioV2Screen() {
 
                                     {selectedCharacter && (
                                         <>
-                                            <Text style={[styles.modalSubtitle, { color: colors.text, marginBottom: 12 }]}>
+                                            <Text style={[styles.modalSubtitle, { color: onBg, marginBottom: 12 }]}>
                                                 2. Escribe el Diálogo:
                                             </Text>
                                             <View style={{ width: '100%' }}>
                                                 <TextInput
                                                     style={[styles.lineInput, {
-                                                        color: colors.text,
-                                                        borderColor: colors.border,
+                                                        color: onBg,
+                                                        borderColor: cardBorder,
+                                                        backgroundColor: fieldBg,
                                                     }]}
                                                     placeholder="Escribe aquí lo que dice el personaje..."
-                                                    placeholderTextColor={colors.textSecondary}
+                                                    placeholderTextColor={onBg2}
                                                     multiline
                                                     scrollEnabled={false}
                                                     value={newLineText}
@@ -2644,10 +2679,10 @@ export default function StudioV2Screen() {
 
                                             <View style={{ flexDirection: 'row', gap: 10, marginTop: 10 }}>
                                                 <TouchableOpacity
-                                                    style={[styles.button, { backgroundColor: colors.border, flex: 1 }]}
+                                                    style={[styles.button, { backgroundColor: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(124,106,247,0.12)', flex: 1 }]}
                                                     onPress={closeAddLineModal}
                                                 >
-                                                    <Text style={[styles.buttonText, { color: colors.text }]}>Cancelar</Text>
+                                                    <Text style={[styles.buttonText, { color: onBg }]}>Cancelar</Text>
                                                 </TouchableOpacity>
 
                                                 <TouchableOpacity
@@ -2676,16 +2711,18 @@ export default function StudioV2Screen() {
                     {/* Processing Overlay */}
                     {isProcessing && (
                         <View style={styles.loadingOverlay}>
-                            <View style={[styles.loadingCard, { backgroundColor: colors.surface }]}>
+                            <View style={styles.loadingCard}>
+                                <BlurView intensity={isDark ? 55 : 75} tint={isDark ? 'dark' : 'light'} style={StyleSheet.absoluteFill} />
+                                <View style={[StyleSheet.absoluteFill, { backgroundColor: isDark ? 'rgba(124,106,247,0.40)' : 'rgba(235,230,245,0.40)' }]} />
                                 <ActivityIndicator size="large" color={colors.primary} />
-                                <Text style={[styles.loadingText, { color: colors.text }]}>
+                                <Text style={[styles.loadingText, { color: onBg }]}>
                                     {processingStep || 'Procesando...'}
                                 </Text>
                                 {/* Progress Bar */}
                                 <View style={{
                                     width: '100%',
                                     height: 8,
-                                    backgroundColor: colors.border,
+                                    backgroundColor: cardBorder,
                                     borderRadius: 4,
                                     marginTop: 8,
                                     overflow: 'hidden'
@@ -2696,7 +2733,7 @@ export default function StudioV2Screen() {
                                         backgroundColor: colors.primary
                                     }} />
                                 </View>
-                                <Text style={{ fontSize: rf(12), color: colors.textSecondary }}>
+                                <Text style={{ fontSize: rf(12), color: onBg2 }}>
                                     {uploadProgress}%
                                 </Text>
                             </View>
@@ -2731,9 +2768,9 @@ export default function StudioV2Screen() {
                                                 marginBottom: 8,
                                                 borderRadius: 12,
                                                 overflow: 'hidden',
-                                                backgroundColor: colors.surface,
+                                                backgroundColor: cardBg,
                                                 borderWidth: 1.5,
-                                                borderColor: isActive ? charColor : colors.border,
+                                                borderColor: isActive ? charColor : cardBorder,
                                                 shadowColor: isActive ? charColor : 'transparent',
                                                 shadowOffset: { width: 0, height: 4 },
                                                 shadowOpacity: isActive ? 0.35 : 0,
@@ -2745,7 +2782,7 @@ export default function StudioV2Screen() {
 
                                                 {/* Position number */}
                                                 <View style={{ width: 36, alignItems: 'center' }}>
-                                                    <Text style={{ fontSize: rf(13), fontWeight: '700', color: colors.textSecondary }}>
+                                                    <Text style={{ fontSize: rf(13), fontWeight: '700', color: onBg2 }}>
                                                         {(index ?? 0) + 1}
                                                     </Text>
                                                 </View>
@@ -2756,7 +2793,7 @@ export default function StudioV2Screen() {
                                                         {item.characterName}
                                                         {item.isUserCharacter ? '  · TÚ' : '  · SC'}
                                                     </Text>
-                                                    <Text style={{ fontSize: rf(13), color: colors.textSecondary, lineHeight: rf(18) }} numberOfLines={2}>
+                                                    <Text style={{ fontSize: rf(13), color: onBg2, lineHeight: rf(18) }} numberOfLines={2}>
                                                         {previewText}
                                                     </Text>
                                                 </View>
@@ -2771,13 +2808,13 @@ export default function StudioV2Screen() {
                                                         alignItems: 'center',
                                                         justifyContent: 'center',
                                                         borderLeftWidth: 1,
-                                                        borderLeftColor: colors.border,
+                                                        borderLeftColor: cardBorder,
                                                     }}
                                                     activeOpacity={0.6}
                                                 >
                                                     <View style={{ gap: 4, alignItems: 'center' }}>
                                                         {[0, 1, 2].map(i => (
-                                                            <View key={i} style={{ width: 20, height: 2.5, borderRadius: 2, backgroundColor: isActive ? charColor : colors.textSecondary }} />
+                                                            <View key={i} style={{ width: 20, height: 2.5, borderRadius: 2, backgroundColor: isActive ? charColor : onBg2 }} />
                                                         ))}
                                                     </View>
                                                 </TouchableOpacity>
@@ -2796,29 +2833,36 @@ export default function StudioV2Screen() {
                             {currentLine && (
                                 <View style={styles.cardContainer}>
                                     {/* Current Card - special style for action cards */}
-                                    <View style={[styles.card, {
-                                        backgroundColor: currentLine.isAction ? 'rgba(139,92,246,0.08)' : colors.background,
-                                        borderColor: currentLine.isAction ? colors.primary : (currentLine.isUserCharacter ? '#10B981' : currentLine.color || colors.primary),
-                                        borderWidth: currentLine.isAction ? 2 : 4,
-                                        borderStyle: currentLine.isAction ? 'dashed' : 'solid',
-                                        padding: 0, overflow: 'hidden'
-                                    }]}>
-                                        {/* Header */}
-                                        <View style={[styles.cardHeaderBanner, { backgroundColor: currentLine.isAction ? colors.primary : (currentLine.isUserCharacter ? '#10B981' : currentLine.color || colors.primary) }]}>
-                                            {!currentLine.isAction && !isPlaying && !isRecording && !isSpeaking && !isListening && (
-                                                <TouchableOpacity onPress={() => setOpenEditMenuLineId(openEditMenuLineId === currentLine.id ? null : currentLine.id)} style={styles.menuButtonAbsolute}>
-                                                    <MoreVertical size={20} color={colors.background} />
-                                                </TouchableOpacity>
-                                            )}
-                                            {!currentLine.isAction && openEditMenuLineId === currentLine.id ? (
-                                                <View style={styles.editMenuInHeader}>
-                                                    <TouchableOpacity onPress={() => { startEditingLine(currentLine); setOpenEditMenuLineId(null); }} style={styles.editButtonHorizontal}><Edit size={18} color={colors.background} /></TouchableOpacity>
-                                                    <TouchableOpacity onPress={() => { deleteLine(currentLine.id); setOpenEditMenuLineId(null); }} style={styles.editButtonHorizontal}><Trash2 size={18} color={colors.background} /></TouchableOpacity>
-                                                </View>
-                                            ) : (
-                                                <View style={styles.headerCenteredContent}>
-                                                    <Text style={[styles.characterName, { color: colors.background }]}>{currentLine.isAction ? '⚡ ACCIÓN' : currentLine.characterName}</Text>
-                                                    {!currentLine.isAction && <View style={[styles.badge, { backgroundColor: 'rgba(0,0,0,0.2)' }]}><Text style={[styles.badgeText, { color: colors.background }]}>{currentLine.isUserCharacter ? 'TÚ' : 'SC'}</Text></View>}
+                                    <LinearGradient
+                                        colors={dialogueCardGradient(currentLine.isAction ? colors.primary : (currentLine.isUserCharacter ? '#10B981' : currentLine.color || colors.primary))}
+                                        start={{ x: 0, y: 0 }}
+                                        end={{ x: 0, y: 1 }}
+                                        style={[styles.card, {
+                                            borderColor: currentLine.isAction ? colors.primary : (currentLine.isUserCharacter ? '#10B981' : currentLine.color || colors.primary),
+                                            borderWidth: 2,
+                                            borderStyle: currentLine.isAction ? 'dashed' : 'solid',
+                                            padding: 0, overflow: 'hidden'
+                                        }]}>
+                                        {/* Menú (...) — esquina superior derecha de la propia tarjeta */}
+                                        {!currentLine.isAction && !isPlaying && !isRecording && !isSpeaking && !isListening && openEditMenuLineId !== currentLine.id && (
+                                            <TouchableOpacity onPress={() => setOpenEditMenuLineId(openEditMenuLineId === currentLine.id ? null : currentLine.id)} style={styles.menuButtonAbsolute}>
+                                                <MoreVertical size={20} color={onBg} />
+                                            </TouchableOpacity>
+                                        )}
+                                        {!currentLine.isAction && openEditMenuLineId === currentLine.id && (
+                                            <View style={styles.editMenuInHeader}>
+                                                <TouchableOpacity onPress={() => { startEditingLine(currentLine); setOpenEditMenuLineId(null); }} style={styles.editButtonHorizontal}><Edit size={18} color={onBg} /></TouchableOpacity>
+                                                <TouchableOpacity onPress={() => { deleteLine(currentLine.id); setOpenEditMenuLineId(null); }} style={styles.editButtonHorizontal}><Trash2 size={18} color={onBg} /></TouchableOpacity>
+                                            </View>
+                                        )}
+                                        {/* Nombre + badge, fijos arriba (fuera del bloque que se centra verticalmente) */}
+                                        <View style={styles.cardNameBlock}>
+                                            <Text style={[styles.characterName, { color: currentLine.isAction ? colors.primary : (currentLine.isUserCharacter ? '#10B981' : currentLine.color || colors.primary) }]}>
+                                                {currentLine.isAction ? '⚡ ACCIÓN' : currentLine.characterName}
+                                            </Text>
+                                            {!currentLine.isAction && (
+                                                <View style={[styles.badge, { borderWidth: 1, borderColor: currentLine.isUserCharacter ? '#10B981' : currentLine.color || colors.primary }]}>
+                                                    <Text style={[styles.badgeText, { color: currentLine.isUserCharacter ? '#10B981' : currentLine.color || colors.primary }]}>{currentLine.isUserCharacter ? 'TÚ' : 'ScriptCue'}</Text>
                                                 </View>
                                             )}
                                         </View>
@@ -2826,9 +2870,9 @@ export default function StudioV2Screen() {
                                         <View style={styles.cardContent}>
                                             {editingLineId === currentLine.id ? (
                                                 <View style={styles.editContainer}>
-                                                    <TextInput style={[styles.editInput, { color: colors.text, borderColor: colors.border, backgroundColor: colors.surface }]} value={editedText} onChangeText={setEditedText} multiline autoFocus />
+                                                    <TextInput style={[styles.editInput, { color: onBg, borderColor: cardBorder, backgroundColor: fieldBg }]} value={editedText} onChangeText={setEditedText} multiline autoFocus />
                                                     <View style={styles.editActions}>
-                                                        <TouchableOpacity onPress={cancelEditing} style={[styles.editActionButton, { backgroundColor: colors.border }]}><Text style={{ color: colors.text }}>Cancelar</Text></TouchableOpacity>
+                                                        <TouchableOpacity onPress={cancelEditing} style={[styles.editActionButton, { backgroundColor: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(124,106,247,0.12)' }]}><Text style={{ color: onBg }}>Cancelar</Text></TouchableOpacity>
                                                         <TouchableOpacity onPress={saveEditedLine} style={[styles.editActionButton, { backgroundColor: '#10B981' }]}><Text style={{ color: '#FFFFFF' }}>Guardar</Text></TouchableOpacity>
                                                     </View>
                                                 </View>
@@ -2836,49 +2880,61 @@ export default function StudioV2Screen() {
                                                 <>
                                                     {!currentLine.isAction && currentLine.isUserCharacter && hideUserLines ? (
                                                         <View style={styles.hiddenLineContainer}>
-                                                            <EyeOff size={32} color={colors.textSecondary} />
-                                                            <Text style={[styles.hiddenLineText, { color: colors.textSecondary }]}>Línea oculta</Text>
+                                                            <EyeOff size={32} color={onBg2} />
+                                                            <Text style={[styles.hiddenLineText, { color: onBg2 }]}>Línea oculta</Text>
                                                         </View>
                                                     ) : (
-                                                        <Text style={[styles.dialogueText, { color: currentLine.isAction ? colors.primary : colors.text, fontStyle: currentLine.isAction ? 'italic' : 'normal' }]}>{currentLine.isAction ? currentLine.text : renderTextWithStageDirections(showStageDirections ? currentLine.text : currentLine.cleanText)}</Text>
+                                                        <Text style={[styles.dialogueText, { color: currentLine.isAction ? colors.primary : onBg, fontStyle: currentLine.isAction ? 'italic' : 'normal' }]}>{currentLine.isAction ? currentLine.text : renderTextWithStageDirections(showStageDirections ? currentLine.text : currentLine.cleanText)}</Text>
                                                     )}
                                                 </>
                                             )}
                                         </View>
                                         {/* Status Indicators */}
                                         {(isListening || isRecording) && currentLine.isUserCharacter && (<View style={styles.statusRow}><Mic size={24} color="#EF4444" /><Text style={[styles.statusText, { color: '#EF4444', fontWeight: '700' }]}>Escuchando...</Text></View>)}
-                                        {isTranscribing && currentLine.isUserCharacter && (<View style={styles.statusRow}><ActivityIndicator size="small" color={colors.primary} /><Text style={[styles.statusText, { color: colors.textSecondary }]}>Procesando...</Text></View>)}
-                                        {isSpeaking && !currentLine.isUserCharacter && (<View style={styles.statusRow}><Volume2 size={20} color={colors.primary} /><Text style={[styles.statusText, { color: colors.textSecondary }]}>Reproduciendo...</Text></View>)}
-                                    </View>
+                                        {isTranscribing && currentLine.isUserCharacter && (<View style={styles.statusRow}><ActivityIndicator size="small" color={colors.primary} /><Text style={[styles.statusText, { color: onBg2 }]}>Procesando...</Text></View>)}
+                                        {isSpeaking && !currentLine.isUserCharacter && (<View style={styles.statusRow}><Volume2 size={20} color={colors.primary} /><Text style={[styles.statusText, { color: onBg2 }]}>Reproduciendo...</Text></View>)}
+                                        {/* Contador de línea, sutil, esquina inferior derecha */}
+                                        <Text style={[styles.cardCounter, { color: onBg2 }]}>{progressText}</Text>
+                                    </LinearGradient>
 
                                     {/* Next Cards */}
                                     {activeLines.slice(currentIndex + 1).map((line, index) => (
-                                        <View key={`${line.id}-${index}`} style={[
-                                            styles.card, styles.nextCard,
-                                            {
-                                                backgroundColor: line.isAction ? 'rgba(139,92,246,0.08)' : colors.background,
-                                                borderColor: line.isAction ? colors.primary : (line.isUserCharacter ? '#10B981' : line.color || colors.primary),
-                                                borderWidth: line.isAction ? 2 : 4,
-                                                opacity: 0.5, padding: 0, overflow: 'hidden',
-                                                marginTop: index === 0 ? 16 : 12,
-                                                borderStyle: line.isAction ? 'dashed' : 'solid',
-                                            }
-                                        ]}>
-                                            <View style={[styles.cardHeaderBanner, { backgroundColor: line.isAction ? colors.primary : (line.isUserCharacter ? '#10B981' : line.color || colors.primary) }]}>
-                                                <Text style={[styles.characterName, { color: colors.background }]}>{line.isAction ? '⚡ ACCIÓN' : line.characterName}</Text>
-                                                {!line.isAction && <View style={[styles.badge, { backgroundColor: 'rgba(0,0,0,0.2)' }]}><Text style={[styles.badgeText, { color: colors.background }]}>{line.isUserCharacter ? 'TÚ' : 'SC'}</Text></View>}
+                                        <LinearGradient
+                                            key={`${line.id}-${index}`}
+                                            colors={dialogueCardGradient(line.isAction ? colors.primary : (line.isUserCharacter ? '#10B981' : line.color || colors.primary))}
+                                            start={{ x: 0, y: 0 }}
+                                            end={{ x: 0, y: 1 }}
+                                            style={[
+                                                styles.card, styles.nextCard,
+                                                {
+                                                    borderColor: line.isAction ? colors.primary : (line.isUserCharacter ? '#10B981' : line.color || colors.primary),
+                                                    borderWidth: 2,
+                                                    opacity: 0.5, padding: 0, overflow: 'hidden',
+                                                    marginTop: index === 0 ? 16 : 12,
+                                                    borderStyle: line.isAction ? 'dashed' : 'solid',
+                                                }
+                                            ]}>
+                                            <View style={styles.cardNameBlock}>
+                                                <Text style={[styles.characterName, { color: line.isAction ? colors.primary : (line.isUserCharacter ? '#10B981' : line.color || colors.primary) }]}>
+                                                    {line.isAction ? '⚡ ACCIÓN' : line.characterName}
+                                                </Text>
+                                                {!line.isAction && (
+                                                    <View style={[styles.badge, { borderWidth: 1, borderColor: line.isUserCharacter ? '#10B981' : line.color || colors.primary }]}>
+                                                        <Text style={[styles.badgeText, { color: line.isUserCharacter ? '#10B981' : line.color || colors.primary }]}>{line.isUserCharacter ? 'TÚ' : 'ScriptCue'}</Text>
+                                                    </View>
+                                                )}
                                             </View>
                                             <View style={styles.cardContent}>
                                                 {!line.isAction && line.isUserCharacter && hideUserLines ? (
                                                     <View style={styles.hiddenLineContainer}>
-                                                        <EyeOff size={32} color={colors.textSecondary} />
-                                                        <Text style={[styles.hiddenLineText, { color: colors.textSecondary, fontSize: rf(12) }]}>Oculta</Text>
+                                                        <EyeOff size={32} color={onBg2} />
+                                                        <Text style={[styles.hiddenLineText, { color: onBg2, fontSize: rf(12) }]}>Oculta</Text>
                                                     </View>
                                                 ) : (
-                                                    <Text style={[styles.dialogueText, { color: line.isAction ? colors.primary : colors.text, fontStyle: line.isAction ? 'italic' : 'normal' }]} numberOfLines={2}>{line.text}</Text>
+                                                    <Text style={[styles.dialogueText, { color: line.isAction ? colors.primary : onBg, fontStyle: line.isAction ? 'italic' : 'normal' }]} numberOfLines={2}>{line.text}</Text>
                                                 )}
                                             </View>
-                                        </View>
+                                        </LinearGradient>
                                     ))}
                                 </View>
                             )}
@@ -2886,20 +2942,24 @@ export default function StudioV2Screen() {
                     )}
 
                     {/* Footer Controls */}
-                    <View style={[styles.footer, { backgroundColor: colors.surface, borderTopColor: colors.border }]}>
-                        <View style={styles.progressContainer}>
-                            <Text style={[styles.progressText, { color: colors.textSecondary }]}>
-                                {progressText}
-                            </Text>
-                        </View>
-
+                    <View style={[styles.footer, {
+                        borderColor: cardBorder,
+                        overflow: 'hidden',
+                        shadowColor: '#000',
+                        shadowOffset: { width: 0, height: 8 },
+                        shadowOpacity: 0.3,
+                        shadowRadius: 16,
+                        elevation: 8,
+                    }]}>
+                        <BlurView intensity={isDark ? 55 : 65} tint={isDark ? 'dark' : 'light'} style={StyleSheet.absoluteFill} />
+                        <View style={[StyleSheet.absoluteFill, { backgroundColor: isDark ? 'rgba(124,106,247,0.14)' : 'rgba(235,230,245,0.5)' }]} />
                         <View style={styles.controls}>
                             <TouchableOpacity
                                 onPress={handlePrevious}
                                 disabled={currentIndex === 0}
                                 style={[styles.controlButton, currentIndex === 0 && styles.controlButtonDisabled]}
                             >
-                                <SkipBack size={24} color={currentIndex === 0 ? colors.textSecondary : colors.text} />
+                                <SkipBack size={24} color={currentIndex === 0 ? onBg2 : onBg} />
                             </TouchableOpacity>
 
                             <TouchableOpacity
@@ -2923,7 +2983,7 @@ export default function StudioV2Screen() {
                             >
                                 <SkipForward
                                     size={24}
-                                    color={(currentIndex === activeLines.length - 1 && !loopEnabled) ? colors.textSecondary : colors.text}
+                                    color={(currentIndex === activeLines.length - 1 && !loopEnabled) ? onBg2 : onBg}
                                 />
                             </TouchableOpacity>
 
@@ -2931,17 +2991,17 @@ export default function StudioV2Screen() {
                                 onPress={() => setLoopEnabled(prev => !prev)}
                                 style={[
                                     styles.loopButton,
-                                    { backgroundColor: loopEnabled ? colors.primary : colors.input }
+                                    { backgroundColor: loopEnabled ? colors.primary : fieldBg }
                                 ]}
                             >
-                                <Repeat size={20} color={loopEnabled ? '#FFFFFF' : colors.text} />
+                                <Repeat size={20} color={loopEnabled ? '#FFFFFF' : onBg} />
                             </TouchableOpacity>
 
                             <TouchableOpacity
                                 onPress={handleRecButton}
                                 style={[
                                     styles.recButton,
-                                    { backgroundColor: isRecording ? '#EF4444' : colors.input }
+                                    { backgroundColor: isRecording ? '#EF4444' : fieldBg }
                                 ]}
                             >
                                 {isRecording ? (
@@ -2960,6 +3020,7 @@ export default function StudioV2Screen() {
                 </View>
             </SafeAreaView >
         </GestureHandlerRootView >
+        </ImageBackground>
     );
 }
 
@@ -2979,7 +3040,11 @@ const styles = StyleSheet.create({
         borderBottomWidth: 1,
     },
     backButton: {
-        padding: 8,
+        width: 40,
+        height: 40,
+        borderRadius: 20,
+        alignItems: 'center',
+        justifyContent: 'center',
     },
     headerCenter: {
         flex: 1,
@@ -3020,7 +3085,11 @@ const styles = StyleSheet.create({
         marginTop: 2,
     },
     menuButton: {
-        padding: rp(8),
+        width: 40,
+        height: 40,
+        borderRadius: 20,
+        alignItems: 'center',
+        justifyContent: 'center',
     },
     bottomSheetOverlay: {
         flex: 1,
@@ -3077,48 +3146,49 @@ const styles = StyleSheet.create({
         zIndex: -1, // Behind main card
         minHeight: rp(150), // Smaller height for next card
     },
-    cardHeaderBanner: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        justifyContent: 'center',
-        position: 'relative', // Para posicionar el botón de menú absoluto
-        width: '100%',
-        paddingVertical: rp(10),
-        paddingHorizontal: rp(40), // Espacio para el botón de menú
-        marginBottom: rp(12),
-        top: 0,
-        left: 0,
-        right: 0,
-    },
-    headerCenteredContent: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        justifyContent: 'center',
-        gap: rp(12),
-        flex: 1,
-    },
     menuButtonAbsolute: {
         position: 'absolute',
+        top: rp(12),
         right: rp(12),
-        padding: rp(4),
-        borderRadius: rp(6),
-        backgroundColor: 'rgba(0, 0, 0, 0.15)',
+        width: rp(30),
+        height: rp(30),
+        borderRadius: rp(15),
+        backgroundColor: 'rgba(0, 0, 0, 0.18)',
         justifyContent: 'center',
         alignItems: 'center',
         zIndex: 10,
     },
     editMenuInHeader: {
+        position: 'absolute',
+        top: rp(12),
+        right: rp(12),
         flexDirection: 'row',
         alignItems: 'center',
-        justifyContent: 'center',
         gap: rp(8),
-        flex: 1,
+        zIndex: 10,
+    },
+    cardNameBlock: {
+        alignItems: 'center',
+        width: '100%',
+        paddingTop: rp(20),
+        paddingHorizontal: rp(48), // deja hueco al botón (...) en la esquina superior derecha
+    },
+    cardCounter: {
+        position: 'absolute',
+        bottom: rp(12),
+        right: rp(16),
+        fontSize: rf(11),
+        fontWeight: '600',
+        opacity: 0.8,
     },
     characterName: {
         fontSize: rf(18),
-        fontWeight: '700',
+        fontWeight: '800',
+        letterSpacing: 0.3,
+        textAlign: 'center',
     },
     badge: {
+        marginTop: rp(6),
         paddingHorizontal: rp(12),
         paddingVertical: rp(4),
         borderRadius: rp(12),
@@ -3128,7 +3198,7 @@ const styles = StyleSheet.create({
         fontWeight: '700',
     },
     cardContent: {
-        paddingTop: rp(12),
+        paddingTop: rp(16),
         paddingHorizontal: rp(24),
         paddingBottom: rp(24),
         width: '100%',
@@ -3159,18 +3229,13 @@ const styles = StyleSheet.create({
         color: '#FFFFFF',
     },
     footer: {
+        marginHorizontal: rp(16),
+        marginBottom: Platform.OS === 'ios' ? rp(8) : rp(14),
         paddingHorizontal: rp(20),
-        paddingVertical: rp(16),
-        borderTopWidth: 1,
-        paddingBottom: Platform.OS === 'ios' ? rp(24) : rp(16),
-    },
-    progressContainer: {
-        alignItems: 'center',
-        marginBottom: rp(12),
-    },
-    progressText: {
-        fontSize: rf(12),
-        fontWeight: '500',
+        paddingTop: rp(14),
+        paddingBottom: rp(14),
+        borderRadius: rp(28),
+        borderWidth: 1,
     },
     controls: {
         flexDirection: 'row',
@@ -3351,6 +3416,7 @@ const styles = StyleSheet.create({
     loadingCard: {
         padding: rp(24),
         borderRadius: rp(16),
+        overflow: 'hidden',
         alignItems: 'center',
         gap: rp(16),
         minWidth: rp(200),

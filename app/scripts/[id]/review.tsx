@@ -2,11 +2,12 @@ import React, { useState, useEffect, useCallback } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, Alert,
   TextInput, Modal, ScrollView, ActivityIndicator,
-  KeyboardAvoidingView, Platform, Pressable,
+  KeyboardAvoidingView, Platform, Pressable, ImageBackground,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { Stack } from 'expo-router';
+import { BlurView } from 'expo-blur';
 import { useTheme } from '@/contexts/ThemeContext';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/utils/supabase';
@@ -19,15 +20,39 @@ import DraggableFlatList, { ScaleDecorator } from 'react-native-draggable-flatli
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import * as Haptics from 'expo-haptics';
 import { ArrowLeft, Edit, Trash2, Plus, CheckCircle, X, Save, Check } from 'lucide-react-native';
+import { ConfirmDialog } from '@/components/ConfirmDialog';
 
 const REVIEW_INFO_KEY = 'hideReviewInfoV2';
 
 export default function ReviewScreen() {
   const router = useRouter();
   const { id, force } = useLocalSearchParams<{ id: string; force?: string }>();
-  const { colors } = useTheme();
+  const { colors, isDark } = useTheme();
   const { user } = useAuth();
   const insets = useSafeAreaInsets();
+
+  // Paleta "sobre imagen de fondo" del diseño glass, igual que en Importar Guion
+  const onBg = isDark ? '#ffffff' : '#2a2447';
+  const onBg2 = isDark ? '#a0a0c0' : '#5c5678';
+  const cardBg = isDark ? 'rgba(124,106,247,0.08)' : 'rgba(255,255,255,0.55)';
+  const cardBorder = isDark ? 'rgba(167,139,250,0.25)' : 'rgba(124,106,247,0.15)';
+  const cardShadow = !isDark ? {
+    shadowColor: '#1a1625',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.28,
+    shadowRadius: 16,
+    elevation: 8,
+  } : null;
+  const fieldBg = isDark ? 'rgba(255,255,255,0.06)' : 'rgba(255,255,255,0.7)';
+  const fieldBorder = isDark ? 'rgba(255,255,255,0.14)' : 'rgba(124,106,247,0.18)';
+  const neutralChipBg = isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.05)';
+  const glassHeaderBtn = isDark
+    ? { backgroundColor: 'rgba(124,106,247,0.14)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.2)' }
+    : { backgroundColor: colors.primary };
+  // Norma general de modo oscuro: el texto/icono de los botones secundarios (glass,
+  // fondo oscuro translúcido) va en blanco para que se lea mejor; en claro mantiene el acento morado.
+  const accentOnGlass = isDark ? '#FFFFFF' : colors.primary;
+  const bg = () => (isDark ? require('@/assets/images/ui-dark-bg.png') : require('@/assets/images/ui-light-bg.png'));
 
   const [lines, setLines] = useState<DialogueLine[]>([]);
   const [loading, setLoading] = useState(true);
@@ -88,7 +113,7 @@ export default function ReviewScreen() {
 
   const handleEmotionSelect = async (emotionVal: string) => {
     if (!activeEmotionLineId) return;
-    
+
     // Optimistic UI update
     setLines(prev => prev.map(l => {
       if (l.id === activeEmotionLineId) {
@@ -115,7 +140,7 @@ export default function ReviewScreen() {
   };
   const [showReviewInfo, setShowReviewInfo] = useState(false);
   const [dontShowReviewInfoAgain, setDontShowReviewInfoAgain] = useState(false);
-  
+
   const [showAddLineInfo, setShowAddLineInfo] = useState(false);
   const [dontShowAddLineInfoAgain, setDontShowAddLineInfoAgain] = useState(false);
 
@@ -203,9 +228,9 @@ export default function ReviewScreen() {
 
       setLines(prev => prev.map(l =>
         l.id === editingLine.id
-          ? { 
-              ...l, 
-              text: editText, 
+          ? {
+              ...l,
+              text: editText,
               cleanText: editText.replace(/\([^)]*\)/g, '').trim(),
               characterName: charName,
               characterId: charId,
@@ -278,13 +303,8 @@ export default function ReviewScreen() {
   };
 
   // ── Confirm & generate TTS ────────────────────────────────────────────────
-  const confirmAndGenerate = () => {
-    Alert.alert(
-      'Confirmar guion',
-      `Se generarán voces para ${lines.filter(l => !l.isUserCharacter && !l.isAction).length} líneas de réplica. ¿Continuar?`,
-      [{ text: 'Cancelar', style: 'cancel' }, { text: 'Confirmar', onPress: doConfirm }]
-    );
-  };
+  const [showConfirmDialog, setShowConfirmDialog] = useState(false);
+  const confirmAndGenerate = () => setShowConfirmDialog(true);
 
   const doConfirm = async () => {
     if (!user) return;
@@ -321,26 +341,29 @@ export default function ReviewScreen() {
   // ── Render ────────────────────────────────────────────────────────────────
   if (loading) {
     return (
-      <View style={[s.center, { flex: 1, backgroundColor: colors.background }]}>
-        <ActivityIndicator size="large" color={colors.primary} />
-        <Text style={{ color: colors.textSecondary, marginTop: 12 }}>Cargando guion…</Text>
-      </View>
+      <ImageBackground source={bg()} resizeMode="cover" style={{ flex: 1 }}>
+        <View style={[s.center, { flex: 1 }]}>
+          <ActivityIndicator size="large" color={colors.primary} />
+          <Text style={{ color: onBg2, marginTop: 12 }}>Cargando guion…</Text>
+        </View>
+      </ImageBackground>
     );
   }
 
   return (
+    <ImageBackground source={bg()} resizeMode="cover" style={{ flex: 1 }}>
     <GestureHandlerRootView style={{ flex: 1 }}>
       <Stack.Screen options={{ headerShown: false }} />
-      <SafeAreaView style={[s.container, { backgroundColor: colors.surface }]}>
+      <SafeAreaView style={[s.container, { backgroundColor: 'transparent' }]}>
 
         {/* ── Header ── */}
-        <View style={[s.header, { backgroundColor: colors.surface, borderBottomColor: colors.border }]}>
-          <TouchableOpacity onPress={() => router.back()} style={s.backBtn}>
-            <ArrowLeft size={24} color={colors.text} />
+        <View style={[s.header, { backgroundColor: 'transparent', borderBottomWidth: 0 }]}>
+          <TouchableOpacity onPress={() => router.back()} style={[s.headerIconBtn, glassHeaderBtn]}>
+            <ArrowLeft size={20} color={isDark ? onBg : '#FFFFFF'} />
           </TouchableOpacity>
           <View style={{ flex: 1, alignItems: 'center' }}>
-            <Text style={[s.headerTitle, { color: colors.text, textAlign: 'center' }]}>Revisar guion</Text>
-            <Text style={[s.headerSub, { color: colors.textSecondary, textAlign: 'center' }]}>
+            <Text style={[s.headerTitle, { color: onBg, textAlign: 'center' }]}>Revisar guion</Text>
+            <Text style={[s.headerSub, { color: onBg2, textAlign: 'center' }]}>
               {lines.length} líneas · Usa ≡ para reordenar
             </Text>
           </View>
@@ -351,8 +374,8 @@ export default function ReviewScreen() {
             } else {
               setShowAddModal(true);
             }
-          }} style={[s.addBtn, { backgroundColor: colors.primary }]}>
-            <Plus size={18} color="#fff" />
+          }} style={[s.headerIconBtn, glassHeaderBtn]}>
+            <Plus size={18} color={isDark ? onBg : '#FFFFFF'} />
           </TouchableOpacity>
         </View>
 
@@ -362,7 +385,7 @@ export default function ReviewScreen() {
           keyExtractor={item => item.id}
           onDragBegin={() => Haptics.selectionAsync()}
           onDragEnd={({ data }) => { setLines(data); syncOrder(data); }}
-          containerStyle={{ flex: 1, backgroundColor: colors.background }}
+          containerStyle={{ flex: 1, backgroundColor: 'transparent' }}
           contentContainerStyle={{ paddingHorizontal: rp(16), paddingTop: rp(12), paddingBottom: 140 }}
           renderItem={({ item, drag, isActive, getIndex }) => {
             const index = getIndex() ?? 0;
@@ -370,17 +393,20 @@ export default function ReviewScreen() {
             const charData = characters.find(c => c.name.toLowerCase().trim() === item.characterName.toLowerCase().trim());
             const isElevenLabs = charData?.voice_provider === 'elevenlabs';
             const isHume = charData?.voice_provider === 'hume';
-            
+
             return (
               <ScaleDecorator activeScale={1.02}>
+                <View style={[s.cardShadowWrapper, {
+                  ...cardShadow,
+                  shadowColor: isActive ? charColor : (cardShadow?.shadowColor || 'transparent'),
+                  shadowOpacity: isActive ? 0.35 : (cardShadow?.shadowOpacity || 0),
+                  elevation: isActive ? 6 : (cardShadow?.elevation || 1),
+                }]}>
                 <View style={[s.card, {
-                  backgroundColor: colors.surface,
+                  backgroundColor: cardBg,
                   borderColor: charColor,
                   borderStyle: item.isAction ? 'dashed' : 'solid',
                   borderWidth: item.isAction ? 2 : 1.5,
-                  shadowColor: isActive ? charColor : 'transparent',
-                  shadowOpacity: isActive ? 0.3 : 0,
-                  shadowRadius: 8, elevation: isActive ? 6 : 1,
                 }]}>
                   <View style={[s.colorBar, { backgroundColor: charColor }]} />
                   <View style={{ flex: 1, padding: rp(12) }}>
@@ -388,59 +414,65 @@ export default function ReviewScreen() {
                       <Text style={[s.charName, { color: charColor }]}>
                         {item.isAction ? 'TARJETA DE ACCIÓN' : item.characterName}
                         {!item.isAction && (
-                          <Text style={[s.badge, { color: colors.textSecondary }]}>
+                          <Text style={[s.badge, { color: onBg2 }]}>
                             {item.isUserCharacter ? '  · TÚ' : '  · SC'}
                           </Text>
                         )}
                       </Text>
-                      <Text style={[s.lineNum, { color: colors.textSecondary }]}>#{index + 1}</Text>
+                      <Text style={[s.lineNum, { color: onBg2 }]}>#{index + 1}</Text>
                     </View>
-                    <Text style={[s.dialogueText, { color: colors.text }]}>{item.text}</Text>
-                    
-                    {!item.isAction && !item.isUserCharacter && (isElevenLabs || isHume) && (
-                      <TouchableOpacity 
-                        style={{ marginTop: rp(8), flexDirection: 'row', alignItems: 'center', alignSelf: 'flex-start' }}
-                        onPress={() => {
-                          setActiveEmotionLineId(item.id);
-                          setEmotionModalVisible(true);
-                        }}
-                      >
-                        <Text style={{ marginRight: 6 }}>🎭</Text>
-                        <View style={{
-                            backgroundColor: item.voiceDirection ? charColor + '20' : colors.border,
-                            paddingHorizontal: rp(8),
-                            paddingVertical: rp(4),
-                            borderRadius: rp(12),
-                        }}>
-                          <Text style={{ 
-                            fontSize: rf(12), 
-                            color: item.voiceDirection ? charColor : colors.textSecondary,
-                            fontWeight: item.voiceDirection ? '600' : '400'
-                          }}>
-                             {item.voiceDirection ? translateEmotion(item.voiceDirection.emotion) : 'Neutral'} ▾
-                          </Text>
-                        </View>
-                      </TouchableOpacity>
-                    )}
+                    <Text style={[s.dialogueText, { color: onBg }]}>{item.text}</Text>
 
-                    <View style={s.lineActions}>
-                      <TouchableOpacity onPress={() => openEditModal(item)} style={s.iconBtn}>
-                        <Edit size={15} color={colors.textSecondary} />
-                      </TouchableOpacity>
-                      <TouchableOpacity onPress={() => deleteLine(item.id)} style={s.iconBtn}>
-                        <Trash2 size={15} color="#EF4444" />
-                      </TouchableOpacity>
+                    <View style={s.cardFooterRow}>
+                      {!item.isAction && !item.isUserCharacter && (isElevenLabs || isHume) ? (
+                        <View style={{ alignItems: 'flex-start' }}>
+                          <Text style={[s.emotionLabel, { color: onBg2 }]}>Configurar emoción</Text>
+                          <TouchableOpacity
+                            style={{ flexDirection: 'row', alignItems: 'center' }}
+                            onPress={() => {
+                              setActiveEmotionLineId(item.id);
+                              setEmotionModalVisible(true);
+                            }}
+                          >
+                            <Text style={{ marginRight: 6 }}>🎭</Text>
+                            <View style={{
+                                backgroundColor: item.voiceDirection ? charColor + '30' : neutralChipBg,
+                                paddingHorizontal: rp(8),
+                                paddingVertical: rp(4),
+                                borderRadius: rp(12),
+                            }}>
+                              <Text style={{
+                                fontSize: rf(12),
+                                color: onBg,
+                                fontWeight: item.voiceDirection ? '600' : '400'
+                              }}>
+                                 {item.voiceDirection ? translateEmotion(item.voiceDirection.emotion) : 'Neutral'} ▾
+                              </Text>
+                            </View>
+                          </TouchableOpacity>
+                        </View>
+                      ) : <View />}
+
+                      <View style={s.lineActions}>
+                        <TouchableOpacity onPress={() => openEditModal(item)} style={s.iconBtn}>
+                          <Edit size={15} color={onBg2} />
+                        </TouchableOpacity>
+                        <TouchableOpacity onPress={() => deleteLine(item.id)} style={s.iconBtn}>
+                          <Trash2 size={15} color="#EF4444" />
+                        </TouchableOpacity>
+                      </View>
                     </View>
                   </View>
                   {/* Drag handle */}
                   <TouchableOpacity onPressIn={drag} delayPressIn={0}
-                    style={[s.dragHandle, { borderLeftColor: colors.border }]} activeOpacity={0.5}>
+                    style={[s.dragHandle, { borderLeftColor: cardBorder }]} activeOpacity={0.5}>
                     <View style={{ gap: 4 }}>
                       {[0, 1, 2].map(i => (
-                        <View key={i} style={{ width: 18, height: 2.5, borderRadius: 2, backgroundColor: isActive ? charColor : colors.textSecondary }} />
+                        <View key={i} style={{ width: 18, height: 2.5, borderRadius: 2, backgroundColor: isActive ? charColor : onBg2 }} />
                       ))}
                     </View>
                   </TouchableOpacity>
+                </View>
                 </View>
               </ScaleDecorator>
             );
@@ -448,27 +480,31 @@ export default function ReviewScreen() {
         />
 
         {/* ── Confirm button ── */}
-        <View style={[s.footer, { backgroundColor: colors.surface, borderTopColor: colors.border }]}>
-          {isConfirming ? (
-            <View style={s.confirmingContainer}>
-              <ActivityIndicator color={colors.primary} />
-              <Text style={[s.confirmingText, { color: colors.text }]}>
-                Generando voces… {confirmProgress}/{confirmTotal}
-              </Text>
-              <View style={[s.progressTrack, { backgroundColor: colors.border }]}>
-                <View style={[s.progressFill, {
-                  backgroundColor: colors.primary,
-                  width: (confirmTotal > 0 ? `${(confirmProgress / confirmTotal) * 100}%` : '0%') as any,
-                }]} />
+        <View style={s.footer}>
+          <BlurView intensity={isDark ? 55 : 65} tint={isDark ? 'dark' : 'light'} style={StyleSheet.absoluteFill} />
+          <View style={[StyleSheet.absoluteFill, { backgroundColor: isDark ? 'rgba(124,106,247,0.14)' : 'rgba(235,230,245,0.5)' }]} />
+          <View style={[s.footerContent, { borderTopColor: cardBorder, paddingBottom: Math.max(insets.bottom, rp(16)) }]}>
+            {isConfirming ? (
+              <View style={s.confirmingContainer}>
+                <ActivityIndicator color={colors.primary} />
+                <Text style={[s.confirmingText, { color: onBg }]}>
+                  Generando voces… {confirmProgress}/{confirmTotal}
+                </Text>
+                <View style={[s.progressTrack, { backgroundColor: cardBorder }]}>
+                  <View style={[s.progressFill, {
+                    backgroundColor: colors.primary,
+                    width: (confirmTotal > 0 ? `${(confirmProgress / confirmTotal) * 100}%` : '0%') as any,
+                  }]} />
+                </View>
               </View>
-            </View>
-          ) : (
-            <TouchableOpacity onPress={confirmAndGenerate}
-              style={[s.confirmBtn, { backgroundColor: '#10B981' }]} activeOpacity={0.85}>
-              <CheckCircle size={20} color="#fff" />
-              <Text style={s.confirmBtnText}>Confirmar guion y generar voces</Text>
-            </TouchableOpacity>
-          )}
+            ) : (
+              <TouchableOpacity onPress={confirmAndGenerate}
+                style={[s.confirmBtn, { backgroundColor: '#10B981' }]} activeOpacity={0.85}>
+                <CheckCircle size={20} color="#fff" />
+                <Text style={s.confirmBtnText}>Confirmar guion y generar voces</Text>
+              </TouchableOpacity>
+            )}
+          </View>
         </View>
 
         {/* ── Edit Modal ── keyboard-safe bottom sheet outside the list ── */}
@@ -483,34 +519,37 @@ export default function ReviewScreen() {
             style={{ flex: 1 }}
           >
             <Pressable style={s.modalOverlay} onPress={() => setEditModalVisible(false)}>
-              <Pressable onPress={e => e.stopPropagation()} style={[s.modalContent, { backgroundColor: colors.surface, paddingBottom: Math.max(insets.bottom + rp(20), rp(40)) }]}>
+              <Pressable onPress={e => e.stopPropagation()} style={s.modalContent}>
+                <BlurView intensity={isDark ? 55 : 75} tint={isDark ? 'dark' : 'light'} style={StyleSheet.absoluteFill} />
+                <View style={[StyleSheet.absoluteFill, { backgroundColor: isDark ? 'rgba(124,106,247,0.40)' : 'rgba(235,230,245,0.40)' }]} />
+                <View style={{ padding: rp(24), paddingBottom: Math.max(insets.bottom + rp(20), rp(40)) }}>
                 <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: rp(12) }}>
-                  <Text style={[s.modalTitle, { color: colors.text, marginBottom: 0 }]}>Editar línea</Text>
+                  <Text style={[s.modalTitle, { color: onBg, marginBottom: 0 }]}>Editar línea</Text>
                   <TouchableOpacity onPress={() => setEditModalVisible(false)} style={{ padding: 4 }}>
-                    <X size={20} color={colors.textSecondary} />
+                    <X size={20} color={onBg2} />
                   </TouchableOpacity>
                 </View>
 
                 <View style={{ flexDirection: 'row', marginBottom: rp(16), gap: 12 }}>
-                  <TouchableOpacity onPress={() => setEditSelectedChar(null)} style={{ flex: 1, padding: 8, borderRadius: 8, borderWidth: 1, borderColor: editSelectedChar === null ? colors.primary : colors.border, backgroundColor: editSelectedChar === null ? colors.primary + '20' : 'transparent', alignItems: 'center' }}>
-                    <Text style={{ color: editSelectedChar === null ? colors.primary : colors.text }}>Acción</Text>
+                  <TouchableOpacity onPress={() => setEditSelectedChar(null)} style={{ flex: 1, padding: 8, borderRadius: 8, borderWidth: 1, borderColor: editSelectedChar === null ? colors.primary : cardBorder, backgroundColor: editSelectedChar === null ? colors.primary + '20' : 'transparent', alignItems: 'center' }}>
+                    <Text style={{ color: editSelectedChar === null ? accentOnGlass : onBg }}>Acción</Text>
                   </TouchableOpacity>
-                  <TouchableOpacity onPress={() => setEditSelectedChar(characters[0] || undefined)} style={{ flex: 1, padding: 8, borderRadius: 8, borderWidth: 1, borderColor: editSelectedChar !== null ? colors.primary : colors.border, backgroundColor: editSelectedChar !== null ? colors.primary + '20' : 'transparent', alignItems: 'center' }}>
-                    <Text style={{ color: editSelectedChar !== null ? colors.primary : colors.text }}>Diálogo</Text>
+                  <TouchableOpacity onPress={() => setEditSelectedChar(characters[0] || undefined)} style={{ flex: 1, padding: 8, borderRadius: 8, borderWidth: 1, borderColor: editSelectedChar !== null ? colors.primary : cardBorder, backgroundColor: editSelectedChar !== null ? colors.primary + '20' : 'transparent', alignItems: 'center' }}>
+                    <Text style={{ color: editSelectedChar !== null ? accentOnGlass : onBg }}>Diálogo</Text>
                   </TouchableOpacity>
                 </View>
 
                 {editSelectedChar !== null && (
                   <>
-                    <Text style={[s.modalLabel, { color: colors.textSecondary }]}>Personaje:</Text>
+                    <Text style={[s.modalLabel, { color: onBg2 }]}>Personaje:</Text>
                     <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: rp(16) }}>
                       {characters.map(c => (
                         <TouchableOpacity key={c.id} onPress={() => setEditSelectedChar(c)}
                           style={[s.charChip, {
-                            backgroundColor: editSelectedChar?.id === c.id ? c.color + '30' : colors.background,
-                            borderColor: editSelectedChar?.id === c.id ? c.color : colors.border,
+                            backgroundColor: editSelectedChar?.id === c.id ? c.color + '30' : fieldBg,
+                            borderColor: editSelectedChar?.id === c.id ? c.color : cardBorder,
                           }]}>
-                          <Text style={[s.charChipText, { color: editSelectedChar?.id === c.id ? c.color : colors.text }]}>{c.name}</Text>
+                          <Text style={[s.charChipText, { color: onBg }]}>{c.name}</Text>
                         </TouchableOpacity>
                       ))}
                     </ScrollView>
@@ -519,8 +558,8 @@ export default function ReviewScreen() {
 
                 <TextInput
                   style={[s.input, {
-                    color: colors.text, borderColor: colors.border,
-                    backgroundColor: colors.background, minHeight: 120,
+                    color: onBg, borderColor: fieldBorder,
+                    backgroundColor: fieldBg, minHeight: 120,
                   }]}
                   value={editText}
                   onChangeText={setEditText}
@@ -528,13 +567,14 @@ export default function ReviewScreen() {
                   autoFocus
                   textAlignVertical="top"
                   scrollEnabled
+                  placeholderTextColor={onBg2}
                 />
 
                 <View style={s.modalBtns}>
                   <TouchableOpacity
                     onPress={() => setEditModalVisible(false)}
-                    style={[s.actionBtn, { backgroundColor: colors.border, flex: 1 }]}>
-                    <Text style={{ color: colors.text }}>Cancelar</Text>
+                    style={[s.actionBtn, { backgroundColor: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(124,106,247,0.12)', flex: 1 }]}>
+                    <Text style={{ color: onBg }}>Cancelar</Text>
                   </TouchableOpacity>
                   <TouchableOpacity
                     onPress={saveEdit}
@@ -545,6 +585,7 @@ export default function ReviewScreen() {
                       : <><Save size={14} color="#fff" /><Text style={{ color: '#fff' }}> Guardar</Text></>
                     }
                   </TouchableOpacity>
+                </View>
                 </View>
               </Pressable>
             </Pressable>
@@ -559,23 +600,25 @@ export default function ReviewScreen() {
           onRequestClose={() => setEmotionModalVisible(false)}
          supportedOrientations={['portrait', 'landscape', 'landscape-left', 'landscape-right']}>
           <Pressable style={[s.modalOverlay, { backgroundColor: 'rgba(0,0,0,0.4)' }]} onPress={() => setEmotionModalVisible(false)}>
-            <View style={[s.modalContent, { backgroundColor: colors.surface, paddingHorizontal: 0, paddingBottom: Math.max(insets.bottom + rp(20), rp(20)) }]}>
-              <View style={{ paddingHorizontal: rp(20), paddingBottom: rp(12), borderBottomWidth: 1, borderBottomColor: colors.border }}>
-                <Text style={[s.modalTitle, { color: colors.text, marginBottom: 0 }]}>Dirección Interpretativa</Text>
+            <View style={[s.modalContent, { paddingBottom: Math.max(insets.bottom + rp(20), rp(20)) }]}>
+              <BlurView intensity={isDark ? 55 : 75} tint={isDark ? 'dark' : 'light'} style={StyleSheet.absoluteFill} />
+              <View style={[StyleSheet.absoluteFill, { backgroundColor: isDark ? 'rgba(124,106,247,0.40)' : 'rgba(235,230,245,0.40)' }]} />
+              <View style={{ paddingHorizontal: rp(20), paddingTop: rp(20), paddingBottom: rp(12), borderBottomWidth: 1, borderBottomColor: cardBorder }}>
+                <Text style={[s.modalTitle, { color: onBg, marginBottom: 0 }]}>Dirección Interpretativa</Text>
               </View>
               <ScrollView style={{ maxHeight: 300 }}>
                 {EMOTIONS.map(emo => (
-                  <TouchableOpacity 
+                  <TouchableOpacity
                     key={emo.value}
-                    style={{ 
-                      paddingVertical: rp(14), 
+                    style={{
+                      paddingVertical: rp(14),
                       paddingHorizontal: rp(20),
                       borderBottomWidth: 1,
-                      borderBottomColor: colors.border
+                      borderBottomColor: cardBorder
                     }}
                     onPress={() => handleEmotionSelect(emo.value)}
                   >
-                    <Text style={{ color: colors.text, fontSize: rf(15) }}>{emo.label}</Text>
+                    <Text style={{ color: onBg, fontSize: rf(15) }}>{emo.label}</Text>
                   </TouchableOpacity>
                 ))}
               </ScrollView>
@@ -587,46 +630,49 @@ export default function ReviewScreen() {
         <Modal visible={showAddModal} transparent animationType="slide" onRequestClose={() => setShowAddModal(false)} supportedOrientations={['portrait', 'landscape', 'landscape-left', 'landscape-right']}>
           <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
             <Pressable style={s.modalOverlay} onPress={() => setShowAddModal(false)}>
-              <Pressable onPress={e => e.stopPropagation()} style={[s.modalContent, { backgroundColor: colors.surface, paddingBottom: Math.max(insets.bottom + rp(20), rp(40)) }]}>
-                <Text style={[s.modalTitle, { color: colors.text }]}>Añadir línea</Text>
-                
+              <Pressable onPress={e => e.stopPropagation()} style={s.modalContent}>
+                <BlurView intensity={isDark ? 55 : 75} tint={isDark ? 'dark' : 'light'} style={StyleSheet.absoluteFill} />
+                <View style={[StyleSheet.absoluteFill, { backgroundColor: isDark ? 'rgba(124,106,247,0.40)' : 'rgba(235,230,245,0.40)' }]} />
+                <View style={{ padding: rp(24), paddingBottom: Math.max(insets.bottom + rp(20), rp(40)) }}>
+                <Text style={[s.modalTitle, { color: onBg }]}>Añadir línea</Text>
+
                 <View style={{ flexDirection: 'row', marginBottom: rp(16), gap: 12 }}>
-                  <TouchableOpacity onPress={() => setSelectedChar(null)} style={{ flex: 1, padding: 8, borderRadius: 8, borderWidth: 1, borderColor: selectedChar === null ? colors.primary : colors.border, backgroundColor: selectedChar === null ? colors.primary + '20' : 'transparent', alignItems: 'center' }}>
-                    <Text style={{ color: selectedChar === null ? colors.primary : colors.text }}>Acción</Text>
+                  <TouchableOpacity onPress={() => setSelectedChar(null)} style={{ flex: 1, padding: 8, borderRadius: 8, borderWidth: 1, borderColor: selectedChar === null ? colors.primary : cardBorder, backgroundColor: selectedChar === null ? colors.primary + '20' : 'transparent', alignItems: 'center' }}>
+                    <Text style={{ color: selectedChar === null ? accentOnGlass : onBg }}>Acción</Text>
                   </TouchableOpacity>
-                  <TouchableOpacity onPress={() => setSelectedChar(characters[0] || undefined)} style={{ flex: 1, padding: 8, borderRadius: 8, borderWidth: 1, borderColor: selectedChar !== null ? colors.primary : colors.border, backgroundColor: selectedChar !== null ? colors.primary + '20' : 'transparent', alignItems: 'center' }}>
-                    <Text style={{ color: selectedChar !== null ? colors.primary : colors.text }}>Diálogo</Text>
+                  <TouchableOpacity onPress={() => setSelectedChar(characters[0] || undefined)} style={{ flex: 1, padding: 8, borderRadius: 8, borderWidth: 1, borderColor: selectedChar !== null ? colors.primary : cardBorder, backgroundColor: selectedChar !== null ? colors.primary + '20' : 'transparent', alignItems: 'center' }}>
+                    <Text style={{ color: selectedChar !== null ? accentOnGlass : onBg }}>Diálogo</Text>
                   </TouchableOpacity>
                 </View>
 
                 {selectedChar !== null && (
                   <>
-                    <Text style={[s.modalLabel, { color: colors.textSecondary }]}>Personaje:</Text>
+                    <Text style={[s.modalLabel, { color: onBg2 }]}>Personaje:</Text>
                     <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: rp(16) }}>
                       {characters.map(c => (
                         <TouchableOpacity key={c.id} onPress={() => setSelectedChar(c)}
                           style={[s.charChip, {
-                            backgroundColor: selectedChar?.id === c.id ? c.color + '30' : colors.background,
-                            borderColor: selectedChar?.id === c.id ? c.color : colors.border,
+                            backgroundColor: selectedChar?.id === c.id ? c.color + '30' : fieldBg,
+                            borderColor: selectedChar?.id === c.id ? c.color : cardBorder,
                           }]}>
-                          <Text style={[s.charChipText, { color: selectedChar?.id === c.id ? c.color : colors.text }]}>{c.name}</Text>
+                          <Text style={[s.charChipText, { color: onBg }]}>{c.name}</Text>
                         </TouchableOpacity>
                       ))}
                     </ScrollView>
                   </>
                 )}
-                
-                <Text style={[s.modalLabel, { color: colors.textSecondary }]}>{selectedChar === null ? 'Acción:' : 'Diálogo:'}</Text>
+
+                <Text style={[s.modalLabel, { color: onBg2 }]}>{selectedChar === null ? 'Acción:' : 'Diálogo:'}</Text>
                 <TextInput
-                  style={[s.input, { color: colors.text, borderColor: colors.border, backgroundColor: colors.background }]}
+                  style={[s.input, { color: onBg, borderColor: fieldBorder, backgroundColor: fieldBg }]}
                   value={newLineText} onChangeText={setNewLineText}
-                  placeholder="Escribe el diálogo…" placeholderTextColor={colors.textSecondary}
+                  placeholder="Escribe el diálogo…" placeholderTextColor={onBg2}
                   multiline autoFocus
                 />
                 <View style={s.modalBtns}>
                   <TouchableOpacity onPress={() => setShowAddModal(false)}
-                    style={[s.actionBtn, { backgroundColor: colors.border, flex: 1 }]}>
-                    <Text style={{ color: colors.text }}>Cancelar</Text>
+                    style={[s.actionBtn, { backgroundColor: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(124,106,247,0.12)', flex: 1 }]}>
+                    <Text style={{ color: onBg }}>Cancelar</Text>
                   </TouchableOpacity>
                   <TouchableOpacity onPress={addLine}
                     disabled={(!selectedChar && selectedChar !== null) || !newLineText.trim() || isSaving}
@@ -637,6 +683,7 @@ export default function ReviewScreen() {
                       : <Text style={{ color: '#fff' }}>Añadir</Text>
                     }
                   </TouchableOpacity>
+                </View>
                 </View>
               </Pressable>
             </Pressable>
@@ -651,16 +698,19 @@ export default function ReviewScreen() {
           onRequestClose={() => setShowReviewInfo(false)}
          supportedOrientations={['portrait', 'landscape', 'landscape-left', 'landscape-right']}>
           <View style={s.modalOverlay}>
-            <View style={[s.modalContent, { backgroundColor: colors.surface, paddingBottom: Math.max(insets.bottom + rp(20), rp(40)) }]}>
+            <View style={s.modalContent}>
+              <BlurView intensity={isDark ? 55 : 75} tint={isDark ? 'dark' : 'light'} style={StyleSheet.absoluteFill} />
+              <View style={[StyleSheet.absoluteFill, { backgroundColor: isDark ? 'rgba(124,106,247,0.40)' : 'rgba(235,230,245,0.40)' }]} />
+              <View style={{ padding: rp(24), paddingBottom: Math.max(insets.bottom + rp(20), rp(40)) }}>
               <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: rp(16), gap: 12 }}>
                 <Edit size={24} color={colors.primary} />
-                <Text style={[s.modalTitle, { color: colors.text, marginBottom: 0 }]}>Revisa el guion</Text>
+                <Text style={[s.modalTitle, { color: onBg, marginBottom: 0 }]}>Revisa el guion</Text>
               </View>
 
-              <Text style={{ color: colors.textSecondary, fontSize: rf(14), lineHeight: rf(22), marginBottom: rp(20) }}>
+              <Text style={{ color: onBg, fontSize: rf(14), lineHeight: rf(22), marginBottom: rp(20) }}>
                 El sistema puede cometer errores al transcribir el guion.
                 {'\n\n'}
-                Revisa el texto, comprueba las tarjetas de las acciones y los diálogos, reordena las líneas si es necesario puedes crear nuevas pulsando "+". Confirma cuando esté listo. Después se generarán las voces automáticamente.
+                Revisa el texto, comprueba las tarjetas de las acciones y los diálogos, reordena las líneas si es necesario puedes crear nuevas pulsando &quot;+&quot;. Confirma cuando esté listo. Después se generarán las voces automáticamente.
               </Text>
 
               <TouchableOpacity
@@ -669,12 +719,12 @@ export default function ReviewScreen() {
               >
                 <View style={{
                   width: 20, height: 20, borderRadius: 4, borderWidth: 2, alignItems: 'center', justifyContent: 'center',
-                  borderColor: dontShowReviewInfoAgain ? colors.primary : colors.textSecondary,
+                  borderColor: dontShowReviewInfoAgain ? colors.primary : cardBorder,
                   backgroundColor: dontShowReviewInfoAgain ? colors.primary : 'transparent'
                 }}>
                   {dontShowReviewInfoAgain && <Check size={14} color="#FFFFFF" />}
                 </View>
-                <Text style={{ color: colors.textSecondary, fontSize: rf(13) }}>No volver a mostrar este mensaje</Text>
+                <Text style={{ color: onBg2, fontSize: rf(13) }}>No volver a mostrar este mensaje</Text>
               </TouchableOpacity>
 
               <TouchableOpacity
@@ -688,6 +738,7 @@ export default function ReviewScreen() {
               >
                 <Text style={{ color: '#fff', fontSize: rf(14), fontWeight: '600' }}>Entendido</Text>
               </TouchableOpacity>
+              </View>
             </View>
           </View>
         </Modal>
@@ -700,13 +751,16 @@ export default function ReviewScreen() {
           onRequestClose={() => setShowAddLineInfo(false)}
          supportedOrientations={['portrait', 'landscape', 'landscape-left', 'landscape-right']}>
           <View style={s.modalOverlay}>
-            <View style={[s.modalContent, { backgroundColor: colors.surface, paddingBottom: Math.max(insets.bottom + rp(20), rp(40)) }]}>
+            <View style={s.modalContent}>
+              <BlurView intensity={isDark ? 55 : 75} tint={isDark ? 'dark' : 'light'} style={StyleSheet.absoluteFill} />
+              <View style={[StyleSheet.absoluteFill, { backgroundColor: isDark ? 'rgba(124,106,247,0.40)' : 'rgba(235,230,245,0.40)' }]} />
+              <View style={{ padding: rp(24), paddingBottom: Math.max(insets.bottom + rp(20), rp(40)) }}>
               <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: rp(16), gap: 12 }}>
                 <Plus size={24} color={colors.primary} />
-                <Text style={[s.modalTitle, { color: colors.text, marginBottom: 0 }]}>Añadir línea o acción</Text>
+                <Text style={[s.modalTitle, { color: onBg, marginBottom: 0 }]}>Añadir línea o acción</Text>
               </View>
 
-              <Text style={{ color: colors.textSecondary, fontSize: rf(14), lineHeight: rf(22), marginBottom: rp(20) }}>
+              <Text style={{ color: onBg, fontSize: rf(14), lineHeight: rf(22), marginBottom: rp(20) }}>
                 Puedes agregar nuevas líneas de diálogo o acciones al guion manualmente.
                 {'\n\n'}
                 Ten en cuenta que las nuevas tarjetas se añadirán por defecto al final de la lista, pero luego podrás arrastrarlas a la posición que desees usando el botón lateral (≡).
@@ -718,12 +772,12 @@ export default function ReviewScreen() {
               >
                 <View style={{
                   width: 20, height: 20, borderRadius: 4, borderWidth: 2, alignItems: 'center', justifyContent: 'center',
-                  borderColor: dontShowAddLineInfoAgain ? colors.primary : colors.textSecondary,
+                  borderColor: dontShowAddLineInfoAgain ? colors.primary : cardBorder,
                   backgroundColor: dontShowAddLineInfoAgain ? colors.primary : 'transparent'
                 }}>
                   {dontShowAddLineInfoAgain && <Check size={14} color="#FFFFFF" />}
                 </View>
-                <Text style={{ color: colors.textSecondary, fontSize: rf(13) }}>No volver a mostrar este mensaje</Text>
+                <Text style={{ color: onBg2, fontSize: rf(13) }}>No volver a mostrar este mensaje</Text>
               </TouchableOpacity>
 
               <TouchableOpacity
@@ -738,36 +792,51 @@ export default function ReviewScreen() {
               >
                 <Text style={{ color: '#fff', fontSize: rf(14), fontWeight: '600' }}>Entendido</Text>
               </TouchableOpacity>
+              </View>
             </View>
           </View>
         </Modal>
 
+        <ConfirmDialog
+          visible={showConfirmDialog}
+          title="Confirmar guion"
+          message={`Se generarán voces para ${lines.filter(l => !l.isUserCharacter && !l.isAction).length} líneas de réplica. ¿Continuar?`}
+          confirmText="Confirmar"
+          cancelText="Cancelar"
+          onConfirm={() => { setShowConfirmDialog(false); doConfirm(); }}
+          onCancel={() => setShowConfirmDialog(false)}
+        />
+
       </SafeAreaView>
     </GestureHandlerRootView>
+    </ImageBackground>
   );
 }
 
 const s = StyleSheet.create({
   container: { flex: 1 },
   center: { alignItems: 'center', justifyContent: 'center' },
-  header: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: rp(16), paddingVertical: rp(12), borderBottomWidth: 1, gap: 12 },
-  backBtn: { padding: 4 },
+  header: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: rp(20), paddingVertical: rp(16), gap: 12 },
+  headerIconBtn: { width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center' },
   headerTitle: { fontSize: rf(16), fontWeight: '700' },
   headerSub: { fontSize: rf(12), marginTop: 2 },
-  addBtn: { width: 36, height: 36, borderRadius: 18, alignItems: 'center', justifyContent: 'center' },
-  card: { flexDirection: 'row', borderRadius: 12, marginBottom: 10, borderWidth: 1.5, overflow: 'hidden', shadowOffset: { width: 0, height: 4 } },
+  cardShadowWrapper: { borderRadius: 16, marginBottom: 10, shadowOffset: { width: 0, height: 4 } },
+  card: { flexDirection: 'row', borderRadius: 16, overflow: 'hidden' },
   colorBar: { width: 5 },
   cardHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   charName: { fontSize: rf(13), fontWeight: '700' },
   badge: { fontSize: rf(11), fontWeight: '400' },
   lineNum: { fontSize: rf(11) },
   dialogueText: { fontSize: rf(14), lineHeight: rf(22), marginTop: 6 },
-  lineActions: { flexDirection: 'row', gap: 8, marginTop: 8, justifyContent: 'flex-end' },
+  cardFooterRow: { flexDirection: 'row', alignItems: 'flex-end', justifyContent: 'space-between', marginTop: 10 },
+  emotionLabel: { fontSize: rf(10), fontWeight: '600', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 4 },
+  lineActions: { flexDirection: 'row', gap: 8 },
   iconBtn: { padding: 6 },
   input: { borderWidth: 1, borderRadius: 8, padding: rp(10), fontSize: rf(14), lineHeight: rf(22), minHeight: 80, textAlignVertical: 'top' },
   actionBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingHorizontal: rp(14), paddingVertical: rp(8), borderRadius: 8 },
   dragHandle: { width: 44, alignItems: 'center', justifyContent: 'center', borderLeftWidth: 1 },
-  footer: { position: 'absolute', bottom: 0, left: 0, right: 0, paddingHorizontal: rp(20), paddingVertical: rp(16), borderTopWidth: 1 },
+  footer: { position: 'absolute', bottom: 0, left: 0, right: 0, overflow: 'hidden' },
+  footerContent: { paddingHorizontal: rp(20), paddingTop: rp(16), borderTopWidth: 1 },
   confirmBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10, paddingVertical: rp(16), borderRadius: 14 },
   confirmBtnText: { color: '#fff', fontSize: rf(16), fontWeight: '700' },
   confirmingContainer: { alignItems: 'center', gap: 8 },
@@ -775,7 +844,7 @@ const s = StyleSheet.create({
   progressTrack: { width: '100%', height: 6, borderRadius: 3, overflow: 'hidden' },
   progressFill: { height: '100%', borderRadius: 3 },
   modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' },
-  modalContent: { borderTopLeftRadius: 20, borderTopRightRadius: 20, padding: rp(24) },
+  modalContent: { borderTopLeftRadius: 20, borderTopRightRadius: 20, overflow: 'hidden' },
   modalTitle: { fontSize: rf(18), fontWeight: '700', marginBottom: rp(20) },
   modalLabel: { fontSize: rf(13), marginBottom: 8 },
   modalBtns: { flexDirection: 'row', gap: 12, marginTop: rp(16) },
