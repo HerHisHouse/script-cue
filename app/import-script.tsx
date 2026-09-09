@@ -1,5 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, TextInput, ActivityIndicator, Alert, ScrollView, Platform, ImageBackground } from 'react-native';
+import { LinearGradient } from 'expo-linear-gradient';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, useLocalSearchParams } from 'expo-router';
@@ -80,6 +81,10 @@ export default function ImportScriptScreen() {
     elevation: 8,
   } : null;
   const fieldBg = isDark ? 'rgba(255,255,255,0.06)' : 'rgba(255,255,255,0.7)';
+  // Norma general de modo oscuro: el texto/icono de los botones secundarios (glass,
+  // fondo oscuro translúcido) va en blanco para que se lea mejor; en claro mantiene el acento morado.
+  const accentOnGlass = isDark ? '#FFFFFF' : colors.primary;
+  const chipActiveBg = isDark ? 'rgba(124,106,247,0.28)' : 'rgba(124,106,247,0.16)';
   const fieldBorder = isDark ? 'rgba(255,255,255,0.14)' : 'rgba(124,106,247,0.18)';
   const [title, setTitle] = useState('');
   const [file, setFile] = useState<any>(null);
@@ -900,10 +905,10 @@ export default function ImportScriptScreen() {
                 ]}
                 onPress={pickDocument}
               >
-                <Upload size={24} color={file ? colors.success : colors.primary} />
+                <Upload size={24} color={file ? colors.success : accentOnGlass} />
                 <Text style={[
                   styles.scanButtonText,
-                  { color: file ? colors.success : colors.primary }
+                  { color: file ? colors.success : accentOnGlass }
                 ]}>
                   {file ? file.name : 'Seleccionar Archivo'}
                 </Text>
@@ -919,8 +924,8 @@ export default function ImportScriptScreen() {
                 style={[styles.scanButton, { ...cardShadow, backgroundColor: cardBg, borderColor: cardBorder }]}
                 onPress={() => router.push('/scan-script')}
               >
-                <Camera size={24} color={colors.primary} />
-                <Text style={[styles.scanButtonText, { color: colors.primary }]}>
+                <Camera size={24} color={accentOnGlass} />
+                <Text style={[styles.scanButtonText, { color: accentOnGlass }]}>
                   Escanear Guion
                 </Text>
               </TouchableOpacity>
@@ -940,12 +945,19 @@ export default function ImportScriptScreen() {
               </View>
 
               {characters.map((char, index) => (
-                <View key={char.id} style={[styles.characterCard, { ...cardShadow, backgroundColor: cardBg, borderColor: cardBorder }]}>
+                <View key={char.id} style={[styles.characterCardShadowWrapper, cardShadow]}>
+                  <LinearGradient
+                    colors={[`${char.color}80`, `${char.color}1F`]}
+                    start={{ x: 0, y: 0 }}
+                    end={{ x: 1, y: 1 }}
+                    style={styles.characterCardGradientRing}
+                  >
+                    <View style={[styles.characterCard, { backgroundColor: cardBg }]}>
                   <View style={styles.characterHeader}>
                     <Text style={[styles.characterNumber, { color: onBg }]}>Personaje {index + 1}</Text>
                     {char.isMyCharacter && (
-                      <View style={[styles.myCharacterBadge, { backgroundColor: isDark ? '#1E3A8A' : '#EFF6FF' }]}>
-                        <Text style={[styles.myCharacterBadgeText, { color: colors.primary }]}>Mi personaje</Text>
+                      <View style={[styles.myCharacterBadge, { backgroundColor: chipActiveBg, borderWidth: 1, borderColor: cardBorder }]}>
+                        <Text style={[styles.myCharacterBadgeText, { color: accentOnGlass }]}>Mi personaje</Text>
                       </View>
                     )}
                     <TouchableOpacity 
@@ -1043,7 +1055,7 @@ export default function ImportScriptScreen() {
                               >
                                 <Text style={[
                                   styles.pickerOptionText,
-                                  isSelected ? styles.pickerOptionTextSelected : { color: onBg2 }
+                                  isSelected ? { color: accentOnGlass, fontWeight: '700' as const } : { color: onBg2 }
                                 ]}>
                                   {provConfig.label}
                                 </Text>
@@ -1132,7 +1144,7 @@ export default function ImportScriptScreen() {
                                   <View style={[styles.colorDot, { backgroundColor: colorOption.value }]} />
                                   <Text style={[
                                     styles.pickerOptionText,
-                                    isSelected ? styles.pickerOptionTextSelected : { color: onBg2 }
+                                    isSelected ? { color: accentOnGlass, fontWeight: '700' as const } : { color: onBg2 }
                                   ]}>
                                     {colorOption.label}
                                   </Text>
@@ -1146,11 +1158,13 @@ export default function ImportScriptScreen() {
                   )}
 
                   {char.isMyCharacter && (
-                    <View style={[styles.colorInfo, { backgroundColor: isDark ? '#064E3B' : '#D1FAE5' }]}>
+                    <View style={[styles.colorInfo, { backgroundColor: isDark ? 'rgba(16,185,129,0.14)' : 'rgba(16,185,129,0.10)', borderWidth: 1, borderColor: isDark ? 'rgba(16,185,129,0.35)' : 'rgba(16,185,129,0.25)' }]}>
                       <View style={[styles.colorDot, { backgroundColor: GREEN_COLOR }]} />
-                      <Text style={[styles.colorInfoText, { color: isDark ? '#10B981' : '#065F46' }]}>Color verde asignado automáticamente</Text>
+                      <Text style={[styles.colorInfoText, { color: isDark ? '#34D399' : '#065F46' }]}>Color verde asignado automáticamente</Text>
                     </View>
                   )}
+                    </View>
+                  </LinearGradient>
                 </View>
               ))}
 
@@ -1171,7 +1185,7 @@ export default function ImportScriptScreen() {
                   ]);
                 }}
               >
-                <Text style={[styles.uploadText, { color: colors.primary }]}>
+                <Text style={[styles.uploadText, { color: accentOnGlass }]}>
                   + Añadir Personaje Manualmente
                 </Text>
               </TouchableOpacity>
@@ -1364,17 +1378,18 @@ const styles = StyleSheet.create({
     fontSize: rf(16),
     color: '#374151',
   },
-  pickerOptionTextSelected: {
-    color: '#3B82F6',
-    fontWeight: '600',
+  characterCardShadowWrapper: {
+    borderRadius: 21,
+    marginBottom: 16,
+  },
+  characterCardGradientRing: {
+    borderRadius: 21,
+    padding: 1.4,
+    overflow: 'hidden',
   },
   characterCard: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 20,
+    borderRadius: 19,
     padding: rp(16),
-    marginBottom: 16,
-    borderWidth: 1,
-    borderColor: '#E5E7EB',
   },
   characterHeader: {
     flexDirection: 'row',
@@ -1388,10 +1403,9 @@ const styles = StyleSheet.create({
     color: '#111827',
   },
   myCharacterBadge: {
-    backgroundColor: '#10B981',
     paddingHorizontal: rp(12),
     paddingVertical: rp(6),
-    borderRadius: 6,
+    borderRadius: 20,
   },
   myCharacterBadgeText: {
     fontSize: rf(12),
@@ -1475,8 +1489,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginTop: 12,
     padding: rp(12),
-    backgroundColor: '#F0FDF4',
-    borderRadius: 8,
+    borderRadius: 12,
   },
   colorDot: {
     width: 12,

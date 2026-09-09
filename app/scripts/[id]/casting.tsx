@@ -61,7 +61,6 @@ import {
   calculateLineDuration,
   generateActionId
 } from '@/utils/sceneConfig';
-import { activateAEC, deactivateAEC } from '@/modules/audio-echo-cancellation';
 import { trackEvent } from '@/utils/analytics';
 
 type SceneItem = ParsedScript['scenes'][0];
@@ -1471,12 +1470,6 @@ export default function CastingModeScreen() {
       console.log('[Casting] Auriculares seleccionados por usuario:',
         userSelectedHeadphones ? 'SÍ' : 'NO');
 
-      // Activar AEC nativo con el modo correcto según auriculares
-      activateAEC(userSelectedHeadphones);
-
-      // Pequeña pausa para que el sistema aplique el nuevo modo de audio
-      await new Promise(resolve => setTimeout(resolve, 200));
-
       // Sin auriculares: bajar volumen de la IA para reducir eco residual
       if (!userSelectedHeadphones) {
         setTtsVolume(0.6);
@@ -1578,8 +1571,6 @@ export default function CastingModeScreen() {
 
     try {
       const video = await cameraRef.current.stopRecording();
-      // Desactivar AEC al terminar la grabación
-      deactivateAEC();
       // Restaurar volumen de la IA
       setTtsVolume(1.0);
       if (video && recordingTimeRef.current >= 2) {
@@ -1591,8 +1582,7 @@ export default function CastingModeScreen() {
       }
     } catch (e) {
       console.error("Error stopping recording:", e);
-      // Desactivar AEC y restaurar volumen incluso si hay error
-      deactivateAEC();
+      // Restaurar volumen incluso si hay error
       setTtsVolume(1.0);
     }
   }

@@ -25,7 +25,7 @@ import * as ScreenOrientation from 'expo-screen-orientation';
 import { BlurView } from 'expo-blur';
 import { PinchGestureHandler, State } from 'react-native-gesture-handler';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Headphones, Trash2, Clock, FileAudio, MoreVertical, Edit2, Share2, Search, Grid3x3, List, Send, ChevronRight, ChevronDown, Circle, X, Maximize2, Minimize2, Video as VideoIcon, CheckSquare, Square, MinusSquare, Download, Filter, ArrowUpAZ, Check, Calendar } from 'lucide-react-native';
+import { Headphones, Trash2, Clock, FileAudio, MoreVertical, Edit2, Share2, Search, Grid3x3, List, Send, ChevronRight, ChevronDown, Circle, X, Maximize2, Minimize2, Video as VideoIcon, CheckSquare, Square, MinusSquare, Download, Filter, ArrowUpAZ, Check, Calendar, Cloud, Smartphone } from 'lucide-react-native';
 import { PlayerDisc } from '@/components/player/PlayerDisc';
 import { PlayerVideoFrame } from '@/components/player/PlayerVideoFrame';
 import { AnimatedWaveform } from '@/components/player/AnimatedWaveform';
@@ -34,6 +34,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { PlayerControlsCapsule } from '@/components/player/PlayerControlsCapsule';
 import { PlayerTransportRow } from '@/components/player/PlayerTransportRow';
 import { PlaylistSheet, PlaylistTrack } from '@/components/player/PlaylistSheet';
+import { MiniPlayerBar } from '@/components/player/MiniPlayerBar';
 import { SendToModal } from '@/components/SendToModal';
 import { ScreenHeader } from '@/components/ScreenHeader';
 import { MENU_ITEM_PADDING_H, MENU_ITEM_PADDING_V, MENU_SECTION_PADDING_V, HEADER_HORIZONTAL_PADDING } from '@/utils/ui';
@@ -223,6 +224,7 @@ export default function RecordingsScreen() {
 
   // Animation visibility toggle
   const [playlistVisible, setPlaylistVisible] = useState(false);
+  const [miniPlayerVisible, setMiniPlayerVisible] = useState(false);
   // Dimensiones reactivas (se actualizan al rotar), usadas por el vídeo en pantalla completa.
   const { width: liveWindowWidth, height: liveWindowHeight } = useWindowDimensions();
 
@@ -1981,6 +1983,7 @@ export default function RecordingsScreen() {
       Animated.timing(modalScale, { toValue: 0.96, duration: 240, easing: Easing.out(Easing.ease), useNativeDriver: true }),
     ]).start(() => {
       setPlayerVisible(false);
+      setMiniPlayerVisible(false);
       setQueue([]);
       setPositionMillis(0);
       setDurationMillis(0);
@@ -1989,6 +1992,54 @@ export default function RecordingsScreen() {
         setSound(null);
       }
     });
+  }
+
+  // Minimiza el reproductor grande a la barra flotante: a diferencia de closePlayer,
+  // NO detiene la reproducción ni resetea la cola/posición, solo anima el cierre del
+  // modal y deja la pista sonando (el audio sigue vía TrackPlayer en segundo plano).
+  function minimizePlayer() {
+    Animated.parallel([
+      Animated.timing(modalOpacity, { toValue: 0, duration: 220, easing: Easing.out(Easing.ease), useNativeDriver: true }),
+      Animated.timing(modalScale, { toValue: 0.96, duration: 220, easing: Easing.out(Easing.ease), useNativeDriver: true }),
+    ]).start(() => {
+      setPlayerVisible(false);
+      setMiniPlayerVisible(true);
+    });
+  }
+
+  // Reabre el reproductor grande desde la barra mini, con la misma animación de entrada
+  // que usan openPlayerAt/openPlayerWithPlaylist.
+  function expandPlayer() {
+    setMiniPlayerVisible(false);
+    setPlayerVisible(true);
+    modalOpacity.setValue(0);
+    modalScale.setValue(0.96);
+    Animated.parallel([
+      Animated.timing(modalOpacity, { toValue: 1, duration: 260, easing: Easing.out(Easing.ease), useNativeDriver: true }),
+      Animated.timing(modalScale, { toValue: 1, duration: 260, easing: Easing.out(Easing.ease), useNativeDriver: true }),
+    ]).start();
+  }
+
+  function selectPlaybackRate(rate: number) {
+    setPlaybackRate(rate);
+    setShowSpeedMenu(false);
+
+    // Apply to TrackPlayer if available
+    isTrackPlayerReady().then((ready) => {
+      if (ready) {
+        TrackPlayer.setRate(rate).catch((err: any) => console.warn('Could not set TrackPlayer rate:', err));
+      }
+    });
+
+    // Apply to expo-av sound if available
+    if (sound) {
+      sound.setRateAsync(rate, true).catch((err: any) => console.warn('Could not set sound rate:', err));
+    }
+
+    // Apply to video if available
+    if (videoRef.current) {
+      videoRef.current.setRateAsync(rate, true).catch((err: any) => console.warn('Could not set video rate:', err));
+    }
   }
 
   async function playNext() {
@@ -2490,14 +2541,14 @@ export default function RecordingsScreen() {
                   <View style={styles.storageIndicator}>
                     {isLocalFile ? (
                       <View style={styles.storageTag}>
-                        <Text style={styles.storageTagIcon}>📱</Text>
+                        <Smartphone size={11} color={cardSecondaryColor} />
                         <Text style={[styles.storageTagText, { color: cardSecondaryColor }]}>
                           Local
                         </Text>
                       </View>
                     ) : (
                       <View style={styles.storageTag}>
-                        <Text style={styles.storageTagIcon}>☁️</Text>
+                        <Cloud size={11} color={cardSecondaryColor} />
                         <Text style={[styles.storageTagText, { color: cardSecondaryColor }]}>
                           Nube
                         </Text>
@@ -2658,6 +2709,8 @@ export default function RecordingsScreen() {
   const isVideoTrack = currentTrack?.type === 'video';
   const playerProgress = durationMillis ? positionMillis / durationMillis : 0;
   const playerHeaderTint = isDark ? '#FFFFFF' : '#241d3d';
+  const playerGlassBg = isDark ? 'rgba(124,106,247,0.14)' : 'rgba(230,230,236,0.6)';
+  const playerGlassBorder = isDark ? 'rgba(255,255,255,0.2)' : 'rgba(42,27,71,0.18)';
   const videoFrameHeight = Math.min(1450 * (windowWidth / 1284), Dimensions.get('window').height * 0.42);
   const waveformWidth = windowWidth - rp(48);
 
@@ -3165,26 +3218,28 @@ export default function RecordingsScreen() {
                   paddingRight: isVideoTrack && isFullscreen ? 0 : insets.right,
                 }}
               >
-                {/* Header: chevron (cerrar) | REPRODUCIENDO AHORA | expandir (solo vídeo) — oculto en pantalla completa de vídeo */}
+                {/* Header: chevron glass (minimiza, sigue reproduciendo) | REPRODUCIENDO AHORA | X glass (cierra) — oculto en pantalla completa de vídeo */}
                 {!(isVideoTrack && isFullscreen) && (
                   <View style={styles.playerHeaderBar}>
-                    <Pressable onPress={closePlayer} hitSlop={16} accessibilityLabel="Cerrar reproductor">
-                      <ChevronDown size={26} color={playerHeaderTint} />
+                    <Pressable
+                      onPress={minimizePlayer}
+                      hitSlop={12}
+                      accessibilityLabel="Minimizar reproductor"
+                      style={[styles.playerHeaderIconButton, { backgroundColor: playerGlassBg, borderColor: playerGlassBorder }]}
+                    >
+                      <ChevronDown size={22} color={playerHeaderTint} />
                     </Pressable>
                     <Text style={[styles.playerHeaderLabel, { color: isDark ? 'rgba(255,255,255,0.65)' : 'rgba(36,29,61,0.55)' }]}>
                       REPRODUCIENDO AHORA
                     </Text>
-                    {isVideoTrack ? (
-                      <Pressable
-                        onPress={() => setIsFullscreen(!isFullscreen)}
-                        hitSlop={16}
-                        accessibilityLabel={isFullscreen ? 'Salir de pantalla completa' : 'Pantalla completa'}
-                      >
-                        {isFullscreen ? <Minimize2 size={22} color={playerHeaderTint} /> : <Maximize2 size={22} color={playerHeaderTint} />}
-                      </Pressable>
-                    ) : (
-                      <View style={{ width: 26 }} />
-                    )}
+                    <Pressable
+                      onPress={closePlayer}
+                      hitSlop={12}
+                      accessibilityLabel="Cerrar reproductor"
+                      style={[styles.playerHeaderIconButton, { backgroundColor: playerGlassBg, borderColor: playerGlassBorder }]}
+                    >
+                      <X size={20} color={playerHeaderTint} />
+                    </Pressable>
                   </View>
                 )}
 
@@ -3311,23 +3366,35 @@ export default function RecordingsScreen() {
                         </Animated.View>
                       </>
                     ) : (
-                      <View
-                        style={[styles.videoBottomBar, { paddingBottom: 14, paddingLeft: 16, paddingRight: 16 }]}
-                        pointerEvents="box-none"
-                      >
-                        <LinearGradient
-                          colors={['transparent', 'rgba(0,0,0,0.65)']}
-                          style={StyleSheet.absoluteFill}
-                          pointerEvents="none"
-                        />
-                        <PlayerVideoProgressBar
-                          progress={playerProgress}
-                          currentLabel={formatDuration(Math.floor((positionMillis || 0) / 1000))}
-                          durationLabel={formatDuration(Math.floor((durationMillis || 0) / 1000))}
-                          width={Math.max(0, windowWidth - 32)}
-                          onSeek={seekToRatio}
-                        />
-                      </View>
+                      <>
+                        {/* Pantalla completa: dentro del propio vídeo, ya que el hueco superior derecho de la
+                            cabecera ahora lo ocupa el botón de cerrar "X" */}
+                        <Pressable
+                          onPress={() => setIsFullscreen(true)}
+                          hitSlop={12}
+                          accessibilityLabel="Pantalla completa"
+                          style={[styles.fullscreenExitButton, { top: 12, right: 12 }]}
+                        >
+                          <Maximize2 size={18} color="#FFFFFF" />
+                        </Pressable>
+                        <View
+                          style={[styles.videoBottomBar, { paddingBottom: 14, paddingLeft: 16, paddingRight: 16 }]}
+                          pointerEvents="box-none"
+                        >
+                          <LinearGradient
+                            colors={['transparent', 'rgba(0,0,0,0.65)']}
+                            style={StyleSheet.absoluteFill}
+                            pointerEvents="none"
+                          />
+                          <PlayerVideoProgressBar
+                            progress={playerProgress}
+                            currentLabel={formatDuration(Math.floor((positionMillis || 0) / 1000))}
+                            durationLabel={formatDuration(Math.floor((durationMillis || 0) / 1000))}
+                            width={Math.max(0, windowWidth - 32)}
+                            onSeek={seekToRatio}
+                          />
+                        </View>
+                      </>
                     )}
                     </View>
                   ) : (
@@ -3376,58 +3443,21 @@ export default function RecordingsScreen() {
                         </View>
                       )}
 
-                      {/* Cápsula de controles secundarios */}
+                      {/* Cápsula de controles secundarios: al pulsar la velocidad, la propia
+                          cápsula hace un swap animado a un selector de velocidad en el
+                          mismo espacio, en vez de abrir un panel aparte debajo. */}
                       <View style={{ marginTop: rp(24), paddingHorizontal: rp(40) }}>
                         <PlayerControlsCapsule
                           isDark={isDark}
                           onShare={() => { if (currentTrack) handleShare(currentTrack); }}
                           playbackRate={playbackRate}
-                          onPressSpeed={() => setShowSpeedMenu(!showSpeedMenu)}
+                          showSpeedSelector={showSpeedMenu}
+                          onToggleSpeedSelector={() => setShowSpeedMenu(!showSpeedMenu)}
+                          onSelectRate={selectPlaybackRate}
                           loopMode={loopMode}
                           onCycleLoop={cycleLoopMode}
                           onOpenPlaylist={() => setPlaylistVisible(true)}
                         />
-
-                        {/* Menú de velocidad (misma lógica real de antes) */}
-                        {showSpeedMenu && (
-                          <View style={styles.speedMenuContainer}>
-                            {[0.50, 0.75, 1.0, 1.25, 1.50, 1.75, 2.0].map((rate) => (
-                              <Pressable
-                                key={rate}
-                                style={({ pressed }) => [
-                                  styles.speedMenuItem,
-                                  { backgroundColor: playbackRate === rate ? colors.primary : (isDark ? 'rgba(255,255,255,0.1)' : 'rgba(124,106,247,0.12)') },
-                                  pressed && { opacity: 0.7 }
-                                ]}
-                                onPress={() => {
-                                  setPlaybackRate(rate);
-                                  setShowSpeedMenu(false);
-
-                                  // Apply to TrackPlayer if available
-                                  isTrackPlayerReady().then((ready) => {
-                                    if (ready) {
-                                      TrackPlayer.setRate(rate).catch((err: any) => console.warn('Could not set TrackPlayer rate:', err));
-                                    }
-                                  });
-
-                                  // Apply to expo-av sound if available
-                                  if (sound) {
-                                    sound.setRateAsync(rate, true).catch((err: any) => console.warn('Could not set sound rate:', err));
-                                  }
-
-                                  // Apply to video if available
-                                  if (videoRef.current) {
-                                    videoRef.current.setRateAsync(rate, true).catch((err: any) => console.warn('Could not set video rate:', err));
-                                  }
-                                }}
-                              >
-                                <Text style={[styles.speedMenuText, { color: playbackRate === rate ? '#FFFFFF' : playerHeaderTint }]}>
-                                  {rate.toFixed(2)}x
-                                </Text>
-                              </Pressable>
-                            ))}
-                          </View>
-                        )}
                       </View>
 
                       {/* Fila de transporte principal */}
@@ -3713,6 +3743,21 @@ export default function RecordingsScreen() {
           onCancel={() => setShowBulkDeleteConfirm(false)}
           destructive
         />
+
+        {/* Mini reproductor flotante: aparece al minimizar el reproductor grande, la
+            reproducción sigue activa. Mismo tamaño/estilo glass que la tab bar. */}
+        {miniPlayerVisible && !selectionMode && currentTrack && (
+          <MiniPlayerBar
+            title={currentTrack.title || 'Sin título'}
+            isDark={isDark}
+            isPlaying={isPlaying}
+            isLoading={isMediaLoading}
+            onPress={expandPlayer}
+            onPlayPause={togglePlayPause}
+            onPrevious={playPrev}
+            onNext={playNext}
+          />
+        )}
       </View>
     </SafeAreaView>
     </ImageBackground>
@@ -4106,6 +4151,14 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     letterSpacing: 1.5,
   },
+  playerHeaderIconButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+  },
   fullscreenExitButton: {
     position: 'absolute',
     width: 40,
@@ -4149,26 +4202,6 @@ const styles = StyleSheet.create({
   timeText: {
     fontSize: rf(12),
     fontVariant: ['tabular-nums'],
-  },
-  speedMenuContainer: {
-    flexDirection: 'row',
-    gap: 6,
-    paddingHorizontal: rp(8),
-    paddingTop: rp(12),
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  speedMenuItem: {
-    paddingHorizontal: rp(8),
-    paddingVertical: rp(6),
-    borderRadius: 6,
-    minWidth: 42,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  speedMenuText: {
-    fontSize: rf(11),
-    fontWeight: '600',
   },
   modalOverlay: {
     flex: 1,
@@ -4329,9 +4362,6 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: rp(3),
-  },
-  storageTagIcon: {
-    fontSize: rf(10),
   },
   storageTagText: {
     fontSize: rf(10),

@@ -10,6 +10,7 @@ import {
   ActivityIndicator,
   TextInput,
   Platform,
+  ImageBackground,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { CameraView, useCameraPermissions } from 'expo-camera';
@@ -32,9 +33,33 @@ interface CapturedImage {
 export default function ScanScriptScreen() {
   const router = useRouter();
   const { user } = useAuth();
-  const { colors } = useTheme();
+  const { colors, isDark } = useTheme();
   const cameraRef = useRef<any>(null);
   const mountedRef = useRef(true);
+
+  // Paleta "sobre imagen de fondo" del diseño glass, igual que en Importar Guion
+  const onBg = isDark ? '#ffffff' : '#2a2447';
+  const onBg2 = isDark ? '#a0a0c0' : '#5c5678';
+  const cardBg = isDark ? 'rgba(124,106,247,0.08)' : 'rgba(255,255,255,0.55)';
+  const cardBorder = isDark ? 'rgba(167,139,250,0.25)' : 'rgba(124,106,247,0.15)';
+  const cardShadow = !isDark ? {
+    shadowColor: '#1a1625',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.28,
+    shadowRadius: 16,
+    elevation: 8,
+  } : null;
+  const fieldBg = isDark ? 'rgba(255,255,255,0.06)' : 'rgba(255,255,255,0.7)';
+  const fieldBorder = isDark ? 'rgba(255,255,255,0.14)' : 'rgba(124,106,247,0.18)';
+  const glassButtonStyle = isDark
+    ? { backgroundColor: 'rgba(124,106,247,0.80)', borderWidth: 1.5, borderColor: 'rgba(255,255,255,0.5)' }
+    : { backgroundColor: colors.primary };
+  const backButtonStyle = isDark
+    ? { backgroundColor: 'rgba(124,106,247,0.14)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.2)' }
+    : { backgroundColor: colors.primary };
+  // Norma general de modo oscuro: el texto/icono de los botones secundarios (glass,
+  // fondo oscuro translúcido) va en blanco para que se lea mejor; en claro mantiene el acento morado.
+  const accentOnGlass = isDark ? '#FFFFFF' : colors.primary;
 
   useEffect(() => {
     return () => {
@@ -62,28 +87,36 @@ export default function ScanScriptScreen() {
 
   if (!permission.granted) {
     return (
-      <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
-        <View style={[styles.header, { backgroundColor: colors.background, borderBottomColor: colors.border }]}>
-          <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
-            <ArrowLeft size={24} color={colors.text} />
-          </TouchableOpacity>
-          <Text style={[styles.title, { color: colors.text }]}>Escanear Guion</Text>
-          <View style={{ width: 40 }} />
-        </View>
+      <ImageBackground
+        source={isDark ? require('@/assets/images/ui-dark-bg.png') : require('@/assets/images/ui-light-bg.png')}
+        resizeMode="cover"
+        style={styles.container}
+      >
+        <SafeAreaView style={[styles.container, { backgroundColor: 'transparent' }]}>
+          <View style={[styles.header, { backgroundColor: 'transparent', borderBottomWidth: 0 }]}>
+            <TouchableOpacity onPress={() => router.back()} style={[styles.backButton, backButtonStyle]}>
+              <ArrowLeft size={20} color={isDark ? onBg : '#FFFFFF'} />
+            </TouchableOpacity>
+            <Text style={[styles.title, { color: onBg }]}>Escanear Guion</Text>
+            <View style={{ width: 40 }} />
+          </View>
 
-        <View style={styles.permissionContainer}>
-          <Camera size={64} color={colors.textSecondary} />
-          <Text style={[styles.permissionText, { color: colors.text }]}>
-            Necesitamos permiso para usar la cámara
-          </Text>
-          <TouchableOpacity
-            style={[styles.permissionButton, { backgroundColor: colors.primary }]}
-            onPress={requestPermission}
-          >
-            <Text style={styles.permissionButtonText}>Permitir Cámara</Text>
-          </TouchableOpacity>
-        </View>
-      </SafeAreaView>
+          <View style={styles.permissionContainer}>
+            <View style={[styles.emptyIconCircle, { backgroundColor: isDark ? 'rgba(167,139,250,0.15)' : 'rgba(124,106,247,0.12)' }]}>
+              <Camera size={30} color={accentOnGlass} />
+            </View>
+            <Text style={[styles.permissionText, { color: onBg }]}>
+              Necesitamos permiso para usar la cámara
+            </Text>
+            <TouchableOpacity
+              style={[styles.permissionButton, glassButtonStyle]}
+              onPress={requestPermission}
+            >
+              <Text style={styles.permissionButtonText}>Permitir Cámara</Text>
+            </TouchableOpacity>
+          </View>
+        </SafeAreaView>
+      </ImageBackground>
     );
   }
 
@@ -166,7 +199,7 @@ export default function ScanScriptScreen() {
         .from('scripts')
         .select('*', { count: 'exact', head: true })
         .eq('user_id', user.id);
-        
+
       if (!countError && count !== null && count >= BETA_LIMITS.MAX_SCRIPTS) {
         Alert.alert(
           "Límite alcanzado",
@@ -358,107 +391,116 @@ export default function ScanScriptScreen() {
   }
 
   return (
-    <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
-      <View style={[styles.header, { backgroundColor: colors.background, borderBottomColor: colors.border }]}>
-        <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
-          <ArrowLeft size={24} color={colors.text} />
-        </TouchableOpacity>
-        <Text style={[styles.title, { color: colors.text }]}>Escanear Guion</Text>
-        <View style={{ width: 40 }} />
-      </View>
-
-      <ScrollView style={styles.content}>
-        <View style={styles.form}>
-          <Text style={[styles.label, { color: colors.text }]}>Título del Guion</Text>
-          <TextInput
-            style={[styles.input, { backgroundColor: colors.input, color: colors.text, borderColor: colors.border }]}
-            value={title}
-            onChangeText={setTitle}
-            placeholder="Mi Guion"
-            placeholderTextColor={colors.placeholder}
-          />
-
-          <Text style={[styles.sectionTitle, { color: colors.text }]}>
-            Páginas Capturadas ({capturedImages.length})
-          </Text>
-
-          {capturedImages.length === 0 ? (
-            <View style={[styles.emptyState, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-              <Camera size={48} color={colors.textSecondary} />
-              <Text style={[styles.emptyText, { color: colors.textSecondary }]}>
-                Aún no has capturado ninguna página
-              </Text>
-            </View>
-          ) : (
-            <View style={styles.imageGrid}>
-              {capturedImages.map((image, index) => (
-                <View
-                  key={image.id}
-                  style={[styles.imageCard, { backgroundColor: colors.surface, borderColor: colors.border }]}
-                >
-                  <Image source={{ uri: image.uri }} style={styles.imagePreview} />
-                  <View style={styles.imageOverlay}>
-                    <Text style={styles.imageNumber}>Página {index + 1}</Text>
-                    <TouchableOpacity
-                      onPress={() => removeImage(image.id)}
-                      style={styles.removeButton}
-                    >
-                      <X size={18} color="#FFFFFF" />
-                    </TouchableOpacity>
-                  </View>
-                </View>
-              ))}
-            </View>
-          )}
-
-          <TouchableOpacity
-            style={[styles.addButton, { backgroundColor: colors.surface, borderColor: colors.border }]}
-            onPress={() => setShowCamera(true)}
-          >
-            <Plus size={24} color={colors.primary} />
-            <Text style={[styles.addButtonText, { color: colors.primary }]}>
-              {capturedImages.length === 0 ? 'Capturar Primera Página' : 'Agregar Otra Página'}
-            </Text>
+    <ImageBackground
+      source={isDark ? require('@/assets/images/ui-dark-bg.png') : require('@/assets/images/ui-light-bg.png')}
+      resizeMode="cover"
+      style={styles.container}
+    >
+      <SafeAreaView style={[styles.container, { backgroundColor: 'transparent' }]}>
+        <View style={[styles.header, { backgroundColor: 'transparent', borderBottomWidth: 0 }]}>
+          <TouchableOpacity onPress={() => router.back()} style={[styles.backButton, backButtonStyle]}>
+            <ArrowLeft size={20} color={isDark ? onBg : '#FFFFFF'} />
           </TouchableOpacity>
-
-          <TouchableOpacity
-            style={[styles.uploadButton, { backgroundColor: colors.surface, borderColor: colors.border }]}
-            onPress={pickImage}
-          >
-            <ImageIcon size={24} color={colors.primary} />
-            <Text style={[styles.uploadButtonText, { color: colors.primary }]}>
-              Subir Imagen
-            </Text>
-          </TouchableOpacity>
-
-          {capturedImages.length > 0 && (
-            <TouchableOpacity
-              style={[
-                styles.processButton,
-                { backgroundColor: colors.primary },
-                ...(processing ? [{ opacity: 0.6 }] : [])
-              ]}
-              onPress={processImages}
-              disabled={processing}
-            >
-              {processing ? (
-                <>
-                  <ActivityIndicator color="#FFFFFF" />
-                  <Text style={styles.processButtonText}>
-                    {processingStep || 'Procesando...'}
-                  </Text>
-                </>
-              ) : (
-                <>
-                  <Check size={20} color="#FFFFFF" />
-                  <Text style={styles.processButtonText}>Procesar Guion</Text>
-                </>
-              )}
-            </TouchableOpacity>
-          )}
+          <Text style={[styles.title, { color: onBg }]}>Escanear Guion</Text>
+          <View style={{ width: 40 }} />
         </View>
-      </ScrollView>
-    </SafeAreaView>
+
+        <ScrollView style={styles.content}>
+          <View style={styles.form}>
+            <Text style={[styles.label, { color: onBg }]}>Título del Guion</Text>
+            <TextInput
+              style={[styles.input, { backgroundColor: fieldBg, color: onBg, borderColor: fieldBorder }]}
+              value={title}
+              onChangeText={setTitle}
+              placeholder="Mi Guion"
+              placeholderTextColor={onBg2}
+            />
+
+            <Text style={[styles.sectionTitle, { color: onBg }]}>
+              Páginas Capturadas ({capturedImages.length})
+            </Text>
+
+            {capturedImages.length === 0 ? (
+              <View style={[styles.emptyCard, { ...cardShadow, backgroundColor: cardBg, borderColor: cardBorder }]}>
+                <View style={[styles.emptyIconCircle, { backgroundColor: isDark ? 'rgba(167,139,250,0.15)' : 'rgba(124,106,247,0.12)' }]}>
+                  <Camera size={30} color={accentOnGlass} />
+                </View>
+                <Text style={[styles.emptyTitle, { color: onBg }]}>Sin páginas capturadas</Text>
+                <Text style={[styles.emptyText, { color: onBg2 }]}>
+                  Toca &quot;Capturar Primera Página&quot; o sube una imagen para empezar.
+                </Text>
+              </View>
+            ) : (
+              <View style={styles.imageGrid}>
+                {capturedImages.map((image, index) => (
+                  <View
+                    key={image.id}
+                    style={[styles.imageCard, { borderColor: cardBorder }]}
+                  >
+                    <Image source={{ uri: image.uri }} style={styles.imagePreview} />
+                    <View style={styles.imageOverlay}>
+                      <Text style={styles.imageNumber}>Página {index + 1}</Text>
+                      <TouchableOpacity
+                        onPress={() => removeImage(image.id)}
+                        style={styles.removeButton}
+                      >
+                        <X size={18} color="#FFFFFF" />
+                      </TouchableOpacity>
+                    </View>
+                  </View>
+                ))}
+              </View>
+            )}
+
+            <TouchableOpacity
+              style={[styles.scanButton, { ...cardShadow, backgroundColor: cardBg, borderColor: cardBorder }]}
+              onPress={() => setShowCamera(true)}
+            >
+              <Plus size={24} color={accentOnGlass} />
+              <Text style={[styles.scanButtonText, { color: accentOnGlass }]}>
+                {capturedImages.length === 0 ? 'Capturar Primera Página' : 'Agregar Otra Página'}
+              </Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[styles.scanButton, { ...cardShadow, backgroundColor: cardBg, borderColor: cardBorder }]}
+              onPress={pickImage}
+            >
+              <ImageIcon size={24} color={accentOnGlass} />
+              <Text style={[styles.scanButtonText, { color: accentOnGlass }]}>
+                Subir Imagen
+              </Text>
+            </TouchableOpacity>
+
+            {capturedImages.length > 0 && (
+              <TouchableOpacity
+                style={[
+                  styles.processButton,
+                  glassButtonStyle,
+                  ...(processing ? [{ opacity: 0.6 }] : [])
+                ]}
+                onPress={processImages}
+                disabled={processing}
+              >
+                {processing ? (
+                  <>
+                    <ActivityIndicator color="#FFFFFF" />
+                    <Text style={styles.processButtonText}>
+                      {processingStep || 'Procesando...'}
+                    </Text>
+                  </>
+                ) : (
+                  <>
+                    <Check size={20} color="#FFFFFF" />
+                    <Text style={styles.processButtonText}>Procesar Guion</Text>
+                  </>
+                )}
+              </TouchableOpacity>
+            )}
+          </View>
+        </ScrollView>
+      </SafeAreaView>
+    </ImageBackground>
   );
 }
 
@@ -475,22 +517,25 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: rp(16),
-    paddingVertical: rp(12),
-    borderBottomWidth: 1,
+    paddingHorizontal: rp(20),
+    paddingVertical: rp(16),
   },
   backButton: {
-    padding: rp(4),
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   title: {
-    fontSize: rf(18),
+    fontSize: rf(20),
     fontWeight: '600',
   },
   content: {
     flex: 1,
   },
   form: {
-    padding: rp(16),
+    padding: rp(20),
     gap: 16,
   },
   label: {
@@ -499,27 +544,43 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   input: {
-    borderWidth: 1,
+    height: 48,
     borderRadius: 8,
-    padding: rp(12),
+    paddingHorizontal: rp(16),
     fontSize: rf(16),
+    borderWidth: 1,
   },
   sectionTitle: {
     fontSize: rf(16),
     fontWeight: '600',
     marginTop: 8,
   },
-  emptyState: {
-    borderWidth: 2,
-    borderStyle: 'dashed',
-    borderRadius: 12,
-    padding: rp(32),
+  emptyCard: {
+    width: '100%',
+    borderRadius: 24,
+    borderWidth: 1,
+    paddingVertical: rp(32),
+    paddingHorizontal: rp(24),
     alignItems: 'center',
-    gap: 12,
+  },
+  emptyIconCircle: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: rp(16),
+  },
+  emptyTitle: {
+    fontSize: rf(18),
+    fontWeight: '600',
+    marginBottom: 8,
+    textAlign: 'center',
   },
   emptyText: {
     fontSize: rf(14),
     textAlign: 'center',
+    lineHeight: rf(20),
   },
   imageGrid: {
     flexDirection: 'row',
@@ -529,7 +590,7 @@ const styles = StyleSheet.create({
   imageCard: {
     width: '48%',
     aspectRatio: 0.7,
-    borderRadius: 8,
+    borderRadius: 16,
     borderWidth: 1,
     overflow: 'hidden',
   },
@@ -558,33 +619,18 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     padding: rp(4),
   },
-  addButton: {
+  scanButton: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 8,
+    gap: 12,
     borderWidth: 2,
     borderStyle: 'dashed',
-    borderRadius: 12,
-    padding: rp(16),
+    borderRadius: 20,
+    paddingVertical: rp(16),
     marginTop: 8,
   },
-  addButtonText: {
-    fontSize: rf(16),
-    fontWeight: '600',
-  },
-  uploadButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 8,
-    borderWidth: 2,
-    borderStyle: 'dashed',
-    borderRadius: 12,
-    padding: rp(16),
-    marginTop: 8,
-  },
-  uploadButtonText: {
+  scanButtonText: {
     fontSize: rf(16),
     fontWeight: '600',
   },
@@ -616,7 +662,7 @@ const styles = StyleSheet.create({
   permissionButton: {
     paddingHorizontal: rp(24),
     paddingVertical: rp(12),
-    borderRadius: 8,
+    borderRadius: 12,
     marginTop: 8,
   },
   permissionButtonText: {

@@ -8,7 +8,8 @@ import {
     ActivityIndicator,
     Modal,
     TextInput,
-    SafeAreaView
+    SafeAreaView,
+    ImageBackground
 } from 'react-native';
 import { Volume2, VolumeX, Check, ChevronDown, X, Heart, Search, RefreshCw } from 'lucide-react-native';
 import { useTheme } from '@/contexts/ThemeContext';
@@ -57,7 +58,25 @@ export function VoiceSelector({
     labelStyle,
     valueStyle,
 }: VoiceSelectorProps) {
-    const { colors } = useTheme();
+    const { colors, isDark } = useTheme();
+    // Paleta "sobre imagen de fondo" del diseño glass, igual que en Importar Guion
+    const onBg = isDark ? '#ffffff' : '#2a2447';
+    const onBg2 = isDark ? '#a0a0c0' : '#5c5678';
+    const cardBg = isDark ? 'rgba(124,106,247,0.08)' : 'rgba(255,255,255,0.55)';
+    const cardBorder = isDark ? 'rgba(167,139,250,0.25)' : 'rgba(124,106,247,0.15)';
+    const cardShadow = !isDark ? {
+        shadowColor: '#1a1625',
+        shadowOffset: { width: 0, height: 8 },
+        shadowOpacity: 0.28,
+        shadowRadius: 16,
+        elevation: 8,
+    } : null;
+    const fieldBg = isDark ? 'rgba(255,255,255,0.06)' : 'rgba(255,255,255,0.7)';
+    const fieldBorder = isDark ? 'rgba(255,255,255,0.14)' : 'rgba(124,106,247,0.18)';
+    const chipActiveBg = isDark ? 'rgba(124,106,247,0.28)' : 'rgba(124,106,247,0.16)';
+    // Norma general de modo oscuro: texto/icono de acento sobre superficies glass va en
+    // blanco para que se lea mejor; en claro mantiene el morado de acento.
+    const accentOnGlass = isDark ? '#FFFFFF' : colors.primary;
     const [modalVisible, setModalVisible] = useState(false);
     
     const [voices, setVoices] = useState<VoiceOption[]>([]);
@@ -376,32 +395,32 @@ export function VoiceSelector({
 
         return (
             <View style={styles.filterDropdownContainer}>
-                <TouchableOpacity 
-                    style={[styles.filterDropdownHeader, { borderColor: colors.border, backgroundColor: isExpanded || activeCount > 0 ? colors.primary + '15' : colors.surface }]} 
+                <TouchableOpacity
+                    style={[styles.filterDropdownHeader, { borderColor: cardBorder, backgroundColor: isExpanded || activeCount > 0 ? chipActiveBg : cardBg }]}
                     onPress={() => setExpandedFilter(isExpanded ? null : id)}
                 >
-                    <Text style={[styles.filterDropdownTitle, { color: activeCount > 0 ? colors.primary : colors.text }]}>
+                    <Text style={[styles.filterDropdownTitle, { color: activeCount > 0 ? accentOnGlass : onBg }]}>
                         {title} {activeCount > 0 ? `(${activeCount})` : ''}
                     </Text>
-                    <ChevronDown size={16} color={activeCount > 0 ? colors.primary : colors.textSecondary} style={{ transform: [{ rotate: isExpanded ? '180deg' : '0deg' }] }} />
+                    <ChevronDown size={16} color={activeCount > 0 ? accentOnGlass : onBg2} style={{ transform: [{ rotate: isExpanded ? '180deg' : '0deg' }] }} />
                 </TouchableOpacity>
-                
+
                 {isExpanded && (
                     <View style={styles.filterDropdownContent}>
                         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.filterDropdownScroll}>
                             {options.map(opt => {
                                 const isSelected = selectedValues.includes(opt.value);
                                 return (
-                                    <TouchableOpacity 
-                                        key={opt.value} 
+                                    <TouchableOpacity
+                                        key={opt.value}
                                         style={[
-                                            styles.filterChip, 
-                                            { borderColor: isSelected ? colors.primary : colors.border, backgroundColor: isSelected ? colors.primary + '20' : colors.surface }
+                                            styles.filterChip,
+                                            { borderColor: cardBorder, backgroundColor: isSelected ? chipActiveBg : cardBg }
                                         ]}
                                         onPress={() => toggleArrayFilter(setValues, opt.value)}
                                     >
-                                        <Text style={[styles.filterChipText, { color: isSelected ? colors.primary : colors.textSecondary }]}>{opt.label}</Text>
-                                        {isSelected && <Check size={14} color={colors.primary} style={{ marginLeft: 4 }} />}
+                                        <Text style={[styles.filterChipText, { color: isSelected ? accentOnGlass : onBg2 }]}>{opt.label}</Text>
+                                        {isSelected && <Check size={14} color={accentOnGlass} style={{ marginLeft: 4 }} />}
                                     </TouchableOpacity>
                                 );
                             })}
@@ -417,39 +436,39 @@ export function VoiceSelector({
             key={voice.id}
             style={[
                 styles.voiceItem,
-                { backgroundColor: colors.surface, borderColor: colors.border },
-                isSelected && { borderColor: colors.primary, borderWidth: 2 },
+                { ...cardShadow, backgroundColor: cardBg, borderColor: cardBorder },
+                isSelected && { borderColor: isDark ? '#a78bfa' : colors.primary, borderWidth: 2 },
             ]}
             onPress={() => handleSelect(voice.id)}
         >
             <View style={styles.voiceInfo}>
                 <View style={styles.voiceNameRow}>
-                    <Text style={[styles.voiceName, { color: colors.text }]}>{voice.name}</Text>
+                    <Text style={[styles.voiceName, { color: onBg }]}>{voice.name}</Text>
                 </View>
                 {voice.description && (
-                    <Text style={[styles.voiceDescription, { color: colors.textSecondary }]}>{voice.description}</Text>
+                    <Text style={[styles.voiceDescription, { color: onBg2 }]}>{voice.description}</Text>
                 )}
                 {voice.gender && provider !== 'system' && (
-                    <Text style={[styles.voiceGender, { color: colors.textSecondary }]}>
+                    <Text style={[styles.voiceGender, { color: onBg2 }]}>
                         {voice.gender === 'male' ? '♂️ Masculina' : voice.gender === 'female' ? '♀️ Femenina' : '⚪ Neutra'}
                         {voice.language ? ` • ${getLanguageName(voice.language)}` : ''}
                         {voice.country ? ` • ${getCountryName(voice.country)}` : ''}
                     </Text>
                 )}
                 {voice.language && provider === 'system' && (
-                    <Text style={[styles.voiceGender, { color: colors.textSecondary }]}>🌐 {voice.language}</Text>
+                    <Text style={[styles.voiceGender, { color: onBg2 }]}>🌐 {voice.language}</Text>
                 )}
             </View>
             <View style={styles.voiceActions}>
                 {provider !== 'system' && (
                     <TouchableOpacity onPress={(e) => { e.stopPropagation(); handleToggleFavorite(voice.id); }} style={styles.heartButton}>
-                        <Heart size={20} color={favorites.includes(voice.id) ? colors.error : colors.textSecondary} fill={favorites.includes(voice.id) ? colors.error : 'transparent'} />
+                        <Heart size={20} color={favorites.includes(voice.id) ? colors.error : onBg2} fill={favorites.includes(voice.id) ? colors.error : 'transparent'} />
                     </TouchableOpacity>
                 )}
                 <TouchableOpacity
                     style={[
                         styles.previewButton,
-                        { backgroundColor: colors.primary + '20' },
+                        { backgroundColor: chipActiveBg },
                         playingVoiceId === voice.id && { backgroundColor: colors.primary },
                     ]}
                     onPress={(e) => { e.stopPropagation(); handlePreview(voice.id); }}
@@ -459,7 +478,7 @@ export function VoiceSelector({
                     ) : playingVoiceId === voice.id ? (
                         <VolumeX size={18} color="#FFFFFF" />
                     ) : (
-                        <Volume2 size={18} color={colors.primary} />
+                        <Volume2 size={18} color={accentOnGlass} />
                     )}
                 </TouchableOpacity>
                 {isSelected && (
@@ -476,8 +495,8 @@ export function VoiceSelector({
         return (
             <View style={styles.voiceSection}>
                 <View style={styles.voiceSectionHeader}>
-                    <Text style={[styles.voiceSectionTitle, { color: colors.textSecondary }]}>{title}</Text>
-                    <View style={[styles.voiceSectionLine, { backgroundColor: colors.border }]} />
+                    <Text style={[styles.voiceSectionTitle, { color: onBg2 }]}>{title}</Text>
+                    <View style={[styles.voiceSectionLine, { backgroundColor: cardBorder }]} />
                 </View>
                 {data.map(v => renderVoiceItem(v, selectedVoiceId === v.id))}
             </View>
@@ -489,7 +508,7 @@ export function VoiceSelector({
             <TouchableOpacity
                 style={[
                     styles.selectorButton,
-                    { backgroundColor: colors.input, borderColor: colors.border },
+                    { backgroundColor: fieldBg, borderColor: fieldBorder },
                     buttonStyle,
                     disabled && { opacity: 0.5 },
                 ]}
@@ -497,49 +516,54 @@ export function VoiceSelector({
                 disabled={disabled}
             >
                 <View style={styles.selectorContent}>
-                    <Text style={[styles.selectorLabel, { color: colors.textSecondary }, labelStyle]}>Voz del personaje</Text>
-                    <Text style={[styles.selectorValue, { color: colors.text }, valueStyle]}>{getSelectedVoiceName()}</Text>
+                    <Text style={[styles.selectorLabel, { color: onBg2 }, labelStyle]}>Voz del personaje</Text>
+                    <Text style={[styles.selectorValue, { color: onBg }, valueStyle]}>{getSelectedVoiceName()}</Text>
                 </View>
-                <ChevronDown size={20} color={colors.textSecondary} />
+                <ChevronDown size={20} color={onBg2} />
             </TouchableOpacity>
 
             <Modal visible={modalVisible} animationType="slide" transparent={false} onRequestClose={handleClose} supportedOrientations={['portrait', 'landscape', 'landscape-left', 'landscape-right']}>
-                <SafeAreaView style={[styles.fullScreenModal, { backgroundColor: colors.background }]}>
-                    <View style={[styles.modalHeader, { borderBottomColor: colors.border }]}>
+                <ImageBackground
+                    source={isDark ? require('@/assets/images/ui-dark-bg.png') : require('@/assets/images/ui-light-bg.png')}
+                    resizeMode="cover"
+                    style={styles.fullScreenModal}
+                >
+                <SafeAreaView style={[styles.fullScreenModal, { backgroundColor: 'transparent' }]}>
+                    <View style={styles.modalHeader}>
                         <View style={{ flex: 1, paddingRight: 10 }}>
-                            <Text style={[styles.modalTitle, { color: colors.text }]} numberOfLines={1}>{getProviderTitle()}</Text>
+                            <Text style={[styles.modalTitle, { color: onBg }]} numberOfLines={1}>{getProviderTitle()}</Text>
                             {characterName ? (
-                                <Text style={{ color: colors.textSecondary, fontSize: rf(14), marginTop: 2 }}>
+                                <Text style={{ color: onBg2, fontSize: rf(14), marginTop: 2 }}>
                                     Selecciona voz para {characterName}.
                                 </Text>
                             ) : null}
                         </View>
                         <View style={styles.headerActions}>
                             {provider !== 'system' && provider !== 'openai' && (
-                                <TouchableOpacity onPress={() => loadData(true)} style={[styles.refreshButton, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-                                    {refreshing ? <ActivityIndicator size="small" color={colors.primary} /> : <RefreshCw size={18} color={colors.textSecondary} />}
+                                <TouchableOpacity onPress={() => loadData(true)} style={[styles.iconGlassButton, { backgroundColor: cardBg, borderColor: cardBorder }]}>
+                                    {refreshing ? <ActivityIndicator size="small" color={onBg} /> : <RefreshCw size={18} color={onBg} />}
                                 </TouchableOpacity>
                             )}
-                            <TouchableOpacity onPress={handleClose} style={styles.closeButton}>
-                                <X size={24} color={colors.text} />
+                            <TouchableOpacity onPress={handleClose} style={[styles.iconGlassButton, { backgroundColor: cardBg, borderColor: cardBorder }]}>
+                                <X size={20} color={onBg} />
                             </TouchableOpacity>
                         </View>
                     </View>
 
                     {provider !== 'system' && (
                         <View style={styles.filtersContainer}>
-                            <View style={[styles.searchBox, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-                                <Search size={18} color={colors.textSecondary} />
+                            <View style={[styles.searchBox, { backgroundColor: fieldBg, borderColor: fieldBorder }]}>
+                                <Search size={18} color={onBg2} />
                                 <TextInput
-                                    style={[styles.searchInput, { color: colors.text }]}
+                                    style={[styles.searchInput, { color: onBg }]}
                                     placeholder="Buscar voz..."
-                                    placeholderTextColor={colors.textSecondary}
+                                    placeholderTextColor={onBg2}
                                     value={searchQuery}
                                     onChangeText={setSearchQuery}
                                 />
                                 {searchQuery !== '' && (
                                     <TouchableOpacity onPress={() => setSearchQuery('')}>
-                                        <X size={16} color={colors.textSecondary} />
+                                        <X size={16} color={onBg2} />
                                     </TouchableOpacity>
                                 )}
                             </View>
@@ -550,9 +574,9 @@ export function VoiceSelector({
                                     { label: 'Masculinas', value: 'male' },
                                     { label: 'Neutras', value: 'neutral' }
                                 ], genderFilters, setGenderFilters)}
-                                
+
                                 {renderFilterDropdown('language', 'Idioma', languageOptions, languageFilters, setLanguageFilters)}
-                                
+
                                 {renderFilterDropdown('country', 'País', countryOptions, countryFilters, setCountryFilters)}
                             </View>
                         </View>
@@ -562,11 +586,11 @@ export function VoiceSelector({
                         {loadingVoices ? (
                             <View style={styles.loadingContainer}>
                                 <ActivityIndicator size="large" color={colors.primary} />
-                                <Text style={[styles.loadingText, { color: colors.textSecondary }]}>Cargando voces...</Text>
+                                <Text style={[styles.loadingText, { color: onBg2 }]}>Cargando voces...</Text>
                             </View>
                         ) : processedVoices.length === 0 ? (
                             <View style={styles.emptyContainer}>
-                                <Text style={[styles.emptyText, { color: colors.textSecondary }]}>No se encontraron voces.</Text>
+                                <Text style={[styles.emptyText, { color: onBg2 }]}>No se encontraron voces.</Text>
                             </View>
                         ) : provider === 'system' ? (
                             processedVoices.map((v: any) => renderVoiceItem(v, selectedVoiceId === v.id))
@@ -579,6 +603,7 @@ export function VoiceSelector({
                         )}
                     </ScrollView>
                 </SafeAreaView>
+                </ImageBackground>
             </Modal>
         </>
     );
@@ -591,13 +616,12 @@ const styles = StyleSheet.create({
     selectorValue: { fontSize: rf(15), fontWeight: '600' },
     
     fullScreenModal: { flex: 1 },
-    modalHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', padding: rp(20), borderBottomWidth: 1 },
+    modalHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: rp(20), paddingVertical: rp(16) },
     modalTitle: { fontSize: rf(20), fontWeight: '700' },
     headerActions: { flexDirection: 'row', alignItems: 'center', gap: rp(12) },
-    refreshButton: { padding: rp(6), borderRadius: 8, borderWidth: 1 },
-    closeButton: { padding: rp(4) },
-    
-    filtersContainer: { paddingVertical: rp(12), borderBottomWidth: 1, borderBottomColor: '#333' },
+    iconGlassButton: { width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center', borderWidth: 1 },
+
+    filtersContainer: { paddingVertical: rp(12) },
     searchBox: { flexDirection: 'row', alignItems: 'center', marginHorizontal: rp(16), paddingHorizontal: rp(12), height: 44, borderRadius: 22, borderWidth: 1, marginBottom: rp(12) },
     searchInput: { flex: 1, marginLeft: rp(8), fontSize: rf(14) },
     

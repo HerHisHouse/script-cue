@@ -260,9 +260,13 @@ export default function ScriptDetailScreen() {
 
   if (loading) {
     return (
-      <View style={[styles.centerContainer, { backgroundColor: colors.background }]}>
+      <ImageBackground
+        source={isDark ? require('@/assets/images/ui-dark-bg.png') : require('@/assets/images/ui-light-bg.png')}
+        resizeMode="cover"
+        style={styles.centerContainer}
+      >
         <ActivityIndicator size="large" color={colors.primary} />
-      </View>
+      </ImageBackground>
     );
   }
 
