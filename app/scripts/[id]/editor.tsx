@@ -1,9 +1,10 @@
 import React, { useState, useRef, useEffect, useMemo } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, ActivityIndicator, Alert, Platform, PanResponder, ScrollView } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, ActivityIndicator, Alert, Platform, PanResponder, ScrollView, ImageBackground } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, useLocalSearchParams, Stack } from 'expo-router';
 import { ArrowLeft, Save, Edit3, PenTool, Undo, Redo, Type, Trash2, Bold, Italic, Underline, Strikethrough, Palette, ChevronDown, ChevronUp, AlignLeft, AlignCenter, AlignRight, Menu, ALargeSmall, Pencil, Eraser } from 'lucide-react-native';
 import { WebView } from 'react-native-webview';
+import { BlurView } from 'expo-blur';
 import Svg, { Path, G, Image as SvgImage } from 'react-native-svg';
 import { captureRef } from 'react-native-view-shot';
 import * as FileSystem from 'expo-file-system';
@@ -29,7 +30,18 @@ const COLORS = [
 export default function ScriptEditorScreen() {
     const router = useRouter();
     const { id } = useLocalSearchParams();
-    const { colors } = useTheme();
+    const { colors, isDark } = useTheme();
+
+    // Paleta "sobre imagen de fondo" del diseño glass, igual que Modo Estudio / Importar Guion
+    const onBg = isDark ? '#ffffff' : '#2a2447';
+    const cardBorder = isDark ? 'rgba(167,139,250,0.25)' : 'rgba(124,106,247,0.15)';
+    const glassHeaderBtn = isDark
+        ? { backgroundColor: 'rgba(124,106,247,0.14)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.2)' }
+        : { backgroundColor: colors.primary };
+    const editorBg = () => (isDark ? require('@/assets/images/ui-dark-bg.png') : require('@/assets/images/ui-light-bg.png'));
+    const dropdownBg = isDark ? 'rgba(24,18,36,0.97)' : 'rgba(255,255,255,0.98)';
+    const chipInactiveBg = isDark ? 'rgba(255,255,255,0.08)' : 'rgba(104,58,121,0.08)';
+    const chipActiveBg = isDark ? 'rgba(124,106,247,0.30)' : 'rgba(104,58,121,0.15)';
 
     // State
     const [loading, setLoading] = useState(true);
@@ -713,7 +725,8 @@ export default function ScriptEditorScreen() {
     }
 
     return (
-        <SafeAreaView style={[styles.container, { backgroundColor: '#FFFFFF' }]}>
+        <ImageBackground source={editorBg()} resizeMode="cover" style={styles.container}>
+        <SafeAreaView style={[styles.container, { backgroundColor: 'transparent' }]}>
             {/* Off-screen Capture View for Full Document PNG */}
             <View
                 ref={captureViewRef}
@@ -746,29 +759,29 @@ export default function ScriptEditorScreen() {
             <Stack.Screen options={{ headerShown: false }} />
 
             {/* Main Header */}
-            <View style={[styles.header, { borderBottomColor: '#E0E0E0' }]}>
-                <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
-                    <ArrowLeft size={24} color="#000000" />
+            <View style={[styles.header, { borderBottomColor: cardBorder }]}>
+                <TouchableOpacity onPress={() => router.back()} style={[styles.backButton, glassHeaderBtn]}>
+                    <ArrowLeft size={20} color="#FFFFFF" />
                 </TouchableOpacity>
 
                 <View style={styles.headerControls}>
                     <TouchableOpacity onPress={handleUndo} style={styles.iconButton}>
-                        <Undo size={20} color="#000000" />
+                        <Undo size={20} color={onBg} />
                     </TouchableOpacity>
                     <TouchableOpacity onPress={handleRedo} style={styles.iconButton}>
-                        <Redo size={20} color="#000000" />
+                        <Redo size={20} color={onBg} />
                     </TouchableOpacity>
                     <TouchableOpacity
                         onPress={() => setMode(mode === 'edit' ? 'view' : 'edit')}
-                        style={[styles.iconButton, mode === 'edit' && styles.activeModeButton]}
+                        style={[styles.iconButton, mode === 'edit' && [styles.activeModeButton, { backgroundColor: chipActiveBg }]]}
                     >
-                        <Type size={24} color={mode === 'edit' ? colors.primary : "#000000"} />
+                        <Type size={24} color={mode === 'edit' ? colors.primary : onBg} />
                     </TouchableOpacity>
                     <TouchableOpacity
                         onPress={() => setMode(mode === 'draw' ? 'view' : 'draw')}
-                        style={[styles.iconButton, mode === 'draw' ? styles.activeModeButton : null]}
+                        style={[styles.iconButton, mode === 'draw' && [styles.activeModeButton, { backgroundColor: chipActiveBg }]]}
                     >
-                        <Pencil size={24} color={mode === 'draw' ? colors.primary : "#000000"} />
+                        <Pencil size={24} color={mode === 'draw' ? colors.primary : onBg} />
                     </TouchableOpacity>
                 </View>
 
@@ -803,6 +816,10 @@ export default function ScriptEditorScreen() {
                         />
                     )}
                     <View style={styles.toolbar}>
+                        <View style={[styles.toolbarBlurClip, { borderColor: cardBorder }]}>
+                            <BlurView intensity={isDark ? 55 : 75} tint={isDark ? 'dark' : 'light'} style={StyleSheet.absoluteFill} />
+                            <View style={[StyleSheet.absoluteFill, { backgroundColor: isDark ? 'rgba(124,106,247,0.20)' : 'rgba(235,230,245,0.45)' }]} />
+                        </View>
                         {mode === 'edit' && (
                             <View style={styles.toolsContainer}>
                                 <View style={styles.minimalToolbar}>
@@ -815,39 +832,39 @@ export default function ScriptEditorScreen() {
                                                 setShowSizeMenu(false);
                                                 setShowColorMenu(false);
                                             }}
-                                            style={[styles.toolbarButton, showFormatMenu && styles.toolbarButtonActive]}
+                                            style={[styles.toolbarButton, { backgroundColor: chipInactiveBg }, showFormatMenu && [styles.toolbarButtonActive, { backgroundColor: chipActiveBg, borderColor: colors.primary }]]}
                                         >
-                                            <Text style={[styles.toolbarButtonText, showFormatMenu && { color: colors.primary }]}>Aa</Text>
+                                            <Text style={[styles.toolbarButtonText, { color: onBg }, showFormatMenu && { color: colors.primary }]}>Aa</Text>
                                         </TouchableOpacity>
                                         {showFormatMenu && (
-                                            <View style={[styles.dropdownMenu, { backgroundColor: '#FFFFFF', borderColor: '#E0E0E0' }]}>
+                                            <View style={[styles.dropdownMenu, { backgroundColor: dropdownBg, borderColor: cardBorder }]}>
                                                 <TouchableOpacity
                                                     onPress={() => { setIsBold(!isBold); formatText('bold'); setShowFormatMenu(false); }}
                                                     style={[styles.dropdownItem, isBold && styles.dropdownItemActive]}
                                                 >
-                                                    <Bold size={18} color={isBold ? colors.primary : '#000000'} strokeWidth={3} />
-                                                    <Text style={[styles.dropdownItemText, isBold && { color: colors.primary, fontWeight: 'bold' }]}>Negrita</Text>
+                                                    <Bold size={18} color={isBold ? colors.primary : onBg} strokeWidth={3} />
+                                                    <Text style={[styles.dropdownItemText, { color: onBg }, isBold && { color: colors.primary, fontWeight: 'bold' }]}>Negrita</Text>
                                                 </TouchableOpacity>
                                                 <TouchableOpacity
                                                     onPress={() => { setIsItalic(!isItalic); formatText('italic'); setShowFormatMenu(false); }}
                                                     style={[styles.dropdownItem, isItalic && styles.dropdownItemActive]}
                                                 >
-                                                    <Italic size={18} color={isItalic ? colors.primary : '#000000'} />
-                                                    <Text style={[styles.dropdownItemText, isItalic && { color: colors.primary, fontStyle: 'italic' }]}>Cursiva</Text>
+                                                    <Italic size={18} color={isItalic ? colors.primary : onBg} />
+                                                    <Text style={[styles.dropdownItemText, { color: onBg }, isItalic && { color: colors.primary, fontStyle: 'italic' }]}>Cursiva</Text>
                                                 </TouchableOpacity>
                                                 <TouchableOpacity
                                                     onPress={() => { setIsUnderline(!isUnderline); formatText('underline'); setShowFormatMenu(false); }}
                                                     style={[styles.dropdownItem, isUnderline && styles.dropdownItemActive]}
                                                 >
-                                                    <Underline size={18} color={isUnderline ? colors.primary : '#000000'} />
-                                                    <Text style={[styles.dropdownItemText, isUnderline && { color: colors.primary, textDecorationLine: 'underline' }]}>Subrayado</Text>
+                                                    <Underline size={18} color={isUnderline ? colors.primary : onBg} />
+                                                    <Text style={[styles.dropdownItemText, { color: onBg }, isUnderline && { color: colors.primary, textDecorationLine: 'underline' }]}>Subrayado</Text>
                                                 </TouchableOpacity>
                                                 <TouchableOpacity
                                                     onPress={() => { setIsStrikethrough(!isStrikethrough); formatText('strikeThrough'); setShowFormatMenu(false); }}
                                                     style={[styles.dropdownItem, isStrikethrough && styles.dropdownItemActive]}
                                                 >
-                                                    <Strikethrough size={18} color={isStrikethrough ? colors.primary : '#000000'} />
-                                                    <Text style={[styles.dropdownItemText, isStrikethrough && { color: colors.primary, textDecorationLine: 'line-through' }]}>Tachado</Text>
+                                                    <Strikethrough size={18} color={isStrikethrough ? colors.primary : onBg} />
+                                                    <Text style={[styles.dropdownItemText, { color: onBg }, isStrikethrough && { color: colors.primary, textDecorationLine: 'line-through' }]}>Tachado</Text>
                                                 </TouchableOpacity>
                                             </View>
                                         )}
@@ -862,32 +879,32 @@ export default function ScriptEditorScreen() {
                                                 setShowSizeMenu(false);
                                                 setShowColorMenu(false);
                                             }}
-                                            style={[styles.toolbarButton, showAlignMenu && styles.toolbarButtonActive]}
+                                            style={[styles.toolbarButton, { backgroundColor: chipInactiveBg }, showAlignMenu && [styles.toolbarButtonActive, { backgroundColor: chipActiveBg, borderColor: colors.primary }]]}
                                         >
-                                            <Menu size={20} color={showAlignMenu ? colors.primary : '#000000'} />
+                                            <Menu size={20} color={showAlignMenu ? colors.primary : onBg} />
                                         </TouchableOpacity>
                                         {showAlignMenu && (
-                                            <View style={[styles.dropdownMenu, { backgroundColor: '#FFFFFF', borderColor: '#E0E0E0' }]}>
+                                            <View style={[styles.dropdownMenu, { backgroundColor: dropdownBg, borderColor: cardBorder }]}>
                                                 <TouchableOpacity
                                                     onPress={() => { setTextAlign('left'); formatText('justifyLeft'); setShowAlignMenu(false); }}
                                                     style={[styles.dropdownItem, textAlign === 'left' && styles.dropdownItemActive]}
                                                 >
-                                                    <AlignLeft size={18} color={textAlign === 'left' ? colors.primary : '#000000'} />
-                                                    <Text style={[styles.dropdownItemText, textAlign === 'left' && { color: colors.primary }]}>Izquierda</Text>
+                                                    <AlignLeft size={18} color={textAlign === 'left' ? colors.primary : onBg} />
+                                                    <Text style={[styles.dropdownItemText, { color: onBg }, textAlign === 'left' && { color: colors.primary }]}>Izquierda</Text>
                                                 </TouchableOpacity>
                                                 <TouchableOpacity
                                                     onPress={() => { setTextAlign('center'); formatText('justifyCenter'); setShowAlignMenu(false); }}
                                                     style={[styles.dropdownItem, textAlign === 'center' && styles.dropdownItemActive]}
                                                 >
-                                                    <AlignCenter size={18} color={textAlign === 'center' ? colors.primary : '#000000'} />
-                                                    <Text style={[styles.dropdownItemText, textAlign === 'center' && { color: colors.primary }]}>Centrado</Text>
+                                                    <AlignCenter size={18} color={textAlign === 'center' ? colors.primary : onBg} />
+                                                    <Text style={[styles.dropdownItemText, { color: onBg }, textAlign === 'center' && { color: colors.primary }]}>Centrado</Text>
                                                 </TouchableOpacity>
                                                 <TouchableOpacity
                                                     onPress={() => { setTextAlign('right'); formatText('justifyRight'); setShowAlignMenu(false); }}
                                                     style={[styles.dropdownItem, textAlign === 'right' && styles.dropdownItemActive]}
                                                 >
-                                                    <AlignRight size={18} color={textAlign === 'right' ? colors.primary : '#000000'} />
-                                                    <Text style={[styles.dropdownItemText, textAlign === 'right' && { color: colors.primary }]}>Derecha</Text>
+                                                    <AlignRight size={18} color={textAlign === 'right' ? colors.primary : onBg} />
+                                                    <Text style={[styles.dropdownItemText, { color: onBg }, textAlign === 'right' && { color: colors.primary }]}>Derecha</Text>
                                                 </TouchableOpacity>
                                             </View>
                                         )}
@@ -902,19 +919,19 @@ export default function ScriptEditorScreen() {
                                                 setShowAlignMenu(false);
                                                 setShowColorMenu(false);
                                             }}
-                                            style={[styles.toolbarButton, showSizeMenu && styles.toolbarButtonActive]}
+                                            style={[styles.toolbarButton, { backgroundColor: chipInactiveBg }, showSizeMenu && [styles.toolbarButtonActive, { backgroundColor: chipActiveBg, borderColor: colors.primary }]]}
                                         >
-                                            <ALargeSmall size={20} color={showSizeMenu ? colors.primary : '#000000'} />
+                                            <ALargeSmall size={20} color={showSizeMenu ? colors.primary : onBg} />
                                         </TouchableOpacity>
                                         {showSizeMenu && (
-                                            <View style={[styles.dropdownMenu, { backgroundColor: '#FFFFFF', borderColor: '#E0E0E0' }]}>
+                                            <View style={[styles.dropdownMenu, { backgroundColor: dropdownBg, borderColor: cardBorder }]}>
                                                 {['1px', '2px', '3px', '4px', '5px', '6px', '7px', '8px', '9px', '10px', '11px', '12px'].map((size) => (
                                                     <TouchableOpacity
                                                         key={size}
                                                         onPress={() => { setFontSize(size); formatText('fontSize', size.replace('px', '')); setShowSizeMenu(false); }}
                                                         style={[styles.dropdownItem, fontSize === size && styles.dropdownItemActive]}
                                                     >
-                                                        <Text style={[styles.dropdownItemText, { fontSize: Math.max(10, parseInt(size)) }, fontSize === size && { color: colors.primary, fontWeight: 'bold' }]}>{size}</Text>
+                                                        <Text style={[styles.dropdownItemText, { color: onBg, fontSize: Math.max(10, parseInt(size)) }, fontSize === size && { color: colors.primary, fontWeight: 'bold' }]}>{size}</Text>
                                                     </TouchableOpacity>
                                                 ))}
                                             </View>
@@ -930,12 +947,12 @@ export default function ScriptEditorScreen() {
                                                 setShowAlignMenu(false);
                                                 setShowSizeMenu(false);
                                             }}
-                                            style={[styles.toolbarButton, showColorMenu && styles.toolbarButtonActive]}
+                                            style={[styles.toolbarButton, { backgroundColor: chipInactiveBg }, showColorMenu && [styles.toolbarButtonActive, { backgroundColor: chipActiveBg, borderColor: colors.primary }]]}
                                         >
-                                            <Palette size={20} color={showColorMenu ? colors.primary : '#000000'} />
+                                            <Palette size={20} color={showColorMenu ? colors.primary : onBg} />
                                         </TouchableOpacity>
                                         {showColorMenu && (
-                                            <View style={[styles.dropdownMenu, styles.colorDropdown, { backgroundColor: '#FFFFFF', borderColor: '#E0E0E0' }]}>
+                                            <View style={[styles.dropdownMenu, styles.colorDropdown, { backgroundColor: dropdownBg, borderColor: cardBorder }]}>
                                                 <View style={styles.colorGrid}>
                                                     {COLORS.map((color) => (
                                                         <TouchableOpacity
@@ -944,7 +961,7 @@ export default function ScriptEditorScreen() {
                                                             style={[
                                                                 styles.colorButton,
                                                                 { backgroundColor: color },
-                                                                textColor === color && styles.colorButtonActive
+                                                                textColor === color && [styles.colorButtonActive, { borderColor: onBg }]
                                                             ]}
                                                         />
                                                     ))}
@@ -966,32 +983,32 @@ export default function ScriptEditorScreen() {
                                                 setShowStrokeMenu(!showStrokeMenu);
                                                 setShowDrawColorMenu(false);
                                             }}
-                                            style={[styles.toolbarButton, showStrokeMenu && styles.toolbarButtonActive]}
+                                            style={[styles.toolbarButton, { backgroundColor: chipInactiveBg }, showStrokeMenu && [styles.toolbarButtonActive, { backgroundColor: chipActiveBg, borderColor: colors.primary }]]}
                                         >
-                                            <Pencil size={20} color={showStrokeMenu ? colors.primary : '#000000'} />
+                                            <Pencil size={20} color={showStrokeMenu ? colors.primary : onBg} />
                                         </TouchableOpacity>
                                         {showStrokeMenu && (
-                                            <View style={[styles.dropdownMenu, { backgroundColor: '#FFFFFF', borderColor: '#E0E0E0' }]}>
+                                            <View style={[styles.dropdownMenu, { backgroundColor: dropdownBg, borderColor: cardBorder }]}>
                                                 <TouchableOpacity
                                                     onPress={() => { setStrokeWidth(2); setShowStrokeMenu(false); }}
                                                     style={[styles.dropdownItem, strokeWidth === 2 && styles.dropdownItemActive]}
                                                 >
-                                                    <View style={{ width: 30, height: 2, backgroundColor: '#000000' }} />
-                                                    <Text style={[styles.dropdownItemText, strokeWidth === 2 && { color: colors.primary }]}>Fino</Text>
+                                                    <View style={{ width: 30, height: 2, backgroundColor: onBg }} />
+                                                    <Text style={[styles.dropdownItemText, { color: onBg }, strokeWidth === 2 && { color: colors.primary }]}>Fino</Text>
                                                 </TouchableOpacity>
                                                 <TouchableOpacity
                                                     onPress={() => { setStrokeWidth(5); setShowStrokeMenu(false); }}
                                                     style={[styles.dropdownItem, strokeWidth === 5 && styles.dropdownItemActive]}
                                                 >
-                                                    <View style={{ width: 30, height: 5, backgroundColor: '#000000', borderRadius: 2.5 }} />
-                                                    <Text style={[styles.dropdownItemText, strokeWidth === 5 && { color: colors.primary }]}>Medio</Text>
+                                                    <View style={{ width: 30, height: 5, backgroundColor: onBg, borderRadius: 2.5 }} />
+                                                    <Text style={[styles.dropdownItemText, { color: onBg }, strokeWidth === 5 && { color: colors.primary }]}>Medio</Text>
                                                 </TouchableOpacity>
                                                 <TouchableOpacity
                                                     onPress={() => { setStrokeWidth(10); setShowStrokeMenu(false); }}
                                                     style={[styles.dropdownItem, strokeWidth === 10 && styles.dropdownItemActive]}
                                                 >
-                                                    <View style={{ width: 30, height: 10, backgroundColor: '#000000', borderRadius: 5 }} />
-                                                    <Text style={[styles.dropdownItemText, strokeWidth === 10 && { color: colors.primary }]}>Grueso</Text>
+                                                    <View style={{ width: 30, height: 10, backgroundColor: onBg, borderRadius: 5 }} />
+                                                    <Text style={[styles.dropdownItemText, { color: onBg }, strokeWidth === 10 && { color: colors.primary }]}>Grueso</Text>
                                                 </TouchableOpacity>
                                             </View>
                                         )}
@@ -1004,12 +1021,12 @@ export default function ScriptEditorScreen() {
                                                 setShowDrawColorMenu(!showDrawColorMenu);
                                                 setShowStrokeMenu(false);
                                             }}
-                                            style={[styles.toolbarButton, showDrawColorMenu && styles.toolbarButtonActive]}
+                                            style={[styles.toolbarButton, { backgroundColor: chipInactiveBg }, showDrawColorMenu && [styles.toolbarButtonActive, { backgroundColor: chipActiveBg, borderColor: colors.primary }]]}
                                         >
-                                            <Palette size={20} color={showDrawColorMenu ? colors.primary : '#000000'} />
+                                            <Palette size={20} color={showDrawColorMenu ? colors.primary : onBg} />
                                         </TouchableOpacity>
                                         {showDrawColorMenu && (
-                                            <View style={[styles.dropdownMenu, styles.colorDropdown, { backgroundColor: '#FFFFFF', borderColor: '#E0E0E0' }]}>
+                                            <View style={[styles.dropdownMenu, styles.colorDropdown, { backgroundColor: dropdownBg, borderColor: cardBorder }]}>
                                                 <View style={styles.colorGrid}>
                                                     {COLORS.map((color) => (
                                                         <TouchableOpacity
@@ -1018,7 +1035,7 @@ export default function ScriptEditorScreen() {
                                                             style={[
                                                                 styles.colorButton,
                                                                 { backgroundColor: color },
-                                                                strokeColor === color && styles.colorButtonActive
+                                                                strokeColor === color && [styles.colorButtonActive, { borderColor: onBg }]
                                                             ]}
                                                         />
                                                     ))}
@@ -1034,15 +1051,15 @@ export default function ScriptEditorScreen() {
                                             setShowStrokeMenu(false);
                                             setShowDrawColorMenu(false);
                                         }}
-                                        style={[styles.toolbarButton, isErasing && styles.toolbarButtonActive]}
+                                        style={[styles.toolbarButton, { backgroundColor: chipInactiveBg }, isErasing && [styles.toolbarButtonActive, { backgroundColor: chipActiveBg, borderColor: colors.primary }]]}
                                     >
-                                        <Eraser size={20} color={isErasing ? colors.primary : '#000000'} />
+                                        <Eraser size={20} color={isErasing ? colors.primary : onBg} />
                                     </TouchableOpacity>
 
                                     {/* Trash Button */}
                                     <TouchableOpacity
                                         onPress={handleClear}
-                                        style={[styles.toolbarButton, { backgroundColor: '#FFF0F0' }]}
+                                        style={[styles.toolbarButton, { backgroundColor: isDark ? 'rgba(239,68,68,0.18)' : 'rgba(239,68,68,0.12)' }]}
                                     >
                                         <Trash2 size={20} color="#FF0000" />
                                     </TouchableOpacity>
@@ -1066,13 +1083,14 @@ export default function ScriptEditorScreen() {
                 {loading ? (
                     <ActivityIndicator size="large" color={colors.primary} style={{ marginTop: 50 }} />
                 ) : (
-                    <>
+                    <View style={styles.pageShadowWrapper}>
+                    <View style={styles.pageCard}>
                         <View style={[styles.webviewContainer, { pointerEvents: mode === 'draw' ? 'none' : 'auto' }]}>
                             <WebView
                                 ref={webViewRef}
                                 originWhitelist={['*']}
                                 source={webViewSource}
-                                style={[styles.webview, { backgroundColor: '#FFFFFF' }]}
+                                style={styles.webview}
                                 onMessage={(event) => {
                                     try {
                                         const message = JSON.parse(event.nativeEvent.data);
@@ -1164,10 +1182,12 @@ export default function ScriptEditorScreen() {
                                 </G>
                             </Svg>
                         </View>
-                    </>
+                    </View>
+                    </View>
                 )}
             </View>
         </SafeAreaView>
+        </ImageBackground>
     );
 }
 
@@ -1182,10 +1202,13 @@ const styles = StyleSheet.create({
         paddingHorizontal: rp(16),
         paddingVertical: rp(12),
         borderBottomWidth: 1,
-        backgroundColor: '#FFFFFF',
     },
     backButton: {
-        padding: rp(4),
+        width: 40,
+        height: 40,
+        borderRadius: 20,
+        alignItems: 'center',
+        justifyContent: 'center',
     },
     headerControls: {
         flexDirection: 'row',
@@ -1208,92 +1231,29 @@ const styles = StyleSheet.create({
         fontWeight: '600',
         fontSize: rf(14),
     },
-    secondaryToolbar: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        paddingHorizontal: rp(16),
-        paddingVertical: rp(8),
-        backgroundColor: '#F5F5F5',
-        borderBottomWidth: 1,
-        borderBottomColor: '#E0E0E0',
-    },
-    modeButton: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        padding: rp(8),
-        borderRadius: 8,
-        marginRight: 16,
-        gap: 6,
-    },
     activeModeButton: {
-        backgroundColor: '#E8F0FE',
-    },
-    modeText: {
-        fontSize: rf(14),
-        fontWeight: '500',
-        color: '#666666',
-    },
-    expandButton: {
-        marginLeft: 'auto',
-        padding: rp(8),
-    },
-    tertiaryToolbar: {
-        padding: rp(12),
-        backgroundColor: '#FFFFFF',
-        borderBottomWidth: 1,
-        borderBottomColor: '#E0E0E0',
+        borderRadius: 10,
     },
     toolbar: {
-        backgroundColor: '#FFFFFF',
-        borderBottomWidth: 1,
-        borderBottomColor: '#E0E0E0',
+        marginHorizontal: rp(16),
+        marginTop: rp(10),
+        marginBottom: rp(6),
+        position: 'relative',
+        zIndex: 200,
+    },
+    toolbarBlurClip: {
+        position: 'absolute',
+        top: 0,
+        left: 0,
+        right: 0,
+        bottom: 0,
+        borderRadius: 16,
+        borderWidth: 1,
+        overflow: 'hidden',
     },
     toolsContainer: {
         padding: rp(12),
         gap: 12,
-    },
-    formatGroup: {
-        flexDirection: 'row',
-        gap: 16,
-        marginBottom: 8,
-        alignItems: 'center',
-    },
-    sliderContainer: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        gap: 12,
-    },
-    label: {
-        fontSize: rf(14),
-        color: '#000000',
-        fontWeight: '500',
-    },
-    clearButton: {
-        padding: rp(8),
-        backgroundColor: '#FFF0F0',
-        borderRadius: 4,
-        marginLeft: 'auto',
-    },
-    formatButton: {
-        padding: rp(8),
-        backgroundColor: '#F5F5F5',
-        borderRadius: 4,
-    },
-    activeFormatButton: {
-        backgroundColor: '#E8F0FE',
-        borderColor: '#007AFF',
-        borderWidth: 1,
-    },
-    separator: {
-        height: 1,
-        backgroundColor: '#E0E0E0',
-        marginVertical: 4,
-    },
-    separatorVertical: {
-        width: 1,
-        height: 24,
-        backgroundColor: '#E0E0E0',
-        marginHorizontal: 4,
     },
     paletteContainer: {
         flexDirection: 'row',
@@ -1312,41 +1272,34 @@ const styles = StyleSheet.create({
         borderColor: '#000000',
         transform: [{ scale: 1.1 }],
     },
-    fontSizePicker: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        gap: 8,
-    },
-    fontSizeLabel: {
-        fontSize: rf(12),
-        color: '#666666',
-        fontWeight: '500',
-    },
-    fontSizeButton: {
-        paddingHorizontal: rp(10),
-        paddingVertical: rp(6),
-        backgroundColor: '#F5F5F5',
-        borderRadius: 4,
-        marginRight: 6,
-    },
-    activeFontSizeButton: {
-        backgroundColor: '#E8F0FE',
-        borderColor: '#007AFF',
-        borderWidth: 1,
-    },
-    fontSizeButtonText: {
-        fontSize: rf(12),
-        color: '#000000',
-    },
     content: {
         flex: 1,
         position: 'relative',
+    },
+    pageShadowWrapper: {
+        flex: 1,
+        marginHorizontal: rp(12),
+        marginBottom: rp(12),
+        borderRadius: 20,
+        shadowColor: '#1a1625',
+        shadowOffset: { width: 0, height: 6 },
+        shadowOpacity: 0.18,
+        shadowRadius: 14,
+        elevation: 6,
+    },
+    pageCard: {
+        flex: 1,
+        position: 'relative',
+        borderRadius: 20,
+        overflow: 'hidden',
+        backgroundColor: '#FFFFFF',
     },
     webviewContainer: {
         flex: 1,
     },
     webview: {
         flex: 1,
+        backgroundColor: '#FFFFFF',
     },
     drawingLayer: {
         position: 'absolute',
@@ -1380,19 +1333,15 @@ const styles = StyleSheet.create({
         width: 44,
         height: 44,
         borderRadius: 8,
-        backgroundColor: '#F5F5F5',
         alignItems: 'center',
         justifyContent: 'center',
     },
     toolbarButtonActive: {
-        backgroundColor: '#E8F0FE',
         borderWidth: 1,
-        borderColor: '#007AFF',
     },
     toolbarButtonText: {
         fontSize: rf(16),
         fontWeight: '600',
-        color: '#000000',
     },
     dropdownMenu: {
         position: 'absolute',
@@ -1417,11 +1366,10 @@ const styles = StyleSheet.create({
         paddingHorizontal: rp(16),
     },
     dropdownItemActive: {
-        backgroundColor: '#E8F0FE',
+        backgroundColor: 'rgba(124,106,247,0.14)',
     },
     dropdownItemText: {
         fontSize: rf(14),
-        color: '#000000',
     },
     colorDropdown: {
         left: '50%',
@@ -1440,11 +1388,10 @@ const styles = StyleSheet.create({
         height: 32,
         borderRadius: 16,
         borderWidth: 1,
-        borderColor: '#E0E0E0',
+        borderColor: 'rgba(120,120,120,0.3)',
     },
     colorButtonActive: {
         borderWidth: 3,
-        borderColor: '#000000',
         transform: [{ scale: 1.1 }],
     },
 });
