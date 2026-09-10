@@ -6,6 +6,7 @@ import {
   Text,
   TouchableOpacity,
   useWindowDimensions,
+  Platform,
 } from 'react-native';
 import { X } from 'lucide-react-native';
 
@@ -17,6 +18,15 @@ type Props = {
   zoom: number;
   minZoom: number;
   maxZoom: number;
+  /**
+   * Fase M1 (RS, solo iOS): factor de conversión de `zoom` (eje "raw" de
+   * vision-camera) a multiplicador real visible ("x"). En dispositivos
+   * multi-lente, el eje raw no siempre coincide 1:1 con el multiplicador
+   * óptico real — dividir por este valor (el raw de la lente gran angular
+   * neutra) da el número correcto. Ignorado en Android (sigue con la
+   * fórmula original basada en la posición del slider).
+   */
+  displayScale?: number;
   onZoomChange: (value: number) => void;
   onClose: () => void;
 };
@@ -25,6 +35,7 @@ export function VerticalZoomSlider({
   zoom,
   minZoom,
   maxZoom,
+  displayScale = 1,
   onZoomChange,
   onClose,
 }: Props) {
@@ -86,11 +97,12 @@ export function VerticalZoomSlider({
   // Height of the filled (active) portion of the track
   const filledHeight = Math.max(0, SLIDER_HEIGHT - 8 - (SLIDER_HEIGHT * (1 - currentRatio)));
 
-  // Human-readable zoom label — mirrors the button labels: min=0.5x, max=2x
-  // Buttons: zoom=0→0.5x, zoom=0.08→1x, zoom=0.15→2x
-  // We map currentRatio (0→1) to the visual scale 0.5→2
-  const zoomLabelValue = 0.5 + currentRatio * 1.5;
-  const zoomLabel = `${zoomLabelValue.toFixed(1)}x`;
+  // iOS (vision-camera): `zoom` ya es multiplicador real, se convierte con
+  // displayScale. Android (expo-camera): fórmula original sin cambios,
+  // basada en la posición del slider dentro del rango fijo 0.5x-2x.
+  const zoomLabel = Platform.OS === 'ios'
+    ? `${(zoom / displayScale).toFixed(1)}x`
+    : `${(0.5 + currentRatio * 1.5).toFixed(1)}x`;
 
   return (
     <View style={[styles.container, isLandscape && styles.containerLandscape]} pointerEvents="box-none">

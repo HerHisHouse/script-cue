@@ -36,6 +36,11 @@ import { calculateSimilarity } from '@/utils/stringUtils'; // Helper for similar
 import { ArrowLeft, Mic, RotateCcw, Play, Pause, Square, Video, SwitchCamera, Settings2, SkipBack, SkipForward, MoreVertical, EyeOff, Eye, Minus, Plus, Volume2, GripHorizontal, X, Timer, Clapperboard, Trash2, ChevronRight, MessageSquare, FileText, Type, Snail, Rabbit, FlipHorizontal, Bold, Italic, Underline, AlignLeft, AlignCenter, AlignRight, Keyboard as KeyboardIcon, Info, MonitorPlay, Maximize2, CheckCircle2, Layers } from 'lucide-react-native';
 import * as Haptics from 'expo-haptics';
 import SilhouetteGuide, { ShotType } from '@/components/SilhouetteGuide';
+// Fase M1: NO se importan hooks de vision-camera aquí (useCameraDevice, etc.) —
+// viven exclusivamente dentro de VisionCameraView.tsx (cargado con require()
+// solo en iOS) para que este archivo nunca ejecute código de vision-camera
+// en Android. Solo se importa el tipo/funciones puras de utils/cameraZoom.
+import { formatZoomLabel, getNeutralZoomValue, getWidestZoomValue, type ZoomStop } from '@/utils/cameraZoom';
 import { FontAwesome5 } from '@expo/vector-icons';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/utils/supabase';
@@ -122,8 +127,13 @@ export default function CastingModeScreen() {
     const loadCamera = () => {
       try {
         let component;
-        // Siempre usamos ExpoCameraView porque expo-camera funciona tanto en Go como en build nativo
-        component = require('../../../components/ExpoCameraView');
+        // Fase M1: vision-camera solo en iOS (validado en ScriptCue-LAB).
+        // Android se queda con expo-camera hasta validarse ahí también —
+        // require() condicional para que el módulo de vision-camera ni
+        // siquiera se cargue en Android.
+        component = Platform.OS === 'ios'
+          ? require('../../../components/VisionCameraView')
+          : require('../../../components/ExpoCameraView');
 
         if (component) {
           CameraComponent.current = component.default || component;
@@ -142,10 +152,36 @@ export default function CastingModeScreen() {
   const [recordingTime, setRecordingTime] = useState(0);
   const recordingTimeRef = useRef(0);
   const [facing, setFacing] = useState<'back' | 'front'>('front');
-  const [zoom, setZoom] = useState(0.08);
+  // iOS (vision-camera): 1 = gran angular neutro ("1x"), por convención de
+  // vision-camera/AVFoundation — se ajusta a las paradas reales del
+  // dispositivo en cuanto VisionCameraView reporta onZoomInfo.
+  // Android (expo-camera): 0.08, valor original sin cambios.
+  const [zoom, setZoom] = useState(Platform.OS === 'ios' ? 1 : 0.08);
   const [showZoomSlider, setShowZoomSlider] = useState(false);
-  const MIN_ZOOM = 0;   // 0 = gran angular máximo del hardware (equivale a 0.5x)
-  const MAX_ZOOM = 0.3; // Subido de 0.2 para dar más alcance al slider
+
+  // Fase M1: paradas de zoom. En iOS se sobrescriben dinámicamente con las
+  // lentes físicas reales del dispositivo (vía onZoomInfo de
+  // VisionCameraView, ver más abajo). En Android se quedan siempre en estos
+  // valores fijos — EXACTAMENTE los mismos que ya usaba expo-camera antes
+  // de esta migración (0.5x/1x/2x sobre la escala relativa 0-0.3), así que
+  // el comportamiento de Android no cambia en absoluto.
+  const ANDROID_DEFAULT_ZOOM_STOPS: ZoomStop[] = [
+    { label: '0.5x', zoomValue: 0, isNeutral: false },
+    { label: '1x', zoomValue: 0.08, isNeutral: true },
+    { label: '2x', zoomValue: 0.15, isNeutral: false },
+  ];
+  const [zoomStops, setZoomStops] = useState<ZoomStop[]>(
+    Platform.OS === 'ios' ? [{ label: '1x', zoomValue: 1, isNeutral: true }] : ANDROID_DEFAULT_ZOOM_STOPS
+  );
+  const [minZoomState, setMinZoomState] = useState(Platform.OS === 'ios' ? 1 : 0);
+  const [maxZoomState, setMaxZoomState] = useState(Platform.OS === 'ios' ? 1 : 0.3);
+  const handleZoomInfo = useCallback((info: { stops: ZoomStop[]; minZoom: number; maxZoom: number }) => {
+    setZoomStops(info.stops);
+    setMinZoomState(info.minZoom);
+    setMaxZoomState(info.maxZoom);
+  }, []);
+  const MIN_ZOOM = minZoomState;
+  const MAX_ZOOM = maxZoomState;
 
   const [isRecording, setIsRecording] = useState(false);
   // Flag to cancel the countdown loop without relying on cameraRef properties
@@ -273,19 +309,21 @@ export default function CastingModeScreen() {
 
     function activateWideShot() {
       setAutoWideShotEnabled(value);
+      const neutralZoomValue = getNeutralZoomValue(zoomStops);
+      const widestZoomValue = getWidestZoomValue(zoomStops);
       if (!value) {
-        setZoom(0.08);
-        zoomAnimValue.setValue(0.08);
+        setZoom(neutralZoomValue);
+        zoomAnimValue.setValue(neutralZoomValue);
       } else {
         // Al activar, arrancar SIEMPRE mostrando el plano general primero
-        setZoom(0);
-        zoomAnimValue.setValue(0);
+        setZoom(widestZoomValue);
+        zoomAnimValue.setValue(widestZoomValue);
       }
     }
   }
 
   // Animated.Value que controla el zoom real de la cámara durante la transición
-  const zoomAnimValue = useRef(new Animated.Value(0.08)).current;
+  const zoomAnimValue = useRef(new Animated.Value(Platform.OS === 'ios' ? 1 : 0.08)).current;
 
   // Detección de palmada — umbrales y refs
   const CLAP_THRESHOLD_DB = -18;     // Rebajado: más fácil de detectar sin perder precisión
@@ -1449,7 +1487,7 @@ export default function CastingModeScreen() {
     // to avoid a jump when the Animated.Value is out of sync
     zoomAnimValue.setValue(zoom);
     Animated.timing(zoomAnimValue, {
-      toValue: 0, // Plano general = zoom mínimo (campo más ancho disponible)
+      toValue: getWidestZoomValue(zoomStops), // Plano general = zoom mínimo (campo más ancho disponible)
       duration: 800,
       easing: Easing.out(Easing.quad),
       useNativeDriver: false, // El zoom de cámara no admite native driver
@@ -2474,6 +2512,7 @@ export default function CastingModeScreen() {
               facing={facing}
               zoom={zoom}
               videoQuality={videoQuality}
+              onZoomInfo={handleZoomInfo}
             />
           )}
           {castingType === 'free' && globalBackground !== 'transparent' && (
@@ -2481,7 +2520,7 @@ export default function CastingModeScreen() {
           )}
 
           {/* Silueta guía de encuadre — solo Teleprompter Libre, antes de grabar */}
-          {castingType === 'free' && autoWideShotEnabled && !isRecording && zoom === 0 && (
+          {castingType === 'free' && autoWideShotEnabled && !isRecording && zoom === getWidestZoomValue(zoomStops) && (
             <SilhouetteGuide shotType="wide" />
           )}
 
@@ -2519,20 +2558,20 @@ export default function CastingModeScreen() {
                 <View style={{ position: 'relative', zIndex: 100 }}>
                   <TouchableOpacity onPress={() => setIsZoomMenuOpen(!isZoomMenuOpen)} style={[styles.activeZoomBtnHeader, { backgroundColor: 'rgba(0,0,0,0.5)' }]}>
                     <Text style={styles.zoomTextHeader}>
-                      {zoom === 0 ? '0.5x' : zoom === 0.08 ? '1x' : '2x'}
+                      {Platform.OS === 'ios' ? formatZoomLabel(zoom / getNeutralZoomValue(zoomStops)) : (zoom === 0 ? '0.5x' : zoom === 0.08 ? '1x' : '2x')}
                     </Text>
                   </TouchableOpacity>
                   {isZoomMenuOpen && (
                     <View style={{ position: 'absolute', top: 48, left: 0, right: 0, backgroundColor: 'rgba(0,0,0,0.72)', borderRadius: 20, paddingVertical: 6, alignItems: 'center', width: rp(44) }}>
-                      <TouchableOpacity onPress={() => { setZoom(0); setIsZoomMenuOpen(false) }} style={[styles.zoomBtnHeader, zoom === 0 && styles.activeZoomBtnHeader]}>
-                        <Text style={styles.zoomTextHeader}>0.5x</Text>
-                      </TouchableOpacity>
-                      <TouchableOpacity onPress={() => { setZoom(0.08); setIsZoomMenuOpen(false) }} style={[styles.zoomBtnHeader, zoom === 0.08 && styles.activeZoomBtnHeader]}>
-                        <Text style={styles.zoomTextHeader}>1x</Text>
-                      </TouchableOpacity>
-                      <TouchableOpacity onPress={() => { setZoom(0.15); setIsZoomMenuOpen(false) }} style={[styles.zoomBtnHeader, zoom === 0.15 && styles.activeZoomBtnHeader]}>
-                        <Text style={styles.zoomTextHeader}>2x</Text>
-                      </TouchableOpacity>
+                      {zoomStops.map((stop) => (
+                        <TouchableOpacity
+                          key={stop.label}
+                          onPress={() => { setZoom(stop.zoomValue); setIsZoomMenuOpen(false) }}
+                          style={[styles.zoomBtnHeader, zoom === stop.zoomValue && styles.activeZoomBtnHeader]}
+                        >
+                          <Text style={styles.zoomTextHeader}>{stop.label}</Text>
+                        </TouchableOpacity>
+                      ))}
                       <TouchableOpacity
                         onPress={() => { setIsZoomMenuOpen(false); setShowZoomSlider(true); }}
                         style={styles.zoomBtnHeader}
@@ -2554,6 +2593,7 @@ export default function CastingModeScreen() {
                 zoom={zoom}
                 minZoom={MIN_ZOOM}
                 maxZoom={MAX_ZOOM}
+                displayScale={getNeutralZoomValue(zoomStops)}
                 onZoomChange={setZoom}
                 onClose={() => setShowZoomSlider(false)}
               />
