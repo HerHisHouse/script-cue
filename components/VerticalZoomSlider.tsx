@@ -17,6 +17,14 @@ type Props = {
   zoom: number;
   minZoom: number;
   maxZoom: number;
+  /**
+   * Factor de conversión de `zoom` (eje "raw" de vision-camera) a
+   * multiplicador real visible ("x"). En dispositivos multi-lente, el eje
+   * raw no siempre coincide 1:1 con el multiplicador óptico real — dividir
+   * por este valor (el raw de la lente gran angular neutra) da el número
+   * correcto. Por defecto 1 (sin conversión), para mantener compatibilidad.
+   */
+  displayScale?: number;
   onZoomChange: (value: number) => void;
   onClose: () => void;
 };
@@ -25,6 +33,7 @@ export function VerticalZoomSlider({
   zoom,
   minZoom,
   maxZoom,
+  displayScale = 1,
   onZoomChange,
   onClose,
 }: Props) {
@@ -86,11 +95,7 @@ export function VerticalZoomSlider({
   // Height of the filled (active) portion of the track
   const filledHeight = Math.max(0, SLIDER_HEIGHT - 8 - (SLIDER_HEIGHT * (1 - currentRatio)));
 
-  // Human-readable zoom label — mirrors the button labels: min=0.5x, max=2x
-  // Buttons: zoom=0→0.5x, zoom=0.08→1x, zoom=0.15→2x
-  // We map currentRatio (0→1) to the visual scale 0.5→2
-  const zoomLabelValue = 0.5 + currentRatio * 1.5;
-  const zoomLabel = `${zoomLabelValue.toFixed(1)}x`;
+  const zoomLabel = `${(zoom / displayScale).toFixed(1)}x`;
 
   return (
     <View style={[styles.container, isLandscape && styles.containerLandscape]} pointerEvents="box-none">
