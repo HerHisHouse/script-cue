@@ -7,7 +7,7 @@ import {
     ScrollView,
     TextInput,
     ActivityIndicator,
-    Alert,
+    ImageBackground,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, useLocalSearchParams } from 'expo-router';
@@ -17,6 +17,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/utils/supabase';
 import { ScriptAnalysis, Script } from '@/types/database';
 import { rf, rp } from '@/utils/responsive';
+import { ConfirmDialog } from '@/components/ConfirmDialog';
 
 // Definición de los 10 puntos de análisis actoral
 const ANALYSIS_STEPS = [
@@ -75,8 +76,19 @@ const ANALYSIS_STEPS = [
 export default function AnalysisScreen() {
     const router = useRouter();
     const { id } = useLocalSearchParams();
-    const { colors } = useTheme();
+    const { colors, isDark } = useTheme();
     const { user } = useAuth();
+
+    // Paleta "sobre imagen de fondo" del diseño glass, igual que Modo Estudio / Editar guion
+    const onBg = isDark ? '#ffffff' : '#2a2447';
+    const onBg2 = isDark ? '#a0a0c0' : '#5c5678';
+    const cardBg = isDark ? 'rgba(124,106,247,0.08)' : 'rgba(255,255,255,0.55)';
+    const cardBorder = isDark ? 'rgba(167,139,250,0.25)' : 'rgba(124,106,247,0.15)';
+    const fieldBg = isDark ? 'rgba(255,255,255,0.06)' : 'rgba(255,255,255,0.7)';
+    const glassHeaderBtn = isDark
+        ? { backgroundColor: 'rgba(124,106,247,0.14)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.2)' }
+        : { backgroundColor: colors.primary };
+    const analysisBg = () => (isDark ? require('@/assets/images/ui-dark-bg.png') : require('@/assets/images/ui-light-bg.png'));
 
     const [script, setScript] = useState<Script | null>(null);
     const [loading, setLoading] = useState(true);
@@ -85,6 +97,21 @@ export default function AnalysisScreen() {
     const [mode, setMode] = useState<'select' | 'manual' | 'ai' | 'ai-result'>('select');
     const [analysis, setAnalysis] = useState<Partial<ScriptAnalysis>>({});
     const [aiAnalysis, setAiAnalysis] = useState<Partial<ScriptAnalysis>>({});
+    const [infoDialog, setInfoDialog] = useState<{ visible: boolean; title: string; message: string; onClose?: () => void }>({
+        visible: false,
+        title: '',
+        message: '',
+    });
+
+    const showInfo = (title: string, message: string, onClose?: () => void) => {
+        setInfoDialog({ visible: true, title, message, onClose });
+    };
+
+    const closeInfoDialog = () => {
+        const onClose = infoDialog.onClose;
+        setInfoDialog({ visible: false, title: '', message: '' });
+        onClose?.();
+    };
 
     useEffect(() => {
         loadData();
@@ -133,7 +160,7 @@ export default function AnalysisScreen() {
             }
         } catch (error: any) {
             console.error('Error loading data:', error);
-            Alert.alert('Error', error.message);
+            showInfo('Error', error.message);
         } finally {
             setLoading(false);
         }
@@ -142,7 +169,7 @@ export default function AnalysisScreen() {
     const handleSaveAnalysis = async () => {
         try {
             if (!user?.id) {
-                Alert.alert('Error', 'Debes iniciar sesión');
+                showInfo('Error', 'Debes iniciar sesión');
                 return;
             }
 
@@ -175,12 +202,10 @@ export default function AnalysisScreen() {
             // Recargar datos para actualizar estados
             await loadData();
 
-            Alert.alert('Éxito', 'Análisis guardado correctamente', [
-                { text: 'OK', onPress: () => setMode('select') },
-            ]);
+            showInfo('Éxito', 'Análisis guardado correctamente', () => setMode('select'));
         } catch (error: any) {
             console.error('Error saving analysis:', error);
-            Alert.alert('Error', error.message);
+            showInfo('Error', error.message);
         } finally {
             setSaving(false);
         }
@@ -193,7 +218,7 @@ export default function AnalysisScreen() {
     const handleGenerateAIAnalysis = async () => {
         try {
             if (!user?.id) {
-                Alert.alert('Error', 'Debes iniciar sesión');
+                showInfo('Error', 'Debes iniciar sesión');
                 return;
             }
 
@@ -239,14 +264,14 @@ export default function AnalysisScreen() {
             // Cambiar a modo ai-result para mostrar el resultado
             setMode('ai-result');
 
-            Alert.alert(
+            showInfo(
                 'Análisis generado',
-                'El análisis ha sido generado por IA. Puedes revisarlo, editarlo o guardarlo.',
-                [{ text: 'OK', onPress: () => setMode('select') }]
+                'El análisis ha sido generado por ScriptCue. Puedes revisarlo, editarlo o guardarlo.',
+                () => setMode('select')
             );
         } catch (error: any) {
             console.error('Error generating AI analysis:', error);
-            Alert.alert('Error', error.message || 'No se pudo generar el análisis');
+            showInfo('Error', error.message || 'No se pudo generar el análisis');
         } finally {
             setGenerating(false);
         }
@@ -254,32 +279,32 @@ export default function AnalysisScreen() {
 
     if (loading) {
         return (
-            <View style={[styles.centerContainer, { backgroundColor: colors.background }]}>
+            <ImageBackground source={analysisBg()} resizeMode="cover" style={styles.centerContainer}>
                 <ActivityIndicator size="large" color={colors.primary} />
-            </View>
+            </ImageBackground>
         );
     }
 
     // Pantalla de selección de modo
     if (mode === 'select') {
         return (
-            <SafeAreaView style={[styles.container, { backgroundColor: colors.surface }]}>
-                <View style={{ flex: 1, backgroundColor: colors.background }}>
-                <View style={[styles.header, { backgroundColor: colors.surface, borderBottomColor: colors.border }]}>
-                    <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
-                        <ArrowLeft size={24} color={colors.text} />
+            <ImageBackground source={analysisBg()} resizeMode="cover" style={styles.container}>
+            <SafeAreaView style={[styles.container, { backgroundColor: 'transparent' }]}>
+                <View style={[styles.header, { borderBottomColor: cardBorder }]}>
+                    <TouchableOpacity onPress={() => router.back()} style={[styles.backButton, glassHeaderBtn]}>
+                        <ArrowLeft size={20} color="#FFFFFF" />
                     </TouchableOpacity>
-                    <Text style={[styles.headerTitle, { color: colors.text }]}>Modo Análisis</Text>
+                    <Text style={[styles.headerTitle, { color: onBg }]}>Modo Análisis</Text>
                     <View style={{ width: 40 }} />
                 </View>
 
                 <ScrollView style={styles.content} contentContainerStyle={styles.contentContainer}>
-                    <View style={[styles.infoCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+                    <View style={[styles.infoCard, { backgroundColor: cardBg, borderColor: cardBorder }]}>
                         <FileText size={48} color={colors.primary} style={{ marginBottom: 16 }} />
-                        <Text style={[styles.infoTitle, { color: colors.text }]}>
+                        <Text style={[styles.infoTitle, { color: onBg }]}>
                             ¿Cómo quieres trabajar el análisis de esta escena?
                         </Text>
-                        <Text style={[styles.infoDescription, { color: colors.textSecondary }]}>
+                        <Text style={[styles.infoDescription, { color: onBg2 }]}>
                             Puedes completar el análisis rellenando el formulario predeterminado, crear tu propio análisis personalizado o pedirle a ScriptCue que lo analice por ti.
                         </Text>
                     </View>
@@ -323,65 +348,75 @@ export default function AnalysisScreen() {
                         </TouchableOpacity>
                     )}
                 </ScrollView>
-                </View>
+
+                <ConfirmDialog
+                    visible={infoDialog.visible}
+                    title={infoDialog.title}
+                    message={infoDialog.message}
+                    singleButton
+                    confirmText="OK"
+                    onConfirm={closeInfoDialog}
+                    onCancel={closeInfoDialog}
+                />
             </SafeAreaView>
+            </ImageBackground>
         );
     }
 
     // Pantalla de análisis manual
     if (mode === 'manual') {
         return (
-            <SafeAreaView style={[styles.container, { backgroundColor: colors.surface }]}>
-                <View style={{ flex: 1, backgroundColor: colors.background }}>
-                <View style={[styles.header, { backgroundColor: colors.surface, borderBottomColor: colors.border }]}>
-                    <TouchableOpacity onPress={() => setMode('select')} style={styles.backButton}>
-                        <ArrowLeft size={24} color={colors.text} />
+            <ImageBackground source={analysisBg()} resizeMode="cover" style={styles.container}>
+            <SafeAreaView style={[styles.container, { backgroundColor: 'transparent' }]}>
+                <View style={[styles.header, { borderBottomColor: cardBorder }]}>
+                    <TouchableOpacity onPress={() => setMode('select')} style={[styles.backButton, glassHeaderBtn]}>
+                        <ArrowLeft size={20} color="#FFFFFF" />
                     </TouchableOpacity>
-                    <Text style={[styles.headerTitle, { color: colors.text }]} numberOfLines={1}>
+                    <Text style={[styles.headerTitle, { color: onBg }]} numberOfLines={1}>
                         {script?.title || 'Análisis Manual'}
                     </Text>
                     <View style={styles.headerActions}>
                         <TouchableOpacity
                             onPress={() => router.push(`/scripts/${id}/chubbuck-guide`)}
-                            style={styles.guideButton}
+                            style={[styles.guideButton, glassHeaderBtn]}
                         >
-                            <BookOpen size={22} color={colors.primary} />
+                            <BookOpen size={20} color="#FFFFFF" />
                         </TouchableOpacity>
-                        <TouchableOpacity onPress={handleSaveAnalysis} style={styles.saveButton} disabled={saving}>
+                        <TouchableOpacity onPress={handleSaveAnalysis} style={[styles.saveButton, glassHeaderBtn]} disabled={saving}>
                             {saving ? (
-                                <ActivityIndicator size="small" color={colors.primary} />
+                                <ActivityIndicator size="small" color="#FFFFFF" />
                             ) : (
-                                <Save size={24} color={colors.primary} />
+                                <Save size={20} color="#FFFFFF" />
                             )}
                         </TouchableOpacity>
                     </View>
                 </View>
 
                 <ScrollView style={styles.content} contentContainerStyle={styles.formContainer}>
-                    <Text style={[styles.formTitle, { color: colors.text }]}>
+                    <Text style={[styles.formTitle, { color: onBg }]}>
                         Análisis actoral en 10 puntos
                     </Text>
-                    <Text style={[styles.formSubtitle, { color: colors.textSecondary }]}>
+                    <Text style={[styles.formSubtitle, { color: onBg2 }]}>
                         Completa cada punto para desarrollar un análisis profundo de tu personaje.
                     </Text>
 
                     {ANALYSIS_STEPS.map((step, index) => (
-                        <View key={step.key} style={[styles.stepCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-                            <Text style={[styles.stepTitle, { color: colors.text }]}>{step.title}</Text>
-                            <Text style={[styles.stepDescription, { color: colors.textSecondary }]}>
+                        <View key={step.key} style={[styles.stepCard, { backgroundColor: cardBg, borderColor: cardBorder }]}>
+                            <Text style={[styles.stepTitle, { color: onBg }]}>{step.title}</Text>
+                            <Text style={[styles.stepDescription, { color: onBg2 }]}>
                                 {step.description}
                             </Text>
                             <TextInput
                                 style={[
                                     styles.stepInput,
                                     {
-                                        backgroundColor: colors.input,
-                                        color: colors.text,
-                                        borderColor: colors.border,
+                                        backgroundColor: fieldBg,
+                                        color: onBg,
+                                        borderColor: cardBorder,
                                     },
                                 ]}
                                 placeholder="Escribe tu análisis aquí..."
-                                placeholderTextColor={colors.placeholder}
+                                placeholderTextColor={onBg2}
                                 multiline
                                 numberOfLines={4}
                                 value={(analysis as any)[step.key] || ''}
@@ -408,8 +443,18 @@ export default function AnalysisScreen() {
 
                     <View style={{ height: 40 }} />
                 </ScrollView>
-                </View>
+
+                <ConfirmDialog
+                    visible={infoDialog.visible}
+                    title={infoDialog.title}
+                    message={infoDialog.message}
+                    singleButton
+                    confirmText="OK"
+                    onConfirm={closeInfoDialog}
+                    onCancel={closeInfoDialog}
+                />
             </SafeAreaView>
+            </ImageBackground>
         );
     }
 
@@ -446,61 +491,59 @@ export default function AnalysisScreen() {
                 // Recargar datos para actualizar estados
                 await loadData();
 
-                Alert.alert('Guardado', 'El análisis generado ha sido guardado correctamente.', [
-                    { text: 'OK', onPress: () => setMode('select') }
-                ]);
+                showInfo('Guardado', 'El análisis generado ha sido guardado correctamente.', () => setMode('select'));
             } catch (error: any) {
                 console.error('Error saving AI analysis:', error);
-                Alert.alert('Error', 'No se pudo guardar el análisis');
+                showInfo('Error', 'No se pudo guardar el análisis');
             } finally {
                 setSaving(false);
             }
         };
 
         return (
-            <SafeAreaView style={[styles.container, { backgroundColor: colors.surface }]}>
-                <View style={{ flex: 1, backgroundColor: colors.background }}>
-                <View style={[styles.header, { backgroundColor: colors.surface, borderBottomColor: colors.border }]}>
-                    <TouchableOpacity onPress={() => setMode('select')} style={styles.backButton}>
-                        <ArrowLeft size={24} color={colors.text} />
+            <ImageBackground source={analysisBg()} resizeMode="cover" style={styles.container}>
+            <SafeAreaView style={[styles.container, { backgroundColor: 'transparent' }]}>
+                <View style={[styles.header, { borderBottomColor: cardBorder }]}>
+                    <TouchableOpacity onPress={() => setMode('select')} style={[styles.backButton, glassHeaderBtn]}>
+                        <ArrowLeft size={20} color="#FFFFFF" />
                     </TouchableOpacity>
-                    <Text style={[styles.headerTitle, { color: colors.text }]} numberOfLines={1}>
+                    <Text style={[styles.headerTitle, { color: onBg }]} numberOfLines={1}>
                         Resultado del análisis
                     </Text>
-                    <TouchableOpacity onPress={handleSaveAIAnalysis} style={styles.saveButton} disabled={saving}>
+                    <TouchableOpacity onPress={handleSaveAIAnalysis} style={[styles.saveButton, glassHeaderBtn]} disabled={saving}>
                         {saving ? (
-                            <ActivityIndicator size="small" color={colors.primary} />
+                            <ActivityIndicator size="small" color="#FFFFFF" />
                         ) : (
-                            <Save size={24} color={colors.primary} />
+                            <Save size={20} color="#FFFFFF" />
                         )}
                     </TouchableOpacity>
                 </View>
 
                 <ScrollView style={styles.content} contentContainerStyle={styles.formContainer}>
-                    <View style={[styles.aiResultBanner, { backgroundColor: colors.primary + '15', borderColor: colors.primary + '40' }]}>
+                    <View style={[styles.aiResultBanner, { backgroundColor: cardBg, borderColor: cardBorder }]}>
                         <Sparkles size={24} color={colors.primary} />
-                        <Text style={[styles.aiResultText, { color: colors.text }]}>
+                        <Text style={[styles.aiResultText, { color: onBg }]}>
                             Éste es el análisis generado. Puedes guardarlo tal cual, editarlo o descartarlo y hacer uno manual.
                         </Text>
                     </View>
 
                     {ANALYSIS_STEPS.map((step) => (
-                        <View key={step.key} style={[styles.stepCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-                            <Text style={[styles.stepTitle, { color: colors.text }]}>{step.title}</Text>
-                            <Text style={[styles.stepDescription, { color: colors.textSecondary }]}>
+                        <View key={step.key} style={[styles.stepCard, { backgroundColor: cardBg, borderColor: cardBorder }]}>
+                            <Text style={[styles.stepTitle, { color: onBg }]}>{step.title}</Text>
+                            <Text style={[styles.stepDescription, { color: onBg2 }]}>
                                 {step.description}
                             </Text>
                             <TextInput
                                 style={[
                                     styles.stepInput,
                                     {
-                                        backgroundColor: colors.input,
-                                        color: colors.text,
-                                        borderColor: colors.border,
+                                        backgroundColor: fieldBg,
+                                        color: onBg,
+                                        borderColor: cardBorder,
                                     },
                                 ]}
                                 placeholder="Análisis generado por ScriptCue..."
-                                placeholderTextColor={colors.placeholder}
+                                placeholderTextColor={onBg2}
                                 multiline
                                 numberOfLines={4}
                                 value={(aiAnalysis as any)[step.key] || ''}
@@ -529,36 +572,56 @@ export default function AnalysisScreen() {
 
                     <View style={{ height: 40 }} />
                 </ScrollView>
-                </View>
+
+                <ConfirmDialog
+                    visible={infoDialog.visible}
+                    title={infoDialog.title}
+                    message={infoDialog.message}
+                    singleButton
+                    confirmText="OK"
+                    onConfirm={closeInfoDialog}
+                    onCancel={closeInfoDialog}
+                />
             </SafeAreaView>
+            </ImageBackground>
         );
     }
 
     // Pantalla de IA - Generar análisis automáticamente
     if (mode === 'ai') {
         return (
-            <SafeAreaView style={[styles.container, { backgroundColor: colors.surface }]}>
-                <View style={{ flex: 1, backgroundColor: colors.background }}>
-                <View style={[styles.header, { backgroundColor: colors.surface, borderBottomColor: colors.border }]}>
-                    <TouchableOpacity onPress={() => setMode('select')} style={styles.backButton} disabled={generating}>
-                        <ArrowLeft size={24} color={generating ? colors.textSecondary : colors.text} />
+            <ImageBackground source={analysisBg()} resizeMode="cover" style={styles.container}>
+            <SafeAreaView style={[styles.container, { backgroundColor: 'transparent' }]}>
+                <View style={[styles.header, { borderBottomColor: cardBorder }]}>
+                    <TouchableOpacity onPress={() => setMode('select')} style={[styles.backButton, glassHeaderBtn, generating && { opacity: 0.5 }]} disabled={generating}>
+                        <ArrowLeft size={20} color="#FFFFFF" />
                     </TouchableOpacity>
-                    <Text style={[styles.headerTitle, { color: colors.text }]}>Creando análisis</Text>
+                    <Text style={[styles.headerTitle, { color: onBg }]}>Creando análisis</Text>
                     <View style={{ width: 40 }} />
                 </View>
 
                 <View style={styles.centerContainer}>
                     <Sparkles size={64} color={colors.primary} style={{ marginBottom: 24 }} />
                     <ActivityIndicator size="large" color={colors.primary} style={{ marginBottom: 16 }} />
-                    <Text style={[styles.generatingTitle, { color: colors.text }]}>
+                    <Text style={[styles.generatingTitle, { color: onBg }]}>
                         Generando análisis...
                     </Text>
-                    <Text style={[styles.generatingSubtitle, { color: colors.textSecondary }]}>
+                    <Text style={[styles.generatingSubtitle, { color: onBg2 }]}>
                         ScriptCue está analizando tu guion con los 10 puntos de análisis actoral
                     </Text>
                 </View>
-                </View>
+
+                <ConfirmDialog
+                    visible={infoDialog.visible}
+                    title={infoDialog.title}
+                    message={infoDialog.message}
+                    singleButton
+                    confirmText="OK"
+                    onConfirm={closeInfoDialog}
+                    onCancel={closeInfoDialog}
+                />
             </SafeAreaView>
+            </ImageBackground>
         );
     }
 
@@ -585,12 +648,14 @@ const styles = StyleSheet.create({
     backButton: {
         width: 40,
         height: 40,
+        borderRadius: 20,
         alignItems: 'center',
         justifyContent: 'center',
     },
     saveButton: {
         width: 40,
         height: 40,
+        borderRadius: 20,
         alignItems: 'center',
         justifyContent: 'center',
     },
@@ -602,6 +667,7 @@ const styles = StyleSheet.create({
     guideButton: {
         width: 40,
         height: 40,
+        borderRadius: 20,
         alignItems: 'center',
         justifyContent: 'center',
     },
@@ -649,7 +715,7 @@ const styles = StyleSheet.create({
         paddingHorizontal: rp(20),
         borderRadius: 12,
         marginBottom: 16,
-        shadowColor: '#3B82F6',
+        shadowColor: '#1a1625',
         shadowOffset: { width: 0, height: 4 },
         shadowOpacity: 0.3,
         shadowRadius: 8,
@@ -702,7 +768,7 @@ const styles = StyleSheet.create({
         paddingHorizontal: rp(20),
         borderRadius: 12,
         marginTop: 24,
-        shadowColor: '#3B82F6',
+        shadowColor: '#1a1625',
         shadowOffset: { width: 0, height: 4 },
         shadowOpacity: 0.3,
         shadowRadius: 8,

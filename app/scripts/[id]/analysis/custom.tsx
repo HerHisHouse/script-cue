@@ -6,7 +6,7 @@ import {
     TouchableOpacity,
     TextInput,
     ActivityIndicator,
-    Alert,
+    ImageBackground,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, useLocalSearchParams } from 'expo-router';
@@ -18,18 +18,46 @@ import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/utils/supabase';
 import { rf, rp } from '@/utils/responsive';
 import { CustomAnalysisQuestion } from '@/types/database';
+import { ConfirmDialog } from '@/components/ConfirmDialog';
 
 export default function CustomAnalysisScreen() {
     const router = useRouter();
     const { id } = useLocalSearchParams();
     const scriptId = id as string;
-    const { colors } = useTheme();
+    const { colors, isDark } = useTheme();
     const { user } = useAuth();
+
+    // Paleta "sobre imagen de fondo" del diseño glass, igual que Modo Análisis / Guía de Referencia
+    const onBg = isDark ? '#ffffff' : '#2a2447';
+    const onBg2 = isDark ? '#a0a0c0' : '#5c5678';
+    const cardBg = isDark ? 'rgba(124,106,247,0.08)' : 'rgba(255,255,255,0.55)';
+    const cardBorder = isDark ? 'rgba(167,139,250,0.25)' : 'rgba(124,106,247,0.15)';
+    const fieldBg = isDark ? 'rgba(255,255,255,0.06)' : 'rgba(255,255,255,0.7)';
+    const glassHeaderBtn = isDark
+        ? { backgroundColor: 'rgba(124,106,247,0.14)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.2)' }
+        : { backgroundColor: colors.primary };
+    const customBg = () => (isDark ? require('@/assets/images/ui-dark-bg.png') : require('@/assets/images/ui-light-bg.png'));
 
     const [scriptTitle, setScriptTitle] = useState<string>('Cargando...');
     const [questions, setQuestions] = useState<CustomAnalysisQuestion[]>([]);
     const [loading, setLoading] = useState(true);
     const [saving, setSaving] = useState(false);
+    const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
+    const [infoDialog, setInfoDialog] = useState<{ visible: boolean; title: string; message: string; onClose?: () => void }>({
+        visible: false,
+        title: '',
+        message: '',
+    });
+
+    const showInfo = (title: string, message: string, onClose?: () => void) => {
+        setInfoDialog({ visible: true, title, message, onClose });
+    };
+
+    const closeInfoDialog = () => {
+        const onClose = infoDialog.onClose;
+        setInfoDialog({ visible: false, title: '', message: '' });
+        onClose?.();
+    };
 
     useEffect(() => {
         loadData();
@@ -89,20 +117,14 @@ export default function CustomAnalysisScreen() {
     };
 
     const handleDeleteQuestion = (id: string) => {
-        Alert.alert(
-            'Eliminar pregunta',
-            '¿Estás seguro de que quieres eliminar esta pregunta?',
-            [
-                { text: 'Cancelar', style: 'cancel' },
-                {
-                    text: 'Eliminar',
-                    style: 'destructive',
-                    onPress: () => {
-                        setQuestions(questions.filter((q) => q.id !== id));
-                    },
-                },
-            ]
-        );
+        setDeleteConfirmId(id);
+    };
+
+    const confirmDeleteQuestion = () => {
+        if (deleteConfirmId) {
+            setQuestions(questions.filter((q) => q.id !== deleteConfirmId));
+        }
+        setDeleteConfirmId(null);
     };
 
     const handleSave = async () => {
@@ -113,7 +135,7 @@ export default function CustomAnalysisScreen() {
         );
 
         if (hasEmptyQuestions) {
-            Alert.alert(
+            showInfo(
                 'Campos vacíos',
                 'Por favor, completa todas las preguntas y respuestas antes de guardar.'
             );
@@ -121,7 +143,7 @@ export default function CustomAnalysisScreen() {
         }
 
         if (questions.length === 0) {
-            Alert.alert(
+            showInfo(
                 'Sin preguntas',
                 'Añade al menos una pregunta antes de guardar.'
             );
@@ -162,14 +184,14 @@ export default function CustomAnalysisScreen() {
                 if (error) throw error;
             }
 
-            Alert.alert(
+            showInfo(
                 'Guardado',
                 'Tu análisis personalizado se ha guardado correctamente.',
-                [{ text: 'OK', onPress: () => router.back() }]
+                () => router.back()
             );
         } catch (error: any) {
             console.error('Error saving custom analysis:', error);
-            Alert.alert(
+            showInfo(
                 'Error',
                 'No se pudo guardar el análisis. Inténtalo de nuevo.'
             );
@@ -185,8 +207,8 @@ export default function CustomAnalysisScreen() {
                     style={[
                         styles.cardContainer,
                         {
-                            backgroundColor: colors.surface,
-                            borderColor: isActive ? colors.primary : colors.border,
+                            backgroundColor: cardBg,
+                            borderColor: isActive ? colors.primary : cardBorder,
                             shadowColor: isActive ? '#000' : 'transparent',
                             elevation: isActive ? 5 : 0,
                             opacity: isActive ? 0.9 : 1,
@@ -200,23 +222,23 @@ export default function CustomAnalysisScreen() {
                             style={styles.dragHandle}
                             accessibilityLabel="Reordenar pregunta"
                         >
-                            <GripVertical size={20} color={colors.textSecondary} />
+                            <GripVertical size={20} color={onBg2} />
                         </TouchableOpacity>
-                        
+
                         <View style={{ flex: 1, marginRight: 8 }}>
                             <TextInput
                                 style={[
                                     styles.titleInput,
-                                    { color: colors.text }
+                                    { color: onBg }
                                 ]}
                                 placeholder="Escribe tu pregunta..."
-                                placeholderTextColor={colors.placeholder}
+                                placeholderTextColor={onBg2}
                                 value={item.question}
                                 onChangeText={(text) => handleUpdateQuestion(item.id, 'question', text)}
                                 multiline
                             />
                         </View>
-                        
+
                         <TouchableOpacity
                             onPress={() => handleDeleteQuestion(item.id)}
                             style={styles.deleteButton}
@@ -229,13 +251,13 @@ export default function CustomAnalysisScreen() {
                         style={[
                             styles.answerInput,
                             {
-                                backgroundColor: colors.input,
-                                color: colors.text,
-                                borderColor: colors.border,
+                                backgroundColor: fieldBg,
+                                color: onBg,
+                                borderColor: cardBorder,
                             },
                         ]}
                         placeholder="Escribe tu respuesta aquí..."
-                        placeholderTextColor={colors.placeholder}
+                        placeholderTextColor={onBg2}
                         multiline
                         numberOfLines={4}
                         value={item.answer}
@@ -249,24 +271,25 @@ export default function CustomAnalysisScreen() {
 
     if (loading) {
         return (
-            <View style={[styles.centerContainer, { backgroundColor: colors.background }]}>
+            <ImageBackground source={customBg()} resizeMode="cover" style={styles.centerContainer}>
                 <ActivityIndicator size="large" color={colors.primary} />
-            </View>
+            </ImageBackground>
         );
     }
 
     return (
         <GestureHandlerRootView style={{ flex: 1 }}>
-            <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
-                <View style={[styles.header, { backgroundColor: colors.surface, borderBottomColor: colors.border }]}>
-                    <TouchableOpacity onPress={() => router.back()} style={styles.headerButton}>
-                        <ArrowLeft size={24} color={colors.text} />
+            <ImageBackground source={customBg()} resizeMode="cover" style={styles.container}>
+            <SafeAreaView style={[styles.container, { backgroundColor: 'transparent' }]}>
+                <View style={[styles.header, { borderBottomColor: cardBorder }]}>
+                    <TouchableOpacity onPress={() => router.back()} style={[styles.headerButton, glassHeaderBtn]}>
+                        <ArrowLeft size={20} color="#FFFFFF" />
                     </TouchableOpacity>
-                    <Text style={[styles.headerTitle, { color: colors.text }]} numberOfLines={1}>
+                    <Text style={[styles.headerTitle, { color: onBg }]} numberOfLines={1}>
                         {scriptTitle}
                     </Text>
-                    <TouchableOpacity onPress={handleAddQuestion} style={styles.headerButton}>
-                        <Plus size={24} color={colors.primary} />
+                    <TouchableOpacity onPress={handleAddQuestion} style={[styles.headerButton, glassHeaderBtn]}>
+                        <Plus size={20} color="#FFFFFF" />
                     </TouchableOpacity>
                 </View>
 
@@ -278,11 +301,11 @@ export default function CustomAnalysisScreen() {
                     contentContainerStyle={styles.listContent}
                     ListEmptyComponent={
                         <View style={styles.emptyContainer}>
-                            <Text style={[styles.emptyText, { color: colors.textSecondary }]}>
+                            <Text style={[styles.emptyText, { color: onBg2 }]}>
                                 Aún no has añadido ninguna pregunta.
                             </Text>
                             <TouchableOpacity
-                                style={[styles.addFirstButton, { borderColor: colors.primary }]}
+                                style={[styles.addFirstButton, { borderColor: cardBorder, backgroundColor: cardBg }]}
                                 onPress={handleAddQuestion}
                             >
                                 <Plus size={20} color={colors.primary} />
@@ -311,7 +334,29 @@ export default function CustomAnalysisScreen() {
                         ) : null
                     }
                 />
+
+                <ConfirmDialog
+                    visible={!!deleteConfirmId}
+                    title="Eliminar pregunta"
+                    message="¿Estás seguro de que quieres eliminar esta pregunta?"
+                    confirmText="Eliminar"
+                    cancelText="Cancelar"
+                    destructive
+                    onConfirm={confirmDeleteQuestion}
+                    onCancel={() => setDeleteConfirmId(null)}
+                />
+
+                <ConfirmDialog
+                    visible={infoDialog.visible}
+                    title={infoDialog.title}
+                    message={infoDialog.message}
+                    singleButton
+                    confirmText="OK"
+                    onConfirm={closeInfoDialog}
+                    onCancel={closeInfoDialog}
+                />
             </SafeAreaView>
+            </ImageBackground>
         </GestureHandlerRootView>
     );
 }
@@ -336,6 +381,7 @@ const styles = StyleSheet.create({
     headerButton: {
         width: 40,
         height: 40,
+        borderRadius: 20,
         alignItems: 'center',
         justifyContent: 'center',
     },
@@ -399,7 +445,7 @@ const styles = StyleSheet.create({
         paddingHorizontal: rp(20),
         borderRadius: 12,
         marginTop: 12,
-        shadowColor: '#3B82F6',
+        shadowColor: '#1a1625',
         shadowOffset: { width: 0, height: 4 },
         shadowOpacity: 0.3,
         shadowRadius: 8,

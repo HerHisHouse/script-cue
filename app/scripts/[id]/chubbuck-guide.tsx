@@ -5,6 +5,7 @@ import {
     StyleSheet,
     ScrollView,
     TouchableOpacity,
+    ImageBackground,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
@@ -14,7 +15,18 @@ import { rf, rp } from '@/utils/responsive';
 
 export default function ChubbuckGuideScreen() {
     const router = useRouter();
-    const { colors } = useTheme();
+    const { colors, isDark } = useTheme();
+
+    // Paleta "sobre imagen de fondo" del diseño glass, igual que Modo Análisis / Editar guion
+    const onBg = isDark ? '#ffffff' : '#2a2447';
+    const onBg2 = isDark ? '#a0a0c0' : '#5c5678';
+    const cardBg = isDark ? 'rgba(124,106,247,0.08)' : 'rgba(255,255,255,0.55)';
+    const cardBorder = isDark ? 'rgba(167,139,250,0.25)' : 'rgba(124,106,247,0.15)';
+    const innerBg = isDark ? 'rgba(255,255,255,0.06)' : 'rgba(255,255,255,0.55)';
+    const glassHeaderBtn = isDark
+        ? { backgroundColor: 'rgba(124,106,247,0.14)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.2)' }
+        : { backgroundColor: colors.primary };
+    const guideBg = () => (isDark ? require('@/assets/images/ui-dark-bg.png') : require('@/assets/images/ui-light-bg.png'));
 
     const steps = [
         {
@@ -157,41 +169,42 @@ export default function ChubbuckGuideScreen() {
     ];
 
     return (
-        <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
-            <View style={[styles.header, { backgroundColor: colors.surface, borderBottomColor: colors.border }]}>
-                <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
-                    <ArrowLeft size={24} color={colors.text} />
+        <ImageBackground source={guideBg()} resizeMode="cover" style={styles.container}>
+        <SafeAreaView style={[styles.container, { backgroundColor: 'transparent' }]}>
+            <View style={[styles.header, { borderBottomColor: cardBorder }]}>
+                <TouchableOpacity onPress={() => router.back()} style={[styles.backButton, glassHeaderBtn]}>
+                    <ArrowLeft size={20} color="#FFFFFF" />
                 </TouchableOpacity>
-                <Text style={[styles.headerTitle, { color: colors.text }]}>Guía de Referencia</Text>
+                <Text style={[styles.headerTitle, { color: onBg }]}>Guía de Referencia</Text>
                 <View style={{ width: 40 }} />
             </View>
 
             <ScrollView style={styles.content} contentContainerStyle={styles.contentContainer}>
                 {/* Título principal */}
-                <View style={[styles.titleCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+                <View style={[styles.titleCard, { backgroundColor: cardBg, borderColor: cardBorder }]}>
                     <BookOpen size={40} color={colors.primary} style={{ marginBottom: 12 }} />
-                    <Text style={[styles.mainTitle, { color: colors.text }]}>Análisis Actoral</Text>
-                    <Text style={[styles.subtitle, { color: colors.textSecondary }]}>
-                        Esta guía te ayudará a comprender en profundidad tu escena y a construir una interpretación más consciente, orgánica y precisa. No se trata de encontrar "respuestas correctas", sino respuestas vivas que te sirvan para actuar.
+                    <Text style={[styles.mainTitle, { color: onBg }]}>Análisis Actoral</Text>
+                    <Text style={[styles.subtitle, { color: onBg2 }]}>
+                        Esta guía te ayudará a comprender en profundidad tu escena y a construir una interpretación más consciente, orgánica y precisa. No se trata de encontrar &ldquo;respuestas correctas&rdquo;, sino respuestas vivas que te sirvan para actuar.
                     </Text>
                 </View>
 
                 {/* Lista de pasos */}
                 {steps.map((step) => (
-                    <View key={step.number} style={[styles.stepCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+                    <View key={step.number} style={[styles.stepCard, { backgroundColor: cardBg, borderColor: cardBorder }]}>
                         <View style={styles.stepHeader}>
                             <View style={[styles.stepNumber, { backgroundColor: colors.primary }]}>
                                 <Text style={styles.stepNumberText}>{step.number}</Text>
                             </View>
                             <View style={{ flex: 1 }}>
-                                <Text style={[styles.stepTitle, { color: colors.text }]}>{step.title}</Text>
+                                <Text style={[styles.stepTitle, { color: onBg }]}>{step.title}</Text>
                                 {step.subtitle && (
                                     <Text style={[styles.stepSubtitle, { color: colors.primary }]}>{step.subtitle}</Text>
                                 )}
                             </View>
                         </View>
 
-                        <Text style={[styles.stepDescription, { color: colors.text }]}>
+                        <Text style={[styles.stepDescription, { color: onBg }]}>
                             {step.description}
                         </Text>
 
@@ -200,7 +213,7 @@ export default function ChubbuckGuideScreen() {
                                 {step.details.map((detail, index) => (
                                     <View key={index} style={styles.detailRow}>
                                         <Text style={[styles.bullet, { color: colors.primary }]}>•</Text>
-                                        <Text style={[styles.detailText, { color: colors.textSecondary }]}>
+                                        <Text style={[styles.detailText, { color: onBg2 }]}>
                                             {detail}
                                         </Text>
                                     </View>
@@ -209,12 +222,12 @@ export default function ChubbuckGuideScreen() {
                         )}
 
                         {step.questions && step.questions.length > 0 && (
-                            <View style={[styles.questionsContainer, { backgroundColor: colors.input, borderColor: colors.border }]}>
-                                <Text style={[styles.questionsTitle, { color: colors.textSecondary }]}>
+                            <View style={[styles.questionsContainer, { backgroundColor: innerBg, borderColor: cardBorder }]}>
+                                <Text style={[styles.questionsTitle, { color: onBg2 }]}>
                                     👉 Pregúntate:
                                 </Text>
                                 {step.questions.map((question, index) => (
-                                    <Text key={index} style={[styles.questionText, { color: colors.text }]}>
+                                    <Text key={index} style={[styles.questionText, { color: onBg }]}>
                                         • {question}
                                     </Text>
                                 ))}
@@ -223,7 +236,7 @@ export default function ChubbuckGuideScreen() {
 
                         {step.tip && (
                             <View style={[styles.tipContainer, { backgroundColor: colors.primary + '15', borderColor: colors.primary + '40' }]}>
-                                <Text style={[styles.tipText, { color: colors.text }]}>
+                                <Text style={[styles.tipText, { color: onBg }]}>
                                     💡 {step.tip}
                                 </Text>
                             </View>
@@ -232,24 +245,25 @@ export default function ChubbuckGuideScreen() {
                 ))}
 
                 {/* Cierre */}
-                <View style={[styles.closingCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-                    <Text style={[styles.closingTitle, { color: colors.text }]}>
+                <View style={[styles.closingCard, { backgroundColor: cardBg, borderColor: cardBorder }]}>
+                    <Text style={[styles.closingTitle, { color: onBg }]}>
                         Cierre de la Guía
                     </Text>
-                    <Text style={[styles.closingText, { color: colors.textSecondary }]}>
+                    <Text style={[styles.closingText, { color: onBg2 }]}>
                         Este análisis no es un examen, es una herramienta de trabajo. Cuanta más honestidad y concreción haya, más útil será en el:
                     </Text>
                     <View style={styles.modesList}>
-                        <Text style={[styles.modeItem, { color: colors.text }]}>• Modo Estudio</Text>
-                        <Text style={[styles.modeItem, { color: colors.text }]}>• Modo Escena</Text>
-                        <Text style={[styles.modeItem, { color: colors.text }]}>• Modo Memory</Text>
-                        <Text style={[styles.modeItem, { color: colors.text }]}>• Grabaciones</Text>
+                        <Text style={[styles.modeItem, { color: onBg }]}>• Modo Estudio</Text>
+                        <Text style={[styles.modeItem, { color: onBg }]}>• Modo Escena</Text>
+                        <Text style={[styles.modeItem, { color: onBg }]}>• Modo Memory</Text>
+                        <Text style={[styles.modeItem, { color: onBg }]}>• Grabaciones</Text>
                     </View>
                 </View>
 
                 <View style={{ height: 40 }} />
             </ScrollView>
         </SafeAreaView>
+        </ImageBackground>
     );
 }
 
@@ -268,6 +282,7 @@ const styles = StyleSheet.create({
     backButton: {
         width: 40,
         height: 40,
+        borderRadius: 20,
         alignItems: 'center',
         justifyContent: 'center',
     },
