@@ -367,14 +367,17 @@ app.post('/process-casting', upload.any(), async (req, res) => {
     // Responder inmediatamente — el cliente puede navegar mientras el servidor procesa
     res.json({ success: true, jobId, message: 'Procesamiento iniciado' });
 
-    // Registrar el job en Supabase
+    // Registrar el job en Supabase. upsert (no insert) para que sea resistente
+    // a blips de red transitorios: si esta llamada falla, la actualización de
+    // estado final de más abajo (también upsert) creará la fila igualmente en
+    // vez de quedarse actualizando una fila que nunca llegó a existir.
     try {
-        const { error } = await supabase.from('casting_jobs').insert({
+        const { error } = await supabase.from('casting_jobs').upsert({
             job_id: jobId,
             user_id: userId,
             script_id: scriptId,
             status: 'processing',
-        });
+        }, { onConflict: 'job_id' });
         if (error) console.error('[Casting] Error registrando job:', error);
     } catch (err) {
         console.error('[Casting] Error registrando job:', err);
@@ -385,11 +388,12 @@ app.post('/process-casting', upload.any(), async (req, res) => {
         .catch(async (err) => {
             console.error(`[Job ${jobId}] Error fatal:`, err.message);
             try {
-                const { error } = await supabase.from('casting_jobs').update({
+                const { error } = await supabase.from('casting_jobs').upsert({
+                    job_id: jobId,
                     status: 'error',
                     error_message: err.message,
                     updated_at: new Date().toISOString(),
-                }).eq('job_id', jobId);
+                }, { onConflict: 'job_id' });
                 if (error) console.error('[Casting] Error actualizando job a error:', error);
             } catch (updateErr) {
                 console.error('[Casting] Excepción actualizando job:', updateErr);
@@ -1102,10 +1106,11 @@ async function processCastingInBackground(jobId, files, body) {
                 } catch (e) {}
             }, 3600000);
 
-            await supabase.from('casting_jobs').update({
+            await supabase.from('casting_jobs').upsert({
+                job_id: jobId,
                 status: 'completed_local',
                 error_message: message,
-            }).eq('job_id', jobId);
+            }, { onConflict: 'job_id' });
 
         } else {
             // Subir a Supabase
@@ -1155,10 +1160,11 @@ async function processCastingInBackground(jobId, files, body) {
             console.log(`[Job ${jobId}] ✅ Guardado en recordings con ID:`, recordingData?.[0]?.id);
             
             // Marcar job como completado al final, tras asegurar éxito total
-            const { error: jobUpdateError } = await supabase.from('casting_jobs').update({
+            const { error: jobUpdateError } = await supabase.from('casting_jobs').upsert({
+                job_id: jobId,
                 status: 'completed',
                 updated_at: new Date().toISOString(),
-            }).eq('job_id', jobId);
+            }, { onConflict: 'job_id' });
 
             if (jobUpdateError) {
                 console.error(`[Job ${jobId}] Error actualizando status final:`, jobUpdateError);
@@ -1219,14 +1225,16 @@ app.post('/process-take-preview', upload.any(), async (req, res) => {
 
     // Registrar el job en Supabase, marcado como preview (job_type requiere la
     // columna añadida en supabase/migrations/20260821120000_add_job_type_to_casting_jobs.sql)
+    // upsert (no insert) para que sea resistente a blips de red transitorios —
+    // ver el mismo comentario en /process-casting más arriba.
     try {
-        const { error } = await supabase.from('casting_jobs').insert({
+        const { error } = await supabase.from('casting_jobs').upsert({
             job_id: jobId,
             user_id: userId,
             script_id: scriptId || null,
             status: 'processing',
             job_type: 'take_preview',
-        });
+        }, { onConflict: 'job_id' });
         if (error) console.error('[Preview] Error registrando job:', error);
     } catch (err) {
         console.error('[Preview] Error registrando job:', err);
@@ -1236,11 +1244,12 @@ app.post('/process-take-preview', upload.any(), async (req, res) => {
         .catch(async (err) => {
             console.error(`[Job ${jobId}] Error fatal:`, err.message);
             try {
-                await supabase.from('casting_jobs').update({
+                await supabase.from('casting_jobs').upsert({
+                    job_id: jobId,
                     status: 'error',
                     error_message: err.message,
                     updated_at: new Date().toISOString(),
-                }).eq('job_id', jobId);
+                }, { onConflict: 'job_id' });
             } catch (updateErr) {
                 console.error('[Preview] Error actualizando status de error:', updateErr);
             }
@@ -1308,10 +1317,11 @@ async function processTakePreviewInBackground(jobId, files, body) {
 
         // Marcar como completado — sin insert en `recordings`, esto no es una
         // grabación final, solo un preview para el comparador de tomas.
-        await supabase.from('casting_jobs').update({
+        await supabase.from('casting_jobs').upsert({
+            job_id: jobId,
             status: 'completed',
             updated_at: new Date().toISOString(),
-        }).eq('job_id', jobId);
+        }, { onConflict: 'job_id' });
 
         console.log(`[Job ${jobId}] ✅ Preview completo`);
 
@@ -1367,14 +1377,15 @@ app.post('/compress-video', upload.fields([
   // Responder inmediatamente
   res.json({ success: true, jobId });
 
-  // Registrar en casting_jobs
+  // Registrar en casting_jobs. upsert (no insert) para que sea resistente a
+  // blips de red transitorios — ver el mismo comentario en /process-casting.
   try {
-    await supabase.from('casting_jobs').insert({
+    await supabase.from('casting_jobs').upsert({
       job_id: jobId,
       user_id: req.body.userId,
       script_id: req.body.scriptId || null,
       status: 'processing',
-    });
+    }, { onConflict: 'job_id' });
   } catch (err) {
     console.error('[Teleprompter] Error registrando job:', err);
   }
@@ -1384,11 +1395,12 @@ app.post('/compress-video', upload.fields([
     .catch(async (err) => {
       console.error(`[Job ${jobId}] Error fatal:`, err.message);
       try {
-        await supabase.from('casting_jobs').update({
+        await supabase.from('casting_jobs').upsert({
+          job_id: jobId,
           status: 'error',
           error_message: err.message,
           updated_at: new Date().toISOString(),
-        }).eq('job_id', jobId);
+        }, { onConflict: 'job_id' });
       } catch (updateErr) {
         console.error('[Job] Error actualizando status de error:', updateErr);
       }
@@ -1555,19 +1567,21 @@ async function processTeleprompterInBackground(jobId, files, body) {
     } else {
       // Vídeo demasiado grande incluso tras comprimir
       console.log(`[Job ${jobId}] ⚠️ Vídeo grande, guardando para descarga...`);
-      await supabase.from('casting_jobs').update({
+      await supabase.from('casting_jobs').upsert({
+        job_id: jobId,
         status: 'completed_local',
         error_message: `Vídeo de ${finalSizeMB.toFixed(0)}MB. Disponible 1 hora.`,
         updated_at: new Date().toISOString(),
-      }).eq('job_id', jobId);
+      }, { onConflict: 'job_id' });
       return;
     }
 
     // Marcar como completado
-    await supabase.from('casting_jobs').update({
+    await supabase.from('casting_jobs').upsert({
+      job_id: jobId,
       status: 'completed',
       updated_at: new Date().toISOString(),
-    }).eq('job_id', jobId);
+    }, { onConflict: 'job_id' });
 
     console.log(`[Job ${jobId}] ✅ Proceso completo`);
 
