@@ -6,13 +6,15 @@ import {
   TouchableOpacity,
   ScrollView,
   ActivityIndicator,
-  Alert,
   Dimensions,
   Image,
   FlatList,
   Modal,
+  ImageBackground,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { BlurView } from 'expo-blur';
+import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { useRouter, useLocalSearchParams, Stack } from 'expo-router';
 import {
   ArrowLeft,
@@ -81,8 +83,37 @@ const getFeedbackIcon = (key: string, color: string) => {
 export default function CoachModeScreen() {
   const router = useRouter();
   const { id } = useLocalSearchParams();
-  const { colors } = useTheme();
+  const { colors, isDark } = useTheme();
   const { user } = useAuth();
+
+  // Paleta "sobre imagen de fondo" del diseño glass, igual que Modo Análisis / Editar guion
+  const onBg = isDark ? '#ffffff' : '#2a2447';
+  const onBg2 = isDark ? '#a0a0c0' : '#5c5678';
+  const cardBg = isDark ? 'rgba(124,106,247,0.08)' : 'rgba(255,255,255,0.55)';
+  const cardBorder = isDark ? 'rgba(167,139,250,0.25)' : 'rgba(124,106,247,0.15)';
+  const fieldBg = isDark ? 'rgba(255,255,255,0.06)' : 'rgba(255,255,255,0.7)';
+  const chipBg = isDark ? 'rgba(255,255,255,0.08)' : 'rgba(104,58,121,0.08)';
+  const glassHeaderBtn = isDark
+    ? { backgroundColor: 'rgba(124,106,247,0.14)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.2)' }
+    : { backgroundColor: colors.primary };
+  const coachBg = () => (isDark ? require('@/assets/images/ui-dark-bg.png') : require('@/assets/images/ui-light-bg.png'));
+  const modalOverlayTint = isDark ? 'rgba(124,106,247,0.20)' : 'rgba(235,230,245,0.55)';
+
+  const [infoDialog, setInfoDialog] = useState<{ visible: boolean; title: string; message: string; onClose?: () => void }>({
+    visible: false,
+    title: '',
+    message: '',
+  });
+
+  const showInfo = (title: string, message: string, onClose?: () => void) => {
+    setInfoDialog({ visible: true, title, message, onClose });
+  };
+
+  const closeInfoDialog = () => {
+    const onClose = infoDialog.onClose;
+    setInfoDialog({ visible: false, title: '', message: '' });
+    onClose?.();
+  };
 
   const [recordings, setRecordings] = useState<Recording[]>([]);
   const [loading, setLoading] = useState(true);
@@ -405,11 +436,11 @@ export default function CoachModeScreen() {
       console.error('Analysis error:', e);
 
       if (e.name === 'AbortError') {
-        Alert.alert('Timeout', 'El análisis tardó demasiado tiempo. El archivo puede ser muy largo. Intenta con una grabación más corta.');
+        showInfo('Timeout', 'El análisis tardó demasiado tiempo. El archivo puede ser muy largo. Intenta con una grabación más corta.');
       } else if (e.message.includes('503')) {
-        Alert.alert('Servidor Ocupado', 'El servidor está procesando demasiadas peticiones. Espera 1 minuto e intenta de nuevo.');
+        showInfo('Servidor Ocupado', 'El servidor está procesando demasiadas peticiones. Espera 1 minuto e intenta de nuevo.');
       } else {
-        Alert.alert('Error de Análisis', e.message);
+        showInfo('Error de Análisis', e.message);
       }
     } finally {
       setComparingWith(null);
@@ -441,7 +472,7 @@ export default function CoachModeScreen() {
       if (!path.startsWith('file://')) {
         const signedUrl = await getSignedUrl(path);
         if (!signedUrl) {
-          Alert.alert('Error', 'No se pudo obtener la URL del audio');
+          showInfo('Error', 'No se pudo obtener la URL del audio');
           return;
         }
         playableUrl = signedUrl;
@@ -455,7 +486,7 @@ export default function CoachModeScreen() {
       newSound.setOnPlaybackStatusUpdate(setPlaybackStatus);
     } catch (e) {
       console.error('Playback error:', e);
-      Alert.alert('Error de reproducción', 'No se pudo reproducir el archivo. Código: -1008 (Acceso denegado o archivo no encontrado).');
+      showInfo('Error de reproducción', 'No se pudo reproducir el archivo. Código: -1008 (Acceso denegado o archivo no encontrado).');
     }
   }
 
@@ -507,7 +538,7 @@ export default function CoachModeScreen() {
         if (!playableUrl.startsWith('file://')) {
           const signedUrl = await getSignedUrl(playableUrl);
           if (!signedUrl) {
-            Alert.alert('Error', 'No se pudo obtener el audio');
+            showInfo('Error', 'No se pudo obtener el audio');
             setPreviewingId(null);
             return;
           }
@@ -536,10 +567,10 @@ export default function CoachModeScreen() {
 
   const renderRecordingItem = ({ item }: { item: Recording }) => (
     <TouchableOpacity
-      style={[styles.recordingCard, { backgroundColor: colors.surface, borderColor: colors.border }]}
+      style={[styles.recordingCard, { backgroundColor: cardBg, borderColor: cardBorder }]}
       onPress={() => selectRecording(item)}
     >
-      <View style={[styles.iconBox, { backgroundColor: colors.input }]}>
+      <View style={[styles.iconBox, { backgroundColor: chipBg }]}>
         {item.type === 'video' ? (
           <VideoIcon size={24} color={colors.primary} />
         ) : (
@@ -547,11 +578,11 @@ export default function CoachModeScreen() {
         )}
       </View>
       <View style={{ flex: 1 }}>
-        <Text style={[styles.recordingTitle, { color: colors.text }]}>
+        <Text style={[styles.recordingTitle, { color: onBg }]}>
           {item.title || `${new Date(item.created_at).toLocaleDateString()} - ${new Date(item.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`}
         </Text>
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-            <Text style={[styles.recordingSubtitle, { color: colors.textSecondary }]}>
+            <Text style={[styles.recordingSubtitle, { color: onBg2 }]}>
                 {item.duration_seconds ? `${Math.round(item.duration_seconds)}s` : 'Analizar duración'}
             </Text>
             {analyzedIds.has(item.id) && (
@@ -569,14 +600,14 @@ export default function CoachModeScreen() {
             return isLocalFile ? (
               <View style={styles.storageTag}>
                 <Text style={styles.storageTagIcon}>📱</Text>
-                <Text style={[styles.storageTagText, { color: colors.textSecondary }]}>
+                <Text style={[styles.storageTagText, { color: onBg2 }]}>
                   Local
                 </Text>
               </View>
             ) : (
               <View style={styles.storageTag}>
                 <Text style={styles.storageTagIcon}>☁️</Text>
-                <Text style={[styles.storageTagText, { color: colors.textSecondary }]}>
+                <Text style={[styles.storageTagText, { color: onBg2 }]}>
                   Nube
                 </Text>
               </View>
@@ -584,7 +615,7 @@ export default function CoachModeScreen() {
           })()}
         </View>
       </View>
-      <ChevronRight size={20} color={colors.textSecondary} />
+      <ChevronRight size={20} color={onBg2} />
     </TouchableOpacity>
   );
   const renderAnalysisContent = () => {
@@ -594,10 +625,10 @@ export default function CoachModeScreen() {
       return (
         <View style={[styles.tabContent, { padding: 20, alignItems: 'center', marginTop: 40 }]}>
           <AlertCircle size={48} color="#ef4444" style={{ marginBottom: 16 }} />
-          <Text style={{ color: colors.text, textAlign: 'center', fontSize: rf(16), lineHeight: 24, marginBottom: 16 }}>
+          <Text style={{ color: onBg, textAlign: 'center', fontSize: rf(16), lineHeight: 24, marginBottom: 16 }}>
             Ocurrió un error en el servidor de ScriptCue al procesar esta grabación.
           </Text>
-          <Text style={{ color: colors.textSecondary, textAlign: 'center', fontSize: rf(14), lineHeight: 20 }}>
+          <Text style={{ color: onBg2, textAlign: 'center', fontSize: rf(14), lineHeight: 20 }}>
             {analysis.feedback.error}
           </Text>
           <TouchableOpacity
@@ -616,7 +647,7 @@ export default function CoachModeScreen() {
       return (
         <View style={[styles.tabContent, { padding: 20, alignItems: 'center', marginTop: 40 }]}>
           <AlertCircle size={48} color={colors.warning} style={{ marginBottom: 16 }} />
-          <Text style={{ color: colors.text, textAlign: 'center', fontSize: rf(16), lineHeight: 24 }}>
+          <Text style={{ color: onBg, textAlign: 'center', fontSize: rf(16), lineHeight: 24 }}>
             Este análisis fue generado con una versión anterior de la app. Graba una nueva toma para verlo en el nuevo formato.
           </Text>
         </View>
@@ -627,17 +658,17 @@ export default function CoachModeScreen() {
       case 'feedback':
         return (
           <View style={styles.tabContent}>
-            <View style={[styles.scoreCard, { backgroundColor: colors.surface }]}>
+            <View style={[styles.scoreCard, { backgroundColor: cardBg, borderColor: cardBorder, borderWidth: 1 }]}>
               {Object.entries(analysis.feedback || {}).map(([key, value]: [string, any], index: number) => (
                 <View key={key} style={styles.verticalFeedbackItem}>
-                  {index > 0 && <View style={[styles.horizontalDivider, { backgroundColor: colors.border }]} />}
+                  {index > 0 && <View style={[styles.horizontalDivider, { backgroundColor: cardBorder }]} />}
                   <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 8 }}>
                     {getFeedbackIcon(key, colors.primary)}
                     <Text style={[styles.feedbackLabelVertical, { color: colors.primary, marginBottom: 0 }]}>
                       {feedbackLabels[key] || key.toUpperCase()}
                     </Text>
                   </View>
-                  <Text style={[styles.feedbackValueVertical, { color: colors.text }]}>
+                  <Text style={[styles.feedbackValueVertical, { color: onBg }]}>
                     {value}
                   </Text>
                 </View>
@@ -650,13 +681,13 @@ export default function CoachModeScreen() {
           <View style={styles.tabContent}>
             <Text style={[styles.sectionTitle, { color: colors.primary, marginBottom: 16 }]}>Propuestas de Exploración</Text>
             {(analysis.propuestas || []).map((prop: any, i: number) => (
-              <View key={i} style={[styles.propuestaCard, { backgroundColor: colors.surface, borderLeftColor: '#a78bfa' }]}>
+              <View key={i} style={[styles.propuestaCard, { backgroundColor: cardBg, borderColor: cardBorder, borderWidth: 1, borderLeftColor: '#a78bfa' }]}>
                 <View style={styles.propuestaNumberBox}>
                   <Text style={styles.propuestaNumber}>{i + 1}</Text>
                 </View>
                 <View style={{ flex: 1 }}>
-                  <Text style={[styles.propuestaTitle, { color: colors.text }]}>{prop.titulo}</Text>
-                  <Text style={[styles.propuestaDesc, { color: colors.textSecondary }]}>{prop.descripcion}</Text>
+                  <Text style={[styles.propuestaTitle, { color: onBg }]}>{prop.titulo}</Text>
+                  <Text style={[styles.propuestaDesc, { color: onBg2 }]}>{prop.descripcion}</Text>
                 </View>
               </View>
             ))}
@@ -709,7 +740,7 @@ export default function CoachModeScreen() {
 
         return (
           <View style={styles.tabContent}>
-            <View style={[styles.scoreCard, { backgroundColor: colors.surface }]}>
+            <View style={[styles.scoreCard, { backgroundColor: cardBg, borderColor: cardBorder, borderWidth: 1 }]}>
               <Text style={[styles.sectionTitle, { color: colors.primary, marginBottom: 16 }]}>
                 {hasHistory ? "Descubrimientos de la toma" : "Comparar Interpretación"}
               </Text>
@@ -726,7 +757,7 @@ export default function CoachModeScreen() {
                             {feedbackLabels[key] || key.toUpperCase()}
                           </Text>
                         </View>
-                        <Text style={[styles.comparisonValueVertical, { color: colors.text }]}>{value}</Text>
+                        <Text style={[styles.comparisonValueVertical, { color: onBg }]}>{value}</Text>
                       </View>
                     );
                   })}
@@ -738,14 +769,14 @@ export default function CoachModeScreen() {
                           DESCUBRIMIENTOS
                         </Text>
                       </View>
-                      <Text style={[styles.comparisonValueVertical, { color: colors.text }]}>{descubrimientos}</Text>
+                      <Text style={[styles.comparisonValueVertical, { color: onBg }]}>{descubrimientos}</Text>
                     </View>
                   )}
                 </View>
               ) : (
                 <View style={styles.emptyComparison}>
-                  <Activity size={40} color={colors.textSecondary} style={{ opacity: 0.3, marginBottom: 12 }} />
-                  <Text style={[styles.emptyComparisonText, { color: colors.textSecondary, marginBottom: 16 }]}>
+                  <Activity size={40} color={onBg2} style={{ opacity: 0.3, marginBottom: 12 }} />
+                  <Text style={[styles.emptyComparisonText, { color: onBg2, marginBottom: 16 }]}>
                     Esta es tu primera toma analizada de esta escena. ¿Quieres compararla con otra grabación?
                   </Text>
                   
@@ -758,7 +789,7 @@ export default function CoachModeScreen() {
                             key={r.id}
                             style={[
                                 styles.comparisonOption, 
-                                { backgroundColor: colors.input, borderColor: comparingWith === r.id ? colors.primary : colors.border },
+                                { backgroundColor: fieldBg, borderColor: comparingWith === r.id ? colors.primary : cardBorder },
                                 comparingWith === r.id && { borderWidth: 2 }
                             ]}
                             onPress={() => startAnalysis(r.id)}
@@ -767,17 +798,17 @@ export default function CoachModeScreen() {
                             {analyzing && comparingWith === r.id ? (
                                 <ActivityIndicator size="small" color={colors.primary} />
                             ) : (
-                                <Repeat size={16} color={comparingWith === r.id ? colors.primary : colors.textSecondary} />
+                                <Repeat size={16} color={comparingWith === r.id ? colors.primary : onBg2} />
                             )}
                             <View style={{ flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
                               <View style={{ flex: 1, marginLeft: 8 }}>
                                 <Text style={[
                                     styles.comparisonOptionText, 
-                                    { color: comparingWith === r.id ? colors.primary : colors.text }
+                                    { color: comparingWith === r.id ? colors.primary : onBg }
                                 ]}>
                                   {r.title || (r.type === 'video' ? 'Grabación de Vídeo' : 'Grabación de Audio')}
                                 </Text>
-                                <Text style={{ fontSize: 12, color: colors.textSecondary, marginTop: 2 }}>
+                                <Text style={{ fontSize: 12, color: onBg2, marginTop: 2 }}>
                                   {r.type === 'video' ? 'Vídeo' : 'Audio'} • {r.duration_seconds ? `${Math.round(r.duration_seconds)}s` : '--s'}
                                 </Text>
                               </View>
@@ -794,7 +825,7 @@ export default function CoachModeScreen() {
                                   {previewingId === r.id ? (
                                     <StopSquare size={18} color={colors.primary} fill={colors.primary} />
                                   ) : (
-                                    <Volume2 size={18} color={colors.textSecondary} />
+                                    <Volume2 size={18} color={onBg2} />
                                   )}
                                 </TouchableOpacity>
                               </View>
@@ -803,7 +834,7 @@ export default function CoachModeScreen() {
                         ))}
                     </View>
                   ) : (
-                    <Text style={{ fontSize: rf(12), color: colors.textSecondary, fontStyle: 'italic', textAlign: 'center' }}>
+                    <Text style={{ fontSize: rf(12), color: onBg2, fontStyle: 'italic', textAlign: 'center' }}>
                       No hay otras grabaciones de la misma escena para comparar.
                     </Text>
                   )}
@@ -817,33 +848,33 @@ export default function CoachModeScreen() {
 
   if (loading) {
     return (
-      <View style={[styles.center, { backgroundColor: colors.background }]}>
+      <ImageBackground source={coachBg()} resizeMode="cover" style={styles.center}>
         <ActivityIndicator size="large" color={colors.primary} />
-      </View>
+      </ImageBackground>
     );
   }
 
   // --- VIEW: RECORDING SELECTION ---
   if (!selectedRecording) {
     return (
-      <SafeAreaView style={[styles.container, { backgroundColor: colors.surface }]}>
+      <ImageBackground source={coachBg()} resizeMode="cover" style={styles.container}>
+      <SafeAreaView style={[styles.container, { backgroundColor: 'transparent' }]}>
         <Stack.Screen options={{ headerShown: false }} />
-        <View style={{ flex: 1, backgroundColor: colors.background }}>
-        <View style={[styles.header, { backgroundColor: colors.surface, borderBottomColor: colors.border }]}>
-          <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
-            <ArrowLeft size={24} color={colors.text} />
+        <View style={[styles.header, { borderBottomColor: cardBorder }]}>
+          <TouchableOpacity onPress={() => router.back()} style={[styles.backButton, glassHeaderBtn]}>
+            <ArrowLeft size={20} color="#FFFFFF" />
           </TouchableOpacity>
-          <Text style={[styles.headerTitle, { color: colors.text }]}>Modo Escena</Text>
+          <Text style={[styles.headerTitle, { color: onBg }]}>Modo Escena</Text>
           <TouchableOpacity
-            onPress={() => Alert.alert('Modo Escena', 'Parte de una grabación y recibe propuestas para explorar tu personaje desde ángulos distintos. No es una evaluación: es un laboratorio.')}
-            style={styles.backButton}
+            onPress={() => showInfo('Modo Escena', 'Parte de una grabación y recibe propuestas para explorar tu personaje desde ángulos distintos. No es una evaluación: es un laboratorio.')}
+            style={[styles.backButton, glassHeaderBtn]}
           >
-            <Info size={24} color={colors.text} />
+            <Info size={20} color="#FFFFFF" />
           </TouchableOpacity>
         </View>
 
         <View style={styles.content}>
-          <Text style={[styles.subtitle, { color: colors.textSecondary }]}>
+          <Text style={[styles.subtitle, { color: onBg2 }]}>
             Selecciona una grabación para recibir propuestas.
           </Text>
 
@@ -858,7 +889,7 @@ export default function CoachModeScreen() {
                   <Text style={[styles.localModeBannerTitle, { color: colors.warning }]}>
                     Modo local activo
                   </Text>
-                  <Text style={[styles.localModeBannerText, { color: colors.textSecondary }]}>
+                  <Text style={[styles.localModeBannerText, { color: onBg2 }]}>
                     Tus grabaciones no se están subiendo a la nube.
                   </Text>
                 </View>
@@ -881,14 +912,14 @@ export default function CoachModeScreen() {
             contentContainerStyle={{ padding: rp(20) }}
             ListEmptyComponent={
               <View style={styles.emptyState}>
-                <Mic size={48} color={colors.textSecondary} style={{ opacity: 0.5 }} />
-                <Text style={[styles.emptyText, { color: colors.textSecondary }]}>
-                  No hay grabaciones disponibles. Ve al "Modo Estudio" o "Modo Casting" para grabar una escena.
+                <Mic size={48} color={onBg2} style={{ opacity: 0.5 }} />
+                <Text style={[styles.emptyText, { color: onBg2 }]}>
+                  No hay grabaciones disponibles. Ve al &ldquo;Modo Estudio&rdquo; o &ldquo;Modo Casting&rdquo; para grabar una escena.
                 </Text>
 
                 <View style={styles.emptyActions}>
                   <TouchableOpacity
-                    style={styles.actionButton}
+                    style={[styles.actionButton, { backgroundColor: colors.primary, shadowColor: colors.primary }]}
                     onPress={() => router.push(`/scripts/${id}/studio-v2`)}
                   >
                     <Play size={24} color="#FFFFFF" />
@@ -896,7 +927,7 @@ export default function CoachModeScreen() {
                   </TouchableOpacity>
 
                   <TouchableOpacity
-                    style={styles.actionButton}
+                    style={[styles.actionButton, { backgroundColor: colors.primary, shadowColor: colors.primary }]}
                     onPress={() => router.push(`/scripts/${id}/casting`)}
                   >
                     <Clapperboard size={24} color="#FFFFFF" />
@@ -916,13 +947,15 @@ export default function CoachModeScreen() {
           onRequestClose={() => { }}
          supportedOrientations={['portrait', 'landscape', 'landscape-left', 'landscape-right']}>
           <View style={styles.modalOverlay}>
-            <View style={[styles.modalContent, { backgroundColor: colors.surface }]}>
+            <View style={[styles.modalContent, { borderWidth: 1, borderColor: cardBorder, overflow: 'hidden' }]}>
+              <BlurView intensity={isDark ? 55 : 65} tint={isDark ? 'dark' : 'light'} style={StyleSheet.absoluteFill} />
+              <View style={[StyleSheet.absoluteFill, { backgroundColor: modalOverlayTint }]} />
               <View style={styles.modalHeader}>
                 <AlertCircle size={48} color={colors.primary} />
-                <Text style={[styles.modalTitle, { color: colors.text }]}>Aviso Importante</Text>
+                <Text style={[styles.modalTitle, { color: onBg }]}>Aviso Importante</Text>
               </View>
 
-              <Text style={[styles.modalText, { color: colors.text }]}>
+              <Text style={[styles.modalText, { color: onBg }]}>
                 El modo Escena es una herramienta de entrenamiento para explorar personajes y escenas desde distintas perspectivas. Diseñada para complementar el estudio y la preparación actoral, no para sustituir la formación profesional.
               </Text>
 
@@ -934,9 +967,9 @@ export default function CoachModeScreen() {
                 {dontShowAgain ? (
                   <CheckSquare size={24} color={colors.primary} />
                 ) : (
-                  <Square size={24} color={colors.textSecondary} />
+                  <Square size={24} color={onBg2} />
                 )}
-                <Text style={[styles.checkboxText, { color: colors.text }]}>
+                <Text style={[styles.checkboxText, { color: onBg }]}>
                   No volver a mostrar este mensaje
                 </Text>
               </TouchableOpacity>
@@ -950,26 +983,36 @@ export default function CoachModeScreen() {
             </View>
           </View>
         </Modal>
-        </View>
+
+        <ConfirmDialog
+          visible={infoDialog.visible}
+          title={infoDialog.title}
+          message={infoDialog.message}
+          singleButton
+          confirmText="OK"
+          onConfirm={closeInfoDialog}
+          onCancel={closeInfoDialog}
+        />
       </SafeAreaView>
+      </ImageBackground>
     );
   }
 
   // --- VIEW: ANALYSIS / DETAILS ---
   return (
-    <SafeAreaView style={[styles.container, { backgroundColor: colors.surface }]}>
+    <ImageBackground source={coachBg()} resizeMode="cover" style={styles.container}>
+    <SafeAreaView style={[styles.container, { backgroundColor: 'transparent' }]}>
       <Stack.Screen options={{ headerShown: false }} />
-      <View style={{ flex: 1, backgroundColor: colors.background }}>
-      <View style={[styles.header, { backgroundColor: colors.surface, borderBottomColor: colors.border }]}>
-        <TouchableOpacity onPress={() => setSelectedRecording(null)} style={styles.backButton}>
-          <ArrowLeft size={24} color={colors.text} />
+      <View style={[styles.header, { borderBottomColor: cardBorder }]}>
+        <TouchableOpacity onPress={() => setSelectedRecording(null)} style={[styles.backButton, glassHeaderBtn]}>
+          <ArrowLeft size={20} color="#FFFFFF" />
         </TouchableOpacity>
-        <Text style={[styles.headerTitle, { color: colors.text }]}>Análisis de la escena</Text>
+        <Text style={[styles.headerTitle, { color: onBg }]}>Análisis de la escena</Text>
         <TouchableOpacity
-          onPress={() => Alert.alert('Modo Escena', 'Parte de una grabación y recibe propuestas para explorar tu personaje desde ángulos distintos. No es una evaluación: es un laboratorio.')}
-          style={styles.backButton}
+          onPress={() => showInfo('Modo Escena', 'Parte de una grabación y recibe propuestas para explorar tu personaje desde ángulos distintos. No es una evaluación: es un laboratorio.')}
+          style={[styles.backButton, glassHeaderBtn]}
         >
-          <Info size={24} color={colors.text} />
+          <Info size={20} color="#FFFFFF" />
         </TouchableOpacity>
       </View>
 
@@ -1002,21 +1045,23 @@ export default function CoachModeScreen() {
 
         {!analysis ? (
           <View style={styles.introSection}>
-            <View style={[styles.introCard, { backgroundColor: colors.surface }]}>
+            <View style={[styles.introCard, { backgroundColor: cardBg, borderWidth: 1, borderColor: cardBorder }]}>
               <Brain size={48} color={colors.primary} style={{ marginBottom: 16 }} />
-              <Text style={[styles.introTitle, { color: colors.text }]}>Análisis de Interpretación</Text>
-              <Text style={[styles.introText, { color: colors.textSecondary }]}>
+              <Text style={[styles.introTitle, { color: onBg }]}>Análisis de Interpretación</Text>
+              <Text style={[styles.introText, { color: onBg2 }]}>
                 ScriptCue analizará la escena para darte propuestas de actuación diferentes.
               </Text>
 
               {/* Modal selector de personaje */}
               {showCharacterSelector ? (
                 <View style={styles.modalOverlay}>
-                  <View style={[styles.modalContent, { backgroundColor: colors.surface }]}>
-                    <Text style={[styles.modalTitle, { color: colors.text }]}>
+                  <View style={[styles.modalContent, { borderWidth: 1, borderColor: cardBorder, overflow: 'hidden' }]}>
+                    <BlurView intensity={isDark ? 55 : 65} tint={isDark ? 'dark' : 'light'} style={StyleSheet.absoluteFill} />
+                    <View style={[StyleSheet.absoluteFill, { backgroundColor: modalOverlayTint }]} />
+                    <Text style={[styles.modalTitle, { color: onBg }]}>
                       ¿Qué personaje interpretas?
                     </Text>
-                    <Text style={[styles.modalText, { color: colors.textSecondary }]}>
+                    <Text style={[styles.modalText, { color: onBg2 }]}>
                       Necesitamos saber tu personaje para analizar 
                       solo tus intervenciones.
                     </Text>
@@ -1027,11 +1072,11 @@ export default function CoachModeScreen() {
                           key={char.id}
                           style={[
                             styles.characterOption,
-                            { 
-                              backgroundColor: colors.input,
-                              borderColor: selectedCharacterId === char.id 
-                                ? colors.primary 
-                                : colors.border,
+                            {
+                              backgroundColor: fieldBg,
+                              borderColor: selectedCharacterId === char.id
+                                ? colors.primary
+                                : cardBorder,
                               borderWidth: selectedCharacterId === char.id ? 2 : 1,
                             }
                           ]}
@@ -1045,7 +1090,7 @@ export default function CoachModeScreen() {
                             { 
                               color: selectedCharacterId === char.id 
                                 ? colors.primary 
-                                : colors.text,
+                                : onBg,
                               fontWeight: selectedCharacterId === char.id ? '700' : '400'
                             }
                           ]}>
@@ -1057,11 +1102,11 @@ export default function CoachModeScreen() {
 
                     <TouchableOpacity
                       style={[
-                        styles.modalButton, 
-                        { 
-                          backgroundColor: selectedCharacterId 
-                            ? colors.primary 
-                            : colors.border,
+                        styles.modalButton,
+                        {
+                          backgroundColor: selectedCharacterId
+                            ? colors.primary
+                            : chipBg,
                           marginTop: 20
                         }
                       ]}
@@ -1088,7 +1133,7 @@ export default function CoachModeScreen() {
                       onPress={() => setShowCharacterSelector(false)}
                       style={{ marginTop: 12 }}
                     >
-                      <Text style={[styles.comparisonLabel, { color: colors.textSecondary }]}>
+                      <Text style={[styles.comparisonLabel, { color: onBg2 }]}>
                         Cancelar
                       </Text>
                     </TouchableOpacity>
@@ -1128,33 +1173,33 @@ export default function CoachModeScreen() {
           <>
             {/* Scroll Indicator */}
             <View style={styles.scrollIndicator}>
-              <Text style={[styles.scrollHint, { color: colors.textSecondary }]}>← Desliza para ver más →</Text>
+              <Text style={[styles.scrollHint, { color: onBg2 }]}>← Desliza para ver más →</Text>
             </View>
 
             {/* TABS HEADER */}
             <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.tabsContainer}>
               <TouchableOpacity
-                style={[styles.tab, activeTab === 'feedback' && styles.activeTab, { borderColor: activeTab === 'feedback' ? colors.primary : 'transparent' }]}
+                style={[styles.tab, { borderColor: activeTab === 'feedback' ? colors.primary : 'transparent' }, activeTab === 'feedback' && { backgroundColor: isDark ? 'rgba(124,106,247,0.20)' : 'rgba(104,58,121,0.12)' }]}
                 onPress={() => setActiveTab('feedback')}
               >
-                <Activity size={18} color={activeTab === 'feedback' ? colors.primary : colors.textSecondary} />
-                <Text style={[styles.tabText, { color: activeTab === 'feedback' ? colors.primary : colors.textSecondary }]}>Análisis</Text>
+                <Activity size={18} color={activeTab === 'feedback' ? colors.primary : onBg2} />
+                <Text style={[styles.tabText, { color: activeTab === 'feedback' ? colors.primary : onBg2 }]}>Análisis</Text>
               </TouchableOpacity>
 
               <TouchableOpacity
-                style={[styles.tab, activeTab === 'propuestas' && styles.activeTab, { borderColor: activeTab === 'propuestas' ? colors.primary : 'transparent' }]}
+                style={[styles.tab, { borderColor: activeTab === 'propuestas' ? colors.primary : 'transparent' }, activeTab === 'propuestas' && { backgroundColor: isDark ? 'rgba(124,106,247,0.20)' : 'rgba(104,58,121,0.12)' }]}
                 onPress={() => setActiveTab('propuestas')}
               >
-                <Sparkles size={18} color={activeTab === 'propuestas' ? colors.primary : colors.textSecondary} />
-                <Text style={[styles.tabText, { color: activeTab === 'propuestas' ? colors.primary : colors.textSecondary }]}>Propuestas</Text>
+                <Sparkles size={18} color={activeTab === 'propuestas' ? colors.primary : onBg2} />
+                <Text style={[styles.tabText, { color: activeTab === 'propuestas' ? colors.primary : onBg2 }]}>Propuestas</Text>
               </TouchableOpacity>
 
               <TouchableOpacity
-                style={[styles.tab, activeTab === 'comparacion' && styles.activeTab, { borderColor: activeTab === 'comparacion' ? colors.primary : 'transparent' }]}
+                style={[styles.tab, { borderColor: activeTab === 'comparacion' ? colors.primary : 'transparent' }, activeTab === 'comparacion' && { backgroundColor: isDark ? 'rgba(124,106,247,0.20)' : 'rgba(104,58,121,0.12)' }]}
                 onPress={() => setActiveTab('comparacion')}
               >
-                <TrendingUp size={18} color={activeTab === 'comparacion' ? colors.primary : colors.textSecondary} />
-                <Text style={[styles.tabText, { color: activeTab === 'comparacion' ? colors.primary : colors.textSecondary }]}>Comparación</Text>
+                <TrendingUp size={18} color={activeTab === 'comparacion' ? colors.primary : onBg2} />
+                <Text style={[styles.tabText, { color: activeTab === 'comparacion' ? colors.primary : onBg2 }]}>Comparación</Text>
               </TouchableOpacity>
             </ScrollView>
 
@@ -1165,8 +1210,18 @@ export default function CoachModeScreen() {
           </>
         )}
       </ScrollView>
-      </View>
+
+      <ConfirmDialog
+        visible={infoDialog.visible}
+        title={infoDialog.title}
+        message={infoDialog.message}
+        singleButton
+        confirmText="OK"
+        onConfirm={closeInfoDialog}
+        onCancel={closeInfoDialog}
+      />
     </SafeAreaView>
+    </ImageBackground>
   );
 }
 
@@ -1182,7 +1237,7 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
   },
   headerTitle: { fontSize: rf(18), fontWeight: '600' },
-  backButton: { padding: rp(8) },
+  backButton: { width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center' },
   content: { flex: 1 },
   subtitle: { padding: rp(20), fontSize: rf(14), textAlign: 'center' },
   recordingCard: {
@@ -1280,9 +1335,6 @@ const styles = StyleSheet.create({
     borderRadius: 20,
     marginRight: 8,
     borderWidth: 1,
-  },
-  activeTab: {
-    backgroundColor: 'rgba(59, 130, 246, 0.1)',
   },
   tabText: { fontSize: rf(14), fontWeight: '600' },
   tabContent: { padding: rp(20) },
@@ -1542,8 +1594,6 @@ const styles = StyleSheet.create({
     paddingVertical: rp(16),
     paddingHorizontal: rp(12),
     borderRadius: 12,
-    backgroundColor: '#683a79',
-    shadowColor: '#683a79',
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.3,
     shadowRadius: 8,
