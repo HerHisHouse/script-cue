@@ -36,6 +36,10 @@ export default function CustomAnalysisScreen() {
     const glassHeaderBtn = isDark
         ? { backgroundColor: 'rgba(124,106,247,0.14)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.2)' }
         : { backgroundColor: colors.primary };
+    // Mismo tratamiento que el botón "Subir y Analizar" de Importar Guion
+    const primaryButtonBg = isDark
+        ? { backgroundColor: 'rgba(124,106,247,0.80)', borderWidth: 1.5, borderColor: 'rgba(255,255,255,0.5)' }
+        : { backgroundColor: colors.primary };
     const customBg = () => (isDark ? require('@/assets/images/ui-dark-bg.png') : require('@/assets/images/ui-light-bg.png'));
 
     const [scriptTitle, setScriptTitle] = useState<string>('Cargando...');
@@ -318,7 +322,7 @@ export default function CustomAnalysisScreen() {
                     ListFooterComponent={
                         questions.length > 0 ? (
                             <TouchableOpacity
-                                style={[styles.saveButtonLarge, { backgroundColor: colors.primary }]}
+                                style={[styles.saveButtonLarge, primaryButtonBg]}
                                 onPress={handleSave}
                                 disabled={saving}
                             >

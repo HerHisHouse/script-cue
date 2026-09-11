@@ -88,6 +88,11 @@ export default function AnalysisScreen() {
     const glassHeaderBtn = isDark
         ? { backgroundColor: 'rgba(124,106,247,0.14)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.2)' }
         : { backgroundColor: colors.primary };
+    // Mismo tratamiento que el botón "Subir y Analizar" de Importar Guion: en oscuro,
+    // morado translúcido con borde en vez del morado sólido (que quedaba plano sobre el cristal)
+    const primaryButtonBg = isDark
+        ? { backgroundColor: 'rgba(124,106,247,0.80)', borderWidth: 1.5, borderColor: 'rgba(255,255,255,0.5)' }
+        : { backgroundColor: colors.primary };
     const analysisBg = () => (isDark ? require('@/assets/images/ui-dark-bg.png') : require('@/assets/images/ui-light-bg.png'));
 
     const [script, setScript] = useState<Script | null>(null);
@@ -300,7 +305,7 @@ export default function AnalysisScreen() {
 
                 <ScrollView style={styles.content} contentContainerStyle={styles.contentContainer}>
                     <View style={[styles.infoCard, { backgroundColor: cardBg, borderColor: cardBorder }]}>
-                        <FileText size={48} color={colors.primary} style={{ marginBottom: 16 }} />
+                        <FileText size={48} color={isDark ? '#FFFFFF' : colors.primary} style={{ marginBottom: 16 }} />
                         <Text style={[styles.infoTitle, { color: onBg }]}>
                             ¿Cómo quieres trabajar el análisis de esta escena?
                         </Text>
@@ -310,7 +315,7 @@ export default function AnalysisScreen() {
                     </View>
 
                     <TouchableOpacity
-                        style={[styles.modeButton, { backgroundColor: colors.primary }]}
+                        style={[styles.modeButton, primaryButtonBg]}
                         onPress={() => setMode('manual')}
                     >
                         <FileText size={24} color="#FFFFFF" />
@@ -319,7 +324,7 @@ export default function AnalysisScreen() {
 
                     {/* Botón de análisis personalizado */}
                     <TouchableOpacity
-                        style={[styles.modeButton, { backgroundColor: colors.primary }]}
+                        style={[styles.modeButton, primaryButtonBg]}
                         onPress={() => router.push(`/scripts/${id}/analysis/custom`)}
                     >
                         <PenLine size={24} color="#FFFFFF" />
@@ -340,7 +345,7 @@ export default function AnalysisScreen() {
                     {/* Mostrar botón de generar IA solo si NO existe análisis de IA */}
                     {Object.keys(aiAnalysis).length === 0 && (
                         <TouchableOpacity
-                            style={[styles.modeButton, { backgroundColor: colors.primary }]}
+                            style={[styles.modeButton, primaryButtonBg]}
                             onPress={() => setMode('ai')}
                         >
                             <Sparkles size={24} color="#FFFFFF" />
@@ -427,7 +432,7 @@ export default function AnalysisScreen() {
                     ))}
 
                     <TouchableOpacity
-                        style={[styles.saveButtonLarge, { backgroundColor: colors.primary }]}
+                        style={[styles.saveButtonLarge, primaryButtonBg]}
                         onPress={handleSaveAnalysis}
                         disabled={saving}
                     >
@@ -556,7 +561,7 @@ export default function AnalysisScreen() {
                     ))}
 
                     <TouchableOpacity
-                        style={[styles.saveButtonLarge, { backgroundColor: colors.primary }]}
+                        style={[styles.saveButtonLarge, primaryButtonBg]}
                         onPress={handleSaveAIAnalysis}
                         disabled={saving}
                     >

@@ -41,7 +41,9 @@ import {
   Target,
   Users,
   Volume2,
-  Square as StopSquare
+  Square as StopSquare,
+  Cloud,
+  Smartphone
 } from 'lucide-react-native';
 import { Audio, Video, ResizeMode } from 'expo-av';
 import { supabase } from '@/utils/supabase';
@@ -96,6 +98,13 @@ export default function CoachModeScreen() {
   const glassHeaderBtn = isDark
     ? { backgroundColor: 'rgba(124,106,247,0.14)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.2)' }
     : { backgroundColor: colors.primary };
+  // Mismo tratamiento que el botón "Subir y Analizar" de Importar Guion / Modo Análisis
+  const primaryButtonBg = isDark
+    ? { backgroundColor: 'rgba(124,106,247,0.80)', borderWidth: 1.5, borderColor: 'rgba(255,255,255,0.5)' }
+    : { backgroundColor: colors.primary };
+  // Sobre el fondo glass morado de la pestaña activa, el propio colors.primary (lila) apenas
+  // contrasta en oscuro; en claro sigue siendo el morado del tema.
+  const activeTabColor = isDark ? '#FFFFFF' : colors.primary;
   const coachBg = () => (isDark ? require('@/assets/images/ui-dark-bg.png') : require('@/assets/images/ui-light-bg.png'));
   const modalOverlayTint = isDark ? 'rgba(124,106,247,0.20)' : 'rgba(235,230,245,0.55)';
 
@@ -572,26 +581,18 @@ export default function CoachModeScreen() {
     >
       <View style={[styles.iconBox, { backgroundColor: chipBg }]}>
         {item.type === 'video' ? (
-          <VideoIcon size={24} color={colors.primary} />
+          <VideoIcon size={24} color={isDark ? '#FFFFFF' : colors.primary} />
         ) : (
-          <Mic size={24} color={colors.primary} />
+          <Mic size={24} color={isDark ? '#FFFFFF' : colors.primary} />
         )}
       </View>
       <View style={{ flex: 1 }}>
         <Text style={[styles.recordingTitle, { color: onBg }]}>
           {item.title || `${new Date(item.created_at).toLocaleDateString()} - ${new Date(item.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`}
         </Text>
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-            <Text style={[styles.recordingSubtitle, { color: onBg2 }]}>
-                {item.duration_seconds ? `${Math.round(item.duration_seconds)}s` : 'Analizar duración'}
-            </Text>
-            {analyzedIds.has(item.id) && (
-                <View style={[styles.analyzedBadge, { backgroundColor: colors.primary + '20' }]}>
-                    <Brain size={12} color={colors.primary} />
-                    <Text style={[styles.analyzedBadgeText, { color: colors.primary }]}>Analizada</Text>
-                </View>
-            )}
-        </View>
+        <Text style={[styles.recordingSubtitle, { color: onBg2 }]}>
+            {item.duration_seconds ? `${Math.round(item.duration_seconds)}s` : 'Analizar duración'}
+        </Text>
         {/* Indicador de ubicación del archivo */}
         <View style={styles.storageIndicator}>
           {(() => {
@@ -599,14 +600,14 @@ export default function CoachModeScreen() {
             const isLocalFile = url.startsWith('file://') || url.startsWith('/');
             return isLocalFile ? (
               <View style={styles.storageTag}>
-                <Text style={styles.storageTagIcon}>📱</Text>
+                <Smartphone size={11} color={onBg2} />
                 <Text style={[styles.storageTagText, { color: onBg2 }]}>
                   Local
                 </Text>
               </View>
             ) : (
               <View style={styles.storageTag}>
-                <Text style={styles.storageTagIcon}>☁️</Text>
+                <Cloud size={11} color={onBg2} />
                 <Text style={[styles.storageTagText, { color: onBg2 }]}>
                   Nube
                 </Text>
@@ -616,6 +617,12 @@ export default function CoachModeScreen() {
         </View>
       </View>
       <ChevronRight size={20} color={onBg2} />
+      {analyzedIds.has(item.id) && (
+          <View style={[styles.analyzedBadge, { backgroundColor: colors.primary + '20' }]}>
+              <Brain size={12} color={isDark ? '#FFFFFF' : colors.primary} />
+              <Text style={[styles.analyzedBadgeText, { color: isDark ? '#FFFFFF' : colors.primary }]}>Analizada</Text>
+          </View>
+      )}
     </TouchableOpacity>
   );
   const renderAnalysisContent = () => {
@@ -632,7 +639,7 @@ export default function CoachModeScreen() {
             {analysis.feedback.error}
           </Text>
           <TouchableOpacity
-            style={[styles.analyzeButton, { backgroundColor: colors.primary, marginTop: 24 }]}
+            style={[styles.analyzeButton, primaryButtonBg, { marginTop: 24 }]}
             onPress={() => startAnalysis(comparingWith || undefined)}
             disabled={analyzing}
           >
@@ -1046,7 +1053,7 @@ export default function CoachModeScreen() {
         {!analysis ? (
           <View style={styles.introSection}>
             <View style={[styles.introCard, { backgroundColor: cardBg, borderWidth: 1, borderColor: cardBorder }]}>
-              <Brain size={48} color={colors.primary} style={{ marginBottom: 16 }} />
+              <Brain size={48} color={isDark ? '#FFFFFF' : colors.primary} style={{ marginBottom: 16 }} />
               <Text style={[styles.introTitle, { color: onBg }]}>Análisis de Interpretación</Text>
               <Text style={[styles.introText, { color: onBg2 }]}>
                 ScriptCue analizará la escena para darte propuestas de actuación diferentes.
@@ -1141,7 +1148,7 @@ export default function CoachModeScreen() {
                 </View>
               ) : (
                 <TouchableOpacity
-                  style={[styles.analyzeButton, { backgroundColor: colors.primary }]}
+                  style={[styles.analyzeButton, primaryButtonBg]}
                   onPress={() => {
                     if (!selectedCharacterName) {
                       // Mostrar selector de personaje
@@ -1182,24 +1189,24 @@ export default function CoachModeScreen() {
                 style={[styles.tab, { borderColor: activeTab === 'feedback' ? colors.primary : 'transparent' }, activeTab === 'feedback' && { backgroundColor: isDark ? 'rgba(124,106,247,0.20)' : 'rgba(104,58,121,0.12)' }]}
                 onPress={() => setActiveTab('feedback')}
               >
-                <Activity size={18} color={activeTab === 'feedback' ? colors.primary : onBg2} />
-                <Text style={[styles.tabText, { color: activeTab === 'feedback' ? colors.primary : onBg2 }]}>Análisis</Text>
+                <Activity size={18} color={activeTab === 'feedback' ? activeTabColor : onBg2} />
+                <Text style={[styles.tabText, { color: activeTab === 'feedback' ? activeTabColor : onBg2 }]}>Análisis</Text>
               </TouchableOpacity>
 
               <TouchableOpacity
                 style={[styles.tab, { borderColor: activeTab === 'propuestas' ? colors.primary : 'transparent' }, activeTab === 'propuestas' && { backgroundColor: isDark ? 'rgba(124,106,247,0.20)' : 'rgba(104,58,121,0.12)' }]}
                 onPress={() => setActiveTab('propuestas')}
               >
-                <Sparkles size={18} color={activeTab === 'propuestas' ? colors.primary : onBg2} />
-                <Text style={[styles.tabText, { color: activeTab === 'propuestas' ? colors.primary : onBg2 }]}>Propuestas</Text>
+                <Sparkles size={18} color={activeTab === 'propuestas' ? activeTabColor : onBg2} />
+                <Text style={[styles.tabText, { color: activeTab === 'propuestas' ? activeTabColor : onBg2 }]}>Propuestas</Text>
               </TouchableOpacity>
 
               <TouchableOpacity
                 style={[styles.tab, { borderColor: activeTab === 'comparacion' ? colors.primary : 'transparent' }, activeTab === 'comparacion' && { backgroundColor: isDark ? 'rgba(124,106,247,0.20)' : 'rgba(104,58,121,0.12)' }]}
                 onPress={() => setActiveTab('comparacion')}
               >
-                <TrendingUp size={18} color={activeTab === 'comparacion' ? colors.primary : onBg2} />
-                <Text style={[styles.tabText, { color: activeTab === 'comparacion' ? colors.primary : onBg2 }]}>Comparación</Text>
+                <TrendingUp size={18} color={activeTab === 'comparacion' ? activeTabColor : onBg2} />
+                <Text style={[styles.tabText, { color: activeTab === 'comparacion' ? activeTabColor : onBg2 }]}>Comparación</Text>
               </TouchableOpacity>
             </ScrollView>
 
@@ -1247,6 +1254,7 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     borderWidth: 1,
     marginBottom: 12,
+    position: 'relative',
   },
   iconBox: {
     width: 48,
@@ -1568,6 +1576,9 @@ const styles = StyleSheet.create({
     fontWeight: '500',
   },
   analyzedBadge: {
+    position: 'absolute',
+    bottom: rp(10),
+    right: rp(10),
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
@@ -1646,9 +1657,6 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: rp(3),
-  },
-  storageTagIcon: {
-    fontSize: rf(10),
   },
   storageTagText: {
     fontSize: rf(10),

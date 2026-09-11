@@ -150,7 +150,7 @@ export default function CarModeScreen() {
     background: '#000000',
     text: '#FFFFFF',
     textSecondary: '#AAAAAA',
-    primary: '#3B82F6',
+    primary: '#8B5FA8',
     error: '#EF4444',
     success: '#10B981',
     surface: '#111111',
@@ -1418,7 +1418,7 @@ export default function CarModeScreen() {
                   <Switch
                     value={readActions}
                     onValueChange={setReadActions}
-                    trackColor={{ false: 'rgba(255,255,255,0.1)', true: 'rgba(100, 140, 255, 0.5)' }}
+                    trackColor={{ false: 'rgba(255,255,255,0.1)', true: 'rgba(139,95,168,0.5)' }}
                     thumbColor={readActions ? '#ffffff' : '#999999'}
                   />
                 </View>
@@ -1608,7 +1608,7 @@ export default function CarModeScreen() {
 
           {/* Nombre del personaje — discreto, arriba del texto */}
           <Text style={{
-            color: currentLine?.color || 'rgba(100, 180, 255, 0.8)',
+            color: currentLine?.color || 'rgba(139,95,168,0.8)',
             fontSize: 20,
             fontWeight: '600',
             letterSpacing: 1,
@@ -1736,7 +1736,7 @@ export default function CarModeScreen() {
                 height: 44,
                 borderRadius: 22,
                 backgroundColor: loopEnabled
-                  ? 'rgba(100, 140, 255, 0.9)'
+                  ? 'rgba(139,95,168,0.9)'
                   : 'rgba(255,255,255,0.1)',
                 alignItems: 'center',
                 justifyContent: 'center',
@@ -2053,7 +2053,7 @@ const styles = StyleSheet.create({
     borderBottomColor: '#333',
   },
   dropdownItemSelected: {
-    backgroundColor: '#3B82F6',
+    backgroundColor: '#8B5FA8',
   },
   dropdownItemText: {
     color: '#FFF',
@@ -2073,7 +2073,7 @@ const styles = StyleSheet.create({
     borderBottomColor: '#333',
   },
   voiceItemSelected: {
-    backgroundColor: 'rgba(59, 130, 246, 0.2)',
+    backgroundColor: 'rgba(139,95,168,0.2)',
   },
   voiceName: {
     color: '#FFF',
@@ -2117,7 +2117,7 @@ const styles = StyleSheet.create({
   },
   progressFill: {
     height: '100%',
-    backgroundColor: '#3B82F6',
+    backgroundColor: '#8B5FA8',
     borderRadius: 4,
   },
   // Menu styles
