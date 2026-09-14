@@ -1935,23 +1935,45 @@ export default function StudioV2Screen() {
 
         setIsUpdating(true);
         try {
-            // Get the current line's scene_id and order_index
-            const currentLine = dialogueLines[currentIndex];
+            // "currentIndex" es un índice sobre "activeLines" (la lista que de verdad
+            // se ve en pantalla, que puede excluir las líneas de acción si
+            // showActions está desactivado) — NO sobre "dialogueLines" (lista
+            // completa sin filtrar). Usar dialogueLines[currentIndex] aquí apuntaba
+            // a una línea distinta a la que el usuario tenía realmente delante en
+            // cuanto había alguna acción oculta antes de esa posición.
+            const currentLine = activeLines[currentIndex];
             const sceneId = currentLine?.sceneId;
 
-            if (!sceneId) {
-                throw new Error('No se pudo determinar la escena actual');
+            if (!sceneId || !currentLine) {
+                throw new Error('No se pudo determinar la línea actual');
             }
 
-            // Calculate new order_index (insert after current line)
-            const newOrderIndex = currentIndex + 1;
+            // "orderIndex" en DialogueLine es solo la posición en el array cargado
+            // (ver loadDialogueLines.ts), no el order_index real de BD — y ese es
+            // además un valor anidado POR ESCENA, no un índice plano de todo el
+            // guion. Para insertar "justo después de esta línea" hay que leer el
+            // order_index real de las líneas de ESTA MISMA escena directamente de
+            // la base de datos.
+            const { data: sceneLines, error: sceneLinesError } = await supabase
+                .from('lines')
+                .select('id, order_index')
+                .eq('scene_id', sceneId)
+                .order('order_index', { ascending: true });
 
-            // Shift all subsequent lines' order_index up by 1
-            const linesToUpdate = dialogueLines.slice(newOrderIndex);
+            if (sceneLinesError) throw sceneLinesError;
+
+            const currentDbLine = (sceneLines || []).find(l => l.id === currentLine.id);
+            const currentOrderIndex = currentDbLine?.order_index ?? ((sceneLines || []).length);
+            const newOrderIndex = currentOrderIndex + 1;
+
+            // Hacer hueco: subir en 1 el order_index de las líneas de ESTA MISMA
+            // escena que queden después del hueco que vamos a abrir (las de otras
+            // escenas no se tocan, su propio order_index es independiente).
+            const linesToUpdate = (sceneLines || []).filter(l => l.order_index >= newOrderIndex);
             for (const line of linesToUpdate) {
                 await supabase
                     .from('lines')
-                    .update({ order_index: line.orderIndex + 1 })
+                    .update({ order_index: line.order_index + 1 })
                     .eq('id', line.id);
             }
 
@@ -2107,8 +2129,10 @@ export default function StudioV2Screen() {
             // Reload data
             await loadData();
 
-            // Move to the new line
-            setCurrentIndex(newOrderIndex);
+            // Mover a la línea nueva: tras recargar, ocupa la posición justo después
+            // de la línea desde la que se creó, en el mismo espacio de índices que
+            // usa el resto de la pantalla (activeLines), no el order_index de BD.
+            setCurrentIndex(currentIndex + 1);
 
             closeAddLineModal();
             Alert.alert('Éxito', 'Nueva línea añadida correctamente. El audio TTS se generará automáticamente.');

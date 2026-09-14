@@ -1,19 +1,25 @@
 import React, { useState, useRef, useEffect, useMemo } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, ActivityIndicator, Alert, Platform, PanResponder, ScrollView, ImageBackground } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { View, Text, StyleSheet, TouchableOpacity, ActivityIndicator, Alert, Platform, PanResponder, ScrollView, ImageBackground, Animated, Easing, Keyboard, useWindowDimensions } from 'react-native';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter, useLocalSearchParams, Stack } from 'expo-router';
-import { ArrowLeft, Save, Edit3, PenTool, Undo, Redo, Type, Trash2, Bold, Italic, Underline, Strikethrough, Palette, ChevronDown, ChevronUp, AlignLeft, AlignCenter, AlignRight, Menu, ALargeSmall, Pencil, Eraser } from 'lucide-react-native';
+import { ArrowLeft, Save, Edit3, PenTool, Undo, Redo, Type, Trash2, Bold, Italic, Underline, Strikethrough, Palette, ChevronDown, ChevronUp, AlignLeft, AlignCenter, AlignRight, Menu, Pilcrow, Pencil, Eraser, Highlighter, Share2 } from 'lucide-react-native';
 import { WebView } from 'react-native-webview';
 import { BlurView } from 'expo-blur';
 import Svg, { Path, G, Image as SvgImage } from 'react-native-svg';
 import { captureRef } from 'react-native-view-shot';
-import * as FileSystem from 'expo-file-system';
+import * as Print from 'expo-print';
+import * as Sharing from 'expo-sharing';
+import * as FileSystem from 'expo-file-system/legacy';
 import Slider from '@react-native-community/slider';
 import { useTheme } from '@/contexts/ThemeContext';
 import { supabase } from '@/utils/supabase';
 import { rf, rp } from '@/utils/responsive';
 
 // --- Constants ---
+// Pausa mínima (sin ninguna edición de texto) para que la siguiente edición
+// abra un punto nuevo en el historial de deshacer — ver actionHistoryRef.
+const EDIT_CHECKPOINT_GAP_MS = 800;
+
 const COLORS = [
     '#000000', // Black
     '#FF0000', // Red
@@ -27,6 +33,205 @@ const COLORS = [
     '#00FFFF', // Cyan
 ];
 
+// Colores de resaltado (marcador/rotulador): llevan el canal alpha ya incorporado
+// para que el texto siga leyéndose debajo, a diferencia de un color de texto sólido.
+const HIGHLIGHT_COLORS: { key: string; label: string; color: string; swatch: string }[] = [
+    { key: 'none', label: 'Sin resaltar', color: 'transparent', swatch: 'transparent' },
+    { key: 'yellow', label: 'Amarillo', color: 'rgba(255,235,59,0.45)', swatch: '#FFEB3B' },
+    { key: 'green', label: 'Verde', color: 'rgba(76,217,100,0.4)', swatch: '#4CD964' },
+    { key: 'red', label: 'Rojo', color: 'rgba(255,59,48,0.4)', swatch: '#FF3B30' },
+    { key: 'pink', label: 'Rosa', color: 'rgba(255,105,180,0.4)', swatch: '#FF69B4' },
+    { key: 'blue', label: 'Azul', color: 'rgba(0,122,255,0.35)', swatch: '#007AFF' },
+    { key: 'orange', label: 'Naranja', color: 'rgba(255,149,0,0.4)', swatch: '#FF9500' },
+];
+
+// Formatos predefinidos de guion cinematográfico estándar. Cada uno aplica un
+// conjunto completo de propiedades (no solo el tamaño) al párrafo donde esté
+// el cursor, igual que hace un editor de guiones real.
+const LINE_STYLES: { key: string; label: string; style: Record<string, string>; preview: any }[] = [
+    {
+        key: 'title',
+        label: 'Título de guion',
+        style: {
+            textAlign: 'center',
+            fontWeight: 'bold',
+            textTransform: 'uppercase',
+            textDecoration: 'underline',
+            fontSize: '15px',
+            marginTop: '0px',
+            marginBottom: '18px',
+            maxWidth: 'none',
+            marginLeft: '0',
+            marginRight: '0',
+        },
+        preview: { fontWeight: 'bold', textTransform: 'uppercase', textDecorationLine: 'underline', textAlign: 'center' },
+    },
+    {
+        key: 'scene',
+        label: 'Encabezado de escena',
+        style: {
+            textAlign: 'left',
+            fontWeight: 'bold',
+            textTransform: 'uppercase',
+            textDecoration: 'none',
+            fontSize: '12px',
+            marginTop: '16px',
+            marginBottom: '8px',
+            maxWidth: 'none',
+            marginLeft: '0',
+            marginRight: '0',
+        },
+        preview: { fontWeight: 'bold', textTransform: 'uppercase', textAlign: 'left' },
+    },
+    {
+        key: 'action',
+        label: 'Descripción de la acción',
+        style: {
+            textAlign: 'left',
+            fontWeight: 'normal',
+            textTransform: 'none',
+            textDecoration: 'none',
+            fontSize: '12px',
+            marginTop: '6px',
+            marginBottom: '8px',
+            maxWidth: 'none',
+            marginLeft: '0',
+            marginRight: '0',
+        },
+        preview: { fontWeight: 'normal', textAlign: 'left' },
+    },
+    {
+        key: 'character',
+        label: 'Nombre de personaje',
+        style: {
+            textAlign: 'center',
+            fontWeight: 'bold',
+            textTransform: 'uppercase',
+            textDecoration: 'none',
+            fontSize: '12px',
+            marginTop: '10px',
+            marginBottom: '0px',
+            maxWidth: 'none',
+            marginLeft: '0',
+            marginRight: '0',
+        },
+        preview: { fontWeight: 'bold', textTransform: 'uppercase', textAlign: 'center' },
+    },
+    {
+        key: 'dialogue',
+        label: 'Diálogo',
+        style: {
+            textAlign: 'center',
+            fontWeight: 'normal',
+            textTransform: 'none',
+            textDecoration: 'none',
+            fontSize: '12px',
+            marginTop: '0px',
+            marginBottom: '8px',
+            maxWidth: '70%',
+            marginLeft: 'auto',
+            marginRight: 'auto',
+        },
+        preview: { fontWeight: 'normal', textAlign: 'center' },
+    },
+];
+
+// --- Reconciliación con scenes/lines --------------------------------------
+// El documento del editor se reconstruye SIEMPRE desde las tablas scenes/lines
+// (fuente de verdad compartida con Revisar guion y Modo Estudio), y al guardar
+// se vuelve a leer con estas mismas funciones en vez de regenerar el guion con
+// IA. Cada párrafo lleva atributos data-* para poder emparejarlo de vuelta con
+// su fila en la base de datos.
+
+function stripHtmlTags(html: string): string {
+    return html.replace(/<[^>]+>/g, '').replace(/&nbsp;/g, ' ').replace(/\s+/g, ' ').trim();
+}
+
+// Divide el HTML del documento en sus elementos de nivel superior (<h1>/<p>).
+// No hay párrafos anidados en este documento, así que un cierre no-codicioso
+// hasta la primera etiqueta de cierre coincidente es suficiente (igual de
+// simple que el splitter que ya usa studio-v2.tsx para script_html).
+function splitTopLevelElements(html: string): { tag: string; attrs: string; innerHtml: string }[] {
+    const result: { tag: string; attrs: string; innerHtml: string }[] = [];
+    const regex = /<(h1|p)\b([^>]*)>([\s\S]*?)<\/\1>/gi;
+    let match: RegExpExecArray | null;
+    while ((match = regex.exec(html)) !== null) {
+        result.push({ tag: match[1].toLowerCase(), attrs: match[2], innerHtml: match[3] });
+    }
+    return result;
+}
+
+function getAttr(attrs: string, name: string): string | null {
+    const m = attrs.match(new RegExp(`${name}="([^"]*)"`));
+    return m ? m[1] : null;
+}
+
+// content_html guarda, en un único TEXT, tanto el estilo propio del párrafo
+// (por si el usuario lo reformateó a mano con uno de los 5 presets) como su
+// HTML interno (negrita/resaltados/lo que sea) — así al reconstruir se puede
+// reinsertar tal cual, sin perder ni el estilo ni el contenido enriquecido.
+function packContentHtml(styleAttr: string, innerHtml: string): string {
+    return JSON.stringify({ style: styleAttr, html: innerHtml });
+}
+
+function unpackContentHtml(packed: string | null): { style: string; html: string } | null {
+    if (!packed) return null;
+    try {
+        const parsed = JSON.parse(packed);
+        if (typeof parsed?.html === 'string') {
+            return { style: typeof parsed.style === 'string' ? parsed.style : '', html: parsed.html };
+        }
+    } catch {
+        // content_html corrupto o de un formato antiguo: se ignora, se usa la plantilla por defecto
+    }
+    return null;
+}
+
+// Para "lines": un nombre de personaje y su diálogo son DOS párrafos distintos
+// (con formato propio cada uno) pero comparten la misma fila/id en BD, así que
+// content_html/content_html_source de una línea llevan un JSON con dos "slots"
+// independientes ("character" y "dialogue" — este último también se reutiliza
+// para una línea de acción, que solo tiene un párrafo), cada uno validado
+// contra su propio texto plano.
+type PackedBlock = { style: string; html: string } | null;
+
+function packLineContentHtml(dialogue: PackedBlock, character: PackedBlock): string {
+    return JSON.stringify({ dialogue, character });
+}
+
+function unpackLineContentHtml(packed: string | null): { dialogue: PackedBlock; character: PackedBlock } {
+    if (!packed) return { dialogue: null, character: null };
+    try {
+        const parsed = JSON.parse(packed);
+        const dialogue = parsed?.dialogue && typeof parsed.dialogue.html === 'string'
+            ? { style: typeof parsed.dialogue.style === 'string' ? parsed.dialogue.style : '', html: parsed.dialogue.html }
+            : null;
+        const character = parsed?.character && typeof parsed.character.html === 'string'
+            ? { style: typeof parsed.character.style === 'string' ? parsed.character.style : '', html: parsed.character.html }
+            : null;
+        return { dialogue, character };
+    } catch {
+        return { dialogue: null, character: null };
+    }
+}
+
+function packLineContentHtmlSource(dialogueSource: string | null, characterSource: string | null): string {
+    return JSON.stringify({ dialogue: dialogueSource, character: characterSource });
+}
+
+function unpackLineContentHtmlSource(packed: string | null): { dialogue: string | null; character: string | null } {
+    if (!packed) return { dialogue: null, character: null };
+    try {
+        const parsed = JSON.parse(packed);
+        return {
+            dialogue: typeof parsed?.dialogue === 'string' ? parsed.dialogue : null,
+            character: typeof parsed?.character === 'string' ? parsed.character : null,
+        };
+    } catch {
+        return { dialogue: null, character: null };
+    }
+}
+
 export default function ScriptEditorScreen() {
     const router = useRouter();
     const { id } = useLocalSearchParams();
@@ -38,17 +243,62 @@ export default function ScriptEditorScreen() {
     const glassHeaderBtn = isDark
         ? { backgroundColor: 'rgba(124,106,247,0.14)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.2)' }
         : { backgroundColor: colors.primary };
+    // Mismo tratamiento que los botones principales (Modo Análisis / Importar Guion)
+    const primaryButtonBg = isDark
+        ? { backgroundColor: 'rgba(124,106,247,0.80)', borderWidth: 1.5, borderColor: 'rgba(255,255,255,0.5)' }
+        : { backgroundColor: colors.primary };
     const editorBg = () => (isDark ? require('@/assets/images/ui-dark-bg.png') : require('@/assets/images/ui-light-bg.png'));
-    const dropdownBg = isDark ? 'rgba(24,18,36,0.97)' : 'rgba(255,255,255,0.98)';
+    const popupOverlayTint = isDark ? 'rgba(124,106,247,0.20)' : 'rgba(235,230,245,0.45)';
     const chipInactiveBg = isDark ? 'rgba(255,255,255,0.08)' : 'rgba(104,58,121,0.08)';
     const chipActiveBg = isDark ? 'rgba(124,106,247,0.30)' : 'rgba(104,58,121,0.15)';
+    const insets = useSafeAreaInsets();
+    const windowDimensions = useWindowDimensions();
+
+    // Geometría de "página" REAL (A4, en puntos) — ya no se deriva del ancho de
+    // pantalla del teléfono. Es la MISMA fuente de verdad tanto para insertar
+    // los saltos de hoja en el WebView visible como para construir el PDF que
+    // genera "Compartir" — evita que dos motores calculen algo ligeramente
+    // distinto (la causa de los desajustes de intentos anteriores). Medido
+    // sobre un guion de referencia real: A4 595×842pt, margen izquierdo ~108pt
+    // (1.5in, hueco de encuadernación), resto ~72pt (1in).
+    const pageWidth = 595;
+    const pageHeight = 842;
+    const pageMarginTop = 72;
+    const pageMarginBottom = 72;
+    const pageMarginRight = 72;
+    const pageMarginLeft = 108;
+    const pageContentHeight = pageHeight - pageMarginTop - pageMarginBottom;
+
+    // Ancho real de la tarjeta del guion en pantalla — pageShadowWrapper ya no le
+    // resta ningún margen horizontal (llega borde a borde). Como la "página"
+    // ahora es de tamaño FIJO (más ancha que el teléfono), el WebView se
+    // renderiza a pageWidth y se reescala visualmente para caber aquí —
+    // displayScale es ese factor, y hay que aplicarlo en cualquier punto donde
+    // el dibujo a mano (fuera del WebView, en coordenadas de pantalla real)
+    // toque el contenido del documento (en coordenadas lógicas de página).
+    const availableScreenWidthPt = windowDimensions.width;
+    const displayScale = availableScreenWidthPt / pageWidth;
+    // Alto (en puntos de pantalla) del SVG de dibujo EN PANTALLA — generoso y
+    // fijo a propósito, nunca "100%" (mezclaría un alto porcentual con un
+    // viewBox de alto fijo y deformaría la escala en Y de forma no uniforme).
+    // El sobrante lo recorta gratis el overflow:hidden que ya tiene pageCard.
+    const drawingSvgHeightPt = windowDimensions.height;
 
     // State
     const [loading, setLoading] = useState(true);
     const [saving, setSaving] = useState(false);
     const [mode, setMode] = useState<'view' | 'edit' | 'draw'>('view');
     const [initialHtml, setInitialHtml] = useState(''); // Only for initial load
+    const [scriptTitle, setScriptTitle] = useState('');
     const htmlContentRef = useRef(''); // Ref for latest content
+
+    const lastEditCheckpointRef = useRef<number>(0);
+    // Índices (dentro de la lista plana de párrafos) donde repaginate() decidió
+    // que empieza cada página nueva — se reutiliza tal cual al construir el PDF
+    // en handleSharePdf, para que la paginación sea idéntica en pantalla y en el
+    // PDF.
+    const pageBreaksRef = useRef<number[]>([]);
+    const pageBreaksResolveRef = useRef<((breaks: number[]) => void) | null>(null);
     const [toolbarExpanded, setToolbarExpanded] = useState(false);
 
     // Drawing State
@@ -59,8 +309,16 @@ export default function ScriptEditorScreen() {
     }
     const [paths, setPaths] = useState<PathData[]>([]);
     const [currentPath, setCurrentPath] = useState<string>('');
-    const [history, setHistory] = useState<PathData[][]>([]);
-    const [redoStack, setRedoStack] = useState<PathData[][]>([]);
+
+    // Pila ÚNICA de deshacer/rehacer, compartida entre texto y dibujo — así
+    // "Deshacer"/"Rehacer" funcionan sin importar en qué modo se pulsen (antes
+    // cada modo tenía su propia pila y solo se podía deshacer si seguías en ese
+    // mismo modo: si dibujabas y luego salías a Vista, Deshacer ya no hacía
+    // nada). Cada acción guarda el estado ANTERIOR a ella; deshacer restaura
+    // ese estado y empuja el actual a la pila de rehacer, y viceversa.
+    type EditAction = { kind: 'text'; before: string } | { kind: 'draw'; before: PathData[] };
+    const actionHistoryRef = useRef<EditAction[]>([]);
+    const actionRedoRef = useRef<EditAction[]>([]);
     const [strokeColor, setStrokeColor] = useState('#FF0000');
     const [strokeWidth, setStrokeWidth] = useState(2);
     const [isErasing, setIsErasing] = useState(false);
@@ -72,34 +330,86 @@ export default function ScriptEditorScreen() {
     const [isUnderline, setIsUnderline] = useState(false);
     const [isStrikethrough, setIsStrikethrough] = useState(false);
     const [textAlign, setTextAlign] = useState<'left' | 'center' | 'right'>('left');
-    const [fontSize, setFontSize] = useState('6px');
 
     // Dropdown Menu States
     const [showFormatMenu, setShowFormatMenu] = useState(false);
     const [showAlignMenu, setShowAlignMenu] = useState(false);
     const [showSizeMenu, setShowSizeMenu] = useState(false);
     const [showColorMenu, setShowColorMenu] = useState(false);
+    const [showHighlightMenu, setShowHighlightMenu] = useState(false);
 
     // Drawing Mode Dropdown States
     const [showStrokeMenu, setShowStrokeMenu] = useState(false);
     const [showDrawColorMenu, setShowDrawColorMenu] = useState(false);
 
+    const anyMenuOpen = showFormatMenu || showAlignMenu || showSizeMenu || showColorMenu || showHighlightMenu || showStrokeMenu || showDrawColorMenu;
+    function closeAllMenus() {
+        setShowFormatMenu(false);
+        setShowAlignMenu(false);
+        setShowSizeMenu(false);
+        setShowColorMenu(false);
+        setShowHighlightMenu(false);
+        setShowStrokeMenu(false);
+        setShowDrawColorMenu(false);
+    }
+
+    // Barra inferior flotante (mismo patrón que PlayerControlsCapsule en Grabaciones):
+    // 3 filas superpuestas que se funden entre sí según el modo activo.
+    const barAnim = useRef({
+        view: new Animated.Value(1),
+        edit: new Animated.Value(0),
+        draw: new Animated.Value(0),
+    }).current;
+
+    useEffect(() => {
+        Animated.parallel([
+            Animated.timing(barAnim.view, { toValue: mode === 'view' ? 1 : 0, duration: 220, easing: Easing.inOut(Easing.ease), useNativeDriver: true }),
+            Animated.timing(barAnim.edit, { toValue: mode === 'edit' ? 1 : 0, duration: 220, easing: Easing.inOut(Easing.ease), useNativeDriver: true }),
+            Animated.timing(barAnim.draw, { toValue: mode === 'draw' ? 1 : 0, duration: 220, easing: Easing.inOut(Easing.ease), useNativeDriver: true }),
+        ]).start();
+    }, [mode]);
+
+    // Para que la barra flotante no quede tapada por el teclado al escribir
+    const [keyboardOffset, setKeyboardOffset] = useState(0);
+    useEffect(() => {
+        const showEvt = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
+        const hideEvt = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
+        const showSub = Keyboard.addListener(showEvt, (e) => setKeyboardOffset(e.endCoordinates?.height || 0));
+        const hideSub = Keyboard.addListener(hideEvt, () => setKeyboardOffset(0));
+        return () => {
+            showSub.remove();
+            hideSub.remove();
+        };
+    }, []);
+
     // Scroll State for Drawing Sync
     const [scrollY, setScrollY] = useState(0);
     const [contentHeight, setContentHeight] = useState(0);
+    // Copia en ref: handleSharePdf necesita leer la altura MÁS RECIENTE justo
+    // después de forzar una repaginación (window.__repaginateNow), y el estado
+    // de React quedaría "congelado" con el valor de cuando se invocó la función
+    // async, por mucho que se espere — un ref sí se lee siempre al día.
+    const contentHeightRef = useRef(0);
 
     // Drawing Layer Image (PNG)
     const [drawingLayerImage, setDrawingLayerImage] = useState<string | null>(null);
 
+    // Exportar a PDF: mientras se genera, se capturan brevemente (fuera de
+    // pantalla) los trazos a mano a su altura COMPLETA — el texto no se
+    // fotografía, se genera como HTML real (ver handleSharePdf).
+    const [exportingPdf, setExportingPdf] = useState(false);
+    const [showShareCapture, setShowShareCapture] = useState(false);
+    const shareViewRef = useRef<View>(null);
+
     // Refs
     const webViewRef = useRef<WebView>(null);
-    const drawingStateRef = useRef({ paths, history, redoStack, strokeColor, strokeWidth, scrollY, isErasing });
+    const drawingStateRef = useRef({ paths, strokeColor, strokeWidth, scrollY, isErasing, displayScale });
     const currentPathPoints = useRef<Array<{ x: number; y: number }>>([]);
 
     // Update ref when state changes
     useEffect(() => {
-        drawingStateRef.current = { paths, history, redoStack, strokeColor, strokeWidth, scrollY, isErasing };
-    }, [paths, history, redoStack, strokeColor, strokeWidth, scrollY, isErasing]);
+        drawingStateRef.current = { paths, strokeColor, strokeWidth, scrollY, isErasing, displayScale };
+    }, [paths, strokeColor, strokeWidth, scrollY, isErasing, displayScale]);
 
     // PanResponder for Drawing
     const panResponderRef = useRef(
@@ -108,10 +418,14 @@ export default function ScriptEditorScreen() {
             onMoveShouldSetPanResponder: () => true,
             onPanResponderGrant: (evt) => {
                 const { locationX, locationY } = evt.nativeEvent;
-                const { strokeColor, strokeWidth, scrollY, paths, history, isErasing } = drawingStateRef.current;
+                const { strokeColor, strokeWidth, scrollY, paths, isErasing, displayScale } = drawingStateRef.current;
 
-                // Use document coordinates (add scrollY)
-                const touchPoint = { x: locationX, y: locationY + scrollY };
+                // El toque llega en puntos de PANTALLA real; el documento (texto y
+                // trazos guardados) vive en coordenadas LÓGICAS de página (más grande,
+                // reescalada visualmente) — hay que dividir por displayScale para que
+                // ambos hablen el mismo idioma. scrollY ya es lógico (viene del propio
+                // WebView), no se divide.
+                const touchPoint = { x: locationX / displayScale, y: (locationY / displayScale) + scrollY };
 
                 // If erasing, check if we touched a path
                 if (isErasing) {
@@ -125,15 +439,17 @@ export default function ScriptEditorScreen() {
 
                         return pathPoints.some(p => {
                             const distance = Math.sqrt(Math.pow(p.x - touchPoint.x, 2) + Math.pow(p.y - touchPoint.y, 2));
-                            return distance < (path.width + 10); // Hit tolerance
+                            // El margen de "10" es perdón de dedo en puntos de PANTALLA
+                            // real — hay que pasarlo también a unidades lógicas.
+                            return distance < (path.width + (10 / displayScale));
                         });
                     });
 
                     if (pathIndex !== -1) {
                         // Remove the touched path
                         const newPaths = paths.filter((_, i) => i !== pathIndex);
-                        setHistory([...history, paths]);
-                        setRedoStack([]);
+                        actionHistoryRef.current.push({ kind: 'draw', before: paths });
+                        actionRedoRef.current = [];
                         setPaths(newPaths);
                     }
                 } else {
@@ -155,10 +471,10 @@ export default function ScriptEditorScreen() {
                 // Only draw if not erasing
                 if (!isErasing) {
                     const { locationX, locationY } = evt.nativeEvent;
-                    const { scrollY } = drawingStateRef.current;
+                    const { scrollY, displayScale } = drawingStateRef.current;
 
-                    // Use document coordinates (add scrollY)
-                    const newPoint = { x: locationX, y: locationY + scrollY };
+                    // Misma conversión pantalla→lógico que en onPanResponderGrant.
+                    const newPoint = { x: locationX / displayScale, y: (locationY / displayScale) + scrollY };
                     currentPathPoints.current.push(newPoint);
 
                     const pathData = currentPathPoints.current
@@ -174,12 +490,12 @@ export default function ScriptEditorScreen() {
                 if (!isErasing) {
                     setCurrentPath((prev) => {
                         if (prev) {
-                            const { paths, history, strokeColor, strokeWidth } = drawingStateRef.current;
+                            const { paths, strokeColor, strokeWidth } = drawingStateRef.current;
                             const newPath: PathData = { d: prev, color: strokeColor, width: strokeWidth };
                             const newPaths = [...paths, newPath];
 
-                            setHistory([...history, paths]);
-                            setRedoStack([]);
+                            actionHistoryRef.current.push({ kind: 'draw', before: paths });
+                            actionRedoRef.current = [];
                             setPaths(newPaths);
                         }
                         return '';
@@ -206,23 +522,27 @@ export default function ScriptEditorScreen() {
 
             if (error) throw error;
 
+            setScriptTitle(data.title || '');
+
             // Priority:
-            // 1. Reconstruct from scenes/lines (ALWAYS reflects Review screen changes)
-            // 2. script_html (contains full formatting with descriptions/action lines from OpenAI)
-            // 3. Raw text fallback
+            // 1. Reconstruir siempre desde escenas/líneas — es la fuente de verdad que
+            //    comparten Revisar guion y Modo Estudio, así que cualquier cambio hecho ahí
+            //    se ve reflejado aquí. El formato manual (negrita, resaltados, presets de
+            //    línea) viaja POR LÍNEA junto a cada fila (content_html), no como un blob
+            //    aparte — por eso no se pierde al reconstruir.
+            // 2. script_html / content — solo como respaldo si el guion nunca llegó a
+            //    estructurarse en escenas/líneas.
+            // 3. Texto en bruto como último recurso.
 
             const reconstructed = await reconstructScriptFromData();
 
             if (reconstructed) {
                 setInitialHtml(reconstructed);
                 htmlContentRef.current = reconstructed;
-            } else if (data.script_html) {
-                // Use the full HTML from OpenAI which includes descriptions, action lines, etc.
-                setInitialHtml(data.script_html);
-                htmlContentRef.current = data.script_html;
-            } else if (data.content) {
-                setInitialHtml(data.content);
-                htmlContentRef.current = data.content;
+            } else if (data.script_html || data.content) {
+                const legacyHtml = data.script_html || data.content;
+                setInitialHtml(legacyHtml);
+                htmlContentRef.current = legacyHtml;
             } else if (data.script_raw || data.parsed_text) {
                 const rawText = data.script_raw || data.parsed_text;
                 const formattedHtml = parseScriptLocally(rawText, data.title);
@@ -260,10 +580,13 @@ export default function ScriptEditorScreen() {
 
     function parseScriptLocally(text: string, title: string) {
         const rawLines = text.split(/\r?\n/);
-        let html = `<div style="text-align: center; font-family: 'Courier New', Courier, monospace; padding: rp(20)px; max-width: 800px; margin: 0 auto;">`;
+        // El margen horizontal real lo pone #editor-root (ver webViewSource), no
+        // este div — así el ancho de columna de texto es el MISMO tanto aquí como
+        // al reconstruir desde scenes/lines y al generar el PDF paginado.
+        let html = `<div style="text-align: center; font-family: 'Courier New', Courier, monospace;">`;
 
         // Title
-        html += `<h1 style="font-weight: bold; text-transform: uppercase; text-decoration: underline; font-size: 22px; margin-bottom: 40px; color: #000000;">${title || 'GUION'}</h1>`;
+        html += `<h1 style="font-weight: bold; text-transform: uppercase; text-decoration: underline; font-size: 15px; margin-bottom: 18px; color: #000000;">${title || 'GUION'}</h1>`;
 
         const SCENE_START_REGEX = /^(INT\.|EXT\.|INT\/EXT\.|INTERIOR|EXTERIOR|I\/E)/i;
         // Regex to split "UPPERCASE HEADER" from "Mixed Case Content"
@@ -335,20 +658,20 @@ export default function ScriptEditorScreen() {
         // Render Loop
         for (const item of lines) {
             if (item.type === 'scene') {
-                html += `<p style="font-weight: bold; text-transform: uppercase; color: #0000FF; margin-top: 40px; margin-bottom: 15px; font-size: 16px;">${item.text}</p>`;
+                html += `<p style="font-weight: bold; text-transform: uppercase; color: #0000FF; margin-top: 16px; margin-bottom: 8px; font-size: 12px;">${item.text}</p>`;
                 previousType = 'scene';
             } else if (item.type === 'character') {
-                const marginTop = (previousType === 'dialogue' || previousType === 'parenthetical' || previousType === 'action') ? '25px' : '15px';
-                html += `<p style="font-weight: bold; text-transform: uppercase; margin-top: ${marginTop}; margin-bottom: 0px; color: #000000;">${item.text}</p>`;
+                const marginTop = (previousType === 'dialogue' || previousType === 'parenthetical' || previousType === 'action') ? '14px' : '10px';
+                html += `<p style="font-weight: bold; text-transform: uppercase; margin-top: ${marginTop}; margin-bottom: 0px; color: #000000; font-size: 12px;">${item.text}</p>`;
                 previousType = 'character';
             } else if (item.type === 'parenthetical') {
-                html += `<p style="margin-top: 0px; margin-bottom: 0px; font-size: 14px;">${item.text}</p>`;
+                html += `<p style="margin-top: 0px; margin-bottom: 0px; font-size: 12px;">${item.text}</p>`;
                 previousType = 'parenthetical';
             } else if (item.type === 'dialogue') {
-                html += `<p style="margin-top: 0px; margin-bottom: 15px; max-width: 80%; margin-left: auto; margin-right: auto;">${item.text}</p>`;
+                html += `<p style="margin-top: 0px; margin-bottom: 8px; max-width: 70%; margin-left: auto; margin-right: auto; font-size: 12px;">${item.text}</p>`;
                 previousType = 'dialogue';
             } else if (item.type === 'transition') {
-                html += `<p style="font-weight: bold; text-transform: uppercase; margin-top: 20px; margin-bottom: 20px; text-align: right;">${item.text}</p>`;
+                html += `<p style="font-weight: bold; text-transform: uppercase; margin-top: 14px; margin-bottom: 14px; text-align: right; font-size: 12px;">${item.text}</p>`;
                 previousType = 'transition';
             } else {
                 // Action
@@ -356,11 +679,11 @@ export default function ScriptEditorScreen() {
                 // But we classified it as action.
                 // If previous was Character, force it to be Dialogue?
                 if (previousType === 'character') {
-                    html += `<p style="margin-top: 0px; margin-bottom: 15px; max-width: 80%; margin-left: auto; margin-right: auto;">${item.text}</p>`;
+                    html += `<p style="margin-top: 0px; margin-bottom: 8px; max-width: 70%; margin-left: auto; margin-right: auto; font-size: 12px;">${item.text}</p>`;
                     previousType = 'dialogue';
                 } else {
-                    const marginTop = (previousType === 'scene') ? '0px' : '20px';
-                    html += `<p style="margin-top: ${marginTop}; margin-bottom: 10px; text-align: center;">${item.text}</p>`;
+                    const marginTop = (previousType === 'scene') ? '0px' : '14px';
+                    html += `<p style="margin-top: ${marginTop}; margin-bottom: 8px; text-align: center; font-size: 12px;">${item.text}</p>`;
                     previousType = 'action';
                 }
             }
@@ -371,7 +694,12 @@ export default function ScriptEditorScreen() {
     }
 
     async function reconstructScriptFromData(): Promise<string | null> {
-        // Reconstruct script with professional screenplay formatting
+        // Reconstruye el guion con formato profesional de guion cinematográfico,
+        // usando SIEMPRE el texto plano actual de scenes/lines (para que Revisar
+        // guion y Modo Estudio queden siempre reflejados aquí), y reaplicando el
+        // formato manual guardado en content_html línea a línea, SOLO si su texto
+        // no ha cambiado desde fuera del editor — si no, se usa la plantilla por
+        // defecto de su tipo (negrita/mayúsculas/centrado para personaje, etc.).
         try {
             const { data: scriptData } = await supabase
                 .from('scripts')
@@ -385,87 +713,88 @@ export default function ScriptEditorScreen() {
                 .eq('script_id', id)
                 .order('order_index');
 
-            const { data: characters } = await supabase
-                .from('characters')
-                .select('*')
-                .eq('script_id', id);
-
             if (!scenes || scenes.length === 0) {
-                return null; // No scenes, use fallback
+                return null; // No hay escenas todavía, usar el respaldo
             }
 
-            // Professional screenplay HTML format
+            // El margen horizontal real lo pone #editor-root (ver webViewSource), no
+            // este div — así el ancho de columna de texto es el MISMO en el WebView
+            // visible, en el PDF paginado que genera "Compartir" y aquí.
             let html = `
-            <div style="font-family: 'Courier New', Courier, monospace; padding: 20px; max-width: 800px; margin: 0 auto; line-height: 1.4;">
-                <!-- Title -->
-                <h1 style="text-align: center; font-weight: bold; text-transform: uppercase; text-decoration: underline; font-size: 18px; margin-bottom: 40px;">
+            <div style="font-family: 'Courier New', Courier, monospace; line-height: 1.15;">
+                <h1 data-title="1" style="text-align: center; font-weight: bold; text-transform: uppercase; text-decoration: underline; font-size: 15px; margin-bottom: 18px;">
                     ${scriptData?.title || 'GUION'}
                 </h1>
             `;
 
-            scenes.forEach((scene, sceneIndex) => {
-                // Scene Heading - LEFT aligned, bold, uppercase
-                const sceneHeading = `${scene.type || 'INT.'} ${scene.location || 'LOCATION'} - ${scene.time || 'DAY'}`;
-                html += `
-                <p style="text-align: left; font-weight: bold; text-transform: uppercase; margin-top: 30px; margin-bottom: 15px; font-size: 14px;">
-                    ${sceneIndex + 1}. ${sceneHeading}
-                </p>
-                `;
+            scenes.forEach((scene: any, sceneIndex: number) => {
+                const heading = scene.heading || 'INT. LOCATION - DAY';
+                const savedScene = unpackContentHtml(scene.content_html);
+                const sceneUpToDate = savedScene && scene.content_html_source === heading;
 
-                // Scene Description - LEFT aligned
-                if (scene.description) {
+                if (sceneUpToDate && savedScene) {
+                    html += `<p data-scene-id="${scene.id}" data-line-type="scene" style="${savedScene.style}">${savedScene.html}</p>`;
+                } else {
                     html += `
-                    <p style="text-align: left; margin-bottom: 15px; font-size: 14px;">
-                        ${scene.description}
+                    <p data-scene-id="${scene.id}" data-line-type="scene" style="text-align: left; font-weight: bold; text-transform: uppercase; margin-top: 16px; margin-bottom: 8px; font-size: 12px;">
+                        ${sceneIndex + 1}. ${heading}
                     </p>
                     `;
                 }
 
-                // Sort lines by order_index
-                const sortedLines = scene.lines?.sort((a: any, b: any) => a.order_index - b.order_index) || [];
+                const sortedLines = (scene.lines || []).slice().sort((a: any, b: any) => a.order_index - b.order_index);
 
                 sortedLines.forEach((line: any) => {
-                    // Use character_name directly from the line, fallback to characters table
-                    let charName = line.character_name;
+                    // Una línea es de acción si no tiene personaje asignado, o lleva el
+                    // nombre centinela "ACCIÓN" (no existe una columna is_action en BD).
+                    const isAction = !line.character_name || line.character_name.toUpperCase() === 'ACCIÓN';
 
-                    if (!charName && line.character_id) {
-                        const char = characters?.find(c => c.id === line.character_id);
-                        charName = char?.name;
-                    }
+                    if (isAction) {
+                        // Una línea de acción es un único párrafo: reutilizamos el "slot"
+                        // de diálogo del JSON para guardar su formato.
+                        const savedActionFormats = unpackLineContentHtml(line.content_html);
+                        const savedActionSources = unpackLineContentHtmlSource(line.content_html_source);
+                        const actionUpToDate = savedActionFormats.dialogue && savedActionSources.dialogue === line.content;
 
-                    charName = charName?.toUpperCase() || 'PERSONAJE';
-
-                    // Check if line is action/description (is_action flag, no character assigned, or specific type)
-                    if (line.is_action || line.character_name === 'ACCIÓN' || line.type === 'action' || line.type === 'description' || !line.character_name) {
-                        // Action/Description - LEFT aligned
-                        html += `
-                        <p style="text-align: left; margin-top: 10px; margin-bottom: 15px; font-size: 14px;">
-                            ${line.content}
-                        </p>
-                        `;
-                    } else {
-                        // Character Name - CENTERED, bold, uppercase
-                        html += `
-                        <p style="text-align: center; font-weight: bold; text-transform: uppercase; margin-top: 20px; margin-bottom: 0px; font-size: 14px;">
-                            ${charName}
-                        </p>
-                        `;
-
-                        // Parenthetical - CENTERED, in parentheses
-                        if (line.parenthetical) {
+                        if (actionUpToDate) {
+                            html += `<p data-line-id="${line.id}" data-line-type="action" style="${savedActionFormats.dialogue!.style}">${savedActionFormats.dialogue!.html}</p>`;
+                        } else {
                             html += `
-                            <p style="text-align: center; margin-top: 0px; margin-bottom: 0px; font-size: 13px; font-style: italic;">
-                                (${line.parenthetical})
+                            <p data-line-id="${line.id}" data-line-type="action" style="text-align: left; margin-top: 6px; margin-bottom: 8px; font-size: 12px;">
+                                ${line.content}
+                            </p>
+                            `;
+                        }
+                    } else {
+                        const charName = line.character_name.toUpperCase();
+                        // El nombre de personaje y su diálogo comparten la misma fila de
+                        // "lines" (mismo id). content_html/content_html_source llevan un
+                        // JSON con AMBOS formatos por separado (uno por "character", otro
+                        // por "dialogue"), cada uno validado contra su propio texto plano.
+                        const savedLineFormats = unpackLineContentHtml(line.content_html);
+                        const savedSources = unpackLineContentHtmlSource(line.content_html_source);
+                        const charUpToDate = savedLineFormats.character && savedSources.character === line.character_name;
+                        const dialogueUpToDate = savedLineFormats.dialogue && savedSources.dialogue === line.content;
+
+                        if (charUpToDate) {
+                            html += `<p data-line-id="${line.id}" data-line-type="character" style="${savedLineFormats.character!.style}">${savedLineFormats.character!.html}</p>`;
+                        } else {
+                            html += `
+                            <p data-line-id="${line.id}" data-line-type="character" style="text-align: center; font-weight: bold; text-transform: uppercase; margin-top: 10px; margin-bottom: 0px; font-size: 12px;">
+                                ${charName}
                             </p>
                             `;
                         }
 
-                        // Dialogue - CENTERED, max-width for readability
-                        html += `
-                        <p style="text-align: center; margin-top: 0px; margin-bottom: 15px; font-size: 14px; max-width: 70%; margin-left: auto; margin-right: auto;">
-                            ${line.content}
-                        </p>
-                        `;
+                        if (dialogueUpToDate) {
+                            html += `<p data-line-id="${line.id}" data-line-type="dialogue" style="${savedLineFormats.dialogue!.style}">${savedLineFormats.dialogue!.html}</p>`;
+                        } else {
+                            html += `
+                            <p data-line-id="${line.id}" data-line-type="dialogue" style="text-align: center; margin-top: 0px; margin-bottom: 8px; font-size: 12px; max-width: 70%; margin-left: auto; margin-right: auto;">
+                                ${line.content}
+                            </p>
+                            `;
+                        }
                     }
                 });
             });
@@ -481,53 +810,294 @@ export default function ScriptEditorScreen() {
 
     // --- Actions ---
 
+    // Arranque en frío: solo se usa si este guion todavía no tiene NINGUNA escena
+    // (nunca llegó a estructurarse). Es el único caso en el que el guardado del
+    // editor sigue llamando a la IA — a partir de ese guardado, ya hay escenas y
+    // se usa siempre el camino determinista de handleSave().
+    async function bootstrapScenesFromPlainText() {
+        const plainText = htmlContentRef.current.replace(/<[^>]+>/g, '\n').trim();
+
+        const { data: sessionData } = await supabase.auth.getSession();
+        const token = sessionData.session?.access_token;
+        if (!token) throw new Error('No auth token');
+
+        const response = await fetch(`${process.env.EXPO_PUBLIC_SUPABASE_URL}/functions/v1/parse-pdf`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${token}`,
+            },
+            body: JSON.stringify({
+                scriptId: id,
+                text: plainText,
+                preserveFormatting: true,
+            }),
+        });
+
+        if (!response.ok) {
+            throw new Error('Failed to bootstrap script structure');
+        }
+    }
+
     async function handleSave() {
         if (saving) return;
         setSaving(true);
 
         try {
-            // Save HTML content to script_html
-            const { error: updateError } = await supabase
-                .from('scripts')
-                .update({
-                    script_html: htmlContentRef.current,
-                    content: htmlContentRef.current, // Keep for compatibility
-                    annotations: paths,
-                    updated_at: new Date().toISOString(),
-                })
-                .eq('id', id);
+            const { data: sceneCheck } = await supabase.from('scenes').select('id').eq('script_id', id).limit(1);
 
-            if (updateError) throw updateError;
-
-            // Extract plain text from HTML for regeneration
-            const plainText = htmlContentRef.current.replace(/<[^>]+>/g, '\n').trim();
-
-            // Get auth token
-            const { data: sessionData } = await supabase.auth.getSession();
-            const token = sessionData.session?.access_token;
-
-            if (!token) throw new Error('No auth token');
-
-            // Call parse-pdf to regenerate scenes/lines from edited HTML
-            const response = await fetch(`${process.env.EXPO_PUBLIC_SUPABASE_URL}/functions/v1/parse-pdf`, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${token}`,
-                },
-                body: JSON.stringify({
-                    scriptId: id,
-                    text: plainText,
-                    skipCharacterDetection: true,
-                    preserveFormatting: true,
-                }),
-            });
-
-            if (!response.ok) {
-                throw new Error('Failed to regenerate script structure');
+            if (!sceneCheck || sceneCheck.length === 0) {
+                // Guion nunca estructurado: arrancar con el flujo antiguo (única vez)
+                await bootstrapScenesFromPlainText();
+                await supabase.from('scripts').update({ annotations: paths, updated_at: new Date().toISOString() }).eq('id', id);
+                Alert.alert('Guardado', 'Guion estructurado y guardado correctamente.');
+                router.back();
+                return;
             }
 
-            Alert.alert('Guardado', 'Guion actualizado y tarjetas regeneradas correctamente.');
+            // --- Reconciliación determinista (sin IA) ---
+            const elements = splitTopLevelElements(htmlContentRef.current);
+
+            const titleEl = elements.find(e => e.tag === 'h1');
+            const titleText = titleEl ? stripHtmlTags(titleEl.innerHtml) : null;
+
+            type ParsedLine = {
+                id: string | null;
+                characterName: string;
+                content: string;
+                styleAttr: string;
+                innerHtml: string;
+                characterStyleAttr: string;
+                characterInnerHtml: string;
+            };
+            type ParsedScene = { id: string | null; heading: string; styleAttr: string; innerHtml: string; lines: ParsedLine[] };
+
+            const parsedScenes: ParsedScene[] = [];
+            let lastType: string | null = null;
+            let pendingCharacterName: string | null = null;
+            let pendingCharacterStyleAttr = '';
+            let pendingCharacterInnerHtml = '';
+
+            // Defensa contra ids duplicados en el documento (p.ej. si un pegado/corte
+            // nativo del WebView clona el data-line-id de un párrafo sobre otro): un
+            // mismo id solo puede convertirse en UNA fila de "lines"/"scenes" por
+            // guardado. El nombre de personaje y su diálogo comparten el mismo id A
+            // PROPÓSITO (misma fila), así que esto se controla al construir cada
+            // ParsedScene/ParsedLine (más abajo), no aquí por simple repetición textual.
+            const usedSceneRowIds = new Set<string>();
+            const usedLineRowIds = new Set<string>();
+
+            for (const el of elements) {
+                if (el.tag === 'h1') continue; // el título se gestiona aparte
+
+                const sceneId = getAttr(el.attrs, 'data-scene-id');
+                const lineId = getAttr(el.attrs, 'data-line-id');
+                const lineType = getAttr(el.attrs, 'data-line-type');
+                const styleAttr = getAttr(el.attrs, 'style') || '';
+                const plainText = stripHtmlTags(el.innerHtml);
+
+                // Resolver el tipo: por lo que ya sabíamos de este párrafo (escena
+                // existente o data-line-type ya presente, incluido el que haya puesto
+                // un preset aplicado a mano) o, si es una línea nueva sin etiquetar,
+                // heredando el tipo de la línea anterior (después de un personaje
+                // siempre va su diálogo).
+                let type: string;
+                if (sceneId || lineType === 'scene') {
+                    type = 'scene';
+                } else if (lineType) {
+                    type = lineType;
+                } else if (lastType === 'character') {
+                    type = 'dialogue';
+                } else if (lastType) {
+                    type = lastType;
+                } else {
+                    type = 'action';
+                }
+
+                if (type === 'scene') {
+                    // Un mismo data-scene-id no puede reclamar dos párrafos de escena
+                    // en el mismo guardado (ver nota de arriba) — la repetición se trata
+                    // como una escena nueva en vez de sobrescribir la primera.
+                    const dedupedSceneId = sceneId && !usedSceneRowIds.has(sceneId) ? sceneId : null;
+                    if (dedupedSceneId) usedSceneRowIds.add(dedupedSceneId);
+                    parsedScenes.push({
+                        id: dedupedSceneId,
+                        heading: plainText.replace(/^\d+\.\s*/, ''),
+                        styleAttr,
+                        innerHtml: el.innerHtml,
+                        lines: [],
+                    });
+                    lastType = 'scene';
+                    pendingCharacterName = null;
+                    pendingCharacterStyleAttr = '';
+                    pendingCharacterInnerHtml = '';
+                    continue;
+                }
+
+                // Documento sin ninguna escena todavía (no debería pasar si llegamos
+                // aquí, pero por seguridad creamos una implícita en vez de descartar texto)
+                if (parsedScenes.length === 0) {
+                    parsedScenes.push({ id: null, heading: 'INT. LOCATION - DAY', styleAttr: '', innerHtml: '', lines: [] });
+                }
+                const currentScene = parsedScenes[parsedScenes.length - 1];
+
+                if (type === 'character') {
+                    // Un párrafo de personaje VACÍO (residuo de ediciones manuales, p.ej.
+                    // un Intro de más que se dejó a medio borrar) no debe crear una fila
+                    // con el nombre de relleno "PERSONAJE" — se ignora sin más, sin tocar
+                    // el nombre pendiente que ya hubiera.
+                    if (plainText) {
+                        pendingCharacterName = plainText.toUpperCase();
+                        pendingCharacterStyleAttr = styleAttr;
+                        pendingCharacterInnerHtml = el.innerHtml;
+                    }
+                    lastType = 'character';
+                    continue; // se combina con el párrafo de diálogo que viene justo después
+                }
+
+                if (type === 'dialogue') {
+                    // Un párrafo de diálogo vacío no se guarda (evita filas fantasma sin
+                    // contenido, p.ej. el hueco que deja un Intro de más sin borrar del
+                    // todo). El nombre de personaje pendiente se conserva para la
+                    // siguiente línea real, no se descarta.
+                    if (plainText) {
+                        // El nombre de personaje y su diálogo comparten fila/id A PROPÓSITO
+                        // (el mismo id ya se pudo "usar" en el párrafo de personaje sin que
+                        // eso cuente como duplicado, porque el personaje no crea fila propia).
+                        const dedupedLineId = lineId && !usedLineRowIds.has(lineId) ? lineId : null;
+                        if (dedupedLineId) usedLineRowIds.add(dedupedLineId);
+                        currentScene.lines.push({
+                            id: dedupedLineId,
+                            characterName: pendingCharacterName || 'PERSONAJE',
+                            content: plainText,
+                            styleAttr,
+                            innerHtml: el.innerHtml,
+                            characterStyleAttr: pendingCharacterStyleAttr,
+                            characterInnerHtml: pendingCharacterInnerHtml,
+                        });
+                        pendingCharacterName = null;
+                        pendingCharacterStyleAttr = '';
+                        pendingCharacterInnerHtml = '';
+                    }
+                    lastType = 'dialogue';
+                    continue;
+                }
+
+                // action (o cualquier tipo no reconocido, por seguridad) — igual que el
+                // diálogo, una línea de acción vacía no se guarda.
+                if (plainText) {
+                    const dedupedLineId = lineId && !usedLineRowIds.has(lineId) ? lineId : null;
+                    if (dedupedLineId) usedLineRowIds.add(dedupedLineId);
+                    currentScene.lines.push({
+                        id: dedupedLineId,
+                        characterName: 'ACCIÓN',
+                        content: plainText,
+                        styleAttr,
+                        innerHtml: el.innerHtml,
+                        characterStyleAttr: '',
+                        characterInnerHtml: '',
+                    });
+                }
+                pendingCharacterName = null;
+                pendingCharacterStyleAttr = '';
+                pendingCharacterInnerHtml = '';
+                lastType = 'action';
+            }
+
+            // Estado actual en BD, para saber qué escenas/líneas hay que borrar
+            const { data: existingScenes } = await supabase
+                .from('scenes')
+                .select('id, lines(id)')
+                .eq('script_id', id);
+
+            const existingSceneIds = new Set((existingScenes || []).map((s: any) => s.id));
+            const existingLineIds = new Set((existingScenes || []).flatMap((s: any) => (s.lines || []).map((l: any) => l.id)));
+            const seenSceneIds = new Set<string>();
+            const seenLineIds = new Set<string>();
+
+            for (let i = 0; i < parsedScenes.length; i++) {
+                const scene = parsedScenes[i];
+                const sceneContentHtml = packContentHtml(scene.styleAttr, scene.innerHtml);
+                let sceneId = scene.id;
+
+                if (sceneId && existingSceneIds.has(sceneId)) {
+                    seenSceneIds.add(sceneId);
+                    await supabase.from('scenes').update({
+                        heading: scene.heading,
+                        order_index: i + 1,
+                        content_html: sceneContentHtml,
+                        content_html_source: scene.heading,
+                    }).eq('id', sceneId);
+                } else {
+                    const { data: newScene, error } = await supabase.from('scenes').insert({
+                        script_id: id,
+                        scene_number: i + 1,
+                        heading: scene.heading,
+                        order_index: i + 1,
+                        content: scene.heading,
+                        content_html: sceneContentHtml,
+                        content_html_source: scene.heading,
+                    }).select().single();
+                    if (error) throw error;
+                    sceneId = newScene.id;
+                    seenSceneIds.add(sceneId!);
+                }
+
+                for (let j = 0; j < scene.lines.length; j++) {
+                    const line = scene.lines[j];
+                    // El "slot" de personaje solo existe para líneas de diálogo (una
+                    // acción no tiene párrafo de nombre delante).
+                    const hasCharacterSlot = line.characterName !== 'ACCIÓN' && !!line.characterStyleAttr;
+                    const lineContentHtml = packLineContentHtml(
+                        { style: line.styleAttr, html: line.innerHtml },
+                        hasCharacterSlot ? { style: line.characterStyleAttr, html: line.characterInnerHtml } : null
+                    );
+                    const lineContentHtmlSource = packLineContentHtmlSource(
+                        line.content,
+                        hasCharacterSlot ? line.characterName : null
+                    );
+
+                    if (line.id && existingLineIds.has(line.id)) {
+                        seenLineIds.add(line.id);
+                        await supabase.from('lines').update({
+                            scene_id: sceneId,
+                            character_name: line.characterName,
+                            content: line.content,
+                            order_index: j + 1,
+                            content_html: lineContentHtml,
+                            content_html_source: lineContentHtmlSource,
+                        }).eq('id', line.id);
+                    } else {
+                        const { data: newLine, error } = await supabase.from('lines').insert({
+                            scene_id: sceneId,
+                            character_name: line.characterName,
+                            content: line.content,
+                            order_index: j + 1,
+                            content_html: lineContentHtml,
+                            content_html_source: lineContentHtmlSource,
+                        }).select().single();
+                        if (error) throw error;
+                        seenLineIds.add(newLine.id);
+                    }
+                }
+            }
+
+            const linesToDelete = [...existingLineIds].filter(lid => !seenLineIds.has(lid));
+            if (linesToDelete.length > 0) {
+                await supabase.from('lines').delete().in('id', linesToDelete);
+            }
+            const scenesToDelete = [...existingSceneIds].filter(sid => !seenSceneIds.has(sid));
+            if (scenesToDelete.length > 0) {
+                await supabase.from('scenes').delete().in('id', scenesToDelete);
+            }
+
+            const scriptUpdates: Record<string, any> = { annotations: paths, updated_at: new Date().toISOString() };
+            if (titleText) scriptUpdates.title = titleText;
+            const { error: scriptError } = await supabase.from('scripts').update(scriptUpdates).eq('id', id);
+            if (scriptError) throw scriptError;
+            if (titleText) setScriptTitle(titleText);
+
+            Alert.alert('Guardado', 'Guion actualizado correctamente.');
             router.back();
 
         } catch (error: any) {
@@ -538,29 +1108,49 @@ export default function ScriptEditorScreen() {
         }
     }
 
+    // Deshacer/rehacer del texto NO usa document.execCommand('undo'/'redo'): en
+    // WebKit ese historial nativo no revierte de forma fiable los resaltados
+    // aplicados vía hiliteColor/backColor (son comandos no estándar, con soporte
+    // irregular — ver el comentario de applyHighlight más abajo), así que
+    // "Deshacer" podía no hacer nada visible tras marcar una palabra. En su
+    // lugar, se guarda una pila propia de snapshots del documento y deshacer
+    // simplemente reemplaza el contenido por el snapshot anterior.
+    function applyEditSnapshot(html: string) {
+        htmlContentRef.current = html;
+        webViewRef.current?.injectJavaScript(`
+            (function() {
+                var root = document.getElementById('editor-root');
+                if (root) { root.innerHTML = ${JSON.stringify(html)}; }
+            })();
+            true;
+        `);
+    }
+
+    // Deshacer/rehacer con una única pila compartida entre texto y dibujo: no
+    // dependen del modo activo, así que funcionan aunque hayas salido del modo
+    // donde hiciste el último cambio (p.ej. dibujar algo y luego pulsar el
+    // lápiz para volver a Vista).
     function handleUndo() {
-        if (mode === 'edit') {
-            formatText('undo');
-        } else if (mode === 'draw') {
-            if (history.length > 0) {
-                const previous = history[history.length - 1];
-                setRedoStack([...redoStack, paths]);
-                setPaths(previous);
-                setHistory(history.slice(0, -1));
-            }
+        const last = actionHistoryRef.current.pop();
+        if (!last) return;
+        if (last.kind === 'text') {
+            actionRedoRef.current.push({ kind: 'text', before: htmlContentRef.current });
+            applyEditSnapshot(last.before);
+        } else {
+            actionRedoRef.current.push({ kind: 'draw', before: paths });
+            setPaths(last.before);
         }
     }
 
     function handleRedo() {
-        if (mode === 'edit') {
-            formatText('redo');
-        } else if (mode === 'draw') {
-            if (redoStack.length > 0) {
-                const next = redoStack[redoStack.length - 1];
-                setHistory([...history, paths]);
-                setPaths(next);
-                setRedoStack(redoStack.slice(0, -1));
-            }
+        const next = actionRedoRef.current.pop();
+        if (!next) return;
+        if (next.kind === 'text') {
+            actionHistoryRef.current.push({ kind: 'text', before: htmlContentRef.current });
+            applyEditSnapshot(next.before);
+        } else {
+            actionHistoryRef.current.push({ kind: 'draw', before: paths });
+            setPaths(next.before);
         }
     }
 
@@ -574,7 +1164,8 @@ export default function ScriptEditorScreen() {
                     text: 'Borrar',
                     style: 'destructive',
                     onPress: () => {
-                        setHistory([...history, paths]);
+                        actionHistoryRef.current.push({ kind: 'draw', before: paths });
+                        actionRedoRef.current = [];
                         setPaths([]);
                     }
                 }
@@ -582,11 +1173,78 @@ export default function ScriptEditorScreen() {
         );
     }
 
+    // Los botones de formato (Negrita/Cursiva/Subrayado/Tachado/Alinear/Color) viven
+    // fuera del WebView; al tocarlos, el WebView puede perder el foco y
+    // "window.getSelection()" queda vacía o desfasada en el momento en que se
+    // ejecuta el script inyectado. Por eso, antes de cada execCommand, se restaura
+    // primero el último Range que el propio WebView guardó (window.__activeRange,
+    // actualizado en cada cambio de selección mientras tenía el foco) — así el
+    // comando actúa siempre sobre lo que el usuario realmente seleccionó, nunca
+    // sobre una selección más amplia o equivocada.
     function formatText(command: string, value: string | null = null) {
         const script = `
-            document.execCommand('${command}', false, ${value ? `'${value}'` : null});
+            (function() {
+                if (window.__activeRange) {
+                    var sel = window.getSelection();
+                    sel.removeAllRanges();
+                    sel.addRange(window.__activeRange);
+                }
+                document.execCommand('${command}', false, ${value ? `'${value}'` : null});
+                window.ReactNativeWebView.postMessage(JSON.stringify({ type: 'content', data: document.getElementById('editor-root').innerHTML }));
+            })();
+            true;
         `;
         webViewRef.current?.injectJavaScript(script);
+    }
+
+    // Resalta el texto seleccionado con un color translúcido (no lo tapa, se lee debajo).
+    // "hiliteColor" es el nombre histórico de Firefox/Gecko para esto; WebKit (Safari/iOS)
+    // a veces solo responde a "backColor" con el mismo efecto, así que probamos el segundo
+    // si el primero no está soportado en ese motor.
+    function applyHighlight(color: string) {
+        const script = `
+            (function() {
+                if (window.__activeRange) {
+                    var sel = window.getSelection();
+                    sel.removeAllRanges();
+                    sel.addRange(window.__activeRange);
+                }
+                var ok = document.execCommand('hiliteColor', false, '${color}');
+                if (!ok) { document.execCommand('backColor', false, '${color}'); }
+                window.ReactNativeWebView.postMessage(JSON.stringify({ type: 'content', data: document.getElementById('editor-root').innerHTML }));
+            })();
+            true;
+        `;
+        webViewRef.current?.injectJavaScript(script);
+        setShowHighlightMenu(false);
+    }
+
+    // Aplica un formato predefinido de guion (título / escena / acción / personaje / diálogo)
+    // al párrafo donde está el cursor. A diferencia de formatText(), esto no usa
+    // execCommand (no vale para "aplicar un conjunto de propiedades al bloque"): busca el
+    // elemento de bloque más cercano y le reasigna sus estilos por completo.
+    function applyLineStyle(preset: { key: string; style: Record<string, string> }) {
+        const declarations = Object.entries(preset.style)
+            .map(([prop, value]) => `node.style.${prop} = ${JSON.stringify(value)};`)
+            .join(' ');
+        // Al aplicar un preset a mano, ese es el tipo más fiable que tenemos de este
+        // párrafo (más que cualquier data-scene-id/data-line-type que ya trajera) —
+        // por eso lo marcamos aquí, y si deja de ser una escena, quitamos el
+        // data-scene-id para que al guardar no se siga tratando como tal.
+        const script = `
+            (function() {
+                var node = window.__activeLine;
+                if (!node || !document.getElementById('editor-root').contains(node)) return true;
+                node.removeAttribute('style');
+                node.setAttribute('data-line-type', ${JSON.stringify(preset.key)});
+                ${preset.key !== 'scene' ? "node.removeAttribute('data-scene-id');" : ''}
+                ${declarations}
+                window.ReactNativeWebView.postMessage(JSON.stringify({ type: 'content', data: document.getElementById('editor-root').innerHTML }));
+            })();
+            true;
+        `;
+        webViewRef.current?.injectJavaScript(script);
+        setShowSizeMenu(false);
     }
 
     // --- Render Helpers ---
@@ -612,29 +1270,228 @@ export default function ScriptEditorScreen() {
         html: `
             <html>
             <head>
-                <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+                <!-- Ancho lógico FIJO (595 = A4 real), reescalado a displayScale para
+                     caber en la pantalla — como "ver sitio de escritorio" en un móvil.
+                     El zoom queda bloqueado en ese mismo valor (el gesto de pellizco es
+                     una fase futura); el bloqueo de gestos de pellizco vive en
+                     injectedJavaScript más abajo, sin una segunda etiqueta viewport
+                     duplicada que pueda desincronizarse de esta. -->
+                <meta name="viewport" content="width=${pageWidth}, initial-scale=${displayScale}, minimum-scale=${displayScale}, maximum-scale=${displayScale}, user-scalable=no">
                 <style>
-                    body { 
-                        font-family: 'Courier New', Courier, monospace; 
-                        font-size: 16px; 
-                        padding: rp(20)px; 
-                        color: #000000; 
+                    body {
+                        font-family: 'Courier New', Courier, monospace;
+                        font-size: 12px;
+                        line-height: 1.15;
+                        padding-top: ${pageMarginTop}px;
+                        padding-left: 0;
+                        padding-right: 0;
+                        /* Espacio extra abajo (margen de "página" + hueco para que la última
+                           línea no quede tapada por la barra flotante de herramientas). El
+                           "140" es un hueco de PANTALLA real (la barra mide eso en puntos
+                           de pantalla); al vivir aquí dentro de unidades lógicas de página,
+                           hay que dividirlo por displayScale para que siga despejando el
+                           mismo hueco físico sea cual sea el factor de escala. */
+                        padding-bottom: ${pageMarginBottom + (140 / displayScale)}px;
+                        color: #000000;
                         background-color: #FFFFFF;
                         text-align: center; /* Default center alignment */
                     }
-                    p { margin-bottom: 10px; }
+                    /* El margen horizontal de "página" vive aquí, no en el div interno que
+                       genera reconstructScriptFromData/parseScriptLocally — así el ancho de
+                       columna de texto es exactamente el mismo que usa el PDF paginado que
+                       genera "Compartir" (buildPagesHtml reutiliza estas mismas cifras).
+                       IMPORTANTE: es PADDING, no margin. Con margin, la propia caja de
+                       "editor-root" (el elemento contenteditable) queda más ESTRECHA que la
+                       página — WebKit dibuja entonces su contorno de foco/edición justo en
+                       ese borde interior (las "líneas azules" al entrar en modo Texto), y
+                       cualquier cosa insertada dentro (como el separador de salto de
+                       página) queda encajonada en esa columna estrecha en vez de ocupar el
+                       ancho completo de la hoja. Con padding, la caja de editor-root sigue
+                       midiendo la página ENTERA (el contorno de WebKit coincide con el
+                       borde real de la hoja) y el texto sigue insetado igual — solo hay que
+                       "romper" ese padding explícitamente en .page-break-gap para que el
+                       separador sí llegue de borde a borde. */
+                    #editor-root {
+                        padding-left: ${pageMarginLeft}px;
+                        padding-right: ${pageMarginRight}px;
+                        box-sizing: border-box;
+                        width: 100%;
+                    }
+                    /* Sin este reset, un <p> sin margen superior propio hereda el margen
+                       por defecto del navegador (~1em) además del margin-bottom de aquí abajo,
+                       lo que hace que un simple Intro parezca un salto de línea doble. */
+                    p { margin-top: 0; margin-bottom: 6px; }
+                    /* Separador visual entre "hojas": el hueco mide EXACTAMENTE el margen
+                       inferior de la hoja que termina + el margen superior de la siguiente
+                       (ni un px más) — así el patrón "una página cada pageHeight px" es
+                       exacto, sin lo cual el recorte del dibujo en el PDF (buildPagesHtml)
+                       iría desalineándose página a página. NO se puede reducir esta altura
+                       sin romper esa matemática — así que, en vez de teñir todo el hueco de
+                       gris (se veía como un bloque grueso), se deja BLANCO —es margen real
+                       de página, no "vacío raro"— y solo se marca con una línea fina el
+                       punto exacto donde una hoja termina y empieza la siguiente, igual que
+                       un visor de PDF real.
+                       Los márgenes negativos "rompen" el padding de editor-root para que
+                       este separador llegue de borde a borde de la hoja (ancho completo de
+                       pantalla), en vez de quedar encajonado en la columna de texto. */
+                    .page-break-gap {
+                        display: block;
+                        height: ${pageMarginBottom + pageMarginTop}px;
+                        margin: 0 -${pageMarginRight}px 0 -${pageMarginLeft}px;
+                        background-color: #FFFFFF;
+                        background-image: linear-gradient(to bottom,
+                            transparent calc(${pageMarginBottom}px - 1px),
+                            rgba(0,0,0,0.18) calc(${pageMarginBottom}px - 1px),
+                            rgba(0,0,0,0.18) calc(${pageMarginBottom}px + 1px),
+                            transparent calc(${pageMarginBottom}px + 1px));
+                        box-sizing: border-box;
+                    }
                 </style>
             </head>
-            <body contenteditable="${mode === 'edit'}">
-                ${initialHtml || 'Escribe tu guion aquí...'}
+            <body>
+                <div id="editor-root" contenteditable="false">
+                    ${initialHtml || 'Escribe tu guion aquí...'}
+                </div>
                 <script>
-                    document.body.addEventListener('input', function() {
+                    // El contenido editable vive en su PROPIO contenedor ("editor-root"),
+                    // separado del <script> de aquí abajo. Si en vez de esto leyéramos
+                    // document.body.innerHTML, esa lectura incluiría también el propio
+                    // <script> como hermano (todo <script> es hijo literal de <body>) —
+                    // y cualquier "<p>" que aparezca dentro de ESTE CÓDIGO (p.ej. en un
+                    // comentario) se colaría en el guardado como si fuera un párrafo real
+                    // del documento. Aislar el contenido en su propio div evita esto.
+                    var root = document.getElementById('editor-root');
+                    root.addEventListener('input', function() {
                         window.ReactNativeWebView.postMessage(JSON.stringify({
                             type: 'content',
-                            data: document.body.innerHTML
+                            data: root.innerHTML
                         }));
                     });
-                    
+
+                    // Altura real del documento (para la capa de dibujo y para exportar a
+                    // PDF, que necesitan saber cuánto mide TODO el guion, no solo lo que
+                    // cabe en la pantalla). Se usa document.body.scrollHeight (no
+                    // root.scrollHeight): el padding que da espacio arriba/abajo del
+                    // texto está puesto en <body>, fuera de "editor-root", así que solo
+                    // la altura de body representa el alto total real renderizado.
+                    function reportHeight() {
+                        window.ReactNativeWebView.postMessage(JSON.stringify({
+                            type: 'height',
+                            data: document.body.scrollHeight
+                        }));
+                    }
+                    reportHeight();
+                    root.addEventListener('input', reportHeight);
+                    window.addEventListener('load', reportHeight);
+
+                    // Paginación real: inserta/quita separadores visuales ("hojas") entre
+                    // los párrafos de nivel superior, sin mover ni clonar ningún párrafo
+                    // real (así nunca hay que preocuparse por perder data-line-id/
+                    // data-line-type/estilo, ni por invalidar el cursor). El mismo cálculo
+                    // (qué párrafos van en cada página) se reutiliza tal cual al generar el
+                    // PDF en "Compartir", para que ambos coincidan siempre.
+                    function repaginate() {
+                        var container = root.firstElementChild || root;
+                        if (!container) return;
+
+                        // Si la selección actual quedara dentro de un separador que vamos a
+                        // quitar, se perdería sin más — se guarda antes de mutar.
+                        var sel = window.getSelection();
+                        var savedRange = (sel && sel.rangeCount > 0) ? sel.getRangeAt(0) : null;
+
+                        var oldGaps = container.querySelectorAll('.page-break-gap');
+                        for (var g = 0; g < oldGaps.length; g++) { oldGaps[g].remove(); }
+
+                        var children = [];
+                        for (var c = 0; c < container.children.length; c++) {
+                            children.push(container.children[c]);
+                        }
+
+                        var breakBeforeIndices = [];
+                        if (children.length > 0) {
+                            // Todas las lecturas (getBoundingClientRect) antes que ninguna
+                            // escritura, para no forzar reflows de más.
+                            var containerTop = container.getBoundingClientRect().top;
+                            var pageStart = 0;
+                            for (var j = 0; j < children.length; j++) {
+                                var rect = children[j].getBoundingClientRect();
+                                var elBottom = rect.bottom - containerTop;
+                                if (j > 0 && (elBottom - pageStart) > ${pageContentHeight}) {
+                                    breakBeforeIndices.push(j);
+                                    pageStart = rect.top - containerTop;
+                                }
+                            }
+                            for (var k = breakBeforeIndices.length - 1; k >= 0; k--) {
+                                var gapEl = document.createElement('div');
+                                gapEl.className = 'page-break-gap';
+                                container.insertBefore(gapEl, children[breakBeforeIndices[k]]);
+                            }
+                        }
+
+                        if (sel && (sel.rangeCount === 0 || !document.contains(sel.anchorNode)) &&
+                            savedRange && document.contains(savedRange.startContainer)) {
+                            sel.removeAllRanges();
+                            sel.addRange(savedRange);
+                        }
+
+                        // reportHeight() se envía ANTES que "pageBreaks" a propósito:
+                        // handleSharePdf espera a "pageBreaks" para saber que ya puede
+                        // capturar, y necesita que la altura (contentHeightRef) ya esté al
+                        // día en ese preciso momento.
+                        reportHeight();
+                        window.ReactNativeWebView.postMessage(JSON.stringify({
+                            type: 'pageBreaks',
+                            data: breakBeforeIndices
+                        }));
+                    }
+
+                    var repaginateTimer = null;
+                    function scheduleRepaginate() {
+                        if (repaginateTimer) clearTimeout(repaginateTimer);
+                        repaginateTimer = setTimeout(repaginate, ${EDIT_CHECKPOINT_GAP_MS});
+                    }
+                    root.addEventListener('input', scheduleRepaginate);
+                    window.addEventListener('load', repaginate);
+                    // Flush síncrono (sin esperar el debounce) para cuando "Compartir"
+                    // necesita la paginación más reciente antes de generar el PDF.
+                    window.__repaginateNow = repaginate;
+
+                    // Los botones de formato viven fuera del WebView (son componentes nativos),
+                    // así que al tocarlos el WebView pierde el foco y "window.getSelection()"
+                    // deja de ser fiable (a veces llega vacía, a veces desfasada). En vez de
+                    // depender de la Selection API, recordamos directamente qué párrafo se
+                    // tocó por última vez. No basta con escuchar "click": tras pulsar Intro
+                    // el cursor salta a un párrafo nuevo sin que se dispare ningún click ahí,
+                    // así que también recalculamos en cada tecla y en cada cambio de selección
+                    // (usando la posición real del cursor, no el elemento tocado).
+                    function updateActiveLine() {
+                        var sel = window.getSelection();
+                        if (!sel || sel.rangeCount === 0) return;
+                        // Además del párrafo activo, guardamos una COPIA del Range exacto
+                        // (no solo el nodo contenedor): los botones de Negrita/Cursiva/
+                        // Subrayado/Alinear/Color siguen viviendo fuera del WebView y llaman
+                        // a document.execCommand sobre "la selección actual" en el momento en
+                        // que se inyecta el script — si para entonces el WebView ya perdió el
+                        // foco, esa selección puede haber quedado vacía o distinta a la que
+                        // el usuario realmente marcó. Restaurar este Range guardado justo
+                        // antes de cada execCommand asegura que el comando actúa exactamente
+                        // sobre lo que se seleccionó, nunca sobre "todo el bloque".
+                        window.__activeRange = sel.getRangeAt(0).cloneRange();
+                        var node = sel.getRangeAt(0).startContainer;
+                        if (node.nodeType !== 1) { node = node.parentNode; }
+                        while (node && node !== root && node.nodeName !== 'P' && node.nodeName !== 'H1' && node.nodeName !== 'H2' && node !== document.body) {
+                            node = node.parentNode;
+                        }
+                        if (node && node !== root && node !== document.body) {
+                            window.__activeLine = node;
+                        }
+                    }
+                    root.addEventListener('click', updateActiveLine);
+                    root.addEventListener('mouseup', updateActiveLine);
+                    root.addEventListener('keyup', updateActiveLine);
+                    root.addEventListener('input', updateActiveLine);
+                    document.addEventListener('selectionchange', updateActiveLine);
+
                     // Send scroll position
                     window.addEventListener('scroll', function() {
                         window.ReactNativeWebView.postMessage(JSON.stringify({
@@ -643,31 +1500,121 @@ export default function ScriptEditorScreen() {
                         }));
                     });
 
-                    // Fix paste to always be plain text
+                    // Fix paste to always be plain text, y SIN heredar el resaltado/color
+                    // del párrafo donde caiga el cursor (si se pega dentro o justo al lado
+                    // de un span resaltado, "insertText" seguiría el "estilo de escritura"
+                    // vigente ahí y el texto pegado saldría resaltado igual). Se envuelve el
+                    // texto pegado en un span con fondo/color explícitamente neutros para
+                    // cortar esa herencia.
                     document.addEventListener('paste', function(e) {
                         e.preventDefault();
                         var text = (e.originalEvent || e).clipboardData.getData('text/plain');
-                        document.execCommand('insertText', false, text);
+                        var escapeHtml = function(s) {
+                            return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+                        };
+                        var neutralSpan = function(s) {
+                            return '<span style="background-color: transparent; color: inherit;">' + escapeHtml(s) + '</span>';
+                        };
+                        var lines = text.split(/\\r?\\n/);
+                        if (lines.length <= 1) {
+                            // Una sola línea: se inserta inline, tal cual, sin crear un
+                            // párrafo nuevo (p.ej. pegar una palabra en medio de una frase).
+                            document.execCommand('insertHTML', false, neutralSpan(text));
+                        } else {
+                            // Varias líneas (p.ej. se cortó un bloque entero de nombre de
+                            // personaje mas diálogo): cada línea debe quedar en su PROPIO
+                            // párrafo, igual que el resto del documento; si se insertaran
+                            // todas dentro de un único nodo separadas por saltos de línea,
+                            // quedarían fusionadas para siempre en un solo bloque y
+                            // compartirían el mismo tipo y formato aunque luego se intente
+                            // reformatear solo una de ellas.
+                            var openTag = String.fromCharCode(60) + 'p' + String.fromCharCode(62);
+                            var closeTag = String.fromCharCode(60) + '/p' + String.fromCharCode(62);
+                            var html = lines.map(function(line) {
+                                return openTag + neutralSpan(line) + closeTag;
+                            }).join('');
+                            document.execCommand('insertHTML', false, html);
+                        }
                     });
 
-                    // Fix huge margin inheritance on Enter key
+                    // Fix huge margin inheritance on Enter key.
+                    // La nueva línea en blanco no debe llevar margen propio: si lo lleva, se
+                    // SUMA (por colapso de márgenes) al margen superior de lo que venga
+                    // después, y un solo Intro acaba pareciendo un salto de línea doble. El
+                    // único espacio que debe añadir un Intro es el de esa propia línea vacía.
                     document.addEventListener('keydown', function(e) {
                         if (e.key === 'Enter' && !e.shiftKey) {
+                            var beforeNode = window.__activeLine;
                             setTimeout(function() {
                                 var selection = window.getSelection();
                                 if (selection.rangeCount > 0) {
                                     var node = selection.focusNode;
-                                    while (node && node.nodeName !== 'P' && node.nodeName !== 'DIV' && node !== document.body) {
+                                    while (node && node !== root && node.nodeName !== 'P' && node !== document.body) {
                                         node = node.parentNode;
                                     }
-                                    if (node && node !== document.body) {
+                                    if (node && node !== root && node !== document.body) {
+                                        // Tras un párrafo con preset (p.ej. "Nombre de personaje":
+                                        // negrita + mayúsculas), a veces el navegador NO crea un
+                                        // párrafo nuevo al pulsar Intro, sino que añade un salto de
+                                        // línea dentro del MISMO párrafo — el nombre ya escrito y la
+                                        // línea en blanco quedan compartiendo un solo nodo. Si en ese
+                                        // caso reseteásemos el estilo de "node" (más abajo), se lo
+                                        // quitaríamos también al nombre ya escrito. Por eso, si "node"
+                                        // sigue siendo el mismo párrafo de antes de pulsar Intro, se
+                                        // fuerza aquí un split real a un párrafo nuevo antes de tocar
+                                        // ningún estilo.
+                                        if (node === beforeNode) {
+                                            var newP = document.createElement('p');
+                                            var br = node.lastChild;
+                                            while (br && br.nodeName !== 'BR') { br = br.previousSibling; }
+                                            if (br) {
+                                                var after = br.nextSibling;
+                                                while (after) {
+                                                    var toMove = after;
+                                                    after = after.nextSibling;
+                                                    newP.appendChild(toMove);
+                                                }
+                                                br.remove();
+                                            }
+                                            if (!newP.hasChildNodes()) {
+                                                newP.appendChild(document.createElement('br'));
+                                            }
+                                            node.parentNode.insertBefore(newP, node.nextSibling);
+                                            var range = document.createRange();
+                                            range.selectNodeContents(newP);
+                                            range.collapse(true);
+                                            selection.removeAllRanges();
+                                            selection.addRange(range);
+                                            node = newP;
+                                        }
+
+                                        node.removeAttribute('data-line-type');
+                                        node.removeAttribute('data-line-id');
+                                        node.removeAttribute('data-scene-id');
                                         node.style.marginTop = '0px';
-                                        node.style.marginBottom = '15px';
+                                        node.style.marginBottom = '0px';
                                         node.style.fontWeight = 'normal';
-                                        node.style.maxWidth = '80%';
+                                        node.style.textTransform = 'none';
+                                        node.style.textDecoration = 'none';
+                                        node.style.maxWidth = '70%';
                                         node.style.marginLeft = 'auto';
                                         node.style.marginRight = 'auto';
-                                        node.style.fontSize = '14px';
+                                        node.style.fontSize = '12px';
+
+                                        // El párrafo que se acaba de partir (p.ej. un diálogo)
+                                        // puede traer su propio margen inferior; si no lo
+                                        // neutralizamos también, se suma al de la línea en blanco
+                                        // y el hueco se duplica otra vez.
+                                        var prev = node.previousElementSibling;
+                                        if (prev) {
+                                            prev.style.marginBottom = '0px';
+                                        }
+
+                                        window.__activeLine = node;
+                                        window.ReactNativeWebView.postMessage(JSON.stringify({
+                                            type: 'content',
+                                            data: root.innerHTML
+                                        }));
                                     }
                                 }
                             }, 10);
@@ -677,7 +1624,24 @@ export default function ScriptEditorScreen() {
             </body>
             </html>
         `
-    }), [initialHtml, mode]);
+    }), [initialHtml]);
+
+    // Activar/desactivar la edición sin recargar el WebView. "webViewSource" ya
+    // NO depende de "mode" (ver arriba) precisamente para esto: si contenteditable
+    // viniera fijado en el HTML según el modo, cada cambio de modo generaría un
+    // "source" nuevo y el WebView recargaría desde "initialHtml" (el último
+    // guardado), perdiendo cualquier resaltado/negrita/cambio hecho desde
+    // entonces que aún no se hubiera guardado. En su lugar, se alterna
+    // contentEditable en vivo sobre el documento ya cargado.
+    useEffect(() => {
+        webViewRef.current?.injectJavaScript(`
+            (function() {
+                var root = document.getElementById('editor-root');
+                if (root) { root.contentEditable = ${mode === 'edit'}; }
+            })();
+            true;
+        `);
+    }, [mode]);
 
     // Capture View Ref
     const captureViewRef = useRef<View>(null);
@@ -687,11 +1651,15 @@ export default function ScriptEditorScreen() {
         setSaving(true);
 
         try {
-            // Capture the full drawing layer
+            // Capture the full drawing layer.
+            // useRenderInContext: el método por defecto en iOS (drawViewHierarchyInRect)
+            // falla en vistas muy altas (guiones largos) con "drawViewHierarchyInRect was
+            // not successful" — renderInContext sí soporta vistas grandes.
             const uri = await captureRef(captureViewRef, {
                 format: 'png',
                 quality: 0.8,
-                result: 'base64' // Get base64 directly
+                result: 'base64', // Get base64 directly
+                useRenderInContext: true,
             });
 
             const base64 = `data:image/png;base64,${uri}`;
@@ -709,10 +1677,7 @@ export default function ScriptEditorScreen() {
             if (updateError) throw updateError;
 
             setDrawingLayerImage(base64);
-            // DON'T clear paths - keep them editable
-            // setPaths([]);
-            // setHistory([]);
-            // setRedoStack([]);
+            // No se borran los trazos (paths) al guardar: se dejan editables.
 
             Alert.alert('Guardado', 'Anotaciones guardadas correctamente.');
 
@@ -721,6 +1686,163 @@ export default function ScriptEditorScreen() {
             Alert.alert('Error', 'No se pudieron guardar las anotaciones: ' + error.message);
         } finally {
             setSaving(false);
+        }
+    }
+
+    // HTML de solo lectura para la captura de "Compartir": mismo tipografía/
+    // colores que el editor visible, pero sin contenteditable ni el <script> de
+    // edición (aquí no hace falta nada de eso, solo se va a fotografiar).
+    // Comparte el guion como PDF: el texto se genera como HTML real (negrita,
+    // mayúsculas, resaltados y colores son estilos CSS de verdad, no una foto —
+    // sale seleccionable y con buena resolución) y los trazos a mano se
+    // superponen encima como una capa de imagen. No se intenta capturar el
+    // WebView del editor: en iOS, react-native-view-shot no puede fotografiar
+    // contenido de un WKWebView en absoluto (falla con "drawViewHierarchyInRect
+    // was not successful"), pase lo que pase con su posición en pantalla — lo
+    // comprobamos. La captura de los dibujos SÍ funciona porque es un SVG plano,
+    // sin ningún WebView de por medio.
+    // Construye el PDF como una secuencia de páginas reales, usando los MISMOS
+    // cortes que decidió repaginate() en el WebView visible (pageBreaks: índices
+    // de la lista plana de párrafos donde empieza cada página nueva) — así no
+    // hay dos motores adivinando el ajuste de línea por separado, la causa de
+    // los desajustes de los intentos anteriores.
+    function buildPagesHtml(pageBreaks: number[], drawingImageBase64: string | null): string {
+        const elements = splitTopLevelElements(htmlContentRef.current);
+
+        const pages: typeof elements[] = [];
+        let current: typeof elements = [];
+        let breakIdx = 0;
+        elements.forEach((el, i) => {
+            if (breakIdx < pageBreaks.length && pageBreaks[breakIdx] === i) {
+                pages.push(current);
+                current = [];
+                breakIdx++;
+            }
+            current.push(el);
+        });
+        pages.push(current);
+
+        const pagesHtml = pages.map((pageElements, pageIndex) => {
+            const innerHtml = pageElements.map((el) => `<${el.tag}${el.attrs}>${el.innerHtml}</${el.tag}>`).join('');
+            const isLast = pageIndex === pages.length - 1;
+            // Recorte tipo "sprite" en CSS: la MISMA imagen completa de los trazos
+            // se reutiliza en cada página, desplazada hacia arriba una página
+            // entera por cada página anterior, y recortada a la ventana de esta
+            // página — sin librería de recorte de imágenes ni dependencia nueva.
+            const drawingCrop = drawingImageBase64
+                ? `<div style="position:absolute; top:0; left:0; width:100%; height:${pageHeight}px; overflow:hidden; pointer-events:none;">
+                       <img src="data:image/png;base64,${drawingImageBase64}" style="position:absolute; top:${-pageIndex * pageHeight}px; left:0; width:100%; display:block;" />
+                   </div>`
+                : '';
+            return `
+                <div class="page" style="position:relative; width:${pageWidth}px; height:${pageHeight}px;${isLast ? '' : ' page-break-after: always;'}">
+                    <div class="editor-root" style="box-sizing:border-box; width:100%; height:100%; padding:${pageMarginTop}px ${pageMarginRight}px ${pageMarginBottom}px ${pageMarginLeft}px;">
+                        ${innerHtml}
+                    </div>
+                    ${drawingCrop}
+                </div>
+            `;
+        }).join('');
+
+        return `
+            <html>
+            <head>
+                <meta name="viewport" content="width=${pageWidth}">
+                <style>
+                    body { margin: 0; padding: 0; }
+                    .editor-root {
+                        font-family: 'Courier New', Courier, monospace;
+                        font-size: 12px;
+                        line-height: 1.15;
+                        color: #000000;
+                        background-color: #FFFFFF;
+                        text-align: center;
+                    }
+                    p { margin-top: 0; margin-bottom: 6px; }
+                </style>
+            </head>
+            <body>
+                ${pagesHtml}
+            </body>
+            </html>
+        `;
+    }
+
+    async function handleSharePdf() {
+        if (exportingPdf) return;
+        setExportingPdf(true);
+
+        try {
+            const canShare = await Sharing.isAvailableAsync();
+            if (!canShare) {
+                Alert.alert('Error', 'No se puede compartir en este dispositivo.');
+                return;
+            }
+
+            // Fuerza una paginación fresca (sin esperar el debounce) antes de
+            // capturar nada: si el usuario acaba de escribir, la paginación
+            // guardada en pageBreaksRef podría estar desactualizada, y exportar
+            // con cortes viejos reintroduciría el mismo desajuste que se quiere
+            // eliminar.
+            const freshPageBreaks = await new Promise<number[]>((resolve) => {
+                pageBreaksResolveRef.current = resolve;
+                webViewRef.current?.injectJavaScript('window.__repaginateNow && window.__repaginateNow(); true;');
+                setTimeout(() => resolve(pageBreaksRef.current), 2000);
+            });
+
+            let drawingImageBase64: string | null = null;
+            if (paths.length > 0) {
+                // Monta (fuera de pantalla) los trazos a mano a la altura COMPLETA
+                // del documento YA paginado, para capturarlos todos de una vez — es
+                // un SVG plano, sin WebView, así que sí puede capturarse fuera de
+                // pantalla sin problema (a diferencia de intentar fotografiar el
+                // WebView del texto).
+                setShowShareCapture(true);
+                await new Promise((resolve) => setTimeout(resolve, 150));
+                drawingImageBase64 = await captureRef(shareViewRef, {
+                    format: 'png',
+                    quality: 1,
+                    result: 'base64',
+                    useRenderInContext: true,
+                });
+                setShowShareCapture(false);
+            }
+
+            const pageHtml = buildPagesHtml(freshPageBreaks, drawingImageBase64);
+
+            const { uri: rawPdfUri } = await Print.printToFileAsync({
+                html: pageHtml,
+                width: pageWidth,
+                height: pageHeight,
+                margins: { top: 0, right: 0, bottom: 0, left: 0 },
+            });
+
+            // printToFileAsync guarda el PDF con un nombre interno (tipo UUID de
+            // Supabase/caché), no con el título del guion — se copia con el nombre
+            // correcto antes de compartirlo para que sea ese el que vea el usuario.
+            const safeTitle = (scriptTitle || 'Guion').replace(/[\\/:*?"<>|]/g, '').trim() || 'Guion';
+            const pdfUri = `${FileSystem.cacheDirectory}${safeTitle}.pdf`;
+            // Si ya se compartió este mismo guion antes en esta sesión, el archivo
+            // puede seguir en caché con ese nombre — copyAsync falla si el destino
+            // ya existe.
+            const existing = await FileSystem.getInfoAsync(pdfUri);
+            if (existing.exists) {
+                await FileSystem.deleteAsync(pdfUri, { idempotent: true });
+            }
+            await FileSystem.copyAsync({ from: rawPdfUri, to: pdfUri });
+
+            await Sharing.shareAsync(pdfUri, {
+                UTI: 'com.adobe.pdf',
+                mimeType: 'application/pdf',
+                dialogTitle: 'Compartir guion en PDF',
+            });
+
+        } catch (error: any) {
+            console.error('Error exporting PDF:', error);
+            Alert.alert('Error', 'No se pudo generar el PDF: ' + error.message);
+        } finally {
+            setShowShareCapture(false);
+            setExportingPdf(false);
         }
     }
 
@@ -735,8 +1857,12 @@ export default function ScriptEditorScreen() {
                     position: 'absolute',
                     left: -10000, // Move off-screen
                     top: 0,
-                    width: '100%', // Assuming width matches screen width roughly
-                    height: contentHeight || 1000, // Full document height
+                    // Ancho LÓGICO de página (no de pantalla): los trazos se guardan en
+                    // ese sistema de coordenadas, así que esta vista invisible debe medir
+                    // exactamente eso para que el PNG resultante no salga comprimido/
+                    // recortado respecto al ancho real de los trazos.
+                    width: pageWidth,
+                    height: contentHeight || 1000, // Full document height (lógico)
                     backgroundColor: 'transparent',
                 }}
             >
@@ -756,6 +1882,45 @@ export default function ScriptEditorScreen() {
                     ))}
                 </Svg>
             </View>
+
+            {/* Captura oculta de los trazos a mano (solo SVG, sin WebView) para
+                "Compartir en PDF" — a la altura completa del documento, con el
+                mismo ancho que la tarjeta visible para que coincida con el texto
+                real que genera handleSharePdf. Al ser un SVG plano sí puede vivir
+                fuera de pantalla sin problema (el texto, en cambio, ya no se
+                fotografía: se genera como HTML real — ver buildTextPageHtml). */}
+            {showShareCapture && (
+                <View
+                    ref={shareViewRef}
+                    collapsable={false}
+                    style={{
+                        position: 'absolute',
+                        left: -10000,
+                        top: 0,
+                        width: pageWidth,
+                        // contentHeightRef (no el estado contentHeight): handleSharePdf
+                        // fuerza una repaginación justo antes de mostrar esta captura, y
+                        // el ref sí refleja ese valor al instante; el estado de React
+                        // podría no haberse aplicado todavía en este render.
+                        height: contentHeightRef.current || 1000,
+                        backgroundColor: 'transparent',
+                    }}
+                >
+                    <Svg height="100%" width="100%">
+                        {paths.map((p, i) => (
+                            <Path
+                                key={i}
+                                d={typeof p === 'string' ? p : p.d}
+                                stroke={typeof p === 'string' ? 'red' : p.color}
+                                strokeWidth={typeof p === 'string' ? 2 : p.width}
+                                fill="none"
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                            />
+                        ))}
+                    </Svg>
+                </View>
+            )}
             <Stack.Screen options={{ headerShown: false }} />
 
             {/* Main Header */}
@@ -764,28 +1929,7 @@ export default function ScriptEditorScreen() {
                     <ArrowLeft size={20} color="#FFFFFF" />
                 </TouchableOpacity>
 
-                <View style={styles.headerControls}>
-                    <TouchableOpacity onPress={handleUndo} style={styles.iconButton}>
-                        <Undo size={20} color={onBg} />
-                    </TouchableOpacity>
-                    <TouchableOpacity onPress={handleRedo} style={styles.iconButton}>
-                        <Redo size={20} color={onBg} />
-                    </TouchableOpacity>
-                    <TouchableOpacity
-                        onPress={() => setMode(mode === 'edit' ? 'view' : 'edit')}
-                        style={[styles.iconButton, mode === 'edit' && [styles.activeModeButton, { backgroundColor: chipActiveBg }]]}
-                    >
-                        <Type size={24} color={mode === 'edit' ? colors.primary : onBg} />
-                    </TouchableOpacity>
-                    <TouchableOpacity
-                        onPress={() => setMode(mode === 'draw' ? 'view' : 'draw')}
-                        style={[styles.iconButton, mode === 'draw' && [styles.activeModeButton, { backgroundColor: chipActiveBg }]]}
-                    >
-                        <Pencil size={24} color={mode === 'draw' ? colors.primary : onBg} />
-                    </TouchableOpacity>
-                </View>
-
-                <TouchableOpacity onPress={handleSave} style={[styles.saveButton, { backgroundColor: colors.primary }]} disabled={saving}>
+                <TouchableOpacity onPress={handleSave} style={[styles.saveButton, primaryButtonBg]} disabled={saving}>
                     {saving ? (
                         <ActivityIndicator size="small" color="#FFFFFF" />
                     ) : (
@@ -797,285 +1941,13 @@ export default function ScriptEditorScreen() {
                 </TouchableOpacity>
             </View>
 
-            {/* Secondary Toolbar (Format / Draw) */}
-            {mode !== 'view' && (
-                <>
-                    {/* Overlay to close menus when clicking outside */}
-                    {(showFormatMenu || showAlignMenu || showSizeMenu || showColorMenu || showStrokeMenu || showDrawColorMenu) && (
-                        <TouchableOpacity
-                            style={styles.menuOverlay}
-                            activeOpacity={1}
-                            onPress={() => {
-                                setShowFormatMenu(false);
-                                setShowAlignMenu(false);
-                                setShowSizeMenu(false);
-                                setShowColorMenu(false);
-                                setShowStrokeMenu(false);
-                                setShowDrawColorMenu(false);
-                            }}
-                        />
-                    )}
-                    <View style={styles.toolbar}>
-                        <View style={[styles.toolbarBlurClip, { borderColor: cardBorder }]}>
-                            <BlurView intensity={isDark ? 55 : 75} tint={isDark ? 'dark' : 'light'} style={StyleSheet.absoluteFill} />
-                            <View style={[StyleSheet.absoluteFill, { backgroundColor: isDark ? 'rgba(124,106,247,0.20)' : 'rgba(235,230,245,0.45)' }]} />
-                        </View>
-                        {mode === 'edit' && (
-                            <View style={styles.toolsContainer}>
-                                <View style={styles.minimalToolbar}>
-                                    {/* Format Button (Aa) - Text Styling */}
-                                    <View style={styles.dropdownWrapper}>
-                                        <TouchableOpacity
-                                            onPress={() => {
-                                                setShowFormatMenu(!showFormatMenu);
-                                                setShowAlignMenu(false);
-                                                setShowSizeMenu(false);
-                                                setShowColorMenu(false);
-                                            }}
-                                            style={[styles.toolbarButton, { backgroundColor: chipInactiveBg }, showFormatMenu && [styles.toolbarButtonActive, { backgroundColor: chipActiveBg, borderColor: colors.primary }]]}
-                                        >
-                                            <Text style={[styles.toolbarButtonText, { color: onBg }, showFormatMenu && { color: colors.primary }]}>Aa</Text>
-                                        </TouchableOpacity>
-                                        {showFormatMenu && (
-                                            <View style={[styles.dropdownMenu, { backgroundColor: dropdownBg, borderColor: cardBorder }]}>
-                                                <TouchableOpacity
-                                                    onPress={() => { setIsBold(!isBold); formatText('bold'); setShowFormatMenu(false); }}
-                                                    style={[styles.dropdownItem, isBold && styles.dropdownItemActive]}
-                                                >
-                                                    <Bold size={18} color={isBold ? colors.primary : onBg} strokeWidth={3} />
-                                                    <Text style={[styles.dropdownItemText, { color: onBg }, isBold && { color: colors.primary, fontWeight: 'bold' }]}>Negrita</Text>
-                                                </TouchableOpacity>
-                                                <TouchableOpacity
-                                                    onPress={() => { setIsItalic(!isItalic); formatText('italic'); setShowFormatMenu(false); }}
-                                                    style={[styles.dropdownItem, isItalic && styles.dropdownItemActive]}
-                                                >
-                                                    <Italic size={18} color={isItalic ? colors.primary : onBg} />
-                                                    <Text style={[styles.dropdownItemText, { color: onBg }, isItalic && { color: colors.primary, fontStyle: 'italic' }]}>Cursiva</Text>
-                                                </TouchableOpacity>
-                                                <TouchableOpacity
-                                                    onPress={() => { setIsUnderline(!isUnderline); formatText('underline'); setShowFormatMenu(false); }}
-                                                    style={[styles.dropdownItem, isUnderline && styles.dropdownItemActive]}
-                                                >
-                                                    <Underline size={18} color={isUnderline ? colors.primary : onBg} />
-                                                    <Text style={[styles.dropdownItemText, { color: onBg }, isUnderline && { color: colors.primary, textDecorationLine: 'underline' }]}>Subrayado</Text>
-                                                </TouchableOpacity>
-                                                <TouchableOpacity
-                                                    onPress={() => { setIsStrikethrough(!isStrikethrough); formatText('strikeThrough'); setShowFormatMenu(false); }}
-                                                    style={[styles.dropdownItem, isStrikethrough && styles.dropdownItemActive]}
-                                                >
-                                                    <Strikethrough size={18} color={isStrikethrough ? colors.primary : onBg} />
-                                                    <Text style={[styles.dropdownItemText, { color: onBg }, isStrikethrough && { color: colors.primary, textDecorationLine: 'line-through' }]}>Tachado</Text>
-                                                </TouchableOpacity>
-                                            </View>
-                                        )}
-                                    </View>
-
-                                    {/* Alignment Button (≡) */}
-                                    <View style={styles.dropdownWrapper}>
-                                        <TouchableOpacity
-                                            onPress={() => {
-                                                setShowAlignMenu(!showAlignMenu);
-                                                setShowFormatMenu(false);
-                                                setShowSizeMenu(false);
-                                                setShowColorMenu(false);
-                                            }}
-                                            style={[styles.toolbarButton, { backgroundColor: chipInactiveBg }, showAlignMenu && [styles.toolbarButtonActive, { backgroundColor: chipActiveBg, borderColor: colors.primary }]]}
-                                        >
-                                            <Menu size={20} color={showAlignMenu ? colors.primary : onBg} />
-                                        </TouchableOpacity>
-                                        {showAlignMenu && (
-                                            <View style={[styles.dropdownMenu, { backgroundColor: dropdownBg, borderColor: cardBorder }]}>
-                                                <TouchableOpacity
-                                                    onPress={() => { setTextAlign('left'); formatText('justifyLeft'); setShowAlignMenu(false); }}
-                                                    style={[styles.dropdownItem, textAlign === 'left' && styles.dropdownItemActive]}
-                                                >
-                                                    <AlignLeft size={18} color={textAlign === 'left' ? colors.primary : onBg} />
-                                                    <Text style={[styles.dropdownItemText, { color: onBg }, textAlign === 'left' && { color: colors.primary }]}>Izquierda</Text>
-                                                </TouchableOpacity>
-                                                <TouchableOpacity
-                                                    onPress={() => { setTextAlign('center'); formatText('justifyCenter'); setShowAlignMenu(false); }}
-                                                    style={[styles.dropdownItem, textAlign === 'center' && styles.dropdownItemActive]}
-                                                >
-                                                    <AlignCenter size={18} color={textAlign === 'center' ? colors.primary : onBg} />
-                                                    <Text style={[styles.dropdownItemText, { color: onBg }, textAlign === 'center' && { color: colors.primary }]}>Centrado</Text>
-                                                </TouchableOpacity>
-                                                <TouchableOpacity
-                                                    onPress={() => { setTextAlign('right'); formatText('justifyRight'); setShowAlignMenu(false); }}
-                                                    style={[styles.dropdownItem, textAlign === 'right' && styles.dropdownItemActive]}
-                                                >
-                                                    <AlignRight size={18} color={textAlign === 'right' ? colors.primary : onBg} />
-                                                    <Text style={[styles.dropdownItemText, { color: onBg }, textAlign === 'right' && { color: colors.primary }]}>Derecha</Text>
-                                                </TouchableOpacity>
-                                            </View>
-                                        )}
-                                    </View>
-
-                                    {/* Font Size Button (Tt) */}
-                                    <View style={styles.dropdownWrapper}>
-                                        <TouchableOpacity
-                                            onPress={() => {
-                                                setShowSizeMenu(!showSizeMenu);
-                                                setShowFormatMenu(false);
-                                                setShowAlignMenu(false);
-                                                setShowColorMenu(false);
-                                            }}
-                                            style={[styles.toolbarButton, { backgroundColor: chipInactiveBg }, showSizeMenu && [styles.toolbarButtonActive, { backgroundColor: chipActiveBg, borderColor: colors.primary }]]}
-                                        >
-                                            <ALargeSmall size={20} color={showSizeMenu ? colors.primary : onBg} />
-                                        </TouchableOpacity>
-                                        {showSizeMenu && (
-                                            <View style={[styles.dropdownMenu, { backgroundColor: dropdownBg, borderColor: cardBorder }]}>
-                                                {['1px', '2px', '3px', '4px', '5px', '6px', '7px', '8px', '9px', '10px', '11px', '12px'].map((size) => (
-                                                    <TouchableOpacity
-                                                        key={size}
-                                                        onPress={() => { setFontSize(size); formatText('fontSize', size.replace('px', '')); setShowSizeMenu(false); }}
-                                                        style={[styles.dropdownItem, fontSize === size && styles.dropdownItemActive]}
-                                                    >
-                                                        <Text style={[styles.dropdownItemText, { color: onBg, fontSize: Math.max(10, parseInt(size)) }, fontSize === size && { color: colors.primary, fontWeight: 'bold' }]}>{size}</Text>
-                                                    </TouchableOpacity>
-                                                ))}
-                                            </View>
-                                        )}
-                                    </View>
-
-                                    {/* Color Button */}
-                                    <View style={styles.dropdownWrapper}>
-                                        <TouchableOpacity
-                                            onPress={() => {
-                                                setShowColorMenu(!showColorMenu);
-                                                setShowFormatMenu(false);
-                                                setShowAlignMenu(false);
-                                                setShowSizeMenu(false);
-                                            }}
-                                            style={[styles.toolbarButton, { backgroundColor: chipInactiveBg }, showColorMenu && [styles.toolbarButtonActive, { backgroundColor: chipActiveBg, borderColor: colors.primary }]]}
-                                        >
-                                            <Palette size={20} color={showColorMenu ? colors.primary : onBg} />
-                                        </TouchableOpacity>
-                                        {showColorMenu && (
-                                            <View style={[styles.dropdownMenu, styles.colorDropdown, { backgroundColor: dropdownBg, borderColor: cardBorder }]}>
-                                                <View style={styles.colorGrid}>
-                                                    {COLORS.map((color) => (
-                                                        <TouchableOpacity
-                                                            key={color}
-                                                            onPress={() => { setTextColor(color); formatText('foreColor', color); setShowColorMenu(false); }}
-                                                            style={[
-                                                                styles.colorButton,
-                                                                { backgroundColor: color },
-                                                                textColor === color && [styles.colorButtonActive, { borderColor: onBg }]
-                                                            ]}
-                                                        />
-                                                    ))}
-                                                </View>
-                                            </View>
-                                        )}
-                                    </View>
-                                </View>
-                            </View>
-                        )}
-
-                        {mode === 'draw' && (
-                            <View style={styles.toolsContainer}>
-                                <View style={styles.minimalToolbar}>
-                                    {/* Stroke Width Button (Pencil with lines) */}
-                                    <View style={styles.dropdownWrapper}>
-                                        <TouchableOpacity
-                                            onPress={() => {
-                                                setShowStrokeMenu(!showStrokeMenu);
-                                                setShowDrawColorMenu(false);
-                                            }}
-                                            style={[styles.toolbarButton, { backgroundColor: chipInactiveBg }, showStrokeMenu && [styles.toolbarButtonActive, { backgroundColor: chipActiveBg, borderColor: colors.primary }]]}
-                                        >
-                                            <Pencil size={20} color={showStrokeMenu ? colors.primary : onBg} />
-                                        </TouchableOpacity>
-                                        {showStrokeMenu && (
-                                            <View style={[styles.dropdownMenu, { backgroundColor: dropdownBg, borderColor: cardBorder }]}>
-                                                <TouchableOpacity
-                                                    onPress={() => { setStrokeWidth(2); setShowStrokeMenu(false); }}
-                                                    style={[styles.dropdownItem, strokeWidth === 2 && styles.dropdownItemActive]}
-                                                >
-                                                    <View style={{ width: 30, height: 2, backgroundColor: onBg }} />
-                                                    <Text style={[styles.dropdownItemText, { color: onBg }, strokeWidth === 2 && { color: colors.primary }]}>Fino</Text>
-                                                </TouchableOpacity>
-                                                <TouchableOpacity
-                                                    onPress={() => { setStrokeWidth(5); setShowStrokeMenu(false); }}
-                                                    style={[styles.dropdownItem, strokeWidth === 5 && styles.dropdownItemActive]}
-                                                >
-                                                    <View style={{ width: 30, height: 5, backgroundColor: onBg, borderRadius: 2.5 }} />
-                                                    <Text style={[styles.dropdownItemText, { color: onBg }, strokeWidth === 5 && { color: colors.primary }]}>Medio</Text>
-                                                </TouchableOpacity>
-                                                <TouchableOpacity
-                                                    onPress={() => { setStrokeWidth(10); setShowStrokeMenu(false); }}
-                                                    style={[styles.dropdownItem, strokeWidth === 10 && styles.dropdownItemActive]}
-                                                >
-                                                    <View style={{ width: 30, height: 10, backgroundColor: onBg, borderRadius: 5 }} />
-                                                    <Text style={[styles.dropdownItemText, { color: onBg }, strokeWidth === 10 && { color: colors.primary }]}>Grueso</Text>
-                                                </TouchableOpacity>
-                                            </View>
-                                        )}
-                                    </View>
-
-                                    {/* Color Button */}
-                                    <View style={styles.dropdownWrapper}>
-                                        <TouchableOpacity
-                                            onPress={() => {
-                                                setShowDrawColorMenu(!showDrawColorMenu);
-                                                setShowStrokeMenu(false);
-                                            }}
-                                            style={[styles.toolbarButton, { backgroundColor: chipInactiveBg }, showDrawColorMenu && [styles.toolbarButtonActive, { backgroundColor: chipActiveBg, borderColor: colors.primary }]]}
-                                        >
-                                            <Palette size={20} color={showDrawColorMenu ? colors.primary : onBg} />
-                                        </TouchableOpacity>
-                                        {showDrawColorMenu && (
-                                            <View style={[styles.dropdownMenu, styles.colorDropdown, { backgroundColor: dropdownBg, borderColor: cardBorder }]}>
-                                                <View style={styles.colorGrid}>
-                                                    {COLORS.map((color) => (
-                                                        <TouchableOpacity
-                                                            key={color}
-                                                            onPress={() => { setStrokeColor(color); setShowDrawColorMenu(false); }}
-                                                            style={[
-                                                                styles.colorButton,
-                                                                { backgroundColor: color },
-                                                                strokeColor === color && [styles.colorButtonActive, { borderColor: onBg }]
-                                                            ]}
-                                                        />
-                                                    ))}
-                                                </View>
-                                            </View>
-                                        )}
-                                    </View>
-
-                                    {/* Eraser Button */}
-                                    <TouchableOpacity
-                                        onPress={() => {
-                                            setIsErasing(!isErasing);
-                                            setShowStrokeMenu(false);
-                                            setShowDrawColorMenu(false);
-                                        }}
-                                        style={[styles.toolbarButton, { backgroundColor: chipInactiveBg }, isErasing && [styles.toolbarButtonActive, { backgroundColor: chipActiveBg, borderColor: colors.primary }]]}
-                                    >
-                                        <Eraser size={20} color={isErasing ? colors.primary : onBg} />
-                                    </TouchableOpacity>
-
-                                    {/* Trash Button */}
-                                    <TouchableOpacity
-                                        onPress={handleClear}
-                                        style={[styles.toolbarButton, { backgroundColor: isDark ? 'rgba(239,68,68,0.18)' : 'rgba(239,68,68,0.12)' }]}
-                                    >
-                                        <Trash2 size={20} color="#FF0000" />
-                                    </TouchableOpacity>
-
-                                    {/* Save Button */}
-                                    <TouchableOpacity
-                                        onPress={handleSaveAnnotations}
-                                        style={[styles.toolbarButton, { backgroundColor: '#10B981' }]}
-                                    >
-                                        <Save size={20} color="#FFFFFF" />
-                                    </TouchableOpacity>
-                                </View>
-                            </View>
-                        )}
-                    </View>
-                </>
+            {/* Overlay to close menus when tapping outside them */}
+            {anyMenuOpen && (
+                <TouchableOpacity
+                    style={styles.menuOverlay}
+                    activeOpacity={1}
+                    onPress={closeAllMenus}
+                />
             )}
 
             {/* Content Area */}
@@ -1095,11 +1967,29 @@ export default function ScriptEditorScreen() {
                                     try {
                                         const message = JSON.parse(event.nativeEvent.data);
                                         if (message.type === 'content') {
+                                            const now = Date.now();
+                                            if (
+                                                htmlContentRef.current &&
+                                                htmlContentRef.current !== message.data &&
+                                                now - lastEditCheckpointRef.current > EDIT_CHECKPOINT_GAP_MS
+                                            ) {
+                                                actionHistoryRef.current.push({ kind: 'text', before: htmlContentRef.current });
+                                                if (actionHistoryRef.current.length > 50) actionHistoryRef.current.shift();
+                                                actionRedoRef.current = []; // cualquier edición nueva invalida el rehacer
+                                            }
+                                            lastEditCheckpointRef.current = now;
                                             htmlContentRef.current = message.data;
                                         } else if (message.type === 'scroll') {
                                             setScrollY(message.data);
                                         } else if (message.type === 'height') {
+                                            contentHeightRef.current = message.data;
                                             setContentHeight(message.data);
+                                        } else if (message.type === 'pageBreaks') {
+                                            pageBreaksRef.current = message.data;
+                                            if (pageBreaksResolveRef.current) {
+                                                pageBreaksResolveRef.current(message.data);
+                                                pageBreaksResolveRef.current = null;
+                                            }
                                         }
                                     } catch {
                                         // Fallback for non-JSON messages
@@ -1118,13 +2008,16 @@ export default function ScriptEditorScreen() {
                                 // Android specific
                                 domStorageEnabled={true}
                                 javaScriptEnabled={true}
-                                // Prevent zoom gestures
+                                // Android ignora <meta viewport> sin esto — necesario para que
+                                // respete el ancho lógico fijo (pageWidth) igual que iOS. La
+                                // librería sí los soporta a nivel nativo (WebSettings de
+                                // Android), pero esta versión no los declara en sus tipos de
+                                // TypeScript — de ahí el "as any".
+                                {...({ useWideViewPort: true, loadWithOverviewMode: true } as any)}
+                                // Prevent zoom gestures. La etiqueta <meta viewport> vive UNA
+                                // sola vez, en el HTML estático (webViewSource) — no se duplica
+                                // aquí para que no puedan desincronizarse entre sí.
                                 injectedJavaScript={`
-                                    const meta = document.createElement('meta');
-                                    meta.setAttribute('content', 'width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no');
-                                    meta.setAttribute('name', 'viewport');
-                                    document.getElementsByTagName('head')[0].appendChild(meta);
-                                    
                                     // Prevent pinch zoom
                                     document.addEventListener('gesturestart', function(e) {
                                         e.preventDefault();
@@ -1144,7 +2037,16 @@ export default function ScriptEditorScreen() {
                             style={[styles.drawingLayer, { pointerEvents: mode === 'draw' ? 'auto' : 'none', zIndex: 10 }]}
                             {...panResponderRef.panHandlers}
                         >
-                            <Svg height="100%" width="100%">
+                            {/* viewBox: el contenido (paths, en coordenadas lógicas de
+                                página) se dibuja como si el SVG midiera pageWidth de ancho,
+                                y SVG lo reescala solo para caber en el tamaño real en
+                                pantalla (width/height) — mismo mecanismo que "displayScale"
+                                aplica al WebView, sin necesidad de transform manual. */}
+                            <Svg
+                                width="100%"
+                                height={drawingSvgHeightPt}
+                                viewBox={`0 0 ${pageWidth} ${drawingSvgHeightPt / displayScale}`}
+                            >
                                 <G transform={`translate(0, -${scrollY})`}>
                                     {/* Render saved PNG layer if exists (hide in draw mode to allow editing) */}
                                     {drawingLayerImage && mode !== 'draw' && (
@@ -1186,6 +2088,347 @@ export default function ScriptEditorScreen() {
                     </View>
                 )}
             </View>
+
+            {/* Barra flotante inferior: Deshacer/Rehacer/Texto/Dibujo, y al activar Texto o
+                Dibujo se funde con los botones de esa herramienta, en el mismo módulo. */}
+            <View
+                pointerEvents="box-none"
+                style={[
+                    styles.bottomBarWrapper,
+                    { bottom: keyboardOffset > 0 ? keyboardOffset + rp(8) : insets.bottom + rp(8) },
+                ]}
+            >
+                <View style={styles.bottomBarCapsule}>
+                    <View style={[styles.bottomBarClip, { borderColor: cardBorder }]}>
+                        <BlurView intensity={isDark ? 55 : 75} tint={isDark ? 'dark' : 'light'} style={StyleSheet.absoluteFill} />
+                        <View style={[StyleSheet.absoluteFill, { backgroundColor: isDark ? 'rgba(124,106,247,0.20)' : 'rgba(235,230,245,0.45)' }]} />
+                    </View>
+
+                    {/* Fila: modo vista */}
+                    <Animated.View
+                        style={[
+                            styles.bottomBarRow,
+                            { opacity: barAnim.view, transform: [{ translateY: barAnim.view.interpolate({ inputRange: [0, 1], outputRange: [8, 0] }) }] },
+                        ]}
+                        pointerEvents={mode === 'view' ? 'auto' : 'none'}
+                    >
+                        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.bottomBarScrollContent}>
+                            <TouchableOpacity onPress={handleUndo} style={[styles.toolbarButton, { backgroundColor: chipInactiveBg }]}>
+                                <Undo size={20} color={onBg} />
+                            </TouchableOpacity>
+                            <TouchableOpacity onPress={handleRedo} style={[styles.toolbarButton, { backgroundColor: chipInactiveBg }]}>
+                                <Redo size={20} color={onBg} />
+                            </TouchableOpacity>
+                            <TouchableOpacity onPress={() => setMode('edit')} style={[styles.toolbarButton, { backgroundColor: chipInactiveBg }]}>
+                                <Type size={22} color={onBg} />
+                            </TouchableOpacity>
+                            <TouchableOpacity onPress={() => setMode('draw')} style={[styles.toolbarButton, { backgroundColor: chipInactiveBg }]}>
+                                <Pencil size={22} color={onBg} />
+                            </TouchableOpacity>
+                            <TouchableOpacity onPress={handleSharePdf} disabled={exportingPdf} style={[styles.toolbarButton, { backgroundColor: chipInactiveBg }]}>
+                                {exportingPdf ? (
+                                    <ActivityIndicator size="small" color={onBg} />
+                                ) : (
+                                    <Share2 size={20} color={onBg} />
+                                )}
+                            </TouchableOpacity>
+                        </ScrollView>
+                    </Animated.View>
+
+                    {/* Fila: modo texto */}
+                    <Animated.View
+                        style={[
+                            styles.bottomBarRow,
+                            { opacity: barAnim.edit, transform: [{ translateY: barAnim.edit.interpolate({ inputRange: [0, 1], outputRange: [8, 0] }) }] },
+                        ]}
+                        pointerEvents={mode === 'edit' ? 'auto' : 'none'}
+                    >
+                        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.bottomBarScrollContent}>
+                            <TouchableOpacity onPress={handleUndo} style={[styles.toolbarButton, { backgroundColor: chipInactiveBg }]}>
+                                <Undo size={20} color={onBg} />
+                            </TouchableOpacity>
+                            <TouchableOpacity onPress={handleRedo} style={[styles.toolbarButton, { backgroundColor: chipInactiveBg }]}>
+                                <Redo size={20} color={onBg} />
+                            </TouchableOpacity>
+                            <TouchableOpacity onPress={() => setMode('view')} style={[styles.toolbarButton, styles.toolbarButtonActive, { backgroundColor: chipActiveBg, borderColor: colors.primary }]}>
+                                <Type size={22} color={colors.primary} />
+                            </TouchableOpacity>
+                            <TouchableOpacity
+                                onPress={() => { setShowSizeMenu(!showSizeMenu); setShowFormatMenu(false); setShowAlignMenu(false); setShowColorMenu(false); setShowHighlightMenu(false); }}
+                                style={[styles.toolbarButton, { backgroundColor: chipInactiveBg }, showSizeMenu && [styles.toolbarButtonActive, { backgroundColor: chipActiveBg, borderColor: colors.primary }]]}
+                            >
+                                <Pilcrow size={20} color={showSizeMenu ? colors.primary : onBg} />
+                            </TouchableOpacity>
+                            <TouchableOpacity
+                                onPress={() => { setShowHighlightMenu(!showHighlightMenu); setShowFormatMenu(false); setShowAlignMenu(false); setShowSizeMenu(false); setShowColorMenu(false); }}
+                                style={[styles.toolbarButton, { backgroundColor: chipInactiveBg }, showHighlightMenu && [styles.toolbarButtonActive, { backgroundColor: chipActiveBg, borderColor: colors.primary }]]}
+                            >
+                                <Highlighter size={20} color={showHighlightMenu ? colors.primary : onBg} />
+                            </TouchableOpacity>
+                            <TouchableOpacity
+                                onPress={() => { setShowColorMenu(!showColorMenu); setShowFormatMenu(false); setShowAlignMenu(false); setShowSizeMenu(false); setShowHighlightMenu(false); }}
+                                style={[styles.toolbarButton, { backgroundColor: chipInactiveBg }, showColorMenu && [styles.toolbarButtonActive, { backgroundColor: chipActiveBg, borderColor: colors.primary }]]}
+                            >
+                                <Palette size={20} color={showColorMenu ? colors.primary : onBg} />
+                            </TouchableOpacity>
+                            <TouchableOpacity
+                                onPress={() => { setShowFormatMenu(!showFormatMenu); setShowAlignMenu(false); setShowSizeMenu(false); setShowColorMenu(false); setShowHighlightMenu(false); }}
+                                style={[styles.toolbarButton, { backgroundColor: chipInactiveBg }, showFormatMenu && [styles.toolbarButtonActive, { backgroundColor: chipActiveBg, borderColor: colors.primary }]]}
+                            >
+                                <Text style={[styles.toolbarButtonText, { color: onBg }, showFormatMenu && { color: colors.primary }]}>Aa</Text>
+                            </TouchableOpacity>
+                            <TouchableOpacity
+                                onPress={() => { setShowAlignMenu(!showAlignMenu); setShowFormatMenu(false); setShowSizeMenu(false); setShowColorMenu(false); setShowHighlightMenu(false); }}
+                                style={[styles.toolbarButton, { backgroundColor: chipInactiveBg }, showAlignMenu && [styles.toolbarButtonActive, { backgroundColor: chipActiveBg, borderColor: colors.primary }]]}
+                            >
+                                <Menu size={20} color={showAlignMenu ? colors.primary : onBg} />
+                            </TouchableOpacity>
+                        </ScrollView>
+                    </Animated.View>
+
+                    {/* Fila: modo dibujo */}
+                    <Animated.View
+                        style={[
+                            styles.bottomBarRow,
+                            { opacity: barAnim.draw, transform: [{ translateY: barAnim.draw.interpolate({ inputRange: [0, 1], outputRange: [8, 0] }) }] },
+                        ]}
+                        pointerEvents={mode === 'draw' ? 'auto' : 'none'}
+                    >
+                        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.bottomBarScrollContent}>
+                            <TouchableOpacity onPress={handleUndo} style={[styles.toolbarButton, { backgroundColor: chipInactiveBg }]}>
+                                <Undo size={20} color={onBg} />
+                            </TouchableOpacity>
+                            <TouchableOpacity onPress={handleRedo} style={[styles.toolbarButton, { backgroundColor: chipInactiveBg }]}>
+                                <Redo size={20} color={onBg} />
+                            </TouchableOpacity>
+                            <TouchableOpacity onPress={() => setMode('view')} style={[styles.toolbarButton, styles.toolbarButtonActive, { backgroundColor: chipActiveBg, borderColor: colors.primary }]}>
+                                <Pencil size={22} color={colors.primary} />
+                            </TouchableOpacity>
+                            <TouchableOpacity
+                                onPress={() => { setShowStrokeMenu(!showStrokeMenu); setShowDrawColorMenu(false); }}
+                                style={[styles.toolbarButton, { backgroundColor: chipInactiveBg }, showStrokeMenu && [styles.toolbarButtonActive, { backgroundColor: chipActiveBg, borderColor: colors.primary }]]}
+                            >
+                                <Pencil size={20} color={showStrokeMenu ? colors.primary : onBg} />
+                            </TouchableOpacity>
+                            <TouchableOpacity
+                                onPress={() => { setShowDrawColorMenu(!showDrawColorMenu); setShowStrokeMenu(false); }}
+                                style={[styles.toolbarButton, { backgroundColor: chipInactiveBg }, showDrawColorMenu && [styles.toolbarButtonActive, { backgroundColor: chipActiveBg, borderColor: colors.primary }]]}
+                            >
+                                <Palette size={20} color={showDrawColorMenu ? colors.primary : onBg} />
+                            </TouchableOpacity>
+                            <TouchableOpacity
+                                onPress={() => { setIsErasing(!isErasing); setShowStrokeMenu(false); setShowDrawColorMenu(false); }}
+                                style={[styles.toolbarButton, { backgroundColor: chipInactiveBg }, isErasing && [styles.toolbarButtonActive, { backgroundColor: chipActiveBg, borderColor: colors.primary }]]}
+                            >
+                                <Eraser size={20} color={isErasing ? colors.primary : onBg} />
+                            </TouchableOpacity>
+                            <TouchableOpacity
+                                onPress={handleClear}
+                                style={[styles.toolbarButton, { backgroundColor: isDark ? 'rgba(239,68,68,0.18)' : 'rgba(239,68,68,0.12)' }]}
+                            >
+                                <Trash2 size={20} color="#FF0000" />
+                            </TouchableOpacity>
+                            <TouchableOpacity
+                                onPress={handleSaveAnnotations}
+                                style={[styles.toolbarButton, { backgroundColor: '#10B981' }]}
+                            >
+                                <Save size={20} color="#FFFFFF" />
+                            </TouchableOpacity>
+                        </ScrollView>
+                    </Animated.View>
+                </View>
+
+                {/* Paneles emergentes (Aa / alineación / tamaño / color / trazo) — flotan
+                    justo encima de la cápsula, con el mismo cristal morado que el módulo
+                    principal, fuera del ScrollView para que no se recorten */}
+                {showFormatMenu && (
+                    <View style={styles.bottomPopupShadow}>
+                        <View style={[styles.bottomPopupClip, { borderColor: cardBorder }]}>
+                            <BlurView intensity={isDark ? 55 : 75} tint={isDark ? 'dark' : 'light'} style={StyleSheet.absoluteFill} />
+                            <View style={[StyleSheet.absoluteFill, { backgroundColor: popupOverlayTint }]} />
+                            <TouchableOpacity
+                                onPress={() => { setIsBold(!isBold); formatText('bold'); setShowFormatMenu(false); }}
+                                style={[styles.dropdownItem, isBold && styles.dropdownItemActive]}
+                            >
+                                <Bold size={18} color={isBold ? colors.primary : onBg} strokeWidth={3} />
+                                <Text style={[styles.dropdownItemText, { color: onBg }, isBold && { color: colors.primary, fontWeight: 'bold' }]}>Negrita</Text>
+                            </TouchableOpacity>
+                            <TouchableOpacity
+                                onPress={() => { setIsItalic(!isItalic); formatText('italic'); setShowFormatMenu(false); }}
+                                style={[styles.dropdownItem, isItalic && styles.dropdownItemActive]}
+                            >
+                                <Italic size={18} color={isItalic ? colors.primary : onBg} />
+                                <Text style={[styles.dropdownItemText, { color: onBg }, isItalic && { color: colors.primary, fontStyle: 'italic' }]}>Cursiva</Text>
+                            </TouchableOpacity>
+                            <TouchableOpacity
+                                onPress={() => { setIsUnderline(!isUnderline); formatText('underline'); setShowFormatMenu(false); }}
+                                style={[styles.dropdownItem, isUnderline && styles.dropdownItemActive]}
+                            >
+                                <Underline size={18} color={isUnderline ? colors.primary : onBg} />
+                                <Text style={[styles.dropdownItemText, { color: onBg }, isUnderline && { color: colors.primary, textDecorationLine: 'underline' }]}>Subrayado</Text>
+                            </TouchableOpacity>
+                            <TouchableOpacity
+                                onPress={() => { setIsStrikethrough(!isStrikethrough); formatText('strikeThrough'); setShowFormatMenu(false); }}
+                                style={[styles.dropdownItem, isStrikethrough && styles.dropdownItemActive]}
+                            >
+                                <Strikethrough size={18} color={isStrikethrough ? colors.primary : onBg} />
+                                <Text style={[styles.dropdownItemText, { color: onBg }, isStrikethrough && { color: colors.primary, textDecorationLine: 'line-through' }]}>Tachado</Text>
+                            </TouchableOpacity>
+                        </View>
+                    </View>
+                )}
+
+                {showAlignMenu && (
+                    <View style={styles.bottomPopupShadow}>
+                        <View style={[styles.bottomPopupClip, { borderColor: cardBorder }]}>
+                            <BlurView intensity={isDark ? 55 : 75} tint={isDark ? 'dark' : 'light'} style={StyleSheet.absoluteFill} />
+                            <View style={[StyleSheet.absoluteFill, { backgroundColor: popupOverlayTint }]} />
+                            <TouchableOpacity
+                                onPress={() => { setTextAlign('left'); formatText('justifyLeft'); setShowAlignMenu(false); }}
+                                style={[styles.dropdownItem, textAlign === 'left' && styles.dropdownItemActive]}
+                            >
+                                <AlignLeft size={18} color={textAlign === 'left' ? colors.primary : onBg} />
+                                <Text style={[styles.dropdownItemText, { color: onBg }, textAlign === 'left' && { color: colors.primary }]}>Izquierda</Text>
+                            </TouchableOpacity>
+                            <TouchableOpacity
+                                onPress={() => { setTextAlign('center'); formatText('justifyCenter'); setShowAlignMenu(false); }}
+                                style={[styles.dropdownItem, textAlign === 'center' && styles.dropdownItemActive]}
+                            >
+                                <AlignCenter size={18} color={textAlign === 'center' ? colors.primary : onBg} />
+                                <Text style={[styles.dropdownItemText, { color: onBg }, textAlign === 'center' && { color: colors.primary }]}>Centrado</Text>
+                            </TouchableOpacity>
+                            <TouchableOpacity
+                                onPress={() => { setTextAlign('right'); formatText('justifyRight'); setShowAlignMenu(false); }}
+                                style={[styles.dropdownItem, textAlign === 'right' && styles.dropdownItemActive]}
+                            >
+                                <AlignRight size={18} color={textAlign === 'right' ? colors.primary : onBg} />
+                                <Text style={[styles.dropdownItemText, { color: onBg }, textAlign === 'right' && { color: colors.primary }]}>Derecha</Text>
+                            </TouchableOpacity>
+                        </View>
+                    </View>
+                )}
+
+                {showSizeMenu && (
+                    <View style={styles.bottomPopupShadow}>
+                        <View style={[styles.bottomPopupClip, { borderColor: cardBorder }]}>
+                            <BlurView intensity={isDark ? 55 : 75} tint={isDark ? 'dark' : 'light'} style={StyleSheet.absoluteFill} />
+                            <View style={[StyleSheet.absoluteFill, { backgroundColor: popupOverlayTint }]} />
+                            <ScrollView style={{ maxHeight: 240 }} showsVerticalScrollIndicator nestedScrollEnabled>
+                                {LINE_STYLES.map((preset) => (
+                                    <TouchableOpacity
+                                        key={preset.key}
+                                        onPress={() => applyLineStyle(preset)}
+                                        style={styles.dropdownItem}
+                                    >
+                                        <Text style={[styles.dropdownItemText, { color: onBg }, preset.preview]}>{preset.label}</Text>
+                                    </TouchableOpacity>
+                                ))}
+                            </ScrollView>
+                        </View>
+                    </View>
+                )}
+
+                {showColorMenu && (
+                    <View style={styles.bottomPopupShadow}>
+                        <View style={[styles.bottomPopupClip, { borderColor: cardBorder }]}>
+                            <BlurView intensity={isDark ? 55 : 75} tint={isDark ? 'dark' : 'light'} style={StyleSheet.absoluteFill} />
+                            <View style={[StyleSheet.absoluteFill, { backgroundColor: popupOverlayTint }]} />
+                            <View style={styles.colorGrid}>
+                                {COLORS.map((color) => (
+                                    <TouchableOpacity
+                                        key={color}
+                                        onPress={() => { setTextColor(color); formatText('foreColor', color); setShowColorMenu(false); }}
+                                        style={[
+                                            styles.colorButton,
+                                            { backgroundColor: color },
+                                            textColor === color && [styles.colorButtonActive, { borderColor: onBg }]
+                                        ]}
+                                    />
+                                ))}
+                            </View>
+                        </View>
+                    </View>
+                )}
+
+                {showHighlightMenu && (
+                    <View style={styles.bottomPopupShadow}>
+                        <View style={[styles.bottomPopupClip, { borderColor: cardBorder }]}>
+                            <BlurView intensity={isDark ? 55 : 75} tint={isDark ? 'dark' : 'light'} style={StyleSheet.absoluteFill} />
+                            <View style={[StyleSheet.absoluteFill, { backgroundColor: popupOverlayTint }]} />
+                            <View style={styles.colorGrid}>
+                                {HIGHLIGHT_COLORS.map((preset) => (
+                                    <TouchableOpacity
+                                        key={preset.key}
+                                        onPress={() => applyHighlight(preset.color)}
+                                        style={[
+                                            styles.colorButton,
+                                            preset.key === 'none'
+                                                ? { backgroundColor: 'transparent', borderColor: onBg, alignItems: 'center', justifyContent: 'center' }
+                                                : { backgroundColor: preset.swatch },
+                                        ]}
+                                    >
+                                        {preset.key === 'none' && (
+                                            <Text style={{ color: onBg, fontSize: 14, fontWeight: '700' }}>✕</Text>
+                                        )}
+                                    </TouchableOpacity>
+                                ))}
+                            </View>
+                        </View>
+                    </View>
+                )}
+
+                {showStrokeMenu && (
+                    <View style={styles.bottomPopupShadow}>
+                        <View style={[styles.bottomPopupClip, { borderColor: cardBorder }]}>
+                            <BlurView intensity={isDark ? 55 : 75} tint={isDark ? 'dark' : 'light'} style={StyleSheet.absoluteFill} />
+                            <View style={[StyleSheet.absoluteFill, { backgroundColor: popupOverlayTint }]} />
+                            <TouchableOpacity
+                                onPress={() => { setStrokeWidth(2); setShowStrokeMenu(false); }}
+                                style={[styles.dropdownItem, strokeWidth === 2 && styles.dropdownItemActive]}
+                            >
+                                <View style={{ width: 30, height: 2, backgroundColor: onBg }} />
+                                <Text style={[styles.dropdownItemText, { color: onBg }, strokeWidth === 2 && { color: colors.primary }]}>Fino</Text>
+                            </TouchableOpacity>
+                            <TouchableOpacity
+                                onPress={() => { setStrokeWidth(5); setShowStrokeMenu(false); }}
+                                style={[styles.dropdownItem, strokeWidth === 5 && styles.dropdownItemActive]}
+                            >
+                                <View style={{ width: 30, height: 5, backgroundColor: onBg, borderRadius: 2.5 }} />
+                                <Text style={[styles.dropdownItemText, { color: onBg }, strokeWidth === 5 && { color: colors.primary }]}>Medio</Text>
+                            </TouchableOpacity>
+                            <TouchableOpacity
+                                onPress={() => { setStrokeWidth(10); setShowStrokeMenu(false); }}
+                                style={[styles.dropdownItem, strokeWidth === 10 && styles.dropdownItemActive]}
+                            >
+                                <View style={{ width: 30, height: 10, backgroundColor: onBg, borderRadius: 5 }} />
+                                <Text style={[styles.dropdownItemText, { color: onBg }, strokeWidth === 10 && { color: colors.primary }]}>Grueso</Text>
+                            </TouchableOpacity>
+                        </View>
+                    </View>
+                )}
+
+                {showDrawColorMenu && (
+                    <View style={styles.bottomPopupShadow}>
+                        <View style={[styles.bottomPopupClip, { borderColor: cardBorder }]}>
+                            <BlurView intensity={isDark ? 55 : 75} tint={isDark ? 'dark' : 'light'} style={StyleSheet.absoluteFill} />
+                            <View style={[StyleSheet.absoluteFill, { backgroundColor: popupOverlayTint }]} />
+                            <View style={styles.colorGrid}>
+                                {COLORS.map((color) => (
+                                    <TouchableOpacity
+                                        key={color}
+                                        onPress={() => { setStrokeColor(color); setShowDrawColorMenu(false); }}
+                                        style={[
+                                            styles.colorButton,
+                                            { backgroundColor: color },
+                                            strokeColor === color && [styles.colorButtonActive, { borderColor: onBg }]
+                                        ]}
+                                    />
+                                ))}
+                            </View>
+                        </View>
+                    </View>
+                )}
+            </View>
         </SafeAreaView>
         </ImageBackground>
     );
@@ -1210,14 +2453,6 @@ const styles = StyleSheet.create({
         alignItems: 'center',
         justifyContent: 'center',
     },
-    headerControls: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        gap: 16,
-    },
-    iconButton: {
-        padding: rp(8),
-    },
     saveButton: {
         flexDirection: 'row',
         alignItems: 'center',
@@ -1230,30 +2465,6 @@ const styles = StyleSheet.create({
         color: '#FFFFFF',
         fontWeight: '600',
         fontSize: rf(14),
-    },
-    activeModeButton: {
-        borderRadius: 10,
-    },
-    toolbar: {
-        marginHorizontal: rp(16),
-        marginTop: rp(10),
-        marginBottom: rp(6),
-        position: 'relative',
-        zIndex: 200,
-    },
-    toolbarBlurClip: {
-        position: 'absolute',
-        top: 0,
-        left: 0,
-        right: 0,
-        bottom: 0,
-        borderRadius: 16,
-        borderWidth: 1,
-        overflow: 'hidden',
-    },
-    toolsContainer: {
-        padding: rp(12),
-        gap: 12,
     },
     paletteContainer: {
         flexDirection: 'row',
@@ -1278,9 +2489,12 @@ const styles = StyleSheet.create({
     },
     pageShadowWrapper: {
         flex: 1,
-        marginHorizontal: rp(12),
+        // Sin margen horizontal: la página llega a los bordes de la pantalla (antes
+        // se veía el fondo morado a los lados, reforzando la sensación de "todo
+        // muy estrecho"). Sin esquinas redondeadas tampoco — pegadas al borde real
+        // de la pantalla sin margen alrededor se verían como un recorte raro, no
+        // como una tarjeta flotante.
         marginBottom: rp(12),
-        borderRadius: 20,
         shadowColor: '#1a1625',
         shadowOffset: { width: 0, height: 6 },
         shadowOpacity: 0.18,
@@ -1290,7 +2504,6 @@ const styles = StyleSheet.create({
     pageCard: {
         flex: 1,
         position: 'relative',
-        borderRadius: 20,
         overflow: 'hidden',
         backgroundColor: '#FFFFFF',
     },
@@ -1309,7 +2522,6 @@ const styles = StyleSheet.create({
         bottom: 0,
         backgroundColor: 'transparent',
     },
-    // New Minimalist Toolbar Styles
     menuOverlay: {
         position: 'absolute',
         top: 0,
@@ -1318,16 +2530,62 @@ const styles = StyleSheet.create({
         bottom: 0,
         zIndex: 50,
     },
-    minimalToolbar: {
+    // Barra flotante inferior (mismo lenguaje visual que la tab bar / PlayerControlsCapsule)
+    bottomBarWrapper: {
+        position: 'absolute',
+        left: 16,
+        right: 16,
+        // Por encima de menuOverlay (zIndex: 50): en RN, en cuanto un hermano define
+        // zIndex, deja de valer el orden del árbol para decidir quién recibe el toque.
+        zIndex: 200,
+    },
+    bottomBarCapsule: {
+        height: 64,
+        borderRadius: 28,
+        position: 'relative',
+    },
+    bottomBarClip: {
+        position: 'absolute',
+        top: 0,
+        left: 0,
+        right: 0,
+        bottom: 0,
+        borderRadius: 28,
+        borderWidth: 1,
+        overflow: 'hidden',
+    },
+    bottomBarRow: {
+        position: 'absolute',
+        top: 0,
+        left: 0,
+        right: 0,
+        bottom: 0,
+        justifyContent: 'center',
+    },
+    bottomBarScrollContent: {
         flexDirection: 'row',
         alignItems: 'center',
-        justifyContent: 'center',
-        gap: 20,
-        paddingVertical: rp(4),
+        gap: 14,
+        paddingHorizontal: 14,
     },
-    dropdownWrapper: {
-        position: 'relative',
-        zIndex: 100,
+    bottomPopupShadow: {
+        position: 'absolute',
+        left: 0,
+        right: 0,
+        bottom: 72, // altura de la cápsula (64) + separación (8)
+        borderRadius: 16,
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: -4 },
+        shadowOpacity: 0.15,
+        shadowRadius: 8,
+        elevation: 8,
+    },
+    bottomPopupClip: {
+        borderRadius: 16,
+        borderWidth: 1,
+        overflow: 'hidden',
+        paddingVertical: 8,
+        maxHeight: 280,
     },
     toolbarButton: {
         width: 44,
@@ -1343,21 +2601,6 @@ const styles = StyleSheet.create({
         fontSize: rf(16),
         fontWeight: '600',
     },
-    dropdownMenu: {
-        position: 'absolute',
-        top: 50,
-        left: 0,
-        minWidth: 150,
-        borderRadius: 12,
-        borderWidth: 1,
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 4 },
-        shadowOpacity: 0.15,
-        shadowRadius: 8,
-        elevation: 8,
-        paddingVertical: 8,
-        zIndex: 1000,
-    },
     dropdownItem: {
         flexDirection: 'row',
         alignItems: 'center',
@@ -1370,12 +2613,6 @@ const styles = StyleSheet.create({
     },
     dropdownItemText: {
         fontSize: rf(14),
-    },
-    colorDropdown: {
-        left: '50%',
-        marginLeft: -100,  // Half of width (200px / 2)
-        width: 200,
-        padding: 12,
     },
     colorGrid: {
         flexDirection: 'row',
