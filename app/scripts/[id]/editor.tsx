@@ -1,8 +1,8 @@
 import React, { useState, useRef, useEffect, useMemo } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, ActivityIndicator, Alert, Platform, PanResponder, ScrollView, ImageBackground, Animated, Easing, Keyboard, useWindowDimensions } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, ActivityIndicator, Alert, Platform, ScrollView, ImageBackground, Animated, Easing, Keyboard, useWindowDimensions } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter, useLocalSearchParams, Stack } from 'expo-router';
-import { ArrowLeft, Save, Edit3, PenTool, Undo, Redo, Type, Trash2, Bold, Italic, Underline, Strikethrough, Palette, ChevronDown, ChevronUp, AlignLeft, AlignCenter, AlignRight, Menu, Pilcrow, Pencil, Eraser, Highlighter, Share2 } from 'lucide-react-native';
+import { ArrowLeft, Save, Edit3, X, PenTool, Undo, Redo, Type, Bold, Italic, Underline, Strikethrough, Palette, ChevronDown, ChevronUp, AlignLeft, AlignCenter, AlignRight, Menu, Pilcrow, Pencil, Highlighter, Share2 } from 'lucide-react-native';
 import { WebView } from 'react-native-webview';
 import { BlurView } from 'expo-blur';
 import Svg, { Path, G, Image as SvgImage } from 'react-native-svg';
@@ -14,24 +14,14 @@ import Slider from '@react-native-community/slider';
 import { useTheme } from '@/contexts/ThemeContext';
 import { supabase } from '@/utils/supabase';
 import { rf, rp } from '@/utils/responsive';
+import ViewAndMarkOverlay from './components/ViewAndMarkOverlay';
+import ExportOptionsSheet from './components/ExportOptionsSheet';
+import { COLORS, type PathData } from './components/drawingShared';
 
 // --- Constants ---
 // Pausa mínima (sin ninguna edición de texto) para que la siguiente edición
 // abra un punto nuevo en el historial de deshacer — ver actionHistoryRef.
 const EDIT_CHECKPOINT_GAP_MS = 800;
-
-const COLORS = [
-    '#000000', // Black
-    '#FF0000', // Red
-    '#0000FF', // Blue
-    '#008000', // Green
-    '#FFA500', // Orange
-    '#800080', // Purple
-    '#FFC0CB', // Pink
-    '#A52A2A', // Brown
-    '#808080', // Gray
-    '#00FFFF', // Cyan
-];
 
 // Colores de resaltado (marcador/rotulador): llevan el canal alpha ya incorporado
 // para que el texto siga leyéndose debajo, a diferencia de un color de texto sólido.
@@ -248,9 +238,20 @@ export default function ScriptEditorScreen() {
         ? { backgroundColor: 'rgba(124,106,247,0.80)', borderWidth: 1.5, borderColor: 'rgba(255,255,255,0.5)' }
         : { backgroundColor: colors.primary };
     const editorBg = () => (isDark ? require('@/assets/images/ui-dark-bg.png') : require('@/assets/images/ui-light-bg.png'));
-    const popupOverlayTint = isDark ? 'rgba(124,106,247,0.20)' : 'rgba(235,230,245,0.45)';
+    // Más opaco que un tinte de cristal normal: al estar sobre la página del
+    // guion (blanca) en vez de sobre el fondo morado con degradado, con menos
+    // opacidad el blanco se colaba y la barra/los menús apenas se distinguían.
+    // Mismo valor que usa la hoja de exportar, para que todo el flotante
+    // inferior sea consistente.
+    const popupOverlayTint = isDark ? 'rgba(20,16,32,0.82)' : 'rgba(235,230,245,0.92)';
     const chipInactiveBg = isDark ? 'rgba(255,255,255,0.08)' : 'rgba(104,58,121,0.08)';
     const chipActiveBg = isDark ? 'rgba(124,106,247,0.30)' : 'rgba(104,58,121,0.15)';
+    // colors.primary en modo oscuro es un morado apagado, casi del mismo tono
+    // que chipActiveBg (el relleno de un botón/opción ya seleccionada) — el
+    // icono/texto activo se veía casi invisible encima. En modo oscuro se usa
+    // blanco puro para el elemento activo en vez de colors.primary (el borde sí
+    // puede seguir siendo colors.primary, es un contorno fino, no un relleno).
+    const activeAccent = isDark ? '#FFFFFF' : colors.primary;
     const insets = useSafeAreaInsets();
     const windowDimensions = useWindowDimensions();
 
@@ -278,16 +279,24 @@ export default function ScriptEditorScreen() {
     // toque el contenido del documento (en coordenadas lógicas de página).
     const availableScreenWidthPt = windowDimensions.width;
     const displayScale = availableScreenWidthPt / pageWidth;
+    // Tope de zoom por pellizco (relectura, no para dibujar — ver el efecto que
+    // alterna el rango de zoom según "mode" más abajo). 3x da margen de sobra
+    // para leer cómodo sin tener que ir haciendo scroll horizontal.
+    const ZOOM_MAX_SCALE = 3;
     // Alto (en puntos de pantalla) del SVG de dibujo EN PANTALLA — generoso y
     // fijo a propósito, nunca "100%" (mezclaría un alto porcentual con un
     // viewBox de alto fijo y deformaría la escala en Y de forma no uniforme).
     // El sobrante lo recorta gratis el overflow:hidden que ya tiene pageCard.
     const drawingSvgHeightPt = windowDimensions.height;
+    // Ancho máximo de la cápsula de herramientas al desplegarse: todo el ancho
+    // disponible dentro de bottomBarWrapper (que resta 16pt a cada lado de la
+    // pantalla) menos el hueco del botón circular (56pt) y su separación (10pt).
+    const toolbarCapsuleMaxWidth = windowDimensions.width - 32 - 56 - 10;
 
     // State
     const [loading, setLoading] = useState(true);
     const [saving, setSaving] = useState(false);
-    const [mode, setMode] = useState<'view' | 'edit' | 'draw'>('view');
+    const [mode, setMode] = useState<'view' | 'edit'>('view');
     const [initialHtml, setInitialHtml] = useState(''); // Only for initial load
     const [scriptTitle, setScriptTitle] = useState('');
     const htmlContentRef = useRef(''); // Ref for latest content
@@ -299,16 +308,34 @@ export default function ScriptEditorScreen() {
     // PDF.
     const pageBreaksRef = useRef<number[]>([]);
     const pageBreaksResolveRef = useRef<((breaks: number[]) => void) | null>(null);
+    // La barra inferior empieza colapsada en un único botón circular (ver
+    // toolbarExpandAnim más abajo) — se despliega hacia la izquierda al
+    // pulsarlo, para dejar el visor del texto más despejado por defecto.
     const [toolbarExpanded, setToolbarExpanded] = useState(false);
+    const toolbarExpandAnim = useRef(new Animated.Value(0)).current;
+    // Ancho real del contenido de cada fila de botones (medido, no el máximo
+    // disponible en pantalla) — en horizontal, el ancho disponible es enorme y
+    // los botones quedaban agrupados a la izquierda con un hueco vacío enorme
+    // antes del botón circular; al abrir la cápsula solo hasta el ancho real
+    // de sus botones (acotado por el máximo disponible, para que en pantallas
+    // estrechas siga cupiendo/haciendo scroll si hiciera falta), queda ceñida
+    // al contenido en vez de estirarse a lo tonto.
+    const [viewRowWidth, setViewRowWidth] = useState(0);
+    const [editRowWidth, setEditRowWidth] = useState(0);
+    function toggleToolbarExpanded() {
+        const next = !toolbarExpanded;
+        setToolbarExpanded(next);
+        if (!next) closeAllMenus();
+        Animated.timing(toolbarExpandAnim, {
+            toValue: next ? 1 : 0,
+            duration: 260,
+            easing: Easing.out(Easing.cubic),
+            useNativeDriver: false,
+        }).start();
+    }
 
     // Drawing State
-    interface PathData {
-        d: string;
-        color: string;
-        width: number;
-    }
     const [paths, setPaths] = useState<PathData[]>([]);
-    const [currentPath, setCurrentPath] = useState<string>('');
 
     // Pila ÚNICA de deshacer/rehacer, compartida entre texto y dibujo — así
     // "Deshacer"/"Rehacer" funcionan sin importar en qué modo se pulsen (antes
@@ -319,9 +346,6 @@ export default function ScriptEditorScreen() {
     type EditAction = { kind: 'text'; before: string } | { kind: 'draw'; before: PathData[] };
     const actionHistoryRef = useRef<EditAction[]>([]);
     const actionRedoRef = useRef<EditAction[]>([]);
-    const [strokeColor, setStrokeColor] = useState('#FF0000');
-    const [strokeWidth, setStrokeWidth] = useState(2);
-    const [isErasing, setIsErasing] = useState(false);
 
     // Rich Text State
     const [textColor, setTextColor] = useState('#000000');
@@ -338,34 +362,28 @@ export default function ScriptEditorScreen() {
     const [showColorMenu, setShowColorMenu] = useState(false);
     const [showHighlightMenu, setShowHighlightMenu] = useState(false);
 
-    // Drawing Mode Dropdown States
-    const [showStrokeMenu, setShowStrokeMenu] = useState(false);
-    const [showDrawColorMenu, setShowDrawColorMenu] = useState(false);
-
-    const anyMenuOpen = showFormatMenu || showAlignMenu || showSizeMenu || showColorMenu || showHighlightMenu || showStrokeMenu || showDrawColorMenu;
+    const anyMenuOpen = showFormatMenu || showAlignMenu || showSizeMenu || showColorMenu || showHighlightMenu;
     function closeAllMenus() {
         setShowFormatMenu(false);
         setShowAlignMenu(false);
         setShowSizeMenu(false);
         setShowColorMenu(false);
         setShowHighlightMenu(false);
-        setShowStrokeMenu(false);
-        setShowDrawColorMenu(false);
     }
 
     // Barra inferior flotante (mismo patrón que PlayerControlsCapsule en Grabaciones):
-    // 3 filas superpuestas que se funden entre sí según el modo activo.
+    // 2 filas superpuestas que se funden entre sí según el modo activo (Vista/
+    // Texto — Dibujo ya no es un "modo" de esta barra, ahora es la superposición
+    // aparte "Ver y marcar", ver showViewAndMark).
     const barAnim = useRef({
         view: new Animated.Value(1),
         edit: new Animated.Value(0),
-        draw: new Animated.Value(0),
     }).current;
 
     useEffect(() => {
         Animated.parallel([
             Animated.timing(barAnim.view, { toValue: mode === 'view' ? 1 : 0, duration: 220, easing: Easing.inOut(Easing.ease), useNativeDriver: true }),
             Animated.timing(barAnim.edit, { toValue: mode === 'edit' ? 1 : 0, duration: 220, easing: Easing.inOut(Easing.ease), useNativeDriver: true }),
-            Animated.timing(barAnim.draw, { toValue: mode === 'draw' ? 1 : 0, duration: 220, easing: Easing.inOut(Easing.ease), useNativeDriver: true }),
         ]).start();
     }, [mode]);
 
@@ -401,110 +419,18 @@ export default function ScriptEditorScreen() {
     const [showShareCapture, setShowShareCapture] = useState(false);
     const shareViewRef = useRef<View>(null);
 
+    // "Ver y marcar": superposición aparte (no un modo más de la barra de 3
+    // filas) con su propio WebView, donde el dibujo vive DENTRO del documento
+    // (no en una capa nativa aparte) — así el trazo nunca se desalinea del
+    // texto, a cualquier nivel de zoom. Sustituye por completo al antiguo modo
+    // Dibujo.
+    const [showViewAndMark, setShowViewAndMark] = useState(false);
+    const [markupHtml, setMarkupHtml] = useState('');
+    const [showExportSheet, setShowExportSheet] = useState(false);
+    const [exportTotalPages, setExportTotalPages] = useState(1);
+
     // Refs
     const webViewRef = useRef<WebView>(null);
-    const drawingStateRef = useRef({ paths, strokeColor, strokeWidth, scrollY, isErasing, displayScale });
-    const currentPathPoints = useRef<Array<{ x: number; y: number }>>([]);
-
-    // Update ref when state changes
-    useEffect(() => {
-        drawingStateRef.current = { paths, strokeColor, strokeWidth, scrollY, isErasing, displayScale };
-    }, [paths, strokeColor, strokeWidth, scrollY, isErasing, displayScale]);
-
-    // PanResponder for Drawing
-    const panResponderRef = useRef(
-        PanResponder.create({
-            onStartShouldSetPanResponder: () => true,
-            onMoveShouldSetPanResponder: () => true,
-            onPanResponderGrant: (evt) => {
-                const { locationX, locationY } = evt.nativeEvent;
-                const { strokeColor, strokeWidth, scrollY, paths, isErasing, displayScale } = drawingStateRef.current;
-
-                // El toque llega en puntos de PANTALLA real; el documento (texto y
-                // trazos guardados) vive en coordenadas LÓGICAS de página (más grande,
-                // reescalada visualmente) — hay que dividir por displayScale para que
-                // ambos hablen el mismo idioma. scrollY ya es lógico (viene del propio
-                // WebView), no se divide.
-                const touchPoint = { x: locationX / displayScale, y: (locationY / displayScale) + scrollY };
-
-                // If erasing, check if we touched a path
-                if (isErasing) {
-                    // Find path that contains this point
-                    const pathIndex = paths.findIndex(path => {
-                        // Simple hit detection: check if touch is near any point in the path
-                        const pathPoints = path.d.split(/[ML]/).filter(p => p.trim()).map(p => {
-                            const [x, y] = p.trim().split(' ').map(Number);
-                            return { x, y };
-                        });
-
-                        return pathPoints.some(p => {
-                            const distance = Math.sqrt(Math.pow(p.x - touchPoint.x, 2) + Math.pow(p.y - touchPoint.y, 2));
-                            // El margen de "10" es perdón de dedo en puntos de PANTALLA
-                            // real — hay que pasarlo también a unidades lógicas.
-                            return distance < (path.width + (10 / displayScale));
-                        });
-                    });
-
-                    if (pathIndex !== -1) {
-                        // Remove the touched path
-                        const newPaths = paths.filter((_, i) => i !== pathIndex);
-                        actionHistoryRef.current.push({ kind: 'draw', before: paths });
-                        actionRedoRef.current = [];
-                        setPaths(newPaths);
-                    }
-                } else {
-                    // Normal drawing mode
-                    const startPoint = touchPoint;
-                    const newPath = {
-                        d: `M ${startPoint.x} ${startPoint.y}`,
-                        color: strokeColor,
-                        width: strokeWidth,
-                        points: [startPoint]
-                    };
-                    setCurrentPath(`M ${startPoint.x} ${startPoint.y}`);
-                    currentPathPoints.current = [startPoint];
-                }
-            },
-            onPanResponderMove: (evt) => {
-                const { isErasing } = drawingStateRef.current;
-
-                // Only draw if not erasing
-                if (!isErasing) {
-                    const { locationX, locationY } = evt.nativeEvent;
-                    const { scrollY, displayScale } = drawingStateRef.current;
-
-                    // Misma conversión pantalla→lógico que en onPanResponderGrant.
-                    const newPoint = { x: locationX / displayScale, y: (locationY / displayScale) + scrollY };
-                    currentPathPoints.current.push(newPoint);
-
-                    const pathData = currentPathPoints.current
-                        .map((p, i) => (i === 0 ? `M ${p.x} ${p.y}` : `L ${p.x} ${p.y}`))
-                        .join(' ');
-                    setCurrentPath(pathData);
-                }
-            },
-            onPanResponderRelease: () => {
-                const { isErasing } = drawingStateRef.current;
-
-                // Only save path if not erasing
-                if (!isErasing) {
-                    setCurrentPath((prev) => {
-                        if (prev) {
-                            const { paths, strokeColor, strokeWidth } = drawingStateRef.current;
-                            const newPath: PathData = { d: prev, color: strokeColor, width: strokeWidth };
-                            const newPaths = [...paths, newPath];
-
-                            actionHistoryRef.current.push({ kind: 'draw', before: paths });
-                            actionRedoRef.current = [];
-                            setPaths(newPaths);
-                        }
-                        return '';
-                    });
-                }
-            },
-        })
-    ).current;
-
 
     // Load Script Data
     useEffect(() => {
@@ -564,7 +490,13 @@ export default function ScriptEditorScreen() {
                     const parsedPaths = typeof data.annotations === 'string'
                         ? JSON.parse(data.annotations)
                         : data.annotations;
-                    setPaths(parsedPaths);
+                    // Guiones guardados antes de "id" en PathData no lo traen — se
+                    // sintetiza uno estable para esta sesión (no hace falta guardarlo
+                    // de vuelta hasta que el usuario borre/edite algo y se guarde).
+                    const pathsWithIds = (parsedPaths || []).map((p: any, i: number) => (
+                        p && p.id ? p : { ...p, id: `legacy-${i}` }
+                    ));
+                    setPaths(pathsWithIds);
                 } catch (e) {
                     console.error('Error parsing annotations:', e);
                     setPaths([]);
@@ -1154,25 +1086,6 @@ export default function ScriptEditorScreen() {
         }
     }
 
-    function handleClear() {
-        Alert.alert(
-            'Borrar todo',
-            '¿Estás seguro de que quieres borrar todas las anotaciones?',
-            [
-                { text: 'Cancelar', style: 'cancel' },
-                {
-                    text: 'Borrar',
-                    style: 'destructive',
-                    onPress: () => {
-                        actionHistoryRef.current.push({ kind: 'draw', before: paths });
-                        actionRedoRef.current = [];
-                        setPaths([]);
-                    }
-                }
-            ]
-        );
-    }
-
     // Los botones de formato (Negrita/Cursiva/Subrayado/Tachado/Alinear/Color) viven
     // fuera del WebView; al tocarlos, el WebView puede perder el foco y
     // "window.getSelection()" queda vacía o desfasada en el momento en que se
@@ -1247,24 +1160,6 @@ export default function ScriptEditorScreen() {
         setShowSizeMenu(false);
     }
 
-    // --- Render Helpers ---
-
-    const renderColorPalette = (selectedColor: string, onSelect: (color: string) => void) => (
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.paletteContainer}>
-            {COLORS.map((color) => (
-                <TouchableOpacity
-                    key={color}
-                    onPress={() => onSelect(color)}
-                    style={[
-                        styles.colorSwatch,
-                        { backgroundColor: color },
-                        selectedColor === color && styles.selectedSwatch
-                    ]}
-                />
-            ))}
-        </ScrollView>
-    );
-
     // Memoize WebView source to prevent reload on re-render
     const webViewSource = useMemo(() => ({
         html: `
@@ -1272,11 +1167,12 @@ export default function ScriptEditorScreen() {
             <head>
                 <!-- Ancho lógico FIJO (595 = A4 real), reescalado a displayScale para
                      caber en la pantalla — como "ver sitio de escritorio" en un móvil.
-                     El zoom queda bloqueado en ese mismo valor (el gesto de pellizco es
-                     una fase futura); el bloqueo de gestos de pellizco vive en
-                     injectedJavaScript más abajo, sin una segunda etiqueta viewport
-                     duplicada que pueda desincronizarse de esta. -->
-                <meta name="viewport" content="width=${pageWidth}, initial-scale=${displayScale}, minimum-scale=${displayScale}, maximum-scale=${displayScale}, user-scalable=no">
+                     El zoom por pellizco siempre está permitido aquí (Vista/Texto es
+                     solo para leer/editar, nunca para dibujar — dibujar ahora vive en
+                     la superposición aparte "Ver y marcar", con su propio WebView y su
+                     propio rango de zoom). Sin una segunda etiqueta viewport duplicada
+                     que pueda desincronizarse de esta. -->
+                <meta name="viewport" content="width=${pageWidth}, initial-scale=${displayScale}, minimum-scale=${displayScale}, maximum-scale=${ZOOM_MAX_SCALE}, user-scalable=yes">
                 <style>
                     body {
                         font-family: 'Courier New', Courier, monospace;
@@ -1632,7 +1528,9 @@ export default function ScriptEditorScreen() {
     // "source" nuevo y el WebView recargaría desde "initialHtml" (el último
     // guardado), perdiendo cualquier resaltado/negrita/cambio hecho desde
     // entonces que aún no se hubiera guardado. En su lugar, se alterna
-    // contentEditable en vivo sobre el documento ya cargado.
+    // contentEditable en vivo sobre el documento ya cargado. El rango de zoom
+    // de este WebView ya no depende de "mode" (solo tiene Vista/Texto, los dos
+    // siempre permiten pellizco) — ver "Ver y marcar" para el dibujo con zoom.
     useEffect(() => {
         webViewRef.current?.injectJavaScript(`
             (function() {
@@ -1706,7 +1604,11 @@ export default function ScriptEditorScreen() {
     // de la lista plana de párrafos donde empieza cada página nueva) — así no
     // hay dos motores adivinando el ajuste de línea por separado, la causa de
     // los desajustes de los intentos anteriores.
-    function buildPagesHtml(pageBreaks: number[], drawingImageBase64: string | null): string {
+    function buildPagesHtml(
+        pageBreaks: number[],
+        drawingImageBase64: string | null,
+        pageRange?: { from: number; to: number }
+    ): string {
         const elements = splitTopLevelElements(htmlContentRef.current);
 
         const pages: typeof elements[] = [];
@@ -1722,13 +1624,26 @@ export default function ScriptEditorScreen() {
         });
         pages.push(current);
 
-        const pagesHtml = pages.map((pageElements, pageIndex) => {
+        // Rango de páginas a exportar (1-indexado, ambos límites incluidos). Se
+        // filtran los índices en vez de recortar el array, para poder seguir
+        // usando el índice de página ORIGINAL (pageIndex) en el recorte del
+        // dibujo más abajo — si se usara la posición dentro del subconjunto
+        // recortado, el "sprite" de cada página apuntaría a un trozo equivocado
+        // de la imagen de trazos.
+        const from = pageRange ? Math.max(1, pageRange.from) : 1;
+        const to = pageRange ? Math.min(pages.length, pageRange.to) : pages.length;
+        const selectedIndices: number[] = [];
+        for (let i = from - 1; i < to; i++) selectedIndices.push(i);
+
+        const pagesHtml = selectedIndices.map((pageIndex, selectionPos) => {
+            const pageElements = pages[pageIndex];
             const innerHtml = pageElements.map((el) => `<${el.tag}${el.attrs}>${el.innerHtml}</${el.tag}>`).join('');
-            const isLast = pageIndex === pages.length - 1;
+            const isLast = selectionPos === selectedIndices.length - 1;
             // Recorte tipo "sprite" en CSS: la MISMA imagen completa de los trazos
             // se reutiliza en cada página, desplazada hacia arriba una página
-            // entera por cada página anterior, y recortada a la ventana de esta
-            // página — sin librería de recorte de imágenes ni dependencia nueva.
+            // entera por cada página anterior (índice ORIGINAL, no el de este
+            // subconjunto), y recortada a la ventana de esta página — sin
+            // librería de recorte de imágenes ni dependencia nueva.
             const drawingCrop = drawingImageBase64
                 ? `<div style="position:absolute; top:0; left:0; width:100%; height:${pageHeight}px; overflow:hidden; pointer-events:none;">
                        <img src="data:image/png;base64,${drawingImageBase64}" style="position:absolute; top:${-pageIndex * pageHeight}px; left:0; width:100%; display:block;" />
@@ -1768,7 +1683,232 @@ export default function ScriptEditorScreen() {
         `;
     }
 
-    async function handleSharePdf() {
+    // Construye el HTML de "Ver y marcar": mismas páginas rígidas que
+    // buildPagesHtml (sin holgura entre ellas — 1 unidad = 1 punto lógico en
+    // TODO el documento apilado), pero sin incrustar una imagen de dibujo: los
+    // trazos van como <path> vectoriales de verdad, dentro de un <svg> que
+    // cubre el documento entero, para poder seguir dibujando/borrando sobre
+    // ellos. Sin ningún viewBox de compensación — al vivir dentro de este mismo
+    // WebView (que hace zoom nativamente), las coordenadas de un toque ya
+    // llegan en el mismo espacio lógico que el texto.
+    function buildMarkupHtml(pageBreaks: number[], pathsForHtml: PathData[]): string {
+        const elements = splitTopLevelElements(htmlContentRef.current);
+        const pages: typeof elements[] = [];
+        let current: typeof elements = [];
+        let breakIdx = 0;
+        elements.forEach((el, i) => {
+            if (breakIdx < pageBreaks.length && pageBreaks[breakIdx] === i) {
+                pages.push(current);
+                current = [];
+                breakIdx++;
+            }
+            current.push(el);
+        });
+        pages.push(current);
+
+        const totalHeight = pages.length * pageHeight;
+
+        const pagesHtml = pages.map((pageElements) => {
+            const innerHtml = pageElements.map((el) => `<${el.tag}${el.attrs}>${el.innerHtml}</${el.tag}>`).join('');
+            return `
+                <div class="page" style="position:relative; width:${pageWidth}px; height:${pageHeight}px;">
+                    <div class="editor-root" style="box-sizing:border-box; width:100%; height:100%; padding:${pageMarginTop}px ${pageMarginRight}px ${pageMarginBottom}px ${pageMarginLeft}px;">
+                        ${innerHtml}
+                    </div>
+                </div>
+            `;
+        }).join('');
+
+        const pathsSvg = pathsForHtml.map((p) => (
+            `<path data-path-id="${p.id}" d="${p.d}" stroke="${p.color}" stroke-width="${p.width}" fill="none" stroke-linecap="round" stroke-linejoin="round" />`
+        )).join('');
+
+        return `
+            <html>
+            <head>
+                <meta name="viewport" content="width=${pageWidth}, initial-scale=${displayScale}, minimum-scale=${displayScale}, maximum-scale=${ZOOM_MAX_SCALE}, user-scalable=yes">
+                <style>
+                    html, body { margin:0; padding:0; background:#FFFFFF; }
+                    .pages { position: relative; width: ${pageWidth}px; }
+                    .page {
+                        background: #FFFFFF;
+                        /* Línea fina marcando el fin de cada hoja, sin añadir altura a la
+                           caja (mismo truco que .page-break-gap del Editor) — así las
+                           páginas quedan perfectamente pegadas, condición necesaria para
+                           que 1 punto lógico = 1 punto en TODO el documento apilado. */
+                        box-shadow: inset 0 -1px 0 rgba(0,0,0,0.15);
+                        box-sizing: border-box;
+                    }
+                    .editor-root {
+                        font-family: 'Courier New', Courier, monospace;
+                        font-size: 12px;
+                        line-height: 1.15;
+                        color: #000000;
+                        text-align: center;
+                    }
+                    p { margin-top: 0; margin-bottom: 6px; }
+                    #ink-overlay { position: absolute; top: 0; left: 0; }
+                </style>
+            </head>
+            <body>
+                <div class="pages" id="pages-container">
+                    ${pagesHtml}
+                    <svg id="ink-overlay" width="${pageWidth}" height="${totalHeight}" viewBox="0 0 ${pageWidth} ${totalHeight}">
+                        ${pathsSvg}
+                    </svg>
+                </div>
+                <script>
+                    (function() {
+                        var svg = document.getElementById('ink-overlay');
+                        var svgNS = 'http://www.w3.org/2000/svg';
+                        var activeStroke = null; // { points: [{x,y}], el: <path> }
+                        window.__activeTool = window.__activeTool || 'pan'; // 'pen' | 'erase' | 'pan'
+
+                        // Deshacer/rehacer cambia "paths" del lado de React Native, no aquí
+                        // dentro del WebView (los trazos nuevos/borrados sí se reflejan al
+                        // instante porque el propio script los añade/quita del DOM) — RN
+                        // llama a esto para volver a pintar el SVG entero tras un deshacer/
+                        // rehacer, para que ambos lados no se desincronicen.
+                        window.__setAllPaths = function(pathsJson) {
+                            var list = JSON.parse(pathsJson);
+                            while (svg.firstChild) { svg.removeChild(svg.firstChild); }
+                            list.forEach(function(p) {
+                                var el = document.createElementNS(svgNS, 'path');
+                                el.setAttribute('data-path-id', p.id);
+                                el.setAttribute('d', p.d);
+                                el.setAttribute('stroke', p.color);
+                                el.setAttribute('stroke-width', String(p.width));
+                                el.setAttribute('fill', 'none');
+                                el.setAttribute('stroke-linecap', 'round');
+                                el.setAttribute('stroke-linejoin', 'round');
+                                svg.appendChild(el);
+                            });
+                        };
+
+                        function svgPoint(touch) {
+                            // pageX/pageY ya están en coordenadas de DOCUMENTO (px de layout),
+                            // independientes del nivel de zoom actual — es justo lo que hace
+                            // que el trazo nunca se desalinee del texto bajo cualquier zoom.
+                            return { x: touch.pageX, y: touch.pageY };
+                        }
+
+                        function pointsToPath(points) {
+                            return points.map(function(p, i) {
+                                return (i === 0 ? 'M ' : 'L ') + p.x + ' ' + p.y;
+                            }).join(' ');
+                        }
+
+                        function startStroke(point) {
+                            activeStroke = { points: [point], el: document.createElementNS(svgNS, 'path') };
+                            activeStroke.el.setAttribute('stroke', window.__strokeColor || '#FF0000');
+                            activeStroke.el.setAttribute('stroke-width', String(window.__strokeWidth || 2));
+                            activeStroke.el.setAttribute('fill', 'none');
+                            activeStroke.el.setAttribute('stroke-linecap', 'round');
+                            activeStroke.el.setAttribute('stroke-linejoin', 'round');
+                            activeStroke.el.setAttribute('d', pointsToPath(activeStroke.points));
+                            svg.appendChild(activeStroke.el);
+                        }
+
+                        function abortStroke() {
+                            if (activeStroke) {
+                                svg.removeChild(activeStroke.el);
+                                activeStroke = null;
+                            }
+                        }
+
+                        function commitStroke() {
+                            if (!activeStroke) return;
+                            if (activeStroke.points.length < 2) { abortStroke(); return; }
+                            var id = 'p' + Date.now() + '-' + Math.random().toString(36).slice(2);
+                            activeStroke.el.setAttribute('data-path-id', id);
+                            window.ReactNativeWebView.postMessage(JSON.stringify({
+                                type: 'newPath',
+                                id: id,
+                                d: pointsToPath(activeStroke.points),
+                                color: window.__strokeColor || '#FF0000',
+                                width: window.__strokeWidth || 2
+                            }));
+                            activeStroke = null;
+                        }
+
+                        function distanceToPolyline(point, d) {
+                            var coords = d.match(/-?\\d+(\\.\\d+)?/g);
+                            if (!coords) return Infinity;
+                            var min = Infinity;
+                            for (var i = 0; i + 1 < coords.length; i += 2) {
+                                var px = parseFloat(coords[i]), py = parseFloat(coords[i + 1]);
+                                var dist = Math.sqrt(Math.pow(px - point.x, 2) + Math.pow(py - point.y, 2));
+                                if (dist < min) min = dist;
+                            }
+                            return min;
+                        }
+
+                        function eraseNear(point) {
+                            var candidates = svg.querySelectorAll('path[data-path-id]');
+                            for (var i = 0; i < candidates.length; i++) {
+                                var el = candidates[i];
+                                var w = parseFloat(el.getAttribute('stroke-width')) || 2;
+                                if (distanceToPolyline(point, el.getAttribute('d')) < (w + 10)) {
+                                    var id = el.getAttribute('data-path-id');
+                                    el.remove();
+                                    window.ReactNativeWebView.postMessage(JSON.stringify({ type: 'erasePath', id: id }));
+                                    return;
+                                }
+                            }
+                        }
+
+                        // No se usa touch-action:none aquí — se evaluaría una sola vez al
+                        // primer toque y bloquearía también el pellizco nativo aunque
+                        // llegara un 2º dedo después. Toda la decisión de "quién se queda
+                        // con el gesto" se hace a mano con preventDefault() selectivo.
+                        document.addEventListener('touchstart', function(e) {
+                            if (window.__activeTool === 'pan') return;
+                            if (e.touches.length !== 1) { abortStroke(); return; }
+                            var point = svgPoint(e.touches[0]);
+                            if (window.__activeTool === 'erase') {
+                                eraseNear(point);
+                            } else {
+                                startStroke(point);
+                            }
+                        }, { passive: false });
+
+                        document.addEventListener('touchmove', function(e) {
+                            if (window.__activeTool === 'pan') return;
+                            if (e.touches.length !== 1) { abortStroke(); return; }
+                            var point = svgPoint(e.touches[0]);
+                            if (window.__activeTool === 'erase') {
+                                e.preventDefault();
+                                eraseNear(point);
+                            } else if (activeStroke) {
+                                // Desde el PRIMER touchmove de la secuencia: si se espera más,
+                                // iOS ya habrá cedido el gesto al scroll nativo y preventDefault
+                                // deja de tener efecto para el resto de esta secuencia.
+                                e.preventDefault();
+                                activeStroke.points.push(point);
+                                activeStroke.el.setAttribute('d', pointsToPath(activeStroke.points));
+                            }
+                        }, { passive: false });
+
+                        document.addEventListener('touchend', function() {
+                            if (window.__activeTool === 'pen') commitStroke();
+                        }, { passive: false });
+                        document.addEventListener('touchcancel', function() {
+                            abortStroke();
+                        }, { passive: false });
+                    })();
+                </script>
+            </body>
+            </html>
+        `;
+    }
+
+    async function handleExport(options: {
+        format: 'pdf' | 'image';
+        fileName: string;
+        pageFrom: number;
+        pageTo: number;
+        includeAnnotations: boolean;
+    }) {
         if (exportingPdf) return;
         setExportingPdf(true);
 
@@ -1790,8 +1930,10 @@ export default function ScriptEditorScreen() {
                 setTimeout(() => resolve(pageBreaksRef.current), 2000);
             });
 
+            const safeName = (options.fileName || scriptTitle || 'Guion').replace(/[\\/:*?"<>|]/g, '').trim() || 'Guion';
+
             let drawingImageBase64: string | null = null;
-            if (paths.length > 0) {
+            if (options.includeAnnotations && paths.length > 0) {
                 // Monta (fuera de pantalla) los trazos a mano a la altura COMPLETA
                 // del documento YA paginado, para capturarlos todos de una vez — es
                 // un SVG plano, sin WebView, así que sí puede capturarse fuera de
@@ -1808,7 +1950,36 @@ export default function ScriptEditorScreen() {
                 setShowShareCapture(false);
             }
 
-            const pageHtml = buildPagesHtml(freshPageBreaks, drawingImageBase64);
+            if (options.format === 'image') {
+                // No es viable capturar una página con texto como imagen: en iOS,
+                // react-native-view-shot no puede fotografiar contenido de un
+                // WKWebView en absoluto (el mismo motivo por el que el PDF se genera
+                // como HTML real en vez de una captura) — así que "Imagen" exporta
+                // SOLO las anotaciones a mano (fondo transparente), que sí se pueden
+                // capturar al ser un SVG plano.
+                if (!drawingImageBase64) {
+                    Alert.alert('Nada que exportar', 'No hay anotaciones a mano en este guion.');
+                    return;
+                }
+                const imageUri = `${FileSystem.cacheDirectory}${safeName}-anotaciones.png`;
+                const existingImg = await FileSystem.getInfoAsync(imageUri);
+                if (existingImg.exists) {
+                    await FileSystem.deleteAsync(imageUri, { idempotent: true });
+                }
+                await FileSystem.writeAsStringAsync(
+                    imageUri,
+                    drawingImageBase64,
+                    { encoding: 'base64' }
+                );
+                await Sharing.shareAsync(imageUri, {
+                    UTI: 'public.png',
+                    mimeType: 'image/png',
+                    dialogTitle: 'Compartir anotaciones',
+                });
+                return;
+            }
+
+            const pageHtml = buildPagesHtml(freshPageBreaks, drawingImageBase64, { from: options.pageFrom, to: options.pageTo });
 
             const { uri: rawPdfUri } = await Print.printToFileAsync({
                 html: pageHtml,
@@ -1818,10 +1989,9 @@ export default function ScriptEditorScreen() {
             });
 
             // printToFileAsync guarda el PDF con un nombre interno (tipo UUID de
-            // Supabase/caché), no con el título del guion — se copia con el nombre
+            // Supabase/caché), no con el nombre elegido — se copia con el nombre
             // correcto antes de compartirlo para que sea ese el que vea el usuario.
-            const safeTitle = (scriptTitle || 'Guion').replace(/[\\/:*?"<>|]/g, '').trim() || 'Guion';
-            const pdfUri = `${FileSystem.cacheDirectory}${safeTitle}.pdf`;
+            const pdfUri = `${FileSystem.cacheDirectory}${safeName}.pdf`;
             // Si ya se compartió este mismo guion antes en esta sesión, el archivo
             // puede seguir en caché con ese nombre — copyAsync falla si el destino
             // ya existe.
@@ -1838,12 +2008,49 @@ export default function ScriptEditorScreen() {
             });
 
         } catch (error: any) {
-            console.error('Error exporting PDF:', error);
-            Alert.alert('Error', 'No se pudo generar el PDF: ' + error.message);
+            console.error('Error exporting:', error);
+            Alert.alert('Error', 'No se pudo exportar: ' + error.message);
         } finally {
             setShowShareCapture(false);
             setExportingPdf(false);
         }
+    }
+
+    // Abre "Ver y marcar": fuerza una repaginación fresca (igual que antes de
+    // exportar) y construye el HTML con los trazos actuales ya incrustados.
+    async function handleOpenViewAndMark() {
+        const freshPageBreaks = await new Promise<number[]>((resolve) => {
+            pageBreaksResolveRef.current = resolve;
+            webViewRef.current?.injectJavaScript('window.__repaginateNow && window.__repaginateNow(); true;');
+            setTimeout(() => resolve(pageBreaksRef.current), 2000);
+        });
+        setMarkupHtml(buildMarkupHtml(freshPageBreaks, paths));
+        setShowViewAndMark(true);
+    }
+
+    function handleNewPathFromMarkup(path: PathData) {
+        actionHistoryRef.current.push({ kind: 'draw', before: paths });
+        actionRedoRef.current = [];
+        setPaths((prev) => [...prev, path]);
+    }
+
+    function handleErasePathFromMarkup(id: string) {
+        actionHistoryRef.current.push({ kind: 'draw', before: paths });
+        actionRedoRef.current = [];
+        setPaths((prev) => prev.filter((p) => p.id !== id));
+    }
+
+    // Abre la hoja de exportar: repagina en fresco (mismo motivo que antes de
+    // compartir/marcar) para que "total de páginas" y el recorte por rango
+    // usen cortes actualizados, no los que hubiera de la última edición.
+    async function handleOpenExportSheet() {
+        const freshPageBreaks = await new Promise<number[]>((resolve) => {
+            pageBreaksResolveRef.current = resolve;
+            webViewRef.current?.injectJavaScript('window.__repaginateNow && window.__repaginateNow(); true;');
+            setTimeout(() => resolve(pageBreaksRef.current), 2000);
+        });
+        setExportTotalPages(freshPageBreaks.length + 1);
+        setShowExportSheet(true);
     }
 
     return (
@@ -1869,12 +2076,12 @@ export default function ScriptEditorScreen() {
                 <Svg height="100%" width="100%">
                     {/* Render current paths only (no old image layer needed) */}
                     {/* Render current paths (without scroll translation as this is full height) */}
-                    {paths.map((p, i) => (
+                    {paths.map((p) => (
                         <Path
-                            key={i}
-                            d={typeof p === 'string' ? p : p.d}
-                            stroke={typeof p === 'string' ? 'red' : p.color}
-                            strokeWidth={typeof p === 'string' ? 2 : p.width}
+                            key={p.id}
+                            d={p.d}
+                            stroke={p.color}
+                            strokeWidth={p.width}
                             fill="none"
                             strokeLinecap="round"
                             strokeLinejoin="round"
@@ -1907,12 +2114,12 @@ export default function ScriptEditorScreen() {
                     }}
                 >
                     <Svg height="100%" width="100%">
-                        {paths.map((p, i) => (
+                        {paths.map((p) => (
                             <Path
-                                key={i}
-                                d={typeof p === 'string' ? p : p.d}
-                                stroke={typeof p === 'string' ? 'red' : p.color}
-                                strokeWidth={typeof p === 'string' ? 2 : p.width}
+                                key={p.id}
+                                d={p.d}
+                                stroke={p.color}
+                                strokeWidth={p.width}
                                 fill="none"
                                 strokeLinecap="round"
                                 strokeLinejoin="round"
@@ -1928,6 +2135,10 @@ export default function ScriptEditorScreen() {
                 <TouchableOpacity onPress={() => router.back()} style={[styles.backButton, glassHeaderBtn]}>
                     <ArrowLeft size={20} color="#FFFFFF" />
                 </TouchableOpacity>
+
+                <View style={styles.headerCenter} pointerEvents="none">
+                    <Text style={styles.headerTitle} numberOfLines={1}>Editar guion</Text>
+                </View>
 
                 <TouchableOpacity onPress={handleSave} style={[styles.saveButton, primaryButtonBg]} disabled={saving}>
                     {saving ? (
@@ -1957,7 +2168,7 @@ export default function ScriptEditorScreen() {
                 ) : (
                     <View style={styles.pageShadowWrapper}>
                     <View style={styles.pageCard}>
-                        <View style={[styles.webviewContainer, { pointerEvents: mode === 'draw' ? 'none' : 'auto' }]}>
+                        <View style={styles.webviewContainer}>
                             <WebView
                                 ref={webViewRef}
                                 originWhitelist={['*']}
@@ -1996,8 +2207,9 @@ export default function ScriptEditorScreen() {
                                         htmlContentRef.current = event.nativeEvent.data;
                                     }
                                 }}
-                                // Disable zoom completely
-                                scalesPageToFit={false}
+                                // Android: permite el zoom por pellizco (este WebView es solo
+                                // Vista/Texto — dibujar vive en "Ver y marcar", aparte).
+                                scalesPageToFit={true}
                                 bounces={false}
                                 scrollEnabled={true}
                                 showsHorizontalScrollIndicator={false}
@@ -2014,30 +2226,18 @@ export default function ScriptEditorScreen() {
                                 // Android), pero esta versión no los declara en sus tipos de
                                 // TypeScript — de ahí el "as any".
                                 {...({ useWideViewPort: true, loadWithOverviewMode: true } as any)}
-                                // Prevent zoom gestures. La etiqueta <meta viewport> vive UNA
-                                // sola vez, en el HTML estático (webViewSource) — no se duplica
-                                // aquí para que no puedan desincronizarse entre sí.
-                                injectedJavaScript={`
-                                    // Prevent pinch zoom
-                                    document.addEventListener('gesturestart', function(e) {
-                                        e.preventDefault();
-                                    });
-                                    document.addEventListener('gesturechange', function(e) {
-                                        e.preventDefault();
-                                    });
-                                    document.addEventListener('gestureend', function(e) {
-                                        e.preventDefault();
-                                    });
-                                    true;
-                                `}
                             />
                         </View>
 
                         <View
-                            style={[styles.drawingLayer, { pointerEvents: mode === 'draw' ? 'auto' : 'none', zIndex: 10 }]}
-                            {...panResponderRef.panHandlers}
+                            style={[styles.drawingLayer, { pointerEvents: 'none', zIndex: 10 }]}
                         >
-                            {/* viewBox: el contenido (paths, en coordenadas lógicas de
+                            {/* Capa de SOLO LECTURA: muestra los trazos ya guardados mientras
+                                se lee/edita el texto, pero ya no se puede dibujar aquí —
+                                dibujar vive en la superposición aparte "Ver y marcar", donde
+                                el trazo forma parte del propio WebView (alineado con
+                                cualquier nivel de zoom, sin esta conversión de coordenadas).
+                                viewBox: el contenido (paths, en coordenadas lógicas de
                                 página) se dibuja como si el SVG midiera pageWidth de ancho,
                                 y SVG lo reescala solo para caber en el tamaño real en
                                 pantalla (width/height) — mismo mecanismo que "displayScale"
@@ -2048,8 +2248,7 @@ export default function ScriptEditorScreen() {
                                 viewBox={`0 0 ${pageWidth} ${drawingSvgHeightPt / displayScale}`}
                             >
                                 <G transform={`translate(0, -${scrollY})`}>
-                                    {/* Render saved PNG layer if exists (hide in draw mode to allow editing) */}
-                                    {drawingLayerImage && mode !== 'draw' && (
+                                    {drawingLayerImage && (
                                         <SvgImage
                                             href={drawingLayerImage}
                                             x="0"
@@ -2060,27 +2259,17 @@ export default function ScriptEditorScreen() {
                                         />
                                     )}
 
-                                    {paths.map((p, i) => (
+                                    {paths.map((p) => (
                                         <Path
-                                            key={i}
-                                            d={typeof p === 'string' ? p : p.d}
-                                            stroke={typeof p === 'string' ? 'red' : p.color}
-                                            strokeWidth={typeof p === 'string' ? 2 : p.width}
+                                            key={p.id}
+                                            d={p.d}
+                                            stroke={p.color}
+                                            strokeWidth={p.width}
                                             fill="none"
                                             strokeLinecap="round"
                                             strokeLinejoin="round"
                                         />
                                     ))}
-                                    {currentPath ? (
-                                        <Path
-                                            d={currentPath}
-                                            stroke={strokeColor}
-                                            strokeWidth={strokeWidth}
-                                            fill="none"
-                                            strokeLinecap="round"
-                                            strokeLinejoin="round"
-                                        />
-                                    ) : null}
                                 </G>
                             </Svg>
                         </View>
@@ -2098,11 +2287,25 @@ export default function ScriptEditorScreen() {
                     { bottom: keyboardOffset > 0 ? keyboardOffset + rp(8) : insets.bottom + rp(8) },
                 ]}
             >
-                <View style={styles.bottomBarCapsule}>
-                    <View style={[styles.bottomBarClip, { borderColor: cardBorder }]}>
-                        <BlurView intensity={isDark ? 55 : 75} tint={isDark ? 'dark' : 'light'} style={StyleSheet.absoluteFill} />
-                        <View style={[StyleSheet.absoluteFill, { backgroundColor: isDark ? 'rgba(124,106,247,0.20)' : 'rgba(235,230,245,0.45)' }]} />
-                    </View>
+                <View style={styles.bottomBarRowOuter} pointerEvents="box-none">
+                    <Animated.View
+                        pointerEvents={toolbarExpanded ? 'auto' : 'none'}
+                        style={[
+                            styles.bottomBarCapsule,
+                            {
+                                width: toolbarExpandAnim.interpolate({
+                                    inputRange: [0, 1],
+                                    outputRange: [0, Math.min(toolbarCapsuleMaxWidth, (mode === 'view' ? viewRowWidth : editRowWidth) || toolbarCapsuleMaxWidth)],
+                                }),
+                                marginRight: toolbarExpandAnim.interpolate({ inputRange: [0, 1], outputRange: [0, 10] }),
+                                opacity: toolbarExpandAnim,
+                            },
+                        ]}
+                    >
+                        <View style={[styles.bottomBarClip, { borderColor: cardBorder }]}>
+                            <BlurView intensity={isDark ? 85 : 90} tint={isDark ? 'dark' : 'light'} style={StyleSheet.absoluteFill} />
+                            <View style={[StyleSheet.absoluteFill, { backgroundColor: popupOverlayTint }]} />
+                        </View>
 
                     {/* Fila: modo vista */}
                     <Animated.View
@@ -2112,7 +2315,12 @@ export default function ScriptEditorScreen() {
                         ]}
                         pointerEvents={mode === 'view' ? 'auto' : 'none'}
                     >
-                        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.bottomBarScrollContent}>
+                        <ScrollView
+                            horizontal
+                            showsHorizontalScrollIndicator={false}
+                            contentContainerStyle={styles.bottomBarScrollContent}
+                            onContentSizeChange={(w) => setViewRowWidth(w)}
+                        >
                             <TouchableOpacity onPress={handleUndo} style={[styles.toolbarButton, { backgroundColor: chipInactiveBg }]}>
                                 <Undo size={20} color={onBg} />
                             </TouchableOpacity>
@@ -2122,15 +2330,11 @@ export default function ScriptEditorScreen() {
                             <TouchableOpacity onPress={() => setMode('edit')} style={[styles.toolbarButton, { backgroundColor: chipInactiveBg }]}>
                                 <Type size={22} color={onBg} />
                             </TouchableOpacity>
-                            <TouchableOpacity onPress={() => setMode('draw')} style={[styles.toolbarButton, { backgroundColor: chipInactiveBg }]}>
+                            <TouchableOpacity onPress={handleOpenViewAndMark} style={[styles.toolbarButton, { backgroundColor: chipInactiveBg }]}>
                                 <Pencil size={22} color={onBg} />
                             </TouchableOpacity>
-                            <TouchableOpacity onPress={handleSharePdf} disabled={exportingPdf} style={[styles.toolbarButton, { backgroundColor: chipInactiveBg }]}>
-                                {exportingPdf ? (
-                                    <ActivityIndicator size="small" color={onBg} />
-                                ) : (
-                                    <Share2 size={20} color={onBg} />
-                                )}
+                            <TouchableOpacity onPress={handleOpenExportSheet} style={[styles.toolbarButton, { backgroundColor: chipInactiveBg }]}>
+                                <Share2 size={20} color={onBg} />
                             </TouchableOpacity>
                         </ScrollView>
                     </Animated.View>
@@ -2143,7 +2347,12 @@ export default function ScriptEditorScreen() {
                         ]}
                         pointerEvents={mode === 'edit' ? 'auto' : 'none'}
                     >
-                        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.bottomBarScrollContent}>
+                        <ScrollView
+                            horizontal
+                            showsHorizontalScrollIndicator={false}
+                            contentContainerStyle={styles.bottomBarScrollContent}
+                            onContentSizeChange={(w) => setEditRowWidth(w)}
+                        >
                             <TouchableOpacity onPress={handleUndo} style={[styles.toolbarButton, { backgroundColor: chipInactiveBg }]}>
                                 <Undo size={20} color={onBg} />
                             </TouchableOpacity>
@@ -2151,91 +2360,49 @@ export default function ScriptEditorScreen() {
                                 <Redo size={20} color={onBg} />
                             </TouchableOpacity>
                             <TouchableOpacity onPress={() => setMode('view')} style={[styles.toolbarButton, styles.toolbarButtonActive, { backgroundColor: chipActiveBg, borderColor: colors.primary }]}>
-                                <Type size={22} color={colors.primary} />
+                                <Type size={22} color={activeAccent} />
                             </TouchableOpacity>
                             <TouchableOpacity
                                 onPress={() => { setShowSizeMenu(!showSizeMenu); setShowFormatMenu(false); setShowAlignMenu(false); setShowColorMenu(false); setShowHighlightMenu(false); }}
                                 style={[styles.toolbarButton, { backgroundColor: chipInactiveBg }, showSizeMenu && [styles.toolbarButtonActive, { backgroundColor: chipActiveBg, borderColor: colors.primary }]]}
                             >
-                                <Pilcrow size={20} color={showSizeMenu ? colors.primary : onBg} />
+                                <Pilcrow size={20} color={showSizeMenu ? activeAccent : onBg} />
                             </TouchableOpacity>
                             <TouchableOpacity
                                 onPress={() => { setShowHighlightMenu(!showHighlightMenu); setShowFormatMenu(false); setShowAlignMenu(false); setShowSizeMenu(false); setShowColorMenu(false); }}
                                 style={[styles.toolbarButton, { backgroundColor: chipInactiveBg }, showHighlightMenu && [styles.toolbarButtonActive, { backgroundColor: chipActiveBg, borderColor: colors.primary }]]}
                             >
-                                <Highlighter size={20} color={showHighlightMenu ? colors.primary : onBg} />
+                                <Highlighter size={20} color={showHighlightMenu ? activeAccent : onBg} />
                             </TouchableOpacity>
                             <TouchableOpacity
                                 onPress={() => { setShowColorMenu(!showColorMenu); setShowFormatMenu(false); setShowAlignMenu(false); setShowSizeMenu(false); setShowHighlightMenu(false); }}
                                 style={[styles.toolbarButton, { backgroundColor: chipInactiveBg }, showColorMenu && [styles.toolbarButtonActive, { backgroundColor: chipActiveBg, borderColor: colors.primary }]]}
                             >
-                                <Palette size={20} color={showColorMenu ? colors.primary : onBg} />
+                                <Palette size={20} color={showColorMenu ? activeAccent : onBg} />
                             </TouchableOpacity>
                             <TouchableOpacity
                                 onPress={() => { setShowFormatMenu(!showFormatMenu); setShowAlignMenu(false); setShowSizeMenu(false); setShowColorMenu(false); setShowHighlightMenu(false); }}
                                 style={[styles.toolbarButton, { backgroundColor: chipInactiveBg }, showFormatMenu && [styles.toolbarButtonActive, { backgroundColor: chipActiveBg, borderColor: colors.primary }]]}
                             >
-                                <Text style={[styles.toolbarButtonText, { color: onBg }, showFormatMenu && { color: colors.primary }]}>Aa</Text>
+                                <Text style={[styles.toolbarButtonText, { color: onBg }, showFormatMenu && { color: activeAccent }]}>Aa</Text>
                             </TouchableOpacity>
                             <TouchableOpacity
                                 onPress={() => { setShowAlignMenu(!showAlignMenu); setShowFormatMenu(false); setShowSizeMenu(false); setShowColorMenu(false); setShowHighlightMenu(false); }}
                                 style={[styles.toolbarButton, { backgroundColor: chipInactiveBg }, showAlignMenu && [styles.toolbarButtonActive, { backgroundColor: chipActiveBg, borderColor: colors.primary }]]}
                             >
-                                <Menu size={20} color={showAlignMenu ? colors.primary : onBg} />
+                                <Menu size={20} color={showAlignMenu ? activeAccent : onBg} />
                             </TouchableOpacity>
                         </ScrollView>
+                    </Animated.View>
                     </Animated.View>
 
-                    {/* Fila: modo dibujo */}
-                    <Animated.View
-                        style={[
-                            styles.bottomBarRow,
-                            { opacity: barAnim.draw, transform: [{ translateY: barAnim.draw.interpolate({ inputRange: [0, 1], outputRange: [8, 0] }) }] },
-                        ]}
-                        pointerEvents={mode === 'draw' ? 'auto' : 'none'}
-                    >
-                        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.bottomBarScrollContent}>
-                            <TouchableOpacity onPress={handleUndo} style={[styles.toolbarButton, { backgroundColor: chipInactiveBg }]}>
-                                <Undo size={20} color={onBg} />
-                            </TouchableOpacity>
-                            <TouchableOpacity onPress={handleRedo} style={[styles.toolbarButton, { backgroundColor: chipInactiveBg }]}>
-                                <Redo size={20} color={onBg} />
-                            </TouchableOpacity>
-                            <TouchableOpacity onPress={() => setMode('view')} style={[styles.toolbarButton, styles.toolbarButtonActive, { backgroundColor: chipActiveBg, borderColor: colors.primary }]}>
-                                <Pencil size={22} color={colors.primary} />
-                            </TouchableOpacity>
-                            <TouchableOpacity
-                                onPress={() => { setShowStrokeMenu(!showStrokeMenu); setShowDrawColorMenu(false); }}
-                                style={[styles.toolbarButton, { backgroundColor: chipInactiveBg }, showStrokeMenu && [styles.toolbarButtonActive, { backgroundColor: chipActiveBg, borderColor: colors.primary }]]}
-                            >
-                                <Pencil size={20} color={showStrokeMenu ? colors.primary : onBg} />
-                            </TouchableOpacity>
-                            <TouchableOpacity
-                                onPress={() => { setShowDrawColorMenu(!showDrawColorMenu); setShowStrokeMenu(false); }}
-                                style={[styles.toolbarButton, { backgroundColor: chipInactiveBg }, showDrawColorMenu && [styles.toolbarButtonActive, { backgroundColor: chipActiveBg, borderColor: colors.primary }]]}
-                            >
-                                <Palette size={20} color={showDrawColorMenu ? colors.primary : onBg} />
-                            </TouchableOpacity>
-                            <TouchableOpacity
-                                onPress={() => { setIsErasing(!isErasing); setShowStrokeMenu(false); setShowDrawColorMenu(false); }}
-                                style={[styles.toolbarButton, { backgroundColor: chipInactiveBg }, isErasing && [styles.toolbarButtonActive, { backgroundColor: chipActiveBg, borderColor: colors.primary }]]}
-                            >
-                                <Eraser size={20} color={isErasing ? colors.primary : onBg} />
-                            </TouchableOpacity>
-                            <TouchableOpacity
-                                onPress={handleClear}
-                                style={[styles.toolbarButton, { backgroundColor: isDark ? 'rgba(239,68,68,0.18)' : 'rgba(239,68,68,0.12)' }]}
-                            >
-                                <Trash2 size={20} color="#FF0000" />
-                            </TouchableOpacity>
-                            <TouchableOpacity
-                                onPress={handleSaveAnnotations}
-                                style={[styles.toolbarButton, { backgroundColor: '#10B981' }]}
-                            >
-                                <Save size={20} color="#FFFFFF" />
-                            </TouchableOpacity>
-                        </ScrollView>
-                    </Animated.View>
+                    <TouchableOpacity onPress={toggleToolbarExpanded} activeOpacity={0.85} style={styles.fabButton}>
+                        <View style={[styles.fabClip, { borderColor: cardBorder }]}>
+                            <BlurView intensity={isDark ? 85 : 90} tint={isDark ? 'dark' : 'light'} style={StyleSheet.absoluteFill} />
+                            <View style={[StyleSheet.absoluteFill, { backgroundColor: popupOverlayTint }]} />
+                        </View>
+                        {toolbarExpanded ? <X size={22} color={onBg} /> : <Edit3 size={22} color={onBg} />}
+                    </TouchableOpacity>
                 </View>
 
                 {/* Paneles emergentes (Aa / alineación / tamaño / color / trazo) — flotan
@@ -2244,35 +2411,35 @@ export default function ScriptEditorScreen() {
                 {showFormatMenu && (
                     <View style={styles.bottomPopupShadow}>
                         <View style={[styles.bottomPopupClip, { borderColor: cardBorder }]}>
-                            <BlurView intensity={isDark ? 55 : 75} tint={isDark ? 'dark' : 'light'} style={StyleSheet.absoluteFill} />
+                            <BlurView intensity={isDark ? 85 : 90} tint={isDark ? 'dark' : 'light'} style={StyleSheet.absoluteFill} />
                             <View style={[StyleSheet.absoluteFill, { backgroundColor: popupOverlayTint }]} />
                             <TouchableOpacity
                                 onPress={() => { setIsBold(!isBold); formatText('bold'); setShowFormatMenu(false); }}
                                 style={[styles.dropdownItem, isBold && styles.dropdownItemActive]}
                             >
-                                <Bold size={18} color={isBold ? colors.primary : onBg} strokeWidth={3} />
-                                <Text style={[styles.dropdownItemText, { color: onBg }, isBold && { color: colors.primary, fontWeight: 'bold' }]}>Negrita</Text>
+                                <Bold size={18} color={isBold ? activeAccent : onBg} strokeWidth={3} />
+                                <Text style={[styles.dropdownItemText, { color: onBg }, isBold && { color: activeAccent, fontWeight: 'bold' }]}>Negrita</Text>
                             </TouchableOpacity>
                             <TouchableOpacity
                                 onPress={() => { setIsItalic(!isItalic); formatText('italic'); setShowFormatMenu(false); }}
                                 style={[styles.dropdownItem, isItalic && styles.dropdownItemActive]}
                             >
-                                <Italic size={18} color={isItalic ? colors.primary : onBg} />
-                                <Text style={[styles.dropdownItemText, { color: onBg }, isItalic && { color: colors.primary, fontStyle: 'italic' }]}>Cursiva</Text>
+                                <Italic size={18} color={isItalic ? activeAccent : onBg} />
+                                <Text style={[styles.dropdownItemText, { color: onBg }, isItalic && { color: activeAccent, fontStyle: 'italic' }]}>Cursiva</Text>
                             </TouchableOpacity>
                             <TouchableOpacity
                                 onPress={() => { setIsUnderline(!isUnderline); formatText('underline'); setShowFormatMenu(false); }}
                                 style={[styles.dropdownItem, isUnderline && styles.dropdownItemActive]}
                             >
-                                <Underline size={18} color={isUnderline ? colors.primary : onBg} />
-                                <Text style={[styles.dropdownItemText, { color: onBg }, isUnderline && { color: colors.primary, textDecorationLine: 'underline' }]}>Subrayado</Text>
+                                <Underline size={18} color={isUnderline ? activeAccent : onBg} />
+                                <Text style={[styles.dropdownItemText, { color: onBg }, isUnderline && { color: activeAccent, textDecorationLine: 'underline' }]}>Subrayado</Text>
                             </TouchableOpacity>
                             <TouchableOpacity
                                 onPress={() => { setIsStrikethrough(!isStrikethrough); formatText('strikeThrough'); setShowFormatMenu(false); }}
                                 style={[styles.dropdownItem, isStrikethrough && styles.dropdownItemActive]}
                             >
-                                <Strikethrough size={18} color={isStrikethrough ? colors.primary : onBg} />
-                                <Text style={[styles.dropdownItemText, { color: onBg }, isStrikethrough && { color: colors.primary, textDecorationLine: 'line-through' }]}>Tachado</Text>
+                                <Strikethrough size={18} color={isStrikethrough ? activeAccent : onBg} />
+                                <Text style={[styles.dropdownItemText, { color: onBg }, isStrikethrough && { color: activeAccent, textDecorationLine: 'line-through' }]}>Tachado</Text>
                             </TouchableOpacity>
                         </View>
                     </View>
@@ -2281,28 +2448,28 @@ export default function ScriptEditorScreen() {
                 {showAlignMenu && (
                     <View style={styles.bottomPopupShadow}>
                         <View style={[styles.bottomPopupClip, { borderColor: cardBorder }]}>
-                            <BlurView intensity={isDark ? 55 : 75} tint={isDark ? 'dark' : 'light'} style={StyleSheet.absoluteFill} />
+                            <BlurView intensity={isDark ? 85 : 90} tint={isDark ? 'dark' : 'light'} style={StyleSheet.absoluteFill} />
                             <View style={[StyleSheet.absoluteFill, { backgroundColor: popupOverlayTint }]} />
                             <TouchableOpacity
                                 onPress={() => { setTextAlign('left'); formatText('justifyLeft'); setShowAlignMenu(false); }}
                                 style={[styles.dropdownItem, textAlign === 'left' && styles.dropdownItemActive]}
                             >
-                                <AlignLeft size={18} color={textAlign === 'left' ? colors.primary : onBg} />
-                                <Text style={[styles.dropdownItemText, { color: onBg }, textAlign === 'left' && { color: colors.primary }]}>Izquierda</Text>
+                                <AlignLeft size={18} color={textAlign === 'left' ? activeAccent : onBg} />
+                                <Text style={[styles.dropdownItemText, { color: onBg }, textAlign === 'left' && { color: activeAccent }]}>Izquierda</Text>
                             </TouchableOpacity>
                             <TouchableOpacity
                                 onPress={() => { setTextAlign('center'); formatText('justifyCenter'); setShowAlignMenu(false); }}
                                 style={[styles.dropdownItem, textAlign === 'center' && styles.dropdownItemActive]}
                             >
-                                <AlignCenter size={18} color={textAlign === 'center' ? colors.primary : onBg} />
-                                <Text style={[styles.dropdownItemText, { color: onBg }, textAlign === 'center' && { color: colors.primary }]}>Centrado</Text>
+                                <AlignCenter size={18} color={textAlign === 'center' ? activeAccent : onBg} />
+                                <Text style={[styles.dropdownItemText, { color: onBg }, textAlign === 'center' && { color: activeAccent }]}>Centrado</Text>
                             </TouchableOpacity>
                             <TouchableOpacity
                                 onPress={() => { setTextAlign('right'); formatText('justifyRight'); setShowAlignMenu(false); }}
                                 style={[styles.dropdownItem, textAlign === 'right' && styles.dropdownItemActive]}
                             >
-                                <AlignRight size={18} color={textAlign === 'right' ? colors.primary : onBg} />
-                                <Text style={[styles.dropdownItemText, { color: onBg }, textAlign === 'right' && { color: colors.primary }]}>Derecha</Text>
+                                <AlignRight size={18} color={textAlign === 'right' ? activeAccent : onBg} />
+                                <Text style={[styles.dropdownItemText, { color: onBg }, textAlign === 'right' && { color: activeAccent }]}>Derecha</Text>
                             </TouchableOpacity>
                         </View>
                     </View>
@@ -2311,7 +2478,7 @@ export default function ScriptEditorScreen() {
                 {showSizeMenu && (
                     <View style={styles.bottomPopupShadow}>
                         <View style={[styles.bottomPopupClip, { borderColor: cardBorder }]}>
-                            <BlurView intensity={isDark ? 55 : 75} tint={isDark ? 'dark' : 'light'} style={StyleSheet.absoluteFill} />
+                            <BlurView intensity={isDark ? 85 : 90} tint={isDark ? 'dark' : 'light'} style={StyleSheet.absoluteFill} />
                             <View style={[StyleSheet.absoluteFill, { backgroundColor: popupOverlayTint }]} />
                             <ScrollView style={{ maxHeight: 240 }} showsVerticalScrollIndicator nestedScrollEnabled>
                                 {LINE_STYLES.map((preset) => (
@@ -2331,7 +2498,7 @@ export default function ScriptEditorScreen() {
                 {showColorMenu && (
                     <View style={styles.bottomPopupShadow}>
                         <View style={[styles.bottomPopupClip, { borderColor: cardBorder }]}>
-                            <BlurView intensity={isDark ? 55 : 75} tint={isDark ? 'dark' : 'light'} style={StyleSheet.absoluteFill} />
+                            <BlurView intensity={isDark ? 85 : 90} tint={isDark ? 'dark' : 'light'} style={StyleSheet.absoluteFill} />
                             <View style={[StyleSheet.absoluteFill, { backgroundColor: popupOverlayTint }]} />
                             <View style={styles.colorGrid}>
                                 {COLORS.map((color) => (
@@ -2353,7 +2520,7 @@ export default function ScriptEditorScreen() {
                 {showHighlightMenu && (
                     <View style={styles.bottomPopupShadow}>
                         <View style={[styles.bottomPopupClip, { borderColor: cardBorder }]}>
-                            <BlurView intensity={isDark ? 55 : 75} tint={isDark ? 'dark' : 'light'} style={StyleSheet.absoluteFill} />
+                            <BlurView intensity={isDark ? 85 : 90} tint={isDark ? 'dark' : 'light'} style={StyleSheet.absoluteFill} />
                             <View style={[StyleSheet.absoluteFill, { backgroundColor: popupOverlayTint }]} />
                             <View style={styles.colorGrid}>
                                 {HIGHLIGHT_COLORS.map((preset) => (
@@ -2377,58 +2544,36 @@ export default function ScriptEditorScreen() {
                     </View>
                 )}
 
-                {showStrokeMenu && (
-                    <View style={styles.bottomPopupShadow}>
-                        <View style={[styles.bottomPopupClip, { borderColor: cardBorder }]}>
-                            <BlurView intensity={isDark ? 55 : 75} tint={isDark ? 'dark' : 'light'} style={StyleSheet.absoluteFill} />
-                            <View style={[StyleSheet.absoluteFill, { backgroundColor: popupOverlayTint }]} />
-                            <TouchableOpacity
-                                onPress={() => { setStrokeWidth(2); setShowStrokeMenu(false); }}
-                                style={[styles.dropdownItem, strokeWidth === 2 && styles.dropdownItemActive]}
-                            >
-                                <View style={{ width: 30, height: 2, backgroundColor: onBg }} />
-                                <Text style={[styles.dropdownItemText, { color: onBg }, strokeWidth === 2 && { color: colors.primary }]}>Fino</Text>
-                            </TouchableOpacity>
-                            <TouchableOpacity
-                                onPress={() => { setStrokeWidth(5); setShowStrokeMenu(false); }}
-                                style={[styles.dropdownItem, strokeWidth === 5 && styles.dropdownItemActive]}
-                            >
-                                <View style={{ width: 30, height: 5, backgroundColor: onBg, borderRadius: 2.5 }} />
-                                <Text style={[styles.dropdownItemText, { color: onBg }, strokeWidth === 5 && { color: colors.primary }]}>Medio</Text>
-                            </TouchableOpacity>
-                            <TouchableOpacity
-                                onPress={() => { setStrokeWidth(10); setShowStrokeMenu(false); }}
-                                style={[styles.dropdownItem, strokeWidth === 10 && styles.dropdownItemActive]}
-                            >
-                                <View style={{ width: 30, height: 10, backgroundColor: onBg, borderRadius: 5 }} />
-                                <Text style={[styles.dropdownItemText, { color: onBg }, strokeWidth === 10 && { color: colors.primary }]}>Grueso</Text>
-                            </TouchableOpacity>
-                        </View>
-                    </View>
-                )}
-
-                {showDrawColorMenu && (
-                    <View style={styles.bottomPopupShadow}>
-                        <View style={[styles.bottomPopupClip, { borderColor: cardBorder }]}>
-                            <BlurView intensity={isDark ? 55 : 75} tint={isDark ? 'dark' : 'light'} style={StyleSheet.absoluteFill} />
-                            <View style={[StyleSheet.absoluteFill, { backgroundColor: popupOverlayTint }]} />
-                            <View style={styles.colorGrid}>
-                                {COLORS.map((color) => (
-                                    <TouchableOpacity
-                                        key={color}
-                                        onPress={() => { setStrokeColor(color); setShowDrawColorMenu(false); }}
-                                        style={[
-                                            styles.colorButton,
-                                            { backgroundColor: color },
-                                            strokeColor === color && [styles.colorButtonActive, { borderColor: onBg }]
-                                        ]}
-                                    />
-                                ))}
-                            </View>
-                        </View>
-                    </View>
-                )}
             </View>
+
+            {showViewAndMark && (
+                <ViewAndMarkOverlay
+                    html={markupHtml}
+                    paths={paths}
+                    saving={saving}
+                    onNewPath={handleNewPathFromMarkup}
+                    onErasePath={handleErasePathFromMarkup}
+                    onUndo={handleUndo}
+                    onRedo={handleRedo}
+                    onSave={handleSaveAnnotations}
+                    onExport={handleOpenExportSheet}
+                    onClose={() => setShowViewAndMark(false)}
+                />
+            )}
+
+            {showExportSheet && (
+                <ExportOptionsSheet
+                    scriptTitle={scriptTitle}
+                    totalPages={exportTotalPages}
+                    hasAnnotations={paths.length > 0}
+                    exporting={exportingPdf}
+                    onClose={() => setShowExportSheet(false)}
+                    onExport={async (options) => {
+                        await handleExport(options);
+                        setShowExportSheet(false);
+                    }}
+                />
+            )}
         </SafeAreaView>
         </ImageBackground>
     );
@@ -2465,6 +2610,16 @@ const styles = StyleSheet.create({
         color: '#FFFFFF',
         fontWeight: '600',
         fontSize: rf(14),
+    },
+    headerCenter: {
+        flex: 1,
+        alignItems: 'center',
+        paddingHorizontal: rp(8),
+    },
+    headerTitle: {
+        color: '#FFFFFF',
+        fontSize: rf(16),
+        fontWeight: '700',
     },
     paletteContainer: {
         flexDirection: 'row',
@@ -2539,10 +2694,33 @@ const styles = StyleSheet.create({
         // zIndex, deja de valer el orden del árbol para decidir quién recibe el toque.
         zIndex: 200,
     },
+    bottomBarRowOuter: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'flex-end',
+    },
     bottomBarCapsule: {
         height: 64,
         borderRadius: 28,
         position: 'relative',
+        overflow: 'hidden',
+    },
+    fabButton: {
+        width: 56,
+        height: 56,
+        borderRadius: 28,
+        alignItems: 'center',
+        justifyContent: 'center',
+    },
+    fabClip: {
+        position: 'absolute',
+        top: 0,
+        left: 0,
+        right: 0,
+        bottom: 0,
+        borderRadius: 28,
+        borderWidth: 1,
+        overflow: 'hidden',
     },
     bottomBarClip: {
         position: 'absolute',
