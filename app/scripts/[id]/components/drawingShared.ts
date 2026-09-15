@@ -13,6 +13,12 @@ export interface PathData {
     d: string;
     color: string;
     width: number;
+    // Opacidad del trazo (0-1) — el tipo de pincel elegido en "Modo dibujo"
+    // (lápiz/pluma/bolígrafo/rotulador/acuarela) fija un ancho y una opacidad
+    // propios para diferenciarlos visualmente unos de otros. Opcional para no
+    // romper los trazos guardados antes de esto: si falta, se trata como 1
+    // (opaco), su comportamiento de siempre.
+    opacity?: number;
 }
 
 export const COLORS = [

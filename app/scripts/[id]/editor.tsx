@@ -2,7 +2,7 @@ import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, ActivityIndicator, Alert, Platform, ScrollView, ImageBackground, Animated, Easing, Keyboard, useWindowDimensions } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter, useLocalSearchParams, Stack } from 'expo-router';
-import { ArrowLeft, Save, Edit3, X, PenTool, Undo, Redo, Type, Bold, Italic, Underline, Strikethrough, Palette, ChevronDown, ChevronUp, AlignLeft, AlignCenter, AlignRight, Menu, Pilcrow, Pencil, Highlighter, Share2 } from 'lucide-react-native';
+import { ArrowLeft, Save, Edit3, X, Check, PenTool, Undo, Redo, Type, Bold, Italic, Underline, Strikethrough, Palette, ChevronDown, ChevronUp, AlignLeft, AlignCenter, AlignRight, Menu, Pilcrow, Pencil, Highlighter, Share2 } from 'lucide-react-native';
 import { WebView } from 'react-native-webview';
 import { BlurView } from 'expo-blur';
 import Svg, { Path, G, Image as SvgImage } from 'react-native-svg';
@@ -243,7 +243,7 @@ export default function ScriptEditorScreen() {
     // opacidad el blanco se colaba y la barra/los menús apenas se distinguían.
     // Mismo valor que usa la hoja de exportar, para que todo el flotante
     // inferior sea consistente.
-    const popupOverlayTint = isDark ? 'rgba(20,16,32,0.82)' : 'rgba(235,230,245,0.92)';
+    const popupOverlayTint = isDark ? 'rgba(20,16,32,0.96)' : 'rgba(235,230,245,0.97)';
     const chipInactiveBg = isDark ? 'rgba(255,255,255,0.08)' : 'rgba(104,58,121,0.08)';
     const chipActiveBg = isDark ? 'rgba(124,106,247,0.30)' : 'rgba(104,58,121,0.15)';
     // colors.primary en modo oscuro es un morado apagado, casi del mismo tono
@@ -359,6 +359,10 @@ export default function ScriptEditorScreen() {
     const [showFormatMenu, setShowFormatMenu] = useState(false);
     const [showAlignMenu, setShowAlignMenu] = useState(false);
     const [showSizeMenu, setShowSizeMenu] = useState(false);
+    // "data-line-type" del párrafo donde está el cursor ahora mismo (reportado
+    // por el WebView en cada updateActiveLine) — para marcar con un tick cuál
+    // preset de LINE_STYLES está aplicado en el menú de tamaño/formato.
+    const [currentLineType, setCurrentLineType] = useState<string | null>(null);
     const [showColorMenu, setShowColorMenu] = useState(false);
     const [showHighlightMenu, setShowHighlightMenu] = useState(false);
 
@@ -1157,6 +1161,11 @@ export default function ScriptEditorScreen() {
             true;
         `;
         webViewRef.current?.injectJavaScript(script);
+        // Optimista: no hace falta esperar a que el WebView confirme por su cuenta
+        // (solo lo hace en el siguiente click/selección dentro del documento) — ya
+        // sabemos qué preset se acaba de aplicar, así el tick del menú se marca al
+        // instante en vez de quedarse mostrando el anterior hasta el próximo toque.
+        setCurrentLineType(preset.key);
         setShowSizeMenu(false);
     }
 
@@ -1380,6 +1389,12 @@ export default function ScriptEditorScreen() {
                         }
                         if (node && node !== root && node !== document.body) {
                             window.__activeLine = node;
+                            // Para que el menú de estilos de párrafo pueda marcar con un
+                            // tick cuál preset está aplicado al párrafo donde está el cursor.
+                            window.ReactNativeWebView.postMessage(JSON.stringify({
+                                type: 'lineType',
+                                data: node.getAttribute('data-line-type') || null,
+                            }));
                         }
                     }
                     root.addEventListener('click', updateActiveLine);
@@ -1720,7 +1735,7 @@ export default function ScriptEditorScreen() {
         }).join('');
 
         const pathsSvg = pathsForHtml.map((p) => (
-            `<path data-path-id="${p.id}" d="${p.d}" stroke="${p.color}" stroke-width="${p.width}" fill="none" stroke-linecap="round" stroke-linejoin="round" />`
+            `<path data-path-id="${p.id}" d="${p.d}" stroke="${p.color}" stroke-width="${p.width}" stroke-opacity="${p.opacity ?? 1}" fill="none" stroke-linecap="round" stroke-linejoin="round" />`
         )).join('');
 
         return `
@@ -1763,6 +1778,21 @@ export default function ScriptEditorScreen() {
                         var svgNS = 'http://www.w3.org/2000/svg';
                         var activeStroke = null; // { points: [{x,y}], el: <path> }
                         window.__activeTool = window.__activeTool || 'pan'; // 'pen' | 'erase' | 'pan'
+                        window.__brushType = window.__brushType || 'pencil';
+
+                        // Ancho/opacidad propios de cada tipo de pincel — sin control manual
+                        // de grosor (de momento): cada pincel ya trae su aspecto característico.
+                        var BRUSH_PARAMS = {
+                            pencil:     { width: 2,  opacity: 0.85 },
+                            fountain:   { width: 2.5, opacity: 1 },
+                            ballpoint:  { width: 3,  opacity: 1 },
+                            marker:     { width: 7,  opacity: 0.85 },
+                            watercolor: { width: 14, opacity: 0.35 },
+                            ruler:      { width: 3,  opacity: 1 },
+                        };
+                        function brushParams() {
+                            return BRUSH_PARAMS[window.__brushType] || BRUSH_PARAMS.pencil;
+                        }
 
                         // Deshacer/rehacer cambia "paths" del lado de React Native, no aquí
                         // dentro del WebView (los trazos nuevos/borrados sí se reflejan al
@@ -1778,6 +1808,7 @@ export default function ScriptEditorScreen() {
                                 el.setAttribute('d', p.d);
                                 el.setAttribute('stroke', p.color);
                                 el.setAttribute('stroke-width', String(p.width));
+                                el.setAttribute('stroke-opacity', String(p.opacity != null ? p.opacity : 1));
                                 el.setAttribute('fill', 'none');
                                 el.setAttribute('stroke-linecap', 'round');
                                 el.setAttribute('stroke-linejoin', 'round');
@@ -1799,9 +1830,17 @@ export default function ScriptEditorScreen() {
                         }
 
                         function startStroke(point) {
-                            activeStroke = { points: [point], el: document.createElementNS(svgNS, 'path') };
+                            var brush = brushParams();
+                            activeStroke = {
+                                points: [point],
+                                startPoint: point, // para la regla: la recta va SIEMPRE de aquí al punto actual
+                                width: brush.width,
+                                opacity: brush.opacity,
+                                el: document.createElementNS(svgNS, 'path'),
+                            };
                             activeStroke.el.setAttribute('stroke', window.__strokeColor || '#FF0000');
-                            activeStroke.el.setAttribute('stroke-width', String(window.__strokeWidth || 2));
+                            activeStroke.el.setAttribute('stroke-width', String(brush.width));
+                            activeStroke.el.setAttribute('stroke-opacity', String(brush.opacity));
                             activeStroke.el.setAttribute('fill', 'none');
                             activeStroke.el.setAttribute('stroke-linecap', 'round');
                             activeStroke.el.setAttribute('stroke-linejoin', 'round');
@@ -1826,19 +1865,38 @@ export default function ScriptEditorScreen() {
                                 id: id,
                                 d: pointsToPath(activeStroke.points),
                                 color: window.__strokeColor || '#FF0000',
-                                width: window.__strokeWidth || 2
+                                width: activeStroke.width,
+                                opacity: activeStroke.opacity
                             }));
                             activeStroke = null;
                         }
 
+                        // Distancia mínima al SEGMENTO (no solo a los vértices): con un
+                        // trazo a mano alzada, denso en puntos, mirar solo los vértices ya
+                        // daba una distancia razonable — pero una línea de la regla son solo
+                        // 2 puntos, y con eso solo se podía borrar tocando cerca de sus dos
+                        // extremos, nunca por el medio.
+                        function distanceToSegment(point, ax, ay, bx, by) {
+                            var dx = bx - ax, dy = by - ay;
+                            var lenSq = dx * dx + dy * dy;
+                            var t = lenSq > 0 ? ((point.x - ax) * dx + (point.y - ay) * dy) / lenSq : 0;
+                            t = Math.max(0, Math.min(1, t));
+                            var px = ax + t * dx, py = ay + t * dy;
+                            return Math.sqrt(Math.pow(px - point.x, 2) + Math.pow(py - point.y, 2));
+                        }
+
                         function distanceToPolyline(point, d) {
                             var coords = d.match(/-?\\d+(\\.\\d+)?/g);
-                            if (!coords) return Infinity;
+                            if (!coords || coords.length < 2) return Infinity;
                             var min = Infinity;
+                            var prevX = null, prevY = null;
                             for (var i = 0; i + 1 < coords.length; i += 2) {
                                 var px = parseFloat(coords[i]), py = parseFloat(coords[i + 1]);
-                                var dist = Math.sqrt(Math.pow(px - point.x, 2) + Math.pow(py - point.y, 2));
-                                if (dist < min) min = dist;
+                                if (prevX !== null) {
+                                    var dist = distanceToSegment(point, prevX, prevY, px, py);
+                                    if (dist < min) min = dist;
+                                }
+                                prevX = px; prevY = py;
                             }
                             return min;
                         }
@@ -1884,7 +1942,14 @@ export default function ScriptEditorScreen() {
                                 // iOS ya habrá cedido el gesto al scroll nativo y preventDefault
                                 // deja de tener efecto para el resto de esta secuencia.
                                 e.preventDefault();
-                                activeStroke.points.push(point);
+                                if (window.__brushType === 'ruler') {
+                                    // Regla: la línea va siempre del punto inicial al dedo ahora
+                                    // mismo (2 puntos, se sustituye en cada movimiento en vez de
+                                    // acumular) — da una recta en vivo, no un trazo a mano alzada.
+                                    activeStroke.points = [activeStroke.startPoint, point];
+                                } else {
+                                    activeStroke.points.push(point);
+                                }
                                 activeStroke.el.setAttribute('d', pointsToPath(activeStroke.points));
                             }
                         }, { passive: false });
@@ -2082,6 +2147,7 @@ export default function ScriptEditorScreen() {
                             d={p.d}
                             stroke={p.color}
                             strokeWidth={p.width}
+                            strokeOpacity={p.opacity ?? 1}
                             fill="none"
                             strokeLinecap="round"
                             strokeLinejoin="round"
@@ -2120,6 +2186,7 @@ export default function ScriptEditorScreen() {
                                 d={p.d}
                                 stroke={p.color}
                                 strokeWidth={p.width}
+                                strokeOpacity={p.opacity ?? 1}
                                 fill="none"
                                 strokeLinecap="round"
                                 strokeLinejoin="round"
@@ -2201,6 +2268,8 @@ export default function ScriptEditorScreen() {
                                                 pageBreaksResolveRef.current(message.data);
                                                 pageBreaksResolveRef.current = null;
                                             }
+                                        } else if (message.type === 'lineType') {
+                                            setCurrentLineType(message.data);
                                         }
                                     } catch {
                                         // Fallback for non-JSON messages
@@ -2265,6 +2334,7 @@ export default function ScriptEditorScreen() {
                                             d={p.d}
                                             stroke={p.color}
                                             strokeWidth={p.width}
+                                            strokeOpacity={p.opacity ?? 1}
                                             fill="none"
                                             strokeLinecap="round"
                                             strokeLinejoin="round"
@@ -2284,7 +2354,7 @@ export default function ScriptEditorScreen() {
                 pointerEvents="box-none"
                 style={[
                     styles.bottomBarWrapper,
-                    { bottom: keyboardOffset > 0 ? keyboardOffset + rp(8) : insets.bottom + rp(8) },
+                    { bottom: keyboardOffset > 0 ? keyboardOffset + rp(8) : insets.bottom + rp(20) },
                 ]}
             >
                 <View style={styles.bottomBarRowOuter} pointerEvents="box-none">
@@ -2298,14 +2368,16 @@ export default function ScriptEditorScreen() {
                                     outputRange: [0, Math.min(toolbarCapsuleMaxWidth, (mode === 'view' ? viewRowWidth : editRowWidth) || toolbarCapsuleMaxWidth)],
                                 }),
                                 marginRight: toolbarExpandAnim.interpolate({ inputRange: [0, 1], outputRange: [0, 10] }),
-                                opacity: toolbarExpandAnim,
                             },
                         ]}
                     >
-                        <View style={[styles.bottomBarClip, { borderColor: cardBorder }]}>
-                            <BlurView intensity={isDark ? 85 : 90} tint={isDark ? 'dark' : 'light'} style={StyleSheet.absoluteFill} />
-                            <View style={[StyleSheet.absoluteFill, { backgroundColor: popupOverlayTint }]} />
-                        </View>
+                        {/* Sin BlurView aquí (a diferencia de los desplegables, que sí lo
+                            llevan y se ven bien): este contenedor va dentro de un
+                            Animated.View cuyo ancho se anima al abrir/cerrar, y un
+                            BlurView anidado en una vista animada no siempre captura bien
+                            el fondo en vivo — se veía demasiado transparente. Un tinte
+                            plano y opaco es más fiable. */}
+                        <View style={[styles.bottomBarClip, { borderColor: cardBorder, backgroundColor: popupOverlayTint }]} />
 
                     {/* Fila: modo vista */}
                     <Animated.View
@@ -2396,11 +2468,16 @@ export default function ScriptEditorScreen() {
                     </Animated.View>
                     </Animated.View>
 
-                    <TouchableOpacity onPress={toggleToolbarExpanded} activeOpacity={0.85} style={styles.fabButton}>
-                        <View style={[styles.fabClip, { borderColor: cardBorder }]}>
-                            <BlurView intensity={isDark ? 85 : 90} tint={isDark ? 'dark' : 'light'} style={StyleSheet.absoluteFill} />
-                            <View style={[StyleSheet.absoluteFill, { backgroundColor: popupOverlayTint }]} />
-                        </View>
+                    {/* Sin BlurView: a este tamaño tan pequeño y con el radio máximo
+                        (círculo perfecto), el recorte del blur podía verse facetado
+                        ("hexagonal") en vez de circular — un tinte plano y opaco, como
+                        el de "Guardar"/el botón atrás del header, es más fiable y ya
+                        pega con el resto de círculos del header. */}
+                    <TouchableOpacity
+                        onPress={toggleToolbarExpanded}
+                        activeOpacity={0.85}
+                        style={[styles.fabButton, { borderColor: cardBorder, backgroundColor: popupOverlayTint }]}
+                    >
                         {toolbarExpanded ? <X size={22} color={onBg} /> : <Edit3 size={22} color={onBg} />}
                     </TouchableOpacity>
                 </View>
@@ -2415,21 +2492,21 @@ export default function ScriptEditorScreen() {
                             <View style={[StyleSheet.absoluteFill, { backgroundColor: popupOverlayTint }]} />
                             <TouchableOpacity
                                 onPress={() => { setIsBold(!isBold); formatText('bold'); setShowFormatMenu(false); }}
-                                style={[styles.dropdownItem, isBold && styles.dropdownItemActive]}
+                                style={[styles.dropdownItem, { borderBottomWidth: 1, borderBottomColor: cardBorder }, isBold && styles.dropdownItemActive]}
                             >
                                 <Bold size={18} color={isBold ? activeAccent : onBg} strokeWidth={3} />
                                 <Text style={[styles.dropdownItemText, { color: onBg }, isBold && { color: activeAccent, fontWeight: 'bold' }]}>Negrita</Text>
                             </TouchableOpacity>
                             <TouchableOpacity
                                 onPress={() => { setIsItalic(!isItalic); formatText('italic'); setShowFormatMenu(false); }}
-                                style={[styles.dropdownItem, isItalic && styles.dropdownItemActive]}
+                                style={[styles.dropdownItem, { borderBottomWidth: 1, borderBottomColor: cardBorder }, isItalic && styles.dropdownItemActive]}
                             >
                                 <Italic size={18} color={isItalic ? activeAccent : onBg} />
                                 <Text style={[styles.dropdownItemText, { color: onBg }, isItalic && { color: activeAccent, fontStyle: 'italic' }]}>Cursiva</Text>
                             </TouchableOpacity>
                             <TouchableOpacity
                                 onPress={() => { setIsUnderline(!isUnderline); formatText('underline'); setShowFormatMenu(false); }}
-                                style={[styles.dropdownItem, isUnderline && styles.dropdownItemActive]}
+                                style={[styles.dropdownItem, { borderBottomWidth: 1, borderBottomColor: cardBorder }, isUnderline && styles.dropdownItemActive]}
                             >
                                 <Underline size={18} color={isUnderline ? activeAccent : onBg} />
                                 <Text style={[styles.dropdownItemText, { color: onBg }, isUnderline && { color: activeAccent, textDecorationLine: 'underline' }]}>Subrayado</Text>
@@ -2452,14 +2529,14 @@ export default function ScriptEditorScreen() {
                             <View style={[StyleSheet.absoluteFill, { backgroundColor: popupOverlayTint }]} />
                             <TouchableOpacity
                                 onPress={() => { setTextAlign('left'); formatText('justifyLeft'); setShowAlignMenu(false); }}
-                                style={[styles.dropdownItem, textAlign === 'left' && styles.dropdownItemActive]}
+                                style={[styles.dropdownItem, { borderBottomWidth: 1, borderBottomColor: cardBorder }, textAlign === 'left' && styles.dropdownItemActive]}
                             >
                                 <AlignLeft size={18} color={textAlign === 'left' ? activeAccent : onBg} />
                                 <Text style={[styles.dropdownItemText, { color: onBg }, textAlign === 'left' && { color: activeAccent }]}>Izquierda</Text>
                             </TouchableOpacity>
                             <TouchableOpacity
                                 onPress={() => { setTextAlign('center'); formatText('justifyCenter'); setShowAlignMenu(false); }}
-                                style={[styles.dropdownItem, textAlign === 'center' && styles.dropdownItemActive]}
+                                style={[styles.dropdownItem, { borderBottomWidth: 1, borderBottomColor: cardBorder }, textAlign === 'center' && styles.dropdownItemActive]}
                             >
                                 <AlignCenter size={18} color={textAlign === 'center' ? activeAccent : onBg} />
                                 <Text style={[styles.dropdownItemText, { color: onBg }, textAlign === 'center' && { color: activeAccent }]}>Centrado</Text>
@@ -2481,15 +2558,38 @@ export default function ScriptEditorScreen() {
                             <BlurView intensity={isDark ? 85 : 90} tint={isDark ? 'dark' : 'light'} style={StyleSheet.absoluteFill} />
                             <View style={[StyleSheet.absoluteFill, { backgroundColor: popupOverlayTint }]} />
                             <ScrollView style={{ maxHeight: 240 }} showsVerticalScrollIndicator nestedScrollEnabled>
-                                {LINE_STYLES.map((preset) => (
-                                    <TouchableOpacity
-                                        key={preset.key}
-                                        onPress={() => applyLineStyle(preset)}
-                                        style={styles.dropdownItem}
-                                    >
-                                        <Text style={[styles.dropdownItemText, { color: onBg }, preset.preview]}>{preset.label}</Text>
-                                    </TouchableOpacity>
-                                ))}
+                                {LINE_STYLES.map((preset, index) => {
+                                    const isActive = preset.key === currentLineType;
+                                    return (
+                                        <TouchableOpacity
+                                            key={preset.key}
+                                            onPress={() => applyLineStyle(preset)}
+                                            style={[
+                                                styles.dropdownItem,
+                                                index < LINE_STYLES.length - 1 && { borderBottomWidth: 1, borderBottomColor: cardBorder },
+                                            ]}
+                                        >
+                                            <Text
+                                                style={[
+                                                    styles.dropdownItemText,
+                                                    styles.dropdownItemTextFlex,
+                                                    { color: isActive ? activeAccent : onBg },
+                                                    preset.preview,
+                                                    // preset.preview trae el textAlign REAL que tendrá en el
+                                                    // guion (centrado para título/personaje, izquierda para el
+                                                    // resto) — en un menú vertical de opciones todas deben ir
+                                                    // alineadas igual (a la izquierda), si no, dentro de este
+                                                    // Text ya con flex:1 (para dejar sitio al tick) quedaban
+                                                    // unos ítems centrados y otros no.
+                                                    styles.dropdownItemTextAlign,
+                                                ]}
+                                            >
+                                                {preset.label}
+                                            </Text>
+                                            {isActive && <Check size={16} color={activeAccent} />}
+                                        </TouchableOpacity>
+                                    );
+                                })}
                             </ScrollView>
                         </View>
                     </View>
@@ -2556,7 +2656,6 @@ export default function ScriptEditorScreen() {
                     onUndo={handleUndo}
                     onRedo={handleRedo}
                     onSave={handleSaveAnnotations}
-                    onExport={handleOpenExportSheet}
                     onClose={() => setShowViewAndMark(false)}
                 />
             )}
@@ -2709,18 +2808,14 @@ const styles = StyleSheet.create({
         width: 56,
         height: 56,
         borderRadius: 28,
+        borderWidth: 1,
+        // Un solo contorno redondeado en vez de dos anidados (uno en este botón
+        // y otro en una capa interna aparte) — dos bordes redondeados casi del
+        // mismo tamaño uno encima del otro podían dar una sensación de facetado
+        // ("hexagonal") en vez de un círculo limpio.
+        overflow: 'hidden',
         alignItems: 'center',
         justifyContent: 'center',
-    },
-    fabClip: {
-        position: 'absolute',
-        top: 0,
-        left: 0,
-        right: 0,
-        bottom: 0,
-        borderRadius: 28,
-        borderWidth: 1,
-        overflow: 'hidden',
     },
     bottomBarClip: {
         position: 'absolute',
@@ -2785,6 +2880,12 @@ const styles = StyleSheet.create({
         gap: 12,
         paddingVertical: rp(12),
         paddingHorizontal: rp(16),
+    },
+    dropdownItemTextFlex: {
+        flex: 1,
+    },
+    dropdownItemTextAlign: {
+        textAlign: 'left',
     },
     dropdownItemActive: {
         backgroundColor: 'rgba(124,106,247,0.14)',

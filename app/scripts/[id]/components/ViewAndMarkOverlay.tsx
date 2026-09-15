@@ -1,15 +1,30 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, Alert, Platform } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, Platform, ScrollView } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { WebView } from 'react-native-webview';
 import { BlurView } from 'expo-blur';
-import { ChevronLeft, Save, Undo, Redo, Pencil, Eraser, Hand, Share2 } from 'lucide-react-native';
+import { ChevronLeft, Save, Undo, Redo, Pencil, PenTool, Pen, Highlighter, Paintbrush, Ruler, Eraser, Hand, X } from 'lucide-react-native';
 import { useTheme } from '@/contexts/ThemeContext';
 import { rf, rp } from '@/utils/responsive';
+import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { COLORS, type PathData } from './drawingShared';
 
 type Tool = 'pen' | 'erase' | 'pan';
-const STROKE_WIDTHS = [2, 4, 7];
+// Cada pincel trae su propio ancho/opacidad (ver BRUSH_PARAMS en
+// buildMarkupHtml, editor.tsx) — sin control manual de grosor por ahora, cada
+// uno ya tiene un aspecto reconocible propio. "Regla" no es un pincel en sí:
+// convierte el trazo de 1 dedo en una línea recta (del punto inicial al
+// actual) en vez de a mano alzada.
+type BrushType = 'pencil' | 'fountain' | 'ballpoint' | 'marker' | 'watercolor' | 'ruler';
+
+const BRUSHES: { key: BrushType; label: string; Icon: typeof Pencil }[] = [
+    { key: 'pencil', label: 'Lápiz', Icon: Pencil },
+    { key: 'fountain', label: 'Pluma', Icon: PenTool },
+    { key: 'ballpoint', label: 'Bolígrafo', Icon: Pen },
+    { key: 'marker', label: 'Rotulador', Icon: Highlighter },
+    { key: 'watercolor', label: 'Acuarela', Icon: Paintbrush },
+    { key: 'ruler', label: 'Regla', Icon: Ruler },
+];
 
 interface ViewAndMarkOverlayProps {
     html: string;
@@ -20,7 +35,6 @@ interface ViewAndMarkOverlayProps {
     onUndo: () => void;
     onRedo: () => void;
     onSave: () => void | Promise<void>;
-    onExport: () => void;
     onClose: () => void;
 }
 
@@ -28,7 +42,7 @@ interface ViewAndMarkOverlayProps {
 // de este WebView (no en una capa nativa aparte), así el trazo nunca se
 // desalinea del texto a ningún nivel de zoom — ver el <script> táctil
 // incrustado por buildMarkupHtml en editor.tsx. Este componente solo
-// orquesta la barra de herramientas (herramienta activa, color, grosor) y
+// orquesta la barra de herramientas (herramienta activa, pincel, color) y
 // reenvía los mensajes del WebView hacia arriba.
 export default function ViewAndMarkOverlay({
     html,
@@ -39,7 +53,6 @@ export default function ViewAndMarkOverlay({
     onUndo,
     onRedo,
     onSave,
-    onExport,
     onClose,
 }: ViewAndMarkOverlayProps) {
     const { colors, isDark } = useTheme();
@@ -50,13 +63,13 @@ export default function ViewAndMarkOverlay({
     // lectura dibujaría una línea sin querer y parecería que no hay forma de
     // volver a solo navegar.
     const [activeTool, setActiveTool] = useState<Tool>('pan');
+    const [brushType, setBrushType] = useState<BrushType>('pencil');
     const [strokeColor, setStrokeColor] = useState('#FF0000');
-    const [strokeWidth, setStrokeWidth] = useState(STROKE_WIDTHS[0]);
     const [showColorMenu, setShowColorMenu] = useState(false);
-    const [showWidthMenu, setShowWidthMenu] = useState(false);
     // Cuántos trazos nuevos/borrados hay desde el último guardado: si es > 0
     // al salir, se avisa antes de perder las marcas (decidido con el usuario).
     const dirtyCountRef = useRef(0);
+    const [showUnsavedDialog, setShowUnsavedDialog] = useState(false);
 
     const onBg = isDark ? '#ffffff' : '#2a2447';
     const cardBorder = isDark ? 'rgba(167,139,250,0.25)' : 'rgba(124,106,247,0.15)';
@@ -80,17 +93,22 @@ export default function ViewAndMarkOverlay({
         ? { backgroundColor: 'rgba(124,106,247,0.80)', borderWidth: 1.5, borderColor: 'rgba(255,255,255,0.5)' }
         : { backgroundColor: colors.primary };
 
+    // La cápsula de pinceles solo tiene sentido con la herramienta "lápiz"
+    // activa (borrar/mover no dibujan) — se despliega automáticamente al
+    // elegirla, sin un estado aparte que pueda desincronizarse.
+    const showBrushCapsule = activeTool === 'pen';
+
     useEffect(() => {
         webViewRef.current?.injectJavaScript(`window.__activeTool = ${JSON.stringify(activeTool)}; true;`);
     }, [activeTool]);
 
     useEffect(() => {
-        webViewRef.current?.injectJavaScript(`window.__strokeColor = ${JSON.stringify(strokeColor)}; true;`);
-    }, [strokeColor]);
+        webViewRef.current?.injectJavaScript(`window.__brushType = ${JSON.stringify(brushType)}; true;`);
+    }, [brushType]);
 
     useEffect(() => {
-        webViewRef.current?.injectJavaScript(`window.__strokeWidth = ${strokeWidth}; true;`);
-    }, [strokeWidth]);
+        webViewRef.current?.injectJavaScript(`window.__strokeColor = ${JSON.stringify(strokeColor)}; true;`);
+    }, [strokeColor]);
 
     // Deshacer/rehacer cambian "paths" del lado de React Native; el WebView no
     // se entera solo (los trazos nuevos/borrados sí se reflejan al instante
@@ -112,7 +130,7 @@ export default function ViewAndMarkOverlay({
             const message = JSON.parse(event.nativeEvent.data);
             if (message.type === 'newPath') {
                 dirtyCountRef.current += 1;
-                onNewPath({ id: message.id, d: message.d, color: message.color, width: message.width });
+                onNewPath({ id: message.id, d: message.d, color: message.color, width: message.width, opacity: message.opacity });
             } else if (message.type === 'erasePath') {
                 dirtyCountRef.current += 1;
                 onErasePath(message.id);
@@ -129,22 +147,16 @@ export default function ViewAndMarkOverlay({
 
     function handleClosePress() {
         if (dirtyCountRef.current > 0) {
-            Alert.alert(
-                'Cambios sin guardar',
-                'Tienes marcas nuevas sin guardar. Si sales ahora, se perderán.',
-                [
-                    { text: 'Cancelar', style: 'cancel' },
-                    { text: 'Salir sin guardar', style: 'destructive', onPress: onClose },
-                ]
-            );
+            setShowUnsavedDialog(true);
         } else {
             onClose();
         }
     }
 
-    function closePopups() {
-        setShowColorMenu(false);
-        setShowWidthMenu(false);
+    async function handleSaveAndClose() {
+        setShowUnsavedDialog(false);
+        await handleSavePress();
+        onClose();
     }
 
     return (
@@ -154,7 +166,7 @@ export default function ViewAndMarkOverlay({
                     <TouchableOpacity onPress={handleClosePress} style={[styles.headerButton, glassHeaderBtn]}>
                         <ChevronLeft size={22} color={onBg} />
                     </TouchableOpacity>
-                    <Text style={[styles.headerTitle, { color: onBg }]}>Ver y marcar</Text>
+                    <Text style={[styles.headerTitle, { color: onBg }]}>Modo dibujo</Text>
                     <TouchableOpacity
                         onPress={handleSavePress}
                         disabled={saving}
@@ -174,8 +186,8 @@ export default function ViewAndMarkOverlay({
                         onMessage={handleMessage}
                         injectedJavaScriptBeforeContentLoaded={`
                             window.__activeTool = ${JSON.stringify(activeTool)};
+                            window.__brushType = ${JSON.stringify(brushType)};
                             window.__strokeColor = ${JSON.stringify(strokeColor)};
-                            window.__strokeWidth = ${strokeWidth};
                             true;
                         `}
                         scalesPageToFit={true}
@@ -192,53 +204,73 @@ export default function ViewAndMarkOverlay({
                 </View>
 
                 <View style={styles.toolbarWrapper}>
+                    {showBrushCapsule && (
+                        <View style={styles.brushCapsule}>
+                            <View style={[styles.brushClip, { borderColor: cardBorder }]}>
+                                <BlurView intensity={isDark ? 85 : 90} tint={isDark ? 'dark' : 'light'} style={StyleSheet.absoluteFill} />
+                                <View style={[StyleSheet.absoluteFill, { backgroundColor: popupOverlayTint }]} />
+                            </View>
+                            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.brushScrollContent}>
+                                {BRUSHES.map(({ key, Icon }) => {
+                                    const isActive = brushType === key;
+                                    return (
+                                        <TouchableOpacity
+                                            key={key}
+                                            onPress={() => setBrushType(key)}
+                                            style={[
+                                                styles.toolbarButton,
+                                                { backgroundColor: isActive ? chipActiveBg : chipInactiveBg },
+                                                isActive && { borderWidth: 1, borderColor: colors.primary },
+                                            ]}
+                                        >
+                                            <Icon size={18} color={isActive ? activeAccent : onBg} />
+                                        </TouchableOpacity>
+                                    );
+                                })}
+                                <TouchableOpacity
+                                    onPress={() => setShowColorMenu(!showColorMenu)}
+                                    style={[styles.toolbarButton, { backgroundColor: chipInactiveBg }]}
+                                >
+                                    <View style={[styles.colorDot, { backgroundColor: strokeColor }]} />
+                                </TouchableOpacity>
+                            </ScrollView>
+                        </View>
+                    )}
+
                     <View style={styles.toolbarCapsule}>
                         <View style={[styles.toolbarClip, { borderColor: cardBorder }]}>
                             <BlurView intensity={isDark ? 85 : 90} tint={isDark ? 'dark' : 'light'} style={StyleSheet.absoluteFill} />
                             <View style={[StyleSheet.absoluteFill, { backgroundColor: popupOverlayTint }]} />
                         </View>
                         <View style={styles.toolbarRow}>
-                            <TouchableOpacity onPress={() => { closePopups(); onUndo(); }} style={[styles.toolbarButton, { backgroundColor: chipInactiveBg }]}>
+                            <TouchableOpacity onPress={() => { setShowColorMenu(false); onUndo(); }} style={[styles.toolbarButton, { backgroundColor: chipInactiveBg }]}>
                                 <Undo size={18} color={onBg} />
                             </TouchableOpacity>
-                            <TouchableOpacity onPress={() => { closePopups(); onRedo(); }} style={[styles.toolbarButton, { backgroundColor: chipInactiveBg }]}>
+                            <TouchableOpacity onPress={() => { setShowColorMenu(false); onRedo(); }} style={[styles.toolbarButton, { backgroundColor: chipInactiveBg }]}>
                                 <Redo size={18} color={onBg} />
                             </TouchableOpacity>
 
                             <TouchableOpacity
-                                onPress={() => { closePopups(); setActiveTool('pen'); }}
+                                onPress={() => { setShowColorMenu(false); setActiveTool('pen'); }}
                                 style={[styles.toolbarButton, { backgroundColor: activeTool === 'pen' ? chipActiveBg : chipInactiveBg }, activeTool === 'pen' && { borderWidth: 1, borderColor: colors.primary }]}
                             >
                                 <Pencil size={18} color={activeTool === 'pen' ? activeAccent : onBg} />
                             </TouchableOpacity>
                             <TouchableOpacity
-                                onPress={() => { closePopups(); setActiveTool('erase'); }}
+                                onPress={() => { setShowColorMenu(false); setActiveTool('erase'); }}
                                 style={[styles.toolbarButton, { backgroundColor: activeTool === 'erase' ? chipActiveBg : chipInactiveBg }, activeTool === 'erase' && { borderWidth: 1, borderColor: colors.primary }]}
                             >
                                 <Eraser size={18} color={activeTool === 'erase' ? activeAccent : onBg} />
                             </TouchableOpacity>
                             <TouchableOpacity
-                                onPress={() => { closePopups(); setActiveTool('pan'); }}
+                                onPress={() => { setShowColorMenu(false); setActiveTool('pan'); }}
                                 style={[styles.toolbarButton, { backgroundColor: activeTool === 'pan' ? chipActiveBg : chipInactiveBg }, activeTool === 'pan' && { borderWidth: 1, borderColor: colors.primary }]}
                             >
                                 <Hand size={18} color={activeTool === 'pan' ? activeAccent : onBg} />
                             </TouchableOpacity>
 
-                            <TouchableOpacity
-                                onPress={() => { setShowWidthMenu(false); setShowColorMenu(!showColorMenu); }}
-                                style={[styles.toolbarButton, { backgroundColor: chipInactiveBg }]}
-                            >
-                                <View style={[styles.colorDot, { backgroundColor: strokeColor }]} />
-                            </TouchableOpacity>
-                            <TouchableOpacity
-                                onPress={() => { setShowColorMenu(false); setShowWidthMenu(!showWidthMenu); }}
-                                style={[styles.toolbarButton, { backgroundColor: chipInactiveBg }]}
-                            >
-                                <View style={[styles.widthDot, { width: strokeWidth + 4, height: strokeWidth + 4, borderRadius: (strokeWidth + 4) / 2, backgroundColor: onBg }]} />
-                            </TouchableOpacity>
-
-                            <TouchableOpacity onPress={() => { closePopups(); onExport(); }} style={[styles.toolbarButton, { backgroundColor: chipInactiveBg }]}>
-                                <Share2 size={18} color={onBg} />
+                            <TouchableOpacity onPress={() => { setShowColorMenu(false); handleClosePress(); }} style={[styles.toolbarButton, { backgroundColor: chipInactiveBg }]}>
+                                <X size={18} color={onBg} />
                             </TouchableOpacity>
                         </View>
                     </View>
@@ -264,28 +296,21 @@ export default function ViewAndMarkOverlay({
                             </View>
                         </View>
                     )}
-
-                    {showWidthMenu && (
-                        <View style={styles.popupShadow}>
-                            <View style={[styles.popupClip, { borderColor: cardBorder }]}>
-                                <BlurView intensity={isDark ? 85 : 90} tint={isDark ? 'dark' : 'light'} style={StyleSheet.absoluteFill} />
-                                <View style={[StyleSheet.absoluteFill, { backgroundColor: popupOverlayTint }]} />
-                                <View style={styles.widthRow}>
-                                    {STROKE_WIDTHS.map((w) => (
-                                        <TouchableOpacity
-                                            key={w}
-                                            onPress={() => { setStrokeWidth(w); setShowWidthMenu(false); }}
-                                            style={[styles.widthOption, strokeWidth === w && { backgroundColor: chipActiveBg }]}
-                                        >
-                                            <View style={{ width: w + 6, height: w + 6, borderRadius: (w + 6) / 2, backgroundColor: onBg }} />
-                                        </TouchableOpacity>
-                                    ))}
-                                </View>
-                            </View>
-                        </View>
-                    )}
                 </View>
             </SafeAreaView>
+
+            <ConfirmDialog
+                visible={showUnsavedDialog}
+                title="Cambios sin guardar"
+                message="Tienes marcas nuevas sin guardar. Si sales ahora, se perderán."
+                extraButtonText="Guardar"
+                onExtra={handleSaveAndClose}
+                confirmText="Salir sin guardar"
+                destructive
+                onConfirm={() => { setShowUnsavedDialog(false); onClose(); }}
+                cancelText="Cancelar"
+                onCancel={() => setShowUnsavedDialog(false)}
+            />
         </View>
     );
 }
@@ -365,6 +390,32 @@ const styles = StyleSheet.create({
         justifyContent: 'space-evenly',
         paddingHorizontal: 10,
     },
+    // Cápsula de pinceles: flota justo encima de la principal (solo con la
+    // herramienta lápiz activa), con scroll horizontal porque 7 opciones
+    // (6 pinceles + color) no caben cómodas en una fila fija como el resto.
+    brushCapsule: {
+        height: 56,
+        borderRadius: 26,
+        position: 'relative',
+        justifyContent: 'center',
+        marginBottom: 8,
+    },
+    brushClip: {
+        position: 'absolute',
+        top: 0,
+        left: 0,
+        right: 0,
+        bottom: 0,
+        borderRadius: 26,
+        borderWidth: 1,
+        overflow: 'hidden',
+    },
+    brushScrollContent: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 10,
+        paddingHorizontal: 10,
+    },
     toolbarButton: {
         width: 40,
         height: 40,
@@ -379,12 +430,13 @@ const styles = StyleSheet.create({
         borderWidth: 1,
         borderColor: 'rgba(120,120,120,0.3)',
     },
-    widthDot: {},
     popupShadow: {
         position: 'absolute',
         left: 0,
         right: 0,
-        bottom: 72,
+        // Encima de las DOS cápsulas apiladas (principal 60 + hueco 8 + pinceles
+        // 56 + hueco 8), ya que el botón de color vive en la de pinceles.
+        bottom: 132,
         borderRadius: 16,
         shadowColor: '#000',
         shadowOffset: { width: 0, height: -4 },
@@ -414,17 +466,5 @@ const styles = StyleSheet.create({
     colorButtonActive: {
         borderWidth: 3,
         transform: [{ scale: 1.1 }],
-    },
-    widthRow: {
-        flexDirection: 'row',
-        justifyContent: 'space-evenly',
-        alignItems: 'center',
-    },
-    widthOption: {
-        width: 48,
-        height: 48,
-        borderRadius: 24,
-        alignItems: 'center',
-        justifyContent: 'center',
     },
 });
