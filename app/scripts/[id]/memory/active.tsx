@@ -6,10 +6,9 @@ import {
   TouchableOpacity,
   ScrollView,
   ActivityIndicator,
-  Alert,
-  Platform,
+  ImageBackground,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { useTheme } from '@/contexts/ThemeContext';
 import { useAuth } from '@/contexts/AuthContext';
@@ -28,6 +27,8 @@ import {
   Check,
   Repeat,
 } from 'lucide-react-native';
+import { LinearGradient } from 'expo-linear-gradient';
+import { ConfirmDialog } from '@/components/ConfirmDialog';
 import * as Speech from 'expo-speech';
 import { FixedFooter } from '@/components/FixedFooter';
 import { getSettings } from '@/utils/appSettings';
@@ -70,8 +71,28 @@ function toFirstLetterHint(text: string): string {
 export default function MemoryModeScreen() {
   const router = useRouter();
   const { id } = useLocalSearchParams();
-  const { colors } = useTheme();
+  const { colors, isDark } = useTheme();
   const { user } = useAuth();
+  const insets = useSafeAreaInsets();
+  const bg = () => (isDark ? require('@/assets/images/ui-dark-bg.png') : require('@/assets/images/ui-light-bg.png'));
+  // Misma paleta "sobre imagen de fondo" que el resto de pantallas rediseñadas.
+  const fg = isDark ? '#FFFFFF' : '#2A1B47';
+  const fgSecondary = isDark ? 'rgba(255,255,255,0.6)' : '#3d3660';
+  const glassBg = isDark ? 'rgba(124,106,247,0.14)' : 'rgba(230,230,236,0.6)';
+  const glassBorder = isDark ? 'rgba(255,255,255,0.2)' : 'rgba(42,27,71,0.18)';
+  // colors.primary en modo oscuro es un morado apagado, poco visible sobre un
+  // relleno ya tintado de morado — en modo oscuro se usa blanco puro.
+  const activeAccent = isDark ? '#FFFFFF' : colors.primary;
+  // Mismo tratamiento que el botón "Guardar" del Editor: en modo oscuro, relleno
+  // morado translúcido con borde blanco en vez de un morado apagado sólido.
+  const primaryButtonBg = isDark
+    ? { backgroundColor: 'rgba(124,106,247,0.80)', borderWidth: 1.5, borderColor: 'rgba(255,255,255,0.5)' }
+    : { backgroundColor: colors.primary };
+  // Mismo degradado de tarjeta que Modo Estudio: sutil arriba, se intensifica
+  // hacia abajo, siempre con el color del propio personaje.
+  const dialogueCardGradient = (charColor: string): [string, string] => (
+    isDark ? [`${charColor}1A`, `${charColor}4D`] : [`${charColor}12`, `${charColor}30`]
+  );
   useEffect(() => {
     if (user && id) trackEvent(user.id, 'game_started', 'memory', { script_id: id, game_type: 'active_memorization' });
   }, [user, id]);
@@ -79,6 +100,9 @@ export default function MemoryModeScreen() {
 
   // Data State
   const [loading, setLoading] = useState(true);
+  // Alert propio (ConfirmDialog) en vez del Alert.alert nativo del sistema,
+  // que no respeta el estilo de cristal de la app.
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [scriptTitle, setScriptTitle] = useState('');
   const [dialogueLines, setDialogueLines] = useState<DialogueLine[]>([]);
   const [userCharacterName, setUserCharacterName] = useState<string>('');
@@ -131,7 +155,7 @@ export default function MemoryModeScreen() {
         setDialogueLines(lines);
       } catch (error: any) {
         console.error('Error loading memory mode:', error);
-        Alert.alert('Error', 'No se pudo cargar el guion para el modo memoria.');
+        setLoadError('No se pudo cargar el guion para el modo memoria.');
       } finally {
         setLoading(false);
       }
@@ -274,58 +298,79 @@ export default function MemoryModeScreen() {
 
   if (loading) {
     return (
-      <View style={[styles.container, styles.center, { backgroundColor: colors.background }]}>
-        <ActivityIndicator size="large" color={colors.primary} />
-      </View>
+      <ImageBackground source={bg()} resizeMode="cover" style={styles.container}>
+        <View style={[styles.container, styles.center]}>
+          <ActivityIndicator size="large" color={colors.primary} />
+        </View>
+      </ImageBackground>
+    );
+  }
+
+  if (loadError) {
+    return (
+      <ImageBackground source={bg()} resizeMode="cover" style={styles.container}>
+        <View style={[styles.container, styles.center]} />
+        <ConfirmDialog
+          visible
+          title="Error"
+          message={loadError}
+          singleButton
+          confirmText="Volver"
+          onConfirm={() => router.back()}
+          onCancel={() => router.back()}
+        />
+      </ImageBackground>
     );
   }
 
   if (!gameStarted) {
     return (
-      <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
-        <View style={[styles.header, { borderBottomColor: colors.border, backgroundColor: colors.surface }]}>
-          <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
-            <ArrowLeft size={24} color={colors.text} />
-          </TouchableOpacity>
-          <Text style={[styles.headerTitle, { color: colors.text }]}>Memorización Activa</Text>
-          <View style={{ width: 40 }} />
-        </View>
-        <View style={[styles.content, styles.center]}>
-          <Text style={[styles.instructions, { color: colors.text }]}>
-            Practica tu guion revelando y ocultando tus líneas.
-            {' \n\n'}
-            Con un toque verás las primeras letras de cada palabra. Con dos toques se mostrará el texto completo. Con un tercer toque se volverá a ocultar.
-            {' \n\n'}
-            La réplica se reproducirá automáticamente.
-            {' \n\n'}
-            Usa los botones de navegación para moverte por el guion.
-          </Text>
-
-          <TouchableOpacity
-            style={styles.checkboxContainer}
-            onPress={() => setDontShowAgain(!dontShowAgain)}
-          >
-            <View style={[styles.checkbox, { borderColor: colors.border }]}>
-              {dontShowAgain && <Check size={16} color={colors.primary} />}
-            </View>
-            <Text style={[styles.checkboxLabel, { color: colors.textSecondary }]}>
-              No volver a mostrar este mensaje
+      <ImageBackground source={bg()} resizeMode="cover" style={styles.container}>
+        <SafeAreaView style={[styles.container, { backgroundColor: 'transparent' }]}>
+          <View style={styles.header}>
+            <TouchableOpacity onPress={() => router.back()} style={[styles.backButton, { backgroundColor: glassBg, borderColor: glassBorder }]}>
+              <ArrowLeft size={24} color={fg} />
+            </TouchableOpacity>
+            <Text style={[styles.headerTitle, { color: fg }]}>Memorización Activa</Text>
+            <View style={{ width: 40 }} />
+          </View>
+          <View style={[styles.content, styles.center]}>
+            <Text style={[styles.instructions, { color: fg }]}>
+              Practica tu guion revelando y ocultando tus líneas.
+              {' \n\n'}
+              Con un toque verás las primeras letras de cada palabra. Con dos toques se mostrará el texto completo. Con un tercer toque se volverá a ocultar.
+              {' \n\n'}
+              La réplica se reproducirá automáticamente.
+              {' \n\n'}
+              Usa los botones de navegación para moverte por el guion.
             </Text>
-          </TouchableOpacity>
 
-          <TouchableOpacity
-            style={[styles.startButton, { backgroundColor: colors.primary }]}
-            onPress={async () => {
-              if (dontShowAgain) {
-                await setIntroPreference('active', true);
-              }
-              setGameStarted(true);
-            }}
-          >
-            <Text style={styles.startButtonText}>Comenzar</Text>
-          </TouchableOpacity>
-        </View>
-      </SafeAreaView>
+            <TouchableOpacity
+              style={styles.checkboxContainer}
+              onPress={() => setDontShowAgain(!dontShowAgain)}
+            >
+              <View style={[styles.checkbox, { borderColor: glassBorder }]}>
+                {dontShowAgain && <Check size={16} color={activeAccent} />}
+              </View>
+              <Text style={[styles.checkboxLabel, { color: fgSecondary }]}>
+                No volver a mostrar este mensaje
+              </Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[styles.startButton, primaryButtonBg]}
+              onPress={async () => {
+                if (dontShowAgain) {
+                  await setIntroPreference('active', true);
+                }
+                setGameStarted(true);
+              }}
+            >
+              <Text style={styles.startButtonText}>Comenzar</Text>
+            </TouchableOpacity>
+          </View>
+        </SafeAreaView>
+      </ImageBackground>
     );
   }
 
@@ -345,21 +390,23 @@ export default function MemoryModeScreen() {
   };
 
   return (
-    <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
-      {/* Header */}
-      <View style={[styles.header, { borderBottomColor: colors.border, backgroundColor: colors.surface }]}>
-        <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
-          <ArrowLeft size={24} color={colors.text} />
-        </TouchableOpacity>
-        <View style={styles.headerInfo}>
-          <Text style={[styles.headerTitle, { color: colors.text }]} numberOfLines={1}>
-            Memorización activa
-          </Text>
-          <Text style={[styles.headerSubtitle, { color: colors.textSecondary }]} numberOfLines={1}>
-            Personaje: {userCharacterName}
-          </Text>
+    <ImageBackground source={bg()} resizeMode="cover" style={styles.container}>
+      <SafeAreaView style={[styles.container, { backgroundColor: 'transparent' }]}>
+        {/* Header */}
+        <View style={styles.header}>
+          <TouchableOpacity onPress={() => router.back()} style={[styles.backButton, { backgroundColor: glassBg, borderColor: glassBorder }]}>
+            <ArrowLeft size={24} color={fg} />
+          </TouchableOpacity>
+          <View style={styles.headerInfo}>
+            <Text style={[styles.headerTitle, { color: fg }]} numberOfLines={1}>
+              Memorización activa
+            </Text>
+            <Text style={[styles.headerSubtitle, { color: fgSecondary }]} numberOfLines={1}>
+              Personaje: {userCharacterName}
+            </Text>
+          </View>
+          <View style={{ width: 40 }} />
         </View>
-      </View>
 
       <ScrollView
         ref={scrollViewRef}
@@ -371,30 +418,37 @@ export default function MemoryModeScreen() {
 
             {/* Zone A: Partner's Line (or Context) */}
             {!isUserTurn ? (
-              <View style={[styles.card, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-                <Text style={[styles.characterName, { color: currentLine.color || colors.primary }]}>
-                  {currentLine.characterName}
-                </Text>
-                <Text style={[styles.dialogueText, { color: colors.text }]}>
-                  {stripStageDirections(currentLine.text)}
-                </Text>
-                <TouchableOpacity
-                  style={[styles.ttsButton, { backgroundColor: colors.input }]}
-                  onPress={playPartnerLine}
-                  disabled={isPlaying}
-                >
-                  <Volume2 size={20} color={isPlaying ? colors.primary : colors.text} />
-                  <Text style={[styles.ttsButtonText, { color: colors.text }]}>
-                    {isPlaying ? 'Reproduciendo...' : 'Escuchar réplica'}
+              <LinearGradient
+                colors={dialogueCardGradient(currentLine.color || colors.primary)}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 0, y: 1 }}
+                style={[styles.card, { borderColor: currentLine.color || colors.primary, borderWidth: 2, padding: 0, overflow: 'hidden' }]}
+              >
+                <View style={styles.cardInner}>
+                  <Text style={[styles.characterName, { color: currentLine.color || activeAccent }]}>
+                    {currentLine.characterName}
                   </Text>
-                </TouchableOpacity>
-              </View>
+                  <Text style={[styles.dialogueText, { color: fg }]}>
+                    {stripStageDirections(currentLine.text)}
+                  </Text>
+                  <TouchableOpacity
+                    style={[styles.ttsButton, styles.pillShadow, { backgroundColor: glassBg, borderColor: glassBorder }]}
+                    onPress={playPartnerLine}
+                    disabled={isPlaying}
+                  >
+                    <Volume2 size={20} color={isPlaying ? activeAccent : fg} />
+                    <Text style={[styles.ttsButtonText, { color: fg }]}>
+                      {isPlaying ? 'Reproduciendo...' : 'Escuchar réplica'}
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+              </LinearGradient>
             ) : (
               // If it's user turn, show previous line as context if available
               currentIndex > 0 && (
-                <View style={[styles.contextCard, { borderColor: colors.border }]}>
-                  <Text style={[styles.contextLabel, { color: colors.textSecondary }]}>Anterior:</Text>
-                  <Text style={[styles.contextText, { color: colors.textSecondary }]}>
+                <View style={[styles.contextCard, { borderColor: glassBorder }]}>
+                  <Text style={[styles.contextLabel, { color: fgSecondary }]}>Anterior:</Text>
+                  <Text style={[styles.contextText, { color: fgSecondary }]}>
                     <Text style={{ fontWeight: 'bold' }}>{dialogueLines[currentIndex - 1].characterName}: </Text>
                     {stripStageDirections(dialogueLines[currentIndex - 1].text)}
                   </Text>
@@ -410,8 +464,8 @@ export default function MemoryModeScreen() {
                 style={[
                   styles.userCard,
                   {
-                    backgroundColor: (revealState[currentIndex] ?? 0) > 0 ? colors.surface : '#1F2937', // Darker for hidden state
-                    borderColor: (revealState[currentIndex] ?? 0) === 2 ? colors.primary : colors.border,
+                    backgroundColor: (revealState[currentIndex] ?? 0) > 0 ? glassBg : 'rgba(10,8,16,0.75)', // Darker for hidden state
+                    borderColor: (revealState[currentIndex] ?? 0) === 2 ? colors.primary : glassBorder,
                     borderWidth: (revealState[currentIndex] ?? 0) > 0 ? 2 : 1
                   }
                 ]}
@@ -422,8 +476,8 @@ export default function MemoryModeScreen() {
 
                 {(revealState[currentIndex] ?? 0) === 0 && (
                   <View style={styles.hiddenContent}>
-                    <EyeOff size={32} color={colors.textSecondary} />
-                    <Text style={[styles.hiddenText, { color: colors.textSecondary }]}>
+                    <EyeOff size={32} color={fgSecondary} />
+                    <Text style={[styles.hiddenText, { color: fgSecondary }]}>
                       Toca para ver una pista
                     </Text>
                   </View>
@@ -431,17 +485,17 @@ export default function MemoryModeScreen() {
 
                 {(revealState[currentIndex] ?? 0) === 1 && (
                   <View style={styles.hiddenContent}>
-                    <Text style={[styles.dialogueText, { color: colors.text, opacity: 0.7 }]}>
+                    <Text style={[styles.dialogueText, { color: fg, opacity: 0.7 }]}>
                       {toFirstLetterHint(stripStageDirections(currentLine.text))}
                     </Text>
-                    <Text style={[styles.hiddenText, { color: colors.textSecondary, marginTop: 12 }]}>
+                    <Text style={[styles.hiddenText, { color: fgSecondary, marginTop: 12 }]}>
                       Toca para revelar
                     </Text>
                   </View>
                 )}
 
                 {(revealState[currentIndex] ?? 0) === 2 && (
-                  <Text style={[styles.dialogueText, { color: colors.text }]}>
+                  <Text style={[styles.dialogueText, { color: fg }]}>
                     {stripStageDirections(currentLine.text)}
                   </Text>
                 )}
@@ -457,7 +511,7 @@ export default function MemoryModeScreen() {
             {/* If it's partner's turn, we can also show a "Next is You" hint */}
             {!isUserTurn && currentIndex < dialogueLines.length - 1 && dialogueLines[currentIndex + 1].isUserCharacter && (
               <View style={styles.nextHint}>
-                <Text style={[styles.nextHintText, { color: colors.textSecondary }]}>
+                <Text style={[styles.nextHintText, { color: fgSecondary }]}>
                   Siguiente: TÚ
                 </Text>
               </View>
@@ -466,60 +520,60 @@ export default function MemoryModeScreen() {
           </View>
         ) : (
           <View style={styles.emptyState}>
-            <Text style={{ color: colors.textSecondary }}>No hay líneas en este guion.</Text>
+            <Text style={{ color: fgSecondary }}>No hay líneas en este guion.</Text>
           </View>
         )}
       </ScrollView>
 
-      {/* Zone C: Controls */}
-      <View style={[styles.controls, { backgroundColor: colors.surface, borderTopColor: colors.border }]}>
-
-        <View style={styles.progressRow}>
-          <Text style={[styles.progressText, { color: colors.textSecondary }]}>{progressText}</Text>
+      {/* Zone C: Controles flotantes — cápsula/círculos con sombra en vez de
+          una barra de borde a borde con línea divisoria (mismo lenguaje que
+          la barra flotante del Editor). */}
+      <View style={[styles.floatingControls, { bottom: insets.bottom + rp(16) }]} pointerEvents="box-none">
+        <View style={[styles.progressPill, { backgroundColor: glassBg, borderColor: glassBorder }]}>
+          <Text style={[styles.progressText, { color: fgSecondary }]}>{progressText}</Text>
         </View>
 
         {currentIndex === dialogueLines.length - 1 ? (
           // Last Line Controls
-          <View style={styles.buttonsRow}>
+          <View style={styles.lastRow}>
             <TouchableOpacity
-              style={[styles.navButton, { backgroundColor: colors.input }]}
+              style={[styles.pillButton, styles.pillShadow, { backgroundColor: glassBg, borderColor: glassBorder, borderWidth: 1 }]}
               onPress={handleRestart}
             >
-              <Repeat size={24} color={colors.text} />
-              <Text style={[styles.navButtonText, { color: colors.text }]}>Reiniciar</Text>
+              <Repeat size={20} color={fg} />
+              <Text style={[styles.navButtonText, { color: fg }]}>Reiniciar</Text>
             </TouchableOpacity>
 
             <TouchableOpacity
-              style={[styles.navButton, { backgroundColor: colors.primary }]}
+              style={[styles.pillButton, styles.pillShadow, primaryButtonBg]}
               onPress={handleFinish}
             >
-              <Check size={24} color="#FFFFFF" />
+              <Check size={20} color="#FFFFFF" />
               <Text style={[styles.navButtonText, { color: "#FFFFFF" }]}>Finalizar</Text>
             </TouchableOpacity>
           </View>
         ) : (
-          // Normal Navigation Controls
-          <View style={styles.buttonsRow}>
+          // Normal Navigation Controls — círculos flotantes a cada lado
+          <View style={styles.navCircleRow}>
             <TouchableOpacity
-              style={[styles.navButton, { backgroundColor: colors.input }]}
+              style={[styles.navCircle, styles.pillShadow, { backgroundColor: glassBg, borderColor: glassBorder, opacity: currentIndex === 0 ? 0.5 : 1 }]}
               onPress={goToPrev}
               disabled={currentIndex === 0}
             >
-              <ChevronLeft size={24} color={currentIndex === 0 ? colors.textSecondary : colors.text} />
-              <Text style={[styles.navButtonText, { color: currentIndex === 0 ? colors.textSecondary : colors.text }]}>Anterior</Text>
+              <ChevronLeft size={26} color={fg} />
             </TouchableOpacity>
 
             <TouchableOpacity
-              style={[styles.navButton, { backgroundColor: colors.input }]}
+              style={[styles.navCircle, styles.pillShadow, { backgroundColor: glassBg, borderColor: glassBorder }]}
               onPress={goToNext}
             >
-              <Text style={[styles.navButtonText, { color: colors.text }]}>Siguiente</Text>
-              <ChevronRight size={24} color={colors.text} />
+              <ChevronRight size={26} color={fg} />
             </TouchableOpacity>
           </View>
         )}
       </View>
-    </SafeAreaView>
+      </SafeAreaView>
+    </ImageBackground>
   );
 }
 
@@ -534,13 +588,17 @@ const styles = StyleSheet.create({
   header: {
     flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'space-between',
     paddingHorizontal: rp(16),
     paddingVertical: rp(12),
-    borderBottomWidth: 1,
   },
   backButton: {
-    padding: rp(8),
-    marginRight: 8,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
   },
   instructions: {
     fontSize: rf(18),
@@ -592,9 +650,11 @@ const styles = StyleSheet.create({
   },
   contentContainer: {
     padding: rp(20),
-    paddingBottom: rp(40),
-    minHeight: '100%',
-    justifyContent: 'center', // Center content vertically
+    paddingTop: rp(16),
+    // Hueco de sobra para que el módulo flotante de controles (Zona C) nunca
+    // tape la última línea, y espacio para poder hacer scroll con textos
+    // largos en vez de forzar el contenido a centrarse verticalmente.
+    paddingBottom: rp(150),
   },
   mainArea: {
     gap: 24,
@@ -609,6 +669,14 @@ const styles = StyleSheet.create({
     shadowRadius: 8,
     elevation: 3,
     alignItems: 'center', // Center content
+  },
+  // La tarjeta pasa a ser un LinearGradient (padding:0 para que el degradado
+  // llegue hasta el borde redondeado) — el padding que antes llevaba "card" se
+  // recupera aquí, en un View normal dentro del degradado.
+  cardInner: {
+    width: '100%',
+    padding: rp(24),
+    alignItems: 'center',
   },
   userCard: {
     borderRadius: 16,
@@ -680,8 +748,10 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    padding: rp(12),
-    borderRadius: 8,
+    paddingVertical: rp(12),
+    paddingHorizontal: rp(20),
+    borderRadius: 24,
+    borderWidth: 1,
     marginTop: 20,
     gap: 8,
   },
@@ -703,33 +773,57 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
-  controls: {
-    padding: rp(16),
-    paddingBottom: Platform.OS === 'ios' ? 0 : 16,
-    borderTopWidth: 1,
-  },
-  progressRow: {
+  // Zona C: ya no es una barra de borde a borde con línea divisoria — es un
+  // módulo flotante (cápsula + círculos, con sombra) que flota sobre el
+  // contenido, mismo lenguaje que la barra flotante del Editor.
+  floatingControls: {
+    position: 'absolute',
+    left: 16,
+    right: 16,
     alignItems: 'center',
+  },
+  progressPill: {
+    paddingHorizontal: rp(14),
+    paddingVertical: rp(6),
+    borderRadius: 100,
+    borderWidth: 1,
     marginBottom: 12,
   },
   progressText: {
     fontSize: rf(12),
     fontWeight: '500',
   },
-  buttonsRow: {
+  pillShadow: {
+    shadowColor: '#1a1625',
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.2,
+    shadowRadius: 12,
+    elevation: 6,
+  },
+  navCircleRow: {
     flexDirection: 'row',
-    alignItems: 'center',
     justifyContent: 'space-between',
+    width: '100%',
+  },
+  navCircle: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  lastRow: {
+    flexDirection: 'row',
     gap: 12,
   },
-  navButton: {
+  pillButton: {
     flexDirection: 'row',
     alignItems: 'center',
-    padding: rp(12),
-    borderRadius: 12,
-    flex: 1,
-    justifyContent: 'center',
-    gap: 4,
+    paddingVertical: rp(14),
+    paddingHorizontal: rp(22),
+    borderRadius: 100,
+    gap: 8,
   },
   navButtonText: {
     fontSize: rf(14),

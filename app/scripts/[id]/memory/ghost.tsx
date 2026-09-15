@@ -9,19 +9,19 @@ import {
     TextInput,
     KeyboardAvoidingView,
     Platform,
-    Alert,
-    Modal,
     Animated,
-    Keyboard
+    Keyboard,
+    ImageBackground,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { useTheme } from '@/contexts/ThemeContext';
 import { useAuth } from '@/contexts/AuthContext';
-import { supabase } from '@/utils/supabase';
 import { DialogueLine } from '@/utils/dialogueParser';
 import { loadDialogueLines } from '@/utils/loadDialogueLines';
 import { ArrowLeft, ChevronLeft, ChevronRight, Heart, Trophy, Check } from 'lucide-react-native';
+import { LinearGradient } from 'expo-linear-gradient';
+import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { saveScore, addFailedLine } from '@/utils/gamification';
 import { getIntroPreferences, setIntroPreference } from '@/utils/introPreferences';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -38,8 +38,23 @@ const LEVELS = [
 export default function GhostModeScreen() {
     const router = useRouter();
     const { id } = useLocalSearchParams();
-    const { colors } = useTheme();
+    const { colors, isDark } = useTheme();
     const { user } = useAuth();
+    const insets = useSafeAreaInsets();
+    const bg = () => (isDark ? require('@/assets/images/ui-dark-bg.png') : require('@/assets/images/ui-light-bg.png'));
+    // Misma paleta "sobre imagen de fondo" que el resto de pantallas rediseñadas.
+    const fg = isDark ? '#FFFFFF' : '#2A1B47';
+    const fgSecondary = isDark ? 'rgba(255,255,255,0.6)' : '#3d3660';
+    const glassBg = isDark ? 'rgba(124,106,247,0.14)' : 'rgba(230,230,236,0.6)';
+    const glassBorder = isDark ? 'rgba(255,255,255,0.2)' : 'rgba(42,27,71,0.18)';
+    const activeAccent = isDark ? '#FFFFFF' : colors.primary;
+    const primaryButtonBg = isDark
+        ? { backgroundColor: 'rgba(124,106,247,0.80)', borderWidth: 1.5, borderColor: 'rgba(255,255,255,0.5)' }
+        : { backgroundColor: colors.primary };
+    // Mismo degradado de tarjeta que Modo Estudio / Memorización Activa.
+    const dialogueCardGradient = (charColor: string): [string, string] => (
+        isDark ? [`${charColor}1A`, `${charColor}4D`] : [`${charColor}12`, `${charColor}30`]
+    );
   useEffect(() => {
     if (user && id) trackEvent(user.id, 'game_started', 'memory', { script_id: id, game_type: 'ghost_text' });
   }, [user, id]);
@@ -64,6 +79,11 @@ export default function GhostModeScreen() {
     const [dontShowAgain, setDontShowAgain] = useState(false);
     const [mistakesInLevel, setMistakesInLevel] = useState(0);
     const [bonusMessage, setBonusMessage] = useState<string | null>(null);
+    // Alerts propios (ConfirmDialog) en vez del Alert.alert nativo del sistema,
+    // que no respeta el estilo de cristal de la app.
+    const [showGameOver, setShowGameOver] = useState(false);
+    const [pendingNextLevel, setPendingNextLevel] = useState<number | null>(null);
+    const [showAllLevelsDone, setShowAllLevelsDone] = useState(false);
 
     // Inputs Refs for Auto-focus
     const inputRefs = useRef<{ [key: number]: TextInput | null }>({});
@@ -254,9 +274,7 @@ export default function GhostModeScreen() {
                 if (newLives <= 0) {
                     // Game Over - NO guardar puntos, resetear sin guardar
                     unsavedPoints.current = 0;
-                    Alert.alert("GAME OVER", "Has perdido todas tus vidas. Vuelves al Nivel 1.", [
-                        { text: "OK", onPress: resetGame }
-                    ]);
+                    setShowGameOver(true);
                 }
                 return newLives;
             });
@@ -337,9 +355,7 @@ export default function GhostModeScreen() {
                 });
             }, 3000);
         } else {
-            Alert.alert("¡Nivel Completado!", `Pasas al siguiente nivel.`, [
-                { text: "Continuar", onPress: () => proceedToNextLevel(nextLevel) }
-            ]);
+            setPendingNextLevel(nextLevel);
         }
     };
 
@@ -353,9 +369,7 @@ export default function GhostModeScreen() {
             setBonusMessage(null);
         } else {
             // Completó TODOS los niveles
-            Alert.alert("¡ENHORABUENA!", "Has completado todos los niveles de entrenamiento.", [
-                { text: "Volver", onPress: () => router.back() }
-            ]);
+            setShowAllLevelsDone(true);
         }
     };
 
@@ -371,49 +385,53 @@ export default function GhostModeScreen() {
     };
 
     if (loading) return (
-        <View style={[styles.center, { backgroundColor: colors.background, flex: 1 }]}>
-            <ActivityIndicator size="large" color={colors.primary} />
-        </View>
+        <ImageBackground source={bg()} resizeMode="cover" style={styles.container}>
+            <View style={[styles.container, styles.center]}>
+                <ActivityIndicator size="large" color={colors.primary} />
+            </View>
+        </ImageBackground>
     );
 
     if (showLevelIntro) {
         return (
-            <SafeAreaView style={[styles.container, styles.center, { backgroundColor: colors.background, padding: rp(20) }]}>
-                <Trophy size={64} color={colors.primary} style={{ marginBottom: 20 }} />
-                <Text style={[styles.introTitle, { color: colors.text, textAlign: 'center' }]}>{LEVELS[level].label}</Text>
-                <Text style={[styles.introSub, { color: colors.textSecondary, textAlign: 'center' }]}>
-                    {level === 0
-                        ? `Completa las palabras ocultas.\n\nTienes 5 vidas. +1 punto por acierto, -2 por error.\n\n¡Bonus de +${LEVELS[level].bonus} puntos si completas sin errores!`
-                        : `Completa las frases.\n\n¡Bonus de +${LEVELS[level].bonus} puntos si completas sin errores!`
-                    }
-                </Text>
-
-                {level === 0 && (
-                    <TouchableOpacity
-                        style={styles.checkboxContainer}
-                        onPress={() => setDontShowAgain(!dontShowAgain)}
-                    >
-                        <View style={[styles.checkbox, { borderColor: colors.border }]}>
-                            {dontShowAgain && <Check size={16} color={colors.primary} />}
-                        </View>
-                        <Text style={[styles.checkboxLabel, { color: colors.textSecondary }]}>
-                            No volver a mostrar este mensaje
-                        </Text>
-                    </TouchableOpacity>
-                )}
-
-                <TouchableOpacity
-                    style={[styles.startButton, { backgroundColor: colors.primary }]}
-                    onPress={async () => {
-                        if (dontShowAgain && level === 0) {
-                            await setIntroPreference('ghost', true);
+            <ImageBackground source={bg()} resizeMode="cover" style={styles.container}>
+                <SafeAreaView style={[styles.container, styles.center, { backgroundColor: 'transparent', padding: rp(20) }]}>
+                    <Trophy size={64} color={activeAccent} style={{ marginBottom: 20 }} />
+                    <Text style={[styles.introTitle, { color: fg, textAlign: 'center' }]}>{LEVELS[level].label}</Text>
+                    <Text style={[styles.introSub, { color: fgSecondary, textAlign: 'center' }]}>
+                        {level === 0
+                            ? `Completa las palabras ocultas.\n\nTienes 5 vidas. +1 punto por acierto, -2 por error.\n\n¡Bonus de +${LEVELS[level].bonus} puntos si completas sin errores!`
+                            : `Completa las frases.\n\n¡Bonus de +${LEVELS[level].bonus} puntos si completas sin errores!`
                         }
-                        setShowLevelIntro(false);
-                    }}
-                >
-                    <Text style={styles.startButtonText}>COMENZAR</Text>
-                </TouchableOpacity>
-            </SafeAreaView>
+                    </Text>
+
+                    {level === 0 && (
+                        <TouchableOpacity
+                            style={styles.checkboxContainer}
+                            onPress={() => setDontShowAgain(!dontShowAgain)}
+                        >
+                            <View style={[styles.checkbox, { borderColor: glassBorder }]}>
+                                {dontShowAgain && <Check size={16} color={activeAccent} />}
+                            </View>
+                            <Text style={[styles.checkboxLabel, { color: fgSecondary }]}>
+                                No volver a mostrar este mensaje
+                            </Text>
+                        </TouchableOpacity>
+                    )}
+
+                    <TouchableOpacity
+                        style={[styles.startButton, primaryButtonBg]}
+                        onPress={async () => {
+                            if (dontShowAgain && level === 0) {
+                                await setIntroPreference('ghost', true);
+                            }
+                            setShowLevelIntro(false);
+                        }}
+                    >
+                        <Text style={styles.startButtonText}>COMENZAR</Text>
+                    </TouchableOpacity>
+                </SafeAreaView>
+            </ImageBackground>
         );
     }
 
@@ -421,22 +439,23 @@ export default function GhostModeScreen() {
     const isUserTurn = currentLine?.isUserCharacter;
 
     return (
-        <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
+        <ImageBackground source={bg()} resizeMode="cover" style={styles.container}>
+        <SafeAreaView style={[styles.container, { backgroundColor: 'transparent' }]}>
             {/* Header */}
-            <View style={[styles.header, { borderBottomColor: colors.border, backgroundColor: colors.surface }]}>
-                <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
-                    <ArrowLeft size={24} color={colors.text} />
+            <View style={styles.header}>
+                <TouchableOpacity onPress={() => router.back()} style={[styles.backButton, { backgroundColor: glassBg, borderColor: glassBorder }]}>
+                    <ArrowLeft size={24} color={fg} />
                 </TouchableOpacity>
 
                 <View style={styles.headerTitleContainer}>
-                    <Text style={[styles.headerTitle, { color: colors.text }]}>Texto Fantasma</Text>
+                    <Text style={[styles.headerTitle, { color: fg }]}>Texto Fantasma</Text>
                     <View style={styles.livesContainer}>
                         {[...Array(5)].map((_, i) => (
                             <Heart
                                 key={i}
                                 size={16}
                                 fill={i < lives ? "#FF4444" : "transparent"}
-                                color={i < lives ? "#FF4444" : colors.textSecondary}
+                                color={i < lives ? "#FF4444" : fgSecondary}
                                 style={{ marginHorizontal: 1 }}
                             />
                         ))}
@@ -444,7 +463,7 @@ export default function GhostModeScreen() {
                 </View>
 
                 <View style={styles.scoreContainer}>
-                    <Text style={[styles.scoreText, { color: score < 0 ? colors.error : colors.primary }]}>{score}</Text>
+                    <Text style={[styles.scoreText, { color: score < 0 ? colors.error : activeAccent }]}>{score}</Text>
                     {pointDelta !== null && (
                         <Animated.Text style={[
                             styles.floatingPoint,
@@ -474,112 +493,150 @@ export default function GhostModeScreen() {
                 <ScrollView contentContainerStyle={styles.content}>
 
                     <View style={styles.progressBanner}>
-                        <Text style={{ color: colors.textSecondary, fontWeight: '600', textAlign: 'center' }}>
+                        <Text style={{ color: fgSecondary, fontWeight: '600', textAlign: 'center' }}>
                             {LEVELS[level].label} - Frase {currentIndex + 1}/{allLines.length}
                         </Text>
                     </View>
 
                     {currentLine && (
-                        <View style={[styles.card, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-                            <Text style={[
-                                styles.charName,
-                                {
-                                    color: isUserTurn ? '#4ADE80' : currentLine.color || colors.primary,
-                                    textAlign: 'center' // Centered
-                                }
-                            ]}>
-                                {currentLine.characterName}
-                            </Text>
+                        <LinearGradient
+                            colors={dialogueCardGradient(isUserTurn ? '#4ADE80' : currentLine.color || colors.primary)}
+                            start={{ x: 0, y: 0 }}
+                            end={{ x: 0, y: 1 }}
+                            style={[styles.card, { borderColor: isUserTurn ? '#4ADE80' : currentLine.color || colors.primary, borderWidth: 2, padding: 0, overflow: 'hidden' }]}
+                        >
+                            <View style={styles.cardInner}>
+                                <Text style={[styles.charName, { color: isUserTurn ? '#4ADE80' : currentLine.color || activeAccent }]}>
+                                    {currentLine.characterName}
+                                </Text>
 
-                            <View style={[styles.wordsRow, { justifyContent: 'center' }]}>
-                                {!isUserTurn ? (
-                                    // Partner Line - Just Text
-                                    <Text style={[styles.text, { color: colors.text, textAlign: 'center' }]}>
-                                        {currentLine.cleanText}
-                                    </Text>
-                                ) : (
-                                    // User Line - Game Logic
-                                    currentLine.cleanText.split(/\s+/).map((word, idx) => {
-                                        const isHidden = hiddenIndices.has(idx);
-                                        const isRevealed = revealedIndices.has(idx);
-                                        const isError = errorIndices.has(idx);
+                                <View style={[styles.wordsRow, { justifyContent: 'center' }]}>
+                                    {!isUserTurn ? (
+                                        // Partner Line - Just Text
+                                        <Text style={[styles.text, { color: fg, textAlign: 'center' }]}>
+                                            {currentLine.cleanText}
+                                        </Text>
+                                    ) : (
+                                        // User Line - Game Logic
+                                        currentLine.cleanText.split(/\s+/).map((word, idx) => {
+                                            const isHidden = hiddenIndices.has(idx);
+                                            const isRevealed = revealedIndices.has(idx);
+                                            const isError = errorIndices.has(idx);
 
-                                        if (!isHidden || isRevealed) {
+                                            if (!isHidden || isRevealed) {
+                                                return (
+                                                    <Text key={idx} style={[styles.word, { color: isHidden ? colors.success : fg }]}>
+                                                        {word}{' '}
+                                                    </Text>
+                                                );
+                                            }
+
                                             return (
-                                                <Text key={idx} style={[styles.word, { color: isHidden ? colors.success : colors.text }]}>
-                                                    {word}{' '}
-                                                </Text>
+                                                <TextInput
+                                                    key={idx}
+                                                    ref={r => { inputRefs.current[idx] = r; }}
+                                                    style={[
+                                                        styles.input,
+                                                        {
+                                                            color: isError ? colors.error : fg,
+                                                            borderColor: isError ? colors.error : glassBorder,
+                                                            width: Math.max(50, word.length * 14)
+                                                        }
+                                                    ]}
+                                                    placeholder="?"
+                                                    placeholderTextColor={fgSecondary}
+                                                    onChangeText={(t) => {
+                                                        // Reset error state on typing
+                                                        if (errorIndices.has(idx)) {
+                                                            const newErrors = new Set(errorIndices);
+                                                            newErrors.delete(idx);
+                                                            setErrorIndices(newErrors);
+                                                        }
+                                                        setUserInputs(prev => ({ ...prev, [idx]: t }));
+                                                    }}
+                                                    onSubmitEditing={() => handleValidateWord(userInputs[idx] || '', idx, word)}
+                                                    blurOnSubmit={false}
+                                                    value={userInputs[idx] || ''}
+                                                    autoCapitalize="none"
+                                                    returnKeyType="next"
+                                                />
                                             );
-                                        }
-
-                                        return (
-                                            <TextInput
-                                                key={idx}
-                                                ref={r => { inputRefs.current[idx] = r; }}
-                                                style={[
-                                                    styles.input,
-                                                    {
-                                                        color: isError ? colors.error : colors.text,
-                                                        borderColor: isError ? colors.error : colors.border,
-                                                        width: Math.max(50, word.length * 14)
-                                                    }
-                                                ]}
-                                                placeholder="?"
-                                                placeholderTextColor={colors.textSecondary}
-                                                onChangeText={(t) => {
-                                                    // Reset error state on typing
-                                                    if (errorIndices.has(idx)) {
-                                                        const newErrors = new Set(errorIndices);
-                                                        newErrors.delete(idx);
-                                                        setErrorIndices(newErrors);
-                                                    }
-                                                    setUserInputs(prev => ({ ...prev, [idx]: t }));
-                                                }}
-                                                onSubmitEditing={() => handleValidateWord(userInputs[idx] || '', idx, word)}
-                                                blurOnSubmit={false}
-                                                value={userInputs[idx] || ''}
-                                                autoCapitalize="none"
-                                                returnKeyType="next"
-                                            />
-                                        );
-                                    })
-                                )}
+                                        })
+                                    )}
+                                </View>
                             </View>
-                        </View>
+                        </LinearGradient>
                     )}
                 </ScrollView>
             </KeyboardAvoidingView>
 
-            {/* Navigation */}
-            <View style={[styles.controls, { backgroundColor: colors.surface, borderTopColor: colors.border }]}>
-                {currentIndex > 0 ? (
-                    <TouchableOpacity onPress={() => setCurrentIndex(p => p - 1)} style={styles.navBtn}>
-                        <ChevronLeft size={24} color={colors.text} />
-                        <Text style={{ color: colors.text, marginLeft: 4 }}>Anterior</Text>
-                    </TouchableOpacity>
-                ) : <View style={{ width: 80 }} />}
+            {/* Navegación: módulo flotante (círculo + píldora), no una barra de
+                borde a borde con línea divisoria. */}
+            <View style={[styles.floatingControls, { bottom: insets.bottom + rp(16) }]} pointerEvents="box-none">
+                <View style={styles.controlsRow}>
+                    {currentIndex > 0 ? (
+                        <TouchableOpacity
+                            onPress={() => setCurrentIndex(p => p - 1)}
+                            style={[styles.navCircle, styles.pillShadow, { backgroundColor: glassBg, borderColor: glassBorder }]}
+                        >
+                            <ChevronLeft size={26} color={fg} />
+                        </TouchableOpacity>
+                    ) : <View style={{ width: 56 }} />}
 
-                <TouchableOpacity
-                    onPress={handleNextLine}
-                    disabled={!isLineComplete()}
-                    style={[styles.nextBtn, { backgroundColor: isLineComplete() ? colors.primary : colors.input }]}
-                >
-                    <Text style={[styles.nextBtnText, { color: isLineComplete() ? '#fff' : colors.textSecondary }]}>
-                        {currentIndex === allLines.length - 1 ? (level < LEVELS.length - 1 ? "Completar Nivel" : "Finalizar") : "Siguiente"}
-                    </Text>
-                    <ChevronRight size={20} color={isLineComplete() ? '#fff' : colors.textSecondary} />
-                </TouchableOpacity>
+                    <TouchableOpacity
+                        onPress={handleNextLine}
+                        disabled={!isLineComplete()}
+                        style={[
+                            styles.nextBtn,
+                            styles.pillShadow,
+                            isLineComplete() ? primaryButtonBg : { backgroundColor: glassBg, borderColor: glassBorder, borderWidth: 1, opacity: 0.5 },
+                        ]}
+                    >
+                        <Text style={[styles.nextBtnText, { color: isLineComplete() ? '#fff' : fgSecondary }]}>
+                            {currentIndex === allLines.length - 1 ? (level < LEVELS.length - 1 ? "Completar Nivel" : "Finalizar") : "Siguiente"}
+                        </Text>
+                        <ChevronRight size={20} color={isLineComplete() ? '#fff' : fgSecondary} />
+                    </TouchableOpacity>
+                </View>
             </View>
 
+            <ConfirmDialog
+                visible={showGameOver}
+                title="GAME OVER"
+                message="Has perdido todas tus vidas. Vuelves al Nivel 1."
+                singleButton
+                confirmText="OK"
+                onConfirm={() => { setShowGameOver(false); resetGame(); }}
+                onCancel={() => { setShowGameOver(false); resetGame(); }}
+            />
+            <ConfirmDialog
+                visible={pendingNextLevel !== null}
+                title="¡Nivel Completado!"
+                message="Pasas al siguiente nivel."
+                singleButton
+                confirmText="Continuar"
+                onConfirm={() => { const next = pendingNextLevel; setPendingNextLevel(null); if (next !== null) proceedToNextLevel(next); }}
+                onCancel={() => { const next = pendingNextLevel; setPendingNextLevel(null); if (next !== null) proceedToNextLevel(next); }}
+            />
+            <ConfirmDialog
+                visible={showAllLevelsDone}
+                title="¡ENHORABUENA!"
+                message="Has completado todos los niveles de entrenamiento."
+                singleButton
+                confirmText="Volver"
+                onConfirm={() => { setShowAllLevelsDone(false); router.back(); }}
+                onCancel={() => { setShowAllLevelsDone(false); router.back(); }}
+            />
         </SafeAreaView>
+        </ImageBackground>
     );
 }
 
 const styles = StyleSheet.create({
     container: { flex: 1 },
     center: { justifyContent: 'center', alignItems: 'center' },
-    header: { flexDirection: 'row', alignItems: 'center', padding: rp(16), borderBottomWidth: 1, justifyContent: 'space-between', zIndex: 1 },
-    backButton: { padding: rp(4) },
+    header: { flexDirection: 'row', alignItems: 'center', padding: rp(16), justifyContent: 'space-between', zIndex: 1 },
+    backButton: { width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center', borderWidth: 1 },
     headerTitleContainer: { flex: 1, alignItems: 'center' },
     headerTitle: { fontSize: rf(18), fontWeight: '700' },
     livesContainer: { flexDirection: 'row', alignItems: 'center', marginTop: 4 },
@@ -595,9 +652,14 @@ const styles = StyleSheet.create({
     startButton: { paddingVertical: rp(16), paddingHorizontal: rp(48), borderRadius: 32 },
     startButtonText: { color: '#FFF', fontSize: rf(18), fontWeight: '700' },
 
-    content: { padding: rp(20), paddingBottom: rp(40) },
+    // Hueco de sobra para que el módulo flotante de navegación no tape el
+    // final de la tarjeta.
+    content: { padding: rp(20), paddingBottom: rp(150) },
     progressBanner: { marginBottom: 16, alignItems: 'center' },
-    card: { padding: rp(24), borderRadius: 16, borderWidth: 1, alignItems: 'center' },
+    card: { borderRadius: 16, borderWidth: 1, alignItems: 'center' },
+    // La tarjeta pasa a ser un LinearGradient (padding:0 para que el degradado
+    // llegue hasta el borde redondeado) — el padding se recupera aquí dentro.
+    cardInner: { width: '100%', padding: rp(24), alignItems: 'center' },
     charName: { fontSize: rf(14), fontWeight: '700', marginBottom: 16, textTransform: 'uppercase' },
     wordsRow: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center' },
     word: { fontSize: rf(20), lineHeight: 32, marginRight: 4, textAlign: 'center' },
@@ -614,9 +676,20 @@ const styles = StyleSheet.create({
         fontWeight: '600'
     },
 
-    controls: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: rp(16), borderTopWidth: 1 },
-    navBtn: { flexDirection: 'row', alignItems: 'center', padding: rp(8) },
-    nextBtn: { flexDirection: 'row', alignItems: 'center', paddingVertical: rp(10), paddingHorizontal: rp(20), borderRadius: 25, gap: 8 },
+    // Módulo flotante de navegación (círculo + píldora), en vez de una barra
+    // de borde a borde con línea divisoria — mismo lenguaje que el resto de
+    // pantallas del modo Memoria.
+    floatingControls: { position: 'absolute', left: 16, right: 16 },
+    controlsRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+    pillShadow: {
+        shadowColor: '#1a1625',
+        shadowOffset: { width: 0, height: 6 },
+        shadowOpacity: 0.2,
+        shadowRadius: 12,
+        elevation: 6,
+    },
+    navCircle: { width: 56, height: 56, borderRadius: 28, borderWidth: 1, alignItems: 'center', justifyContent: 'center' },
+    nextBtn: { flexDirection: 'row', alignItems: 'center', paddingVertical: rp(14), paddingHorizontal: rp(22), borderRadius: 100, gap: 8 },
     nextBtnText: { fontWeight: '600' },
 
     bonusOverlay: {

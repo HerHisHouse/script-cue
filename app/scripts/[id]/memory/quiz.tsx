@@ -6,7 +6,8 @@ import {
     TouchableOpacity,
     ActivityIndicator,
     Animated,
-    Modal
+    Modal,
+    ImageBackground,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, useLocalSearchParams } from 'expo-router';
@@ -30,8 +31,20 @@ export default function QuizModeScreen() {
     const router = useRouter();
     const { id } = useLocalSearchParams();
     const scriptId = id as string;
-    const { colors } = useTheme();
+    const { colors, isDark } = useTheme();
     const { user } = useAuth();
+    const bg = () => (isDark ? require('@/assets/images/ui-dark-bg.png') : require('@/assets/images/ui-light-bg.png'));
+    // Misma paleta "sobre imagen de fondo" que el resto de pantallas rediseñadas.
+    const fg = isDark ? '#FFFFFF' : '#2A1B47';
+    const fgSecondary = isDark ? 'rgba(255,255,255,0.6)' : '#3d3660';
+    const glassBg = isDark ? 'rgba(124,106,247,0.14)' : 'rgba(230,230,236,0.6)';
+    const glassBorder = isDark ? 'rgba(255,255,255,0.2)' : 'rgba(42,27,71,0.18)';
+    const activeAccent = isDark ? '#FFFFFF' : colors.primary;
+    const primaryButtonBg = isDark
+        ? { backgroundColor: 'rgba(124,106,247,0.80)', borderWidth: 1.5, borderColor: 'rgba(255,255,255,0.5)' }
+        : { backgroundColor: colors.primary };
+    // Chip secundario (Cancelar, etc.) — cristal en vez de un fondo sólido.
+    const secondaryButtonBg = { backgroundColor: glassBg, borderWidth: 1, borderColor: glassBorder };
   useEffect(() => {
     if (user && id) trackEvent(user.id, 'game_started', 'memory', { script_id: id, game_type: 'scene_order' });
   }, [user, id]);
@@ -271,112 +284,123 @@ export default function QuizModeScreen() {
 
     if (showShortSceneMessage) {
         return (
-            <SafeAreaView style={[styles.messageContainer, { backgroundColor: colors.background }]}>
-                <AlertTriangle size={60} color={colors.error} />
-                <Text style={[styles.messageTitle, { color: colors.text }]}>
-                    Escena muy corta
-                </Text>
-                <Text style={[styles.messageText, { color: colors.textSecondary }]}>
-                    Esta escena tiene muy pocas líneas para generar 
-                    un quiz de comprensión.
-                    {'\n\n'}
-                    Te recomendamos usar otros modos de memorización 
-                    como Texto Fantasma o Eco de Memoria para este guion.
-                </Text>
-                <TouchableOpacity 
-                    style={[styles.backButton, { backgroundColor: colors.primary }]}
-                    onPress={() => router.back()}
-                >
-                    <Text style={styles.backButtonText}>
-                        Volver a Modo Memoria
+            <ImageBackground source={bg()} resizeMode="cover" style={styles.container}>
+                <SafeAreaView style={[styles.messageContainer, { backgroundColor: 'transparent' }]}>
+                    <AlertTriangle size={60} color={colors.error} />
+                    <Text style={[styles.messageTitle, { color: fg }]}>
+                        Escena muy corta
                     </Text>
-                </TouchableOpacity>
-            </SafeAreaView>
+                    <Text style={[styles.messageText, { color: fgSecondary }]}>
+                        Esta escena tiene muy pocas líneas para generar
+                        un quiz de comprensión.
+                        {'\n\n'}
+                        Te recomendamos usar otros modos de memorización
+                        como Texto Fantasma o Eco de Memoria para este guion.
+                    </Text>
+                    <TouchableOpacity
+                        style={[styles.backButton, primaryButtonBg]}
+                        onPress={() => router.back()}
+                    >
+                        <Text style={styles.backButtonText}>
+                            Volver a Modo Memoria
+                        </Text>
+                    </TouchableOpacity>
+                </SafeAreaView>
+            </ImageBackground>
         );
     }
 
     if (showWelcome) {
         return (
-            <SafeAreaView style={[styles.welcomeContainer, { backgroundColor: colors.background }]}>
-                {errorMsg ? (
-                    <View style={styles.center}>
-                        <Text style={{ color: colors.error, marginBottom: 20 }}>{errorMsg}</Text>
-                        <TouchableOpacity 
-                            style={[styles.backButton, { backgroundColor: colors.primary }]}
-                            onPress={() => router.back()}
-                        >
-                            <Text style={styles.backButtonText}>Volver</Text>
-                        </TouchableOpacity>
-                    </View>
-                ) : (
-                    <>
-                        <View style={styles.iconContainer}>
-                            <Brain 
-                                size={100} 
-                                color={colors.primary} 
-                                strokeWidth={1.5}
+            <ImageBackground source={bg()} resizeMode="cover" style={styles.container}>
+                <SafeAreaView style={[styles.welcomeContainer, { backgroundColor: 'transparent' }]}>
+                    {errorMsg ? (
+                        <View style={styles.center}>
+                            <Text style={{ color: colors.error, marginBottom: 20 }}>{errorMsg}</Text>
+                            <TouchableOpacity
+                                style={[styles.backButton, primaryButtonBg]}
+                                onPress={() => router.back()}
+                            >
+                                <Text style={styles.backButtonText}>Volver</Text>
+                            </TouchableOpacity>
+                        </View>
+                    ) : (
+                        <>
+                            <View style={styles.iconContainer}>
+                                <Brain
+                                    size={100}
+                                    color={activeAccent}
+                                    strokeWidth={1.5}
+                                />
+                            </View>
+                            <Text style={[styles.welcomeTitle, { color: fg }]}>
+                                Quiz Memory
+                            </Text>
+                            <Text style={[styles.welcomeSubtitle, { color: activeAccent }]}>
+                                Comprensión Profunda del Guion
+                            </Text>
+                            <Text style={[styles.welcomeDescription, { color: fgSecondary }]}>
+                                Este juego te ayuda a entender las motivaciones de
+                                los personajes, el subtexto emocional y las relaciones
+                                mediante preguntas de opción múltiple.
+                            </Text>
+
+                            <ActivityIndicator
+                                size="large"
+                                color={colors.primary}
+                                style={styles.loader}
                             />
-                        </View>
-                        <Text style={[styles.welcomeTitle, { color: colors.text }]}>
-                            Quiz Memory
-                        </Text>
-                        <Text style={[styles.welcomeSubtitle, { color: colors.primary }]}>
-                            Comprensión Profunda del Guion
-                        </Text>
-                        <Text style={[styles.welcomeDescription, { color: colors.textSecondary }]}>
-                            Este juego te ayuda a entender las motivaciones de 
-                            los personajes, el subtexto emocional y las relaciones 
-                            mediante preguntas de opción múltiple.
-                        </Text>
-                        
-                        <ActivityIndicator 
-                            size="large" 
-                            color={colors.primary} 
-                            style={styles.loader}
-                        />
-                        
-                        <Text style={[styles.loadingText, { color: colors.textSecondary }]}>
-                            Preparando tu quiz personalizado...
-                        </Text>
-                        
-                        <View style={styles.tipsContainer}>
-                            <Text style={[styles.tipText, { color: colors.textSecondary }]}>
-                                💡 El quiz se genera solo la primera vez
+
+                            <Text style={[styles.loadingText, { color: fgSecondary }]}>
+                                Preparando tu quiz personalizado...
                             </Text>
-                            <Text style={[styles.tipText, { color: colors.textSecondary }]}>
-                                Las siguientes veces cargará al instante
-                            </Text>
-                        </View>
-                    </>
-                )}
-            </SafeAreaView>
+
+                            <View style={styles.tipsContainer}>
+                                <Text style={[styles.tipText, { color: fgSecondary }]}>
+                                    💡 El quiz se genera solo la primera vez
+                                </Text>
+                                <Text style={[styles.tipText, { color: fgSecondary }]}>
+                                    Las siguientes veces cargará al instante
+                                </Text>
+                            </View>
+
+                            <TouchableOpacity
+                                style={[styles.cancelButton, secondaryButtonBg]}
+                                onPress={() => router.back()}
+                            >
+                                <Text style={[styles.cancelButtonText, { color: fg }]}>Cancelar</Text>
+                            </TouchableOpacity>
+                        </>
+                    )}
+                </SafeAreaView>
+            </ImageBackground>
         );
     }
 
     const currentQ = questions[currentQIndex];
 
     if (!currentQ && !loading && !gameFinished) return (
-        <SafeAreaView style={[styles.container, styles.center, { backgroundColor: colors.surface }]}>
-            <View style={{ flex: 1, backgroundColor: colors.background, justifyContent: 'center', alignItems: 'center' }}>
-                <Text style={{ color: colors.text }}>No hay suficientes preguntas disponibles.</Text>
+        <ImageBackground source={bg()} resizeMode="cover" style={styles.container}>
+            <SafeAreaView style={[styles.container, styles.center, { backgroundColor: 'transparent' }]}>
+                <Text style={{ color: fg }}>No hay suficientes preguntas disponibles.</Text>
                 <TouchableOpacity onPress={() => router.back()}>
-                    <Text style={{ color: colors.primary, marginTop: 20 }}>Volver</Text>
+                    <Text style={{ color: activeAccent, marginTop: 20 }}>Volver</Text>
                 </TouchableOpacity>
-            </View>
-        </SafeAreaView>
+            </SafeAreaView>
+        </ImageBackground>
     );
 
     return (
-        <SafeAreaView style={[styles.container, { backgroundColor: colors.surface }]}>
-            <View style={{ flex: 1, backgroundColor: colors.background }}>
+        <ImageBackground source={bg()} resizeMode="cover" style={styles.container}>
+        <SafeAreaView style={[styles.container, { backgroundColor: 'transparent' }]}>
                 {/* Header */}
-                <View style={[styles.header, { borderBottomColor: colors.border, backgroundColor: colors.surface }]}>
-                    <TouchableOpacity onPress={() => router.back()} style={styles.headerBackButton}>
-                        <ArrowLeft size={24} color={colors.text} />
+                <View style={styles.header}>
+                    <TouchableOpacity onPress={() => router.back()} style={[styles.headerBackButton, { backgroundColor: glassBg, borderColor: glassBorder }]}>
+                        <ArrowLeft size={24} color={fg} />
                     </TouchableOpacity>
 
                     <View style={styles.headerTitleContainer}>
-                        <Text style={[styles.headerTitleText, { color: colors.text }]}>
+                        <Text style={[styles.headerTitleText, { color: fg }]}>
                             Pregunta {currentQIndex + 1} de {questions.length}
                         </Text>
                         <View style={styles.livesContainer}>
@@ -385,7 +409,7 @@ export default function QuizModeScreen() {
                                     key={i}
                                     size={16}
                                     fill={i < lives ? "#FF4444" : "transparent"}
-                                    color={i < lives ? "#FF4444" : colors.textSecondary}
+                                    color={i < lives ? "#FF4444" : fgSecondary}
                                     style={{ marginHorizontal: 1 }}
                                 />
                             ))}
@@ -393,7 +417,7 @@ export default function QuizModeScreen() {
                     </View>
 
                     <View style={styles.scoreContainer}>
-                        <Text style={[styles.scoreText, { color: score < 0 ? colors.error : colors.primary }]}>{score}</Text>
+                        <Text style={[styles.scoreText, { color: score < 0 ? colors.error : activeAccent }]}>{score}</Text>
                         {pointDelta !== null && (
                             <Animated.Text style={[
                                 styles.floatingPoint,
@@ -426,12 +450,12 @@ export default function QuizModeScreen() {
                     animationType="fade"
                  supportedOrientations={['portrait', 'landscape', 'landscape-left', 'landscape-right']}>
                     <View style={[styles.modalOverlay, styles.center]}>
-                        <View style={[styles.resultCard, { backgroundColor: colors.surface }]}>
-                            <Trophy size={64} color={lives > 0 ? colors.primary : colors.textSecondary} />
-                            <Text style={[styles.resultTitle, { color: colors.text }]}>
+                        <View style={[styles.resultCard, { backgroundColor: isDark ? '#1a1625' : '#FFFFFF', borderWidth: 1, borderColor: glassBorder }]}>
+                            <Trophy size={64} color={lives > 0 ? activeAccent : fgSecondary} />
+                            <Text style={[styles.resultTitle, { color: fg }]}>
                                 {lives > 0 ? '¡Quiz Completado!' : 'Game Over'}
                             </Text>
-                            <Text style={[styles.resultScore, { color: colors.primary }]}>
+                            <Text style={[styles.resultScore, { color: activeAccent }]}>
                                 Puntuación Final: {score}
                             </Text>
                             {perfectRun && lives > 0 && (
@@ -440,7 +464,7 @@ export default function QuizModeScreen() {
                                 </Text>
                             )}
                             <TouchableOpacity
-                                style={[styles.resultButton, { backgroundColor: colors.primary }]}
+                                style={[styles.resultButton, primaryButtonBg]}
                                 onPress={() => router.back()}
                             >
                                 <Text style={styles.resultButtonText}>Volver</Text>
@@ -452,22 +476,22 @@ export default function QuizModeScreen() {
                 {currentQ && !gameFinished && (
                     <View style={styles.content}>
                         {totalAvailable < 10 && currentQIndex === 0 && (
-                            <View style={[styles.infoBanner, { backgroundColor: colors.border }]}>
-                                <Info size={16} color={colors.primary} />
-                                <Text style={[styles.infoText, { color: colors.text }]}>
-                                    Esta escena generó {totalAvailable} preguntas. 
+                            <View style={[styles.infoBanner, { backgroundColor: glassBg, borderWidth: 1, borderColor: glassBorder }]}>
+                                <Info size={16} color={activeAccent} />
+                                <Text style={[styles.infoText, { color: fg }]}>
+                                    Esta escena generó {totalAvailable} preguntas.
                                     Guiones más largos ofrecen mayor variedad.
                                 </Text>
                             </View>
                         )}
-                        
-                        <Text style={[styles.questionText, { color: colors.text }]}>
+
+                        <Text style={[styles.questionText, { color: fg }]}>
                             {currentQ.question}
                         </Text>
 
                         <View style={styles.optionsContainer}>
                             {currentQ.options.map((opt, idx) => {
-                                let bgColor = colors.surface;
+                                let bgColor = glassBg;
                                 if (selectedOption !== null) {
                                     if (idx === currentQ.correct) bgColor = 'rgba(74, 222, 128, 0.2)';
                                     else if (idx === selectedOption) bgColor = 'rgba(239, 68, 68, 0.2)';
@@ -476,11 +500,11 @@ export default function QuizModeScreen() {
                                 return (
                                     <TouchableOpacity
                                         key={idx}
-                                        style={[styles.optionBtn, { backgroundColor: bgColor, borderColor: colors.border }]}
+                                        style={[styles.optionBtn, { backgroundColor: bgColor, borderColor: glassBorder }]}
                                         onPress={() => handleAnswer(idx)}
                                         disabled={selectedOption !== null}
                                     >
-                                        <Text style={[styles.optionText, { color: colors.text }]}>{opt}</Text>
+                                        <Text style={[styles.optionText, { color: fg }]}>{opt}</Text>
 
                                         <View style={styles.iconOptionContainer}>
                                             {selectedOption !== null && idx === currentQ.correct && <Check size={20} color={colors.success} />}
@@ -492,8 +516,8 @@ export default function QuizModeScreen() {
                         </View>
                     </View>
                 )}
-            </View>
         </SafeAreaView>
+        </ImageBackground>
     );
 }
 
@@ -571,17 +595,27 @@ const styles = StyleSheet.create({
     backButton: {
         paddingVertical: rp(14),
         paddingHorizontal: rp(32),
-        borderRadius: 8,
+        borderRadius: 100,
     },
     backButtonText: {
         color: '#FFFFFF',
         fontSize: rf(16),
         fontWeight: '600',
     },
+    cancelButton: {
+        marginTop: rp(24),
+        paddingVertical: rp(12),
+        paddingHorizontal: rp(28),
+        borderRadius: 100,
+    },
+    cancelButtonText: {
+        fontSize: rf(15),
+        fontWeight: '600',
+    },
 
     // Game UI
-    header: { flexDirection: 'row', alignItems: 'center', padding: rp(16), borderBottomWidth: 1, justifyContent: 'space-between' },
-    headerBackButton: { padding: rp(4) },
+    header: { flexDirection: 'row', alignItems: 'center', padding: rp(16), justifyContent: 'space-between' },
+    headerBackButton: { width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center', borderWidth: 1 },
     headerTitleContainer: { alignItems: 'center', flex: 1 },
     headerTitleText: { fontSize: rf(16), fontWeight: '700', textAlign: 'center', marginBottom: rp(4) },
     livesContainer: { flexDirection: 'row', gap: 4 },

@@ -6,23 +6,23 @@ import {
     TouchableOpacity,
     ActivityIndicator,
     TextInput,
-    Alert,
-    KeyboardAvoidingView,
-    Platform,
+    ImageBackground,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { useTheme } from '@/contexts/ThemeContext';
 import { useAuth } from '@/contexts/AuthContext';
 import { DialogueLine } from '@/utils/dialogueParser';
 import { loadDialogueLines } from '@/utils/loadDialogueLines';
-import { ArrowLeft, Mic, Clock, Check, X, ChevronLeft, ChevronRight, Brain } from 'lucide-react-native';
+import { ArrowLeft, Mic, Clock, Check, X, ChevronLeft, ChevronRight } from 'lucide-react-native';
+import { LinearGradient } from 'expo-linear-gradient';
+import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { getFailedLines, clearFailedLine, saveScore, FailedLine } from '@/utils/gamification';
 import { Audio } from 'expo-av';
 import { enableRecordingMode } from '@/utils/audioMode';
 import * as Speech from 'expo-speech';
 import { transcribeAudio } from '@/services/transcription';
-import { rf, rp } from '@/utils/responsive';
+import { rp } from '@/utils/responsive';
 import { calculateSimilarity, stripStageDirections } from '@/utils/stringUtils';
 
 interface FailedLineWithData extends FailedLine {
@@ -32,8 +32,23 @@ interface FailedLineWithData extends FailedLine {
 export default function ReinforcementScreen() {
     const router = useRouter();
     const { id } = useLocalSearchParams();
-    const { colors } = useTheme();
+    const { colors, isDark } = useTheme();
     const { user } = useAuth();
+    const insets = useSafeAreaInsets();
+    const bg = () => (isDark ? require('@/assets/images/ui-dark-bg.png') : require('@/assets/images/ui-light-bg.png'));
+    // Misma paleta "sobre imagen de fondo" que el resto de pantallas rediseñadas.
+    const fg = isDark ? '#FFFFFF' : '#2A1B47';
+    const fgSecondary = isDark ? 'rgba(255,255,255,0.6)' : '#3d3660';
+    const glassBg = isDark ? 'rgba(124,106,247,0.14)' : 'rgba(230,230,236,0.6)';
+    const glassBorder = isDark ? 'rgba(255,255,255,0.2)' : 'rgba(42,27,71,0.18)';
+    const activeAccent = isDark ? '#FFFFFF' : colors.primary;
+    const primaryButtonBg = isDark
+        ? { backgroundColor: 'rgba(124,106,247,0.80)', borderWidth: 1.5, borderColor: 'rgba(255,255,255,0.5)' }
+        : { backgroundColor: colors.primary };
+    // Mismo degradado de tarjeta que el resto de juegos del modo Memoria.
+    const dialogueCardGradient = (charColor: string): [string, string] => (
+        isDark ? [`${charColor}1A`, `${charColor}4D`] : [`${charColor}12`, `${charColor}30`]
+    );
 
     const [loading, setLoading] = useState(true);
     const [failedItems, setFailedItems] = useState<FailedLineWithData[]>([]);
@@ -66,6 +81,10 @@ export default function ReinforcementScreen() {
 
     // Refs para inputs de Ghost Mode
     const ghostInputRefs = useRef<Record<number, any>>({});
+
+    // Alert propio (ConfirmDialog) en vez del Alert.alert nativo del sistema,
+    // que no respeta el estilo de cristal de la app.
+    const [showAllDone, setShowAllDone] = useState(false);
 
     useEffect(() => {
         if (!id || !user) return;
@@ -213,9 +232,7 @@ export default function ReinforcementScreen() {
             setCurrentIndex(p => p + 1);
             resetStates();
         } else {
-            Alert.alert('¡Completado!', 'Has repasado todos los errores.', [
-                { text: 'Volver', onPress: () => router.back() }
-            ]);
+            setShowAllDone(true);
         }
     };
 
@@ -293,8 +310,13 @@ export default function ReinforcementScreen() {
 
         return (
             <View style={styles.content}>
-                <View style={[styles.ghostCard, { backgroundColor: colors.surface, borderColor: line.color || colors.primary }]}>
-                    <Text style={[styles.charName, { color: line.color || colors.primary }]}>
+                <LinearGradient
+                    colors={dialogueCardGradient(line.color || colors.primary)}
+                    start={{ x: 0, y: 0 }}
+                    end={{ x: 0, y: 1 }}
+                    style={[styles.ghostCard, { borderColor: line.color || colors.primary }]}
+                >
+                    <Text style={[styles.charName, { color: line.color || activeAccent }]}>
                         {line.characterName}
                     </Text>
 
@@ -302,7 +324,7 @@ export default function ReinforcementScreen() {
                         {words.map((word, idx) => {
                             if (!ghostHiddenIndices.has(idx)) {
                                 return (
-                                    <Text key={idx} style={[styles.word, { color: colors.text }]}>
+                                    <Text key={idx} style={[styles.word, { color: fg }]}>
                                         {word}{' '}
                                     </Text>
                                 );
@@ -326,8 +348,8 @@ export default function ReinforcementScreen() {
                                     style={[
                                         styles.ghostInput,
                                         {
-                                            borderColor: hasError ? colors.error : colors.border,
-                                            color: hasError ? colors.error : colors.text,
+                                            borderColor: hasError ? colors.error : glassBorder,
+                                            color: hasError ? colors.error : fg,
                                             width: Math.max(50, word.length * 14)
                                         }
                                     ]}
@@ -342,7 +364,7 @@ export default function ReinforcementScreen() {
                                     }}
                                     onSubmitEditing={() => handleValidateWord(ghostInputs[idx] || '', idx, word)}
                                     placeholder="?"
-                                    placeholderTextColor={colors.textSecondary}
+                                    placeholderTextColor={fgSecondary}
                                     autoCapitalize="none"
                                     autoCorrect={false}
                                     returnKeyType="next"
@@ -351,10 +373,10 @@ export default function ReinforcementScreen() {
                             );
                         })}
                     </View>
-                </View>
+                </LinearGradient>
 
                 {!isComplete && (
-                    <Text style={[styles.hint, { color: colors.textSecondary }]}>
+                    <Text style={[styles.hint, { color: fgSecondary }]}>
                         Completa las palabras ocultas
                     </Text>
                 )}
@@ -440,20 +462,25 @@ export default function ReinforcementScreen() {
 
         return (
             <View style={styles.content}>
-                <View style={[styles.card, { backgroundColor: colors.surface }]}>
-                    <Text style={[styles.charName, { color: line.color || colors.primary }]}>
+                <LinearGradient
+                    colors={dialogueCardGradient(line.color || colors.primary)}
+                    start={{ x: 0, y: 0 }}
+                    end={{ x: 0, y: 1 }}
+                    style={[styles.card, { borderColor: line.color || colors.primary, borderWidth: 2 }]}
+                >
+                    <Text style={[styles.charName, { color: line.color || activeAccent }]}>
                         {line.characterName}
                     </Text>
 
                     {echoPhase === 'speak' ? (
                         <View style={{ alignItems: 'center', marginVertical: 20 }}>
                             <Mic size={48} color={colors.error} style={{ marginBottom: 10 }} />
-                            <Text style={[styles.text, { color: colors.textSecondary, fontStyle: 'italic' }]}>
+                            <Text style={[styles.text, { color: fgSecondary, fontStyle: 'italic' }]}>
                                 (Recita la frase de memoria...)
                             </Text>
                         </View>
                     ) : (
-                        <Text style={[styles.text, { color: colors.text }]}>
+                        <Text style={[styles.text, { color: fg }]}>
                             {stripStageDirections(line.text)}
                         </Text>
                     )}
@@ -462,7 +489,7 @@ export default function ReinforcementScreen() {
                         <View style={[styles.feedbackContainer, {
                             backgroundColor: echoCorrect ? 'rgba(74, 222, 128, 0.1)' : 'rgba(239, 68, 68, 0.1)'
                         }]}>
-                            <Text style={[styles.feedbackLabel, { color: colors.textSecondary }]}>Tú dijiste:</Text>
+                            <Text style={[styles.feedbackLabel, { color: fgSecondary }]}>Tú dijiste:</Text>
                             <Text style={[styles.feedbackText, {
                                 color: echoCorrect ? colors.success : colors.error
                             }]}>
@@ -476,7 +503,7 @@ export default function ReinforcementScreen() {
                                         setEchoTranscript('');
                                         setEchoCorrect(null);
                                     }}
-                                    style={[styles.btn, { backgroundColor: colors.primary, marginTop: 12 }]}
+                                    style={[styles.btn, primaryButtonBg, { marginTop: 12 }]}
                                 >
                                     <Text style={styles.btnText}>Reintentar</Text>
                                 </TouchableOpacity>
@@ -487,18 +514,18 @@ export default function ReinforcementScreen() {
                     {echoPhase === 'processing' && (
                         <View style={{ alignItems: 'center', marginTop: 24 }}>
                             <ActivityIndicator size="large" color={colors.primary} />
-                            <Text style={{ color: colors.primary, marginTop: 10 }}>Verificando...</Text>
+                            <Text style={{ color: activeAccent, marginTop: 10 }}>Verificando...</Text>
                         </View>
                     )}
 
                     {echoPhase === 'read' && (
                         <View style={styles.timerContainer}>
-                            <Clock size={20} color={colors.primary} />
-                            <Text style={[styles.timerText, { color: colors.primary }]}>{echoTimeLeft}s</Text>
-                            <Text style={{ color: colors.textSecondary, marginLeft: 8 }}>Memoriza...</Text>
+                            <Clock size={20} color={activeAccent} />
+                            <Text style={[styles.timerText, { color: activeAccent }]}>{echoTimeLeft}s</Text>
+                            <Text style={{ color: fgSecondary, marginLeft: 8 }}>Memoriza...</Text>
                         </View>
                     )}
-                </View>
+                </LinearGradient>
             </View>
         );
     };
@@ -514,7 +541,7 @@ export default function ReinforcementScreen() {
         if (!displayQuestion || !displayOptions) {
             return (
                 <View style={styles.content}>
-                    <Text style={{ color: colors.text }}>No se puede cargar la pregunta.</Text>
+                    <Text style={{ color: fg }}>No se puede cargar la pregunta.</Text>
                 </View>
             );
         }
@@ -533,13 +560,13 @@ export default function ReinforcementScreen() {
 
         return (
             <View style={styles.content}>
-                <Text style={[styles.questionText, { color: colors.text }]}>
+                <Text style={[styles.questionText, { color: fg }]}>
                     {displayQuestion}
                 </Text>
 
                 <View style={styles.optionsContainer}>
                     {displayOptions.map((opt, idx) => {
-                        let bgColor = colors.surface;
+                        let bgColor = glassBg;
 
                         if (quizSelected !== null) {
                             // Si acertó, mostrar la correcta en verde
@@ -555,11 +582,11 @@ export default function ReinforcementScreen() {
                         return (
                             <TouchableOpacity
                                 key={idx}
-                                style={[styles.optionBtn, { backgroundColor: bgColor, borderColor: colors.border }]}
+                                style={[styles.optionBtn, { backgroundColor: bgColor, borderColor: glassBorder }]}
                                 onPress={() => handleQuizAnswer(idx)}
                                 disabled={quizSelected !== null}
                             >
-                                <Text style={[styles.optionText, { color: colors.text }]}>{opt}</Text>
+                                <Text style={[styles.optionText, { color: fg }]}>{opt}</Text>
 
                                 <View style={styles.iconContainer}>
                                     {quizSelected === idx && quizCorrect && <Check size={20} color={colors.success} />}
@@ -576,7 +603,7 @@ export default function ReinforcementScreen() {
                             setQuizSelected(null);
                             setQuizCorrect(null);
                         }}
-                        style={[styles.btn, { backgroundColor: colors.primary, marginTop: 20, alignSelf: 'center' }]}
+                        style={[styles.btn, primaryButtonBg, { marginTop: 20, alignSelf: 'center' }]}
                     >
                         <Text style={styles.btnText}>Reintentar</Text>
                     </TouchableOpacity>
@@ -585,89 +612,75 @@ export default function ReinforcementScreen() {
         );
     };
 
-    if (loading) return <ActivityIndicator style={{ flex: 1 }} />;
-
-    if (failedItems.length === 0) {
-        return (
-            <SafeAreaView style={[styles.container, { backgroundColor: colors.background, justifyContent: 'center', alignItems: 'center' }]}>
-                <Text style={{ color: colors.text, fontSize: 18, marginBottom: 20 }}>¡No tienes líneas para reforzar!</Text>
-                <TouchableOpacity onPress={() => router.back()} style={{ padding: 12, backgroundColor: colors.primary, borderRadius: 8 }}>
-                    <Text style={{ color: '#fff' }}>Volver</Text>
-                </TouchableOpacity>
-            </SafeAreaView>
-        );
-    }
-
     if (loading) {
         return (
-            <View style={[styles.container, styles.center, { backgroundColor: colors.background }]}>
-                <ActivityIndicator size="large" color={colors.primary} />
-            </View>
+            <ImageBackground source={bg()} resizeMode="cover" style={styles.container}>
+                <View style={[styles.container, styles.center]}>
+                    <ActivityIndicator size="large" color={colors.primary} />
+                </View>
+            </ImageBackground>
         );
     }
 
     if (failedItems.length === 0) {
         return (
-            <SafeAreaView style={[styles.container, { backgroundColor: colors.surface }]}>
-                <View style={{ flex: 1, backgroundColor: colors.background }}>
-                    <View style={[styles.header, { borderBottomColor: colors.border, backgroundColor: colors.surface }]}>
-                        <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
-                            <ArrowLeft size={24} color={colors.text} />
+            <ImageBackground source={bg()} resizeMode="cover" style={styles.container}>
+                <SafeAreaView style={[styles.container, { backgroundColor: 'transparent' }]}>
+                    <View style={styles.header}>
+                        <TouchableOpacity onPress={() => router.back()} style={[styles.backButton, { backgroundColor: glassBg, borderColor: glassBorder }]}>
+                            <ArrowLeft size={24} color={fg} />
                         </TouchableOpacity>
-                        <Text style={[styles.headerTitle, { color: colors.text, flex: 1, textAlign: 'center', marginRight: 40 }]}>
+                        <Text style={[styles.headerTitle, { color: fg, flex: 1, textAlign: 'center', marginRight: 40 }]}>
                             Refuerzo
                         </Text>
                     </View>
                     <View style={[styles.content, styles.center]}>
-                        <Text style={[styles.emptyText, { color: colors.textSecondary }]}>
+                        <Text style={[styles.emptyText, { color: fgSecondary }]}>
                             ¡Excelente! No tienes errores pendientes.{'\n\n'}
                             Completa más juegos para generar refuerzos.
                         </Text>
                         <TouchableOpacity
-                            style={[styles.btn, { backgroundColor: colors.primary, marginTop: 20 }]}
+                            style={[styles.btn, primaryButtonBg, { marginTop: 20 }]}
                             onPress={() => router.back()}
                         >
                             <Text style={styles.btnText}>Volver</Text>
                         </TouchableOpacity>
                     </View>
-                </View>
-            </SafeAreaView>
+                </SafeAreaView>
+            </ImageBackground>
         );
     }
 
     return (
-        <SafeAreaView style={[styles.container, { backgroundColor: colors.surface }]}>
-            <View style={{ flex: 1, backgroundColor: colors.background }}>
-                <View style={[styles.header, { borderBottomColor: colors.border, backgroundColor: colors.surface }]}>
-                    <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
-                        <ArrowLeft size={24} color={colors.text} />
+        <ImageBackground source={bg()} resizeMode="cover" style={styles.container}>
+        <SafeAreaView style={[styles.container, { backgroundColor: 'transparent' }]}>
+                <View style={styles.header}>
+                    <TouchableOpacity onPress={() => router.back()} style={[styles.backButton, { backgroundColor: glassBg, borderColor: glassBorder }]}>
+                        <ArrowLeft size={24} color={fg} />
                     </TouchableOpacity>
-                    <Text style={[styles.headerTitle, { color: colors.text, flex: 1, textAlign: 'center', marginRight: 40 }]}>
+                    <Text style={[styles.headerTitle, { color: fg, flex: 1, textAlign: 'center', marginRight: 40 }]}>
                         Refuerzo ({currentIndex + 1}/{failedItems.length})
                     </Text>
                 </View>
 
                 {currentItem && (
                     <>
-                        {/* Debug logging */}
-                        {console.log('[Reinforcement] Current item reason:', currentItem.reason)}
-                        {console.log('[Reinforcement] Ghost hidden indices:', ghostHiddenIndices.size)}
-
                         {/* Mapear errores antiguos a nuevos tipos */}
                         {(currentItem.reason === 'ghost_error' || currentItem.reason === 'wrong_word' || currentItem.reason === 'revealed' || currentItem.reason === 'timeout') && renderGhostMode()}
                         {(currentItem.reason === 'echo_error' || currentItem.reason === 'poor_match') && renderEchoMode()}
                         {(currentItem.reason === 'quiz_error') && renderQuizMode()}
                         {!['ghost_error', 'echo_error', 'quiz_error', 'wrong_word', 'revealed', 'timeout', 'poor_match'].includes(currentItem.reason) && (
                             <View style={styles.content}>
-                                <Text style={{ color: colors.text }}>Tipo de error no soportado: {currentItem.reason}</Text>
+                                <Text style={{ color: fg }}>Tipo de error no soportado: {currentItem.reason}</Text>
                             </View>
                         )}
                     </>
                 )}
 
-                {/* Navigation Buttons */}
+                {/* Navegación: módulo flotante (círculos), en vez de una fila
+                    plana dentro del contenido. */}
                 {currentItem && (
-                    <View style={styles.navigation}>
+                    <View style={[styles.floatingControls, { bottom: insets.bottom + rp(16) }]} pointerEvents="box-none">
                         <TouchableOpacity
                             onPress={() => {
                                 if (currentIndex > 0) {
@@ -676,10 +689,13 @@ export default function ReinforcementScreen() {
                                 }
                             }}
                             disabled={currentIndex === 0}
-                            style={[styles.navButton, { opacity: currentIndex === 0 ? 0.3 : 1 }]}
+                            style={[
+                                styles.navCircle,
+                                styles.pillShadow,
+                                { backgroundColor: glassBg, borderColor: glassBorder, opacity: currentIndex === 0 ? 0.4 : 1 },
+                            ]}
                         >
-                            <ChevronLeft size={24} color={colors.text} />
-                            <Text style={[styles.navText, { color: colors.text }]}>Anterior</Text>
+                            <ChevronLeft size={26} color={fg} />
                         </TouchableOpacity>
 
                         <TouchableOpacity
@@ -690,25 +706,40 @@ export default function ReinforcementScreen() {
                                 }
                             }}
                             disabled={currentIndex === failedItems.length - 1}
-                            style={[styles.navButton, { opacity: currentIndex === failedItems.length - 1 ? 0.3 : 1 }]}
+                            style={[
+                                styles.navCircle,
+                                styles.pillShadow,
+                                { backgroundColor: glassBg, borderColor: glassBorder, opacity: currentIndex === failedItems.length - 1 ? 0.4 : 1 },
+                            ]}
                         >
-                            <Text style={[styles.navText, { color: colors.text }]}>Siguiente</Text>
-                            <ChevronRight size={24} color={colors.text} />
+                            <ChevronRight size={26} color={fg} />
                         </TouchableOpacity>
                     </View>
                 )}
-            </View>
+
+            <ConfirmDialog
+                visible={showAllDone}
+                title="¡Completado!"
+                message="Has repasado todos los errores."
+                singleButton
+                confirmText="Volver"
+                onConfirm={() => { setShowAllDone(false); router.back(); }}
+                onCancel={() => { setShowAllDone(false); router.back(); }}
+            />
         </SafeAreaView>
+        </ImageBackground>
     );
 }
 
 const styles = StyleSheet.create({
     container: { flex: 1 },
     center: { justifyContent: 'center', alignItems: 'center' },
-    header: { flexDirection: 'row', alignItems: 'center', padding: 16, borderBottomWidth: 1 },
-    backButton: { padding: 8, marginRight: 16 },
+    header: { flexDirection: 'row', alignItems: 'center', padding: 16 },
+    backButton: { width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center', borderWidth: 1, marginRight: 16 },
     headerTitle: { fontSize: 18, fontWeight: '700' },
-    content: { flex: 1, padding: 20 },
+    // Hueco de sobra para que los círculos flotantes de navegación no tapen
+    // el final de la tarjeta.
+    content: { flex: 1, padding: 20, paddingBottom: 100 },
     emptyText: { fontSize: 18, textAlign: 'center', lineHeight: 28 },
 
     // Ghost Mode
@@ -778,7 +809,16 @@ const styles = StyleSheet.create({
     btnText: { color: '#FFF', fontSize: 18, fontWeight: '700' },
 
     // Navigation
-    navigation: { flexDirection: 'row', justifyContent: 'space-between', padding: 20, paddingBottom: 30 },
-    navButton: { flexDirection: 'row', alignItems: 'center', padding: 12, gap: 8 },
-    navText: { fontSize: 16, fontWeight: '600' },
+    // Módulo flotante de navegación (círculos), en vez de una fila plana
+    // dentro del contenido — mismo lenguaje que el resto de pantallas del
+    // modo Memoria.
+    floatingControls: { position: 'absolute', left: 16, right: 16, flexDirection: 'row', justifyContent: 'space-between' },
+    pillShadow: {
+        shadowColor: '#1a1625',
+        shadowOffset: { width: 0, height: 6 },
+        shadowOpacity: 0.2,
+        shadowRadius: 12,
+        elevation: 6,
+    },
+    navCircle: { width: 56, height: 56, borderRadius: 28, borderWidth: 1, alignItems: 'center', justifyContent: 'center' },
 });

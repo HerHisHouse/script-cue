@@ -1,37 +1,35 @@
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useState, useCallback } from 'react';
 import {
     View,
     Text,
     StyleSheet,
     TouchableOpacity,
     ScrollView,
-    ActivityIndicator,
+    ImageBackground,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, useLocalSearchParams, useFocusEffect } from 'expo-router';
 import { useTheme } from '@/contexts/ThemeContext';
+import { BlurView } from 'expo-blur';
 import {
     Brain,
     Ghost,
     Mic,
-    Repeat,
     HelpCircle,
     Zap,
     ArrowLeft,
     Trophy,
-    Flame
+    Flame,
 } from 'lucide-react-native';
 import { getStreak, getTotalScore } from '@/utils/gamification';
-import { ScreenHeader } from '@/components/ScreenHeader';
 import { rf, rp } from '@/utils/responsive';
 
 const GAMES = [
     {
         id: 'active',
         title: 'Memorización Activa',
-        description: '3 niveles de ocultación: oculto, iniciales y texto completo.',
+        description: '3 niveles: oculto, iniciales y texto completo.',
         icon: Brain,
-        color: '#3B82F6', // Blue
         route: '/active'
     },
     {
@@ -39,7 +37,6 @@ const GAMES = [
         title: 'Texto Fantasma',
         description: 'Las palabras desaparecen progresivamente.',
         icon: Ghost,
-        color: '#8B5CF6', // Purple
         route: '/ghost'
     },
     {
@@ -47,16 +44,13 @@ const GAMES = [
         title: 'Eco de Memoria',
         description: 'Lee, memoriza y repite tras el silencio.',
         icon: Mic,
-        color: '#10B981', // Green
         route: '/echo'
     },
-
     {
         id: 'quiz',
         title: 'Quiz Memory',
         description: 'Pon a prueba tu conocimiento del texto.',
         icon: HelpCircle,
-        color: '#EC4899', // Pink
         route: '/quiz'
     },
     {
@@ -64,7 +58,6 @@ const GAMES = [
         title: 'Refuerzo',
         description: 'Repasa solo las líneas que más fallas.',
         icon: Zap,
-        color: '#EF4444', // Red
         route: '/reinforcement'
     }
 ];
@@ -72,7 +65,7 @@ const GAMES = [
 export default function MemoryMenuScreen() {
     const router = useRouter();
     const { id } = useLocalSearchParams();
-    const { colors } = useTheme();
+    const { isDark } = useTheme();
 
     const [streak, setStreak] = useState(0);
     const [totalScore, setTotalScore] = useState(0);
@@ -92,59 +85,77 @@ export default function MemoryMenuScreen() {
         }
     };
 
+    // Misma paleta "sobre imagen de fondo" que el resumen del guion (index.tsx)
+    // y el resto de pantallas rediseñadas.
+    const fg = isDark ? '#FFFFFF' : '#2A1B47';
+    const fgSecondary = isDark ? 'rgba(255,255,255,0.6)' : '#3d3660';
+    const glassBg = isDark ? 'rgba(124,106,247,0.14)' : 'rgba(230,230,236,0.6)';
+    const glassBorder = isDark ? 'rgba(255,255,255,0.2)' : 'rgba(42,27,71,0.18)';
+
     return (
-        <SafeAreaView style={[styles.container, { backgroundColor: colors.surface }]}>
-            <View style={{ flex: 1, backgroundColor: colors.background }}>
-            <View style={[styles.header, { borderBottomColor: colors.border, backgroundColor: colors.surface }]}>
-                <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
-                    <ArrowLeft size={24} color={colors.text} />
-                </TouchableOpacity>
-                <Text style={[styles.headerTitle, { color: colors.text }]}>Entrenamiento de Memoria</Text>
-                <View style={{ width: 40 }} />
-            </View>
-
-            <ScrollView contentContainerStyle={styles.content}>
-
-                {/* Stats Banner */}
-                <View style={[styles.statsContainer, { backgroundColor: colors.surface }]}>
-                    <View style={styles.statItem}>
-                        <Flame size={24} color="#F97316" />
-                        <View>
-                            <Text style={[styles.statLabel, { color: colors.textSecondary }]}>Racha</Text>
-                            <Text style={[styles.statValue, { color: colors.text }]}>{streak} días</Text>
-                        </View>
-                    </View>
-                    <View style={[styles.divider, { backgroundColor: colors.border }]} />
-                    <View style={styles.statItem}>
-                        <Trophy size={24} color="#EAB308" />
-                        <View>
-                            <Text style={[styles.statLabel, { color: colors.textSecondary }]}>Puntos</Text>
-                            <Text style={[styles.statValue, { color: colors.text }]}>{totalScore}</Text>
-                        </View>
-                    </View>
+        <ImageBackground
+            source={isDark ? require('@/assets/images/ui-dark-bg.png') : require('@/assets/images/ui-light-bg.png')}
+            resizeMode="cover"
+            style={styles.container}
+        >
+            <SafeAreaView style={[styles.container, { backgroundColor: 'transparent' }]}>
+                <View style={styles.header}>
+                    <TouchableOpacity onPress={() => router.back()} style={[styles.backButton, { backgroundColor: glassBg, borderColor: glassBorder }]}>
+                        <ArrowLeft size={24} color={fg} />
+                    </TouchableOpacity>
+                    <Text style={[styles.headerTitle, { color: fg }]} numberOfLines={1}>
+                        Entrenamiento de Memoria
+                    </Text>
+                    <View style={{ width: 40 }} />
                 </View>
 
-                <Text style={[styles.sectionTitle, { color: colors.textSecondary }]}>Elige tu juego</Text>
+                <ScrollView style={styles.content} contentContainerStyle={styles.contentContainer}>
 
-                <View style={styles.grid}>
-                    {GAMES.map((game) => (
-                        <TouchableOpacity
-                            key={game.id}
-                            style={[styles.card, { backgroundColor: colors.surface, borderColor: colors.border }]}
-                            onPress={() => router.push(`/scripts/${id}/memory${game.route}`)}
-                        >
-                            <View style={[styles.iconContainer, { backgroundColor: game.color + '20' }]}>
-                                <game.icon size={32} color={game.color} />
+                    {/* Racha / Puntos */}
+                    <View style={[styles.statsCard, { backgroundColor: glassBg, borderColor: glassBorder }]}>
+                        <View style={styles.statItem}>
+                            <Flame size={24} color="#F97316" />
+                            <View>
+                                <Text style={[styles.statLabel, { color: fgSecondary }]}>Racha</Text>
+                                <Text style={[styles.statValue, { color: fg }]}>{streak} días</Text>
                             </View>
-                            <Text style={[styles.cardTitle, { color: colors.text }]}>{game.title}</Text>
-                            <Text style={[styles.cardDesc, { color: colors.textSecondary }]}>{game.description}</Text>
-                        </TouchableOpacity>
-                    ))}
-                </View>
+                        </View>
+                        <View style={[styles.divider, { backgroundColor: glassBorder }]} />
+                        <View style={styles.statItem}>
+                            <Trophy size={24} color="#EAB308" />
+                            <View>
+                                <Text style={[styles.statLabel, { color: fgSecondary }]}>Puntos</Text>
+                                <Text style={[styles.statValue, { color: fg }]}>{totalScore}</Text>
+                            </View>
+                        </View>
+                    </View>
 
-            </ScrollView>
-            </View>
-        </SafeAreaView>
+                    <Text style={[styles.sectionTitle, { color: fgSecondary }]}>Elige tu juego</Text>
+
+                    <View style={styles.list}>
+                        {GAMES.map((game) => (
+                            <TouchableOpacity
+                                key={game.id}
+                                activeOpacity={0.8}
+                                style={[styles.gameCardShadow, isDark && styles.noShadow]}
+                                onPress={() => router.push(`/scripts/${id}/memory${game.route}`)}
+                            >
+                                <View style={[styles.gameCardClip, { borderColor: glassBorder }]}>
+                                    <BlurView intensity={40} tint={isDark ? 'dark' : 'light'} style={[styles.gameCard, { backgroundColor: glassBg }]}>
+                                        <View style={[styles.gameIconCircle, { backgroundColor: glassBorder }]}>
+                                            <game.icon size={28} color={fg} />
+                                        </View>
+                                        <Text style={[styles.gameTitle, { color: fg }]}>{game.title}</Text>
+                                        <Text style={[styles.gameDesc, { color: fgSecondary }]}>{game.description}</Text>
+                                    </BlurView>
+                                </View>
+                            </TouchableOpacity>
+                        ))}
+                    </View>
+
+                </ScrollView>
+            </SafeAreaView>
+        </ImageBackground>
     );
 }
 
@@ -156,30 +167,38 @@ const styles = StyleSheet.create({
         flexDirection: 'row',
         alignItems: 'center',
         justifyContent: 'space-between',
-        paddingHorizontal: rp(16),
-        paddingVertical: rp(12),
-        borderBottomWidth: 1,
+        paddingHorizontal: rp(20),
+        paddingTop: rp(12),
+        paddingBottom: rp(16),
     },
     backButton: {
-        padding: rp(8),
+        width: 40,
+        height: 40,
+        borderRadius: 20,
+        alignItems: 'center',
+        justifyContent: 'center',
+        borderWidth: 1,
     },
     headerTitle: {
+        flex: 1,
         fontSize: rf(18),
         fontWeight: '700',
+        textAlign: 'center',
+        marginHorizontal: 8,
     },
     content: {
+        flex: 1,
         padding: rp(20),
     },
-    statsContainer: {
+    contentContainer: {
+        paddingBottom: rp(40),
+    },
+    statsCard: {
         flexDirection: 'row',
         borderRadius: 16,
+        borderWidth: 1,
         padding: rp(16),
         marginBottom: 24,
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 2 },
-        shadowOpacity: 0.05,
-        shadowRadius: 8,
-        elevation: 2,
     },
     statItem: {
         flex: 1,
@@ -210,38 +229,52 @@ const styles = StyleSheet.create({
         letterSpacing: 1,
         textAlign: 'center',
     },
-    grid: {
-        gap: 16,
+    list: {
+        gap: 14,
     },
-    card: {
-        borderRadius: 16,
-        padding: rp(20),
+    // Misma sombra "flotante" que ModeGlassCard (components/ModeGlassCard.tsx),
+    // pero en fila completa en vez de en cuadrícula — el propio componente no
+    // admite forzar el ancho al 100%, así que aquí se repite el mismo
+    // tratamiento visual (blur + borde + sombra) en un único item por fila.
+    gameCardShadow: {
+        borderRadius: 18,
+        shadowColor: '#1a1625',
+        shadowOffset: { width: 0, height: 6 },
+        shadowOpacity: 0.22,
+        shadowRadius: 12,
+        elevation: 6,
+    },
+    noShadow: {
+        shadowOpacity: 0,
+        elevation: 0,
+    },
+    gameCardClip: {
+        borderRadius: 18,
         borderWidth: 1,
-        flexDirection: 'column',
-        alignItems: 'center',
-        gap: 12,
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 2 },
-        shadowOpacity: 0.05,
-        shadowRadius: 8,
-        elevation: 2,
+        overflow: 'hidden',
     },
-    iconContainer: {
-        width: 56,
-        height: 56,
-        borderRadius: 28,
+    gameCard: {
+        alignItems: 'center',
+        paddingVertical: rp(24),
+        paddingHorizontal: rp(20),
+        gap: 8,
+    },
+    gameIconCircle: {
+        width: 64,
+        height: 64,
+        borderRadius: 32,
         alignItems: 'center',
         justifyContent: 'center',
         marginBottom: 4,
     },
-    cardTitle: {
+    gameTitle: {
         fontSize: rf(18),
         fontWeight: '700',
         textAlign: 'center',
     },
-    cardDesc: {
-        fontSize: rf(14),
-        lineHeight: 20,
+    gameDesc: {
+        fontSize: rf(13.5),
+        lineHeight: 19,
         textAlign: 'center',
     },
 });

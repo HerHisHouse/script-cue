@@ -5,17 +5,19 @@ import {
     StyleSheet,
     TouchableOpacity,
     ActivityIndicator,
-    Alert,
     ScrollView,
     Animated,
+    ImageBackground,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { useTheme } from '@/contexts/ThemeContext';
 import { useAuth } from '@/contexts/AuthContext';
 import { DialogueLine } from '@/utils/dialogueParser';
 import { loadDialogueLines } from '@/utils/loadDialogueLines';
 import { ArrowLeft, Mic, Clock, ChevronLeft, ChevronRight, RotateCcw, Heart, Volume2, Check } from 'lucide-react-native';
+import { LinearGradient } from 'expo-linear-gradient';
+import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { Audio } from 'expo-av';
 import * as Speech from 'expo-speech';
 import { saveScore, addFailedLine } from '@/utils/gamification';
@@ -33,8 +35,23 @@ type Phase = 'read' | 'speak' | 'feedback' | 'ai-speaking';
 export default function EchoModeScreen() {
     const router = useRouter();
     const { id } = useLocalSearchParams();
-    const { colors } = useTheme();
+    const { colors, isDark } = useTheme();
     const { user } = useAuth();
+    const insets = useSafeAreaInsets();
+    const bg = () => (isDark ? require('@/assets/images/ui-dark-bg.png') : require('@/assets/images/ui-light-bg.png'));
+    // Misma paleta "sobre imagen de fondo" que el resto de pantallas rediseñadas.
+    const fg = isDark ? '#FFFFFF' : '#2A1B47';
+    const fgSecondary = isDark ? 'rgba(255,255,255,0.6)' : '#3d3660';
+    const glassBg = isDark ? 'rgba(124,106,247,0.14)' : 'rgba(230,230,236,0.6)';
+    const glassBorder = isDark ? 'rgba(255,255,255,0.2)' : 'rgba(42,27,71,0.18)';
+    const activeAccent = isDark ? '#FFFFFF' : colors.primary;
+    const primaryButtonBg = isDark
+        ? { backgroundColor: 'rgba(124,106,247,0.80)', borderWidth: 1.5, borderColor: 'rgba(255,255,255,0.5)' }
+        : { backgroundColor: colors.primary };
+    // Mismo degradado de tarjeta que Modo Estudio / Memorización Activa / Texto Fantasma.
+    const dialogueCardGradient = (charColor: string): [string, string] => (
+        isDark ? [`${charColor}1A`, `${charColor}4D`] : [`${charColor}12`, `${charColor}30`]
+    );
   useEffect(() => {
     if (user && id) trackEvent(user.id, 'game_started', 'memory', { script_id: id, game_type: 'echo' });
   }, [user, id]);
@@ -61,6 +78,10 @@ export default function EchoModeScreen() {
 
     // Feedback
     const [feedbackStatus, setFeedbackStatus] = useState<'success' | 'error' | null>(null);
+    // Alerts propios (ConfirmDialog) en vez del Alert.alert nativo del sistema,
+    // que no respeta el estilo de cristal de la app.
+    const [levelCompleteMsg, setLevelCompleteMsg] = useState<string | null>(null);
+    const [showGameOver, setShowGameOver] = useState(false);
     const [transcribedText, setTranscribedText] = useState('');
 
     // Refs
@@ -196,6 +217,15 @@ export default function EchoModeScreen() {
         unsavedPoints.current = 0;
     };
 
+    const handleGameOverRestart = () => {
+        setShowGameOver(false);
+        setLives(5);
+        setScore(0);
+        setCurrentIndex(0);
+        setGameActive(true);
+        processingRef.current = false;
+    };
+
     const handleLevelComplete = () => {
         const bonus = lives > 0 ? 15 : 0;
         setScore(s => s + bonus);
@@ -207,9 +237,7 @@ export default function EchoModeScreen() {
             ? `¡Completado! Puntuación: ${score + bonus}\nBonus por vidas: +${bonus}`
             : `Completado. Puntuación: ${score}`;
 
-        Alert.alert('¡Nivel Completado!', message, [
-            { text: 'Volver', onPress: () => router.back() }
-        ]);
+        setLevelCompleteMsg(message);
     };
 
     async function cleanupSound() {
@@ -397,18 +425,7 @@ export default function EchoModeScreen() {
                     if (newLives <= 0) {
                         unsavedPoints.current = 0;
                         setGameActive(false);
-                        Alert.alert("GAME OVER", "Has perdido todas tus vidas.", [
-                            {
-                                text: "Reiniciar",
-                                onPress: () => {
-                                    setLives(5);
-                                    setScore(0);
-                                    setCurrentIndex(0);
-                                    setGameActive(true);
-                                    processingRef.current = false;
-                                }
-                            }
-                        ]);
+                        setShowGameOver(true);
                     }
                     return newLives;
                 });
@@ -446,21 +463,30 @@ export default function EchoModeScreen() {
         if (currentIndex > 0) setCurrentIndex(p => p - 1);
     };
 
-    if (loading) return <ActivityIndicator style={{ flex: 1 }} />;
+    if (loading) return (
+        <ImageBackground source={bg()} resizeMode="cover" style={styles.container}>
+            <View style={[styles.container, styles.center]}>
+                <ActivityIndicator size="large" color={colors.primary} />
+            </View>
+        </ImageBackground>
+    );
 
     const currentLine = dialogueLines[currentIndex];
-    if (!currentLine && gameActive) return <View style={styles.container} />;
+    if (!currentLine && gameActive) return (
+        <ImageBackground source={bg()} resizeMode="cover" style={styles.container} />
+    );
 
     return (
-        <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
+        <ImageBackground source={bg()} resizeMode="cover" style={styles.container}>
+        <SafeAreaView style={[styles.container, { backgroundColor: 'transparent' }]}>
             {/* Header */}
-            <View style={[styles.header, { borderBottomColor: colors.border, backgroundColor: colors.surface }]}>
-                <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
-                    <ArrowLeft size={24} color={colors.text} />
+            <View style={styles.header}>
+                <TouchableOpacity onPress={() => router.back()} style={[styles.backButton, { backgroundColor: glassBg, borderColor: glassBorder }]}>
+                    <ArrowLeft size={24} color={fg} />
                 </TouchableOpacity>
 
                 <View style={styles.headerTitleContainer}>
-                    <Text style={[styles.headerTitle, { color: colors.text }]}>Eco de Memoria</Text>
+                    <Text style={[styles.headerTitle, { color: fg }]}>Eco de Memoria</Text>
                     {gameActive && (
                         <View style={styles.livesContainer}>
                             {[...Array(5)].map((_, i) => (
@@ -468,7 +494,7 @@ export default function EchoModeScreen() {
                                     key={i}
                                     size={16}
                                     fill={i < lives ? "#FF4444" : "transparent"}
-                                    color={i < lives ? "#FF4444" : colors.textSecondary}
+                                    color={i < lives ? "#FF4444" : fgSecondary}
                                     style={{ marginHorizontal: 1 }}
                                 />
                             ))}
@@ -478,7 +504,7 @@ export default function EchoModeScreen() {
 
                 {gameActive && (
                     <View style={styles.scoreContainer}>
-                        <Text style={[styles.scoreText, { color: score < 0 ? colors.error : colors.primary }]}>{score}</Text>
+                        <Text style={[styles.scoreText, { color: score < 0 ? colors.error : activeAccent }]}>{score}</Text>
                         {pointDelta !== null && (
                             <Animated.Text style={[
                                 styles.floatingPoint,
@@ -497,7 +523,7 @@ export default function EchoModeScreen() {
 
             {!gameActive ? (
                 <View style={[styles.content, styles.center]}>
-                    <Text style={[styles.instructions, { color: colors.text }]}>
+                    <Text style={[styles.instructions, { color: fg }]}>
                         Lee cada frase, memorízala y repítela cuando desaparezca.
                         {'\n\n'}
                         Las líneas de réplica se reproducirán automáticamente para darte contexto.
@@ -507,16 +533,16 @@ export default function EchoModeScreen() {
                         style={styles.checkboxContainer}
                         onPress={() => setDontShowAgain(!dontShowAgain)}
                     >
-                        <View style={[styles.checkbox, { borderColor: colors.border }]}>
-                            {dontShowAgain && <Check size={16} color={colors.primary} />}
+                        <View style={[styles.checkbox, { borderColor: glassBorder }]}>
+                            {dontShowAgain && <Check size={16} color={activeAccent} />}
                         </View>
-                        <Text style={[styles.checkboxLabel, { color: colors.textSecondary }]}>
+                        <Text style={[styles.checkboxLabel, { color: fgSecondary }]}>
                             No volver a mostrar este mensaje
                         </Text>
                     </TouchableOpacity>
 
                     <TouchableOpacity
-                        style={[styles.startButton, { backgroundColor: colors.primary }]}
+                        style={[styles.startButton, primaryButtonBg]}
                         onPress={async () => {
                             if (dontShowAgain) {
                                 await setIntroPreference('echo', true);
@@ -529,96 +555,139 @@ export default function EchoModeScreen() {
                 </View>
             ) : (
                 <ScrollView contentContainerStyle={styles.content}>
-                    <View style={[styles.card, {
-                        backgroundColor: colors.surface,
-                        borderColor: currentLine.isUserCharacter ? '#10B981' : (currentLine.color || colors.primary),
-                        borderWidth: 3
-                    }]}>
-                        <Text style={[styles.charName, { color: currentLine.isUserCharacter ? '#10B981' : (currentLine.color || colors.primary) }]}>
-                            {currentLine.characterName}
-                        </Text>
+                    <LinearGradient
+                        colors={dialogueCardGradient(currentLine.isUserCharacter ? '#10B981' : (currentLine.color || colors.primary))}
+                        start={{ x: 0, y: 0 }}
+                        end={{ x: 0, y: 1 }}
+                        style={[styles.card, {
+                            borderColor: currentLine.isUserCharacter ? '#10B981' : (currentLine.color || colors.primary),
+                            borderWidth: 2,
+                            padding: 0,
+                            overflow: 'hidden',
+                        }]}
+                    >
+                        <View style={styles.cardInner}>
+                            <Text style={[styles.charName, { color: currentLine.isUserCharacter ? '#10B981' : (currentLine.color || activeAccent) }]}>
+                                {currentLine.characterName}
+                            </Text>
 
-                        {phase === 'speak' ? (
-                            <View style={styles.speakContainer}>
-                                <Mic size={64} color={colors.error} />
-                                <Text style={[styles.speakText, { color: colors.textSecondary }]}>
-                                    Recita la frase...
-                                </Text>
-                            </View>
-                        ) : phase === 'ai-speaking' ? (
-                            <>
-                                <Text style={[styles.dialogueText, { color: colors.text }]}>
-                                    {stripStageDirections(currentLine.text)}
-                                </Text>
-                                <View style={styles.speakingContainer}>
-                                    <Volume2 size={24} color={colors.primary} />
-                                    <Text style={[styles.speakingText, { color: colors.primary }]}>
-                                        Reproduciendo...
+                            {phase === 'speak' ? (
+                                <View style={styles.speakContainer}>
+                                    <Mic size={64} color={colors.error} />
+                                    <Text style={[styles.speakText, { color: fgSecondary }]}>
+                                        Recita la frase...
                                     </Text>
                                 </View>
-                            </>
-                        ) : (
-                            <Text style={[styles.dialogueText, { color: colors.text }]}>
-                                {stripStageDirections(currentLine.text)}
-                            </Text>
-                        )}
-
-                        {phase === 'read' && currentLine.isUserCharacter && (
-                            <View style={styles.timerContainer}>
-                                <Clock size={20} color={colors.primary} />
-                                <Text style={[styles.timerText, { color: colors.primary }]}>{timeLeft}s</Text>
-                            </View>
-                        )}
-
-                        {phase === 'feedback' && (
-                            <View style={[styles.feedbackContainer, { backgroundColor: feedbackStatus === 'success' ? 'rgba(74, 222, 128, 0.1)' : 'rgba(239, 68, 68, 0.1)' }]}>
-                                <Text style={[styles.feedbackLabel, { color: colors.textSecondary }]}>Tú dijiste:</Text>
-                                <Text style={[styles.feedbackText, { color: feedbackStatus === 'success' ? colors.success : colors.error }]}>
-                                    {transcribedText}
+                            ) : phase === 'ai-speaking' ? (
+                                <>
+                                    <Text style={[styles.dialogueText, { color: fg }]}>
+                                        {stripStageDirections(currentLine.text)}
+                                    </Text>
+                                    <View style={styles.speakingContainer}>
+                                        <Volume2 size={24} color={activeAccent} />
+                                        <Text style={[styles.speakingText, { color: activeAccent }]}>
+                                            Reproduciendo...
+                                        </Text>
+                                    </View>
+                                </>
+                            ) : (
+                                <Text style={[styles.dialogueText, { color: fg }]}>
+                                    {stripStageDirections(currentLine.text)}
                                 </Text>
+                            )}
 
-                                {feedbackStatus === 'error' && lives > 0 && (
-                                    <TouchableOpacity onPress={handleRetry} style={[styles.retryButton, { backgroundColor: colors.primary }]}>
-                                        <RotateCcw size={16} color="#FFF" style={{ marginRight: 8 }} />
-                                        <Text style={{ color: '#FFF', fontWeight: '600' }}>Reintentar</Text>
-                                    </TouchableOpacity>
-                                )}
-                            </View>
-                        )}
+                            {phase === 'read' && currentLine.isUserCharacter && (
+                                <View style={styles.timerContainer}>
+                                    <Clock size={20} color={activeAccent} />
+                                    <Text style={[styles.timerText, { color: activeAccent }]}>{timeLeft}s</Text>
+                                </View>
+                            )}
+
+                            {phase === 'feedback' && (
+                                <View style={[styles.feedbackContainer, { backgroundColor: feedbackStatus === 'success' ? 'rgba(74, 222, 128, 0.1)' : 'rgba(239, 68, 68, 0.1)' }]}>
+                                    <Text style={[styles.feedbackLabel, { color: fgSecondary }]}>Tú dijiste:</Text>
+                                    <Text style={[styles.feedbackText, { color: feedbackStatus === 'success' ? colors.success : colors.error }]}>
+                                        {transcribedText}
+                                    </Text>
+
+                                    {feedbackStatus === 'error' && lives > 0 && (
+                                        <TouchableOpacity onPress={handleRetry} style={[styles.retryButton, primaryButtonBg]}>
+                                            <RotateCcw size={16} color="#FFF" style={{ marginRight: 8 }} />
+                                            <Text style={{ color: '#FFF', fontWeight: '600' }}>Reintentar</Text>
+                                        </TouchableOpacity>
+                                    )}
+                                </View>
+                            )}
+                        </View>
+                    </LinearGradient>
+                </ScrollView>
+            )}
+
+            {/* Navegación: módulo flotante (círculos + píldora de progreso), en
+                vez de una fila plana dentro del contenido. */}
+            {gameActive && (
+                <View style={[styles.floatingControls, { bottom: insets.bottom + rp(16) }]} pointerEvents="box-none">
+                    <View style={[styles.progressPill, { backgroundColor: glassBg, borderColor: glassBorder }]}>
+                        <Text style={[styles.progress, { color: fgSecondary }]}>
+                            {currentIndex + 1} / {dialogueLines.length}
+                        </Text>
                     </View>
-
-                    <View style={styles.navigation}>
+                    <View style={styles.controlsRow}>
                         <TouchableOpacity
                             onPress={handlePrev}
                             disabled={currentIndex === 0 || (phase !== 'read' && phase !== 'ai-speaking')}
-                            style={[styles.navButton, { opacity: currentIndex === 0 || (phase !== 'read' && phase !== 'ai-speaking') ? 0.3 : 1 }]}
+                            style={[
+                                styles.navCircle,
+                                styles.pillShadow,
+                                { backgroundColor: glassBg, borderColor: glassBorder, opacity: currentIndex === 0 || (phase !== 'read' && phase !== 'ai-speaking') ? 0.4 : 1 },
+                            ]}
                         >
-                            <ChevronLeft size={24} color={colors.text} />
+                            <ChevronLeft size={26} color={fg} />
                         </TouchableOpacity>
-
-                        <Text style={[styles.progress, { color: colors.textSecondary }]}>
-                            {currentIndex + 1} / {dialogueLines.length}
-                        </Text>
 
                         <TouchableOpacity
                             onPress={handleNext}
                             disabled={currentIndex === dialogueLines.length - 1 || (phase !== 'read' && phase !== 'ai-speaking')}
-                            style={[styles.navButton, { opacity: currentIndex === dialogueLines.length - 1 || (phase !== 'read' && phase !== 'ai-speaking') ? 0.3 : 1 }]}
+                            style={[
+                                styles.navCircle,
+                                styles.pillShadow,
+                                { backgroundColor: glassBg, borderColor: glassBorder, opacity: currentIndex === dialogueLines.length - 1 || (phase !== 'read' && phase !== 'ai-speaking') ? 0.4 : 1 },
+                            ]}
                         >
-                            <ChevronRight size={24} color={colors.text} />
+                            <ChevronRight size={26} color={fg} />
                         </TouchableOpacity>
                     </View>
-                </ScrollView>
+                </View>
             )}
+
+            <ConfirmDialog
+                visible={levelCompleteMsg !== null}
+                title="¡Nivel Completado!"
+                message={levelCompleteMsg || ''}
+                singleButton
+                confirmText="Volver"
+                onConfirm={() => { setLevelCompleteMsg(null); router.back(); }}
+                onCancel={() => { setLevelCompleteMsg(null); router.back(); }}
+            />
+            <ConfirmDialog
+                visible={showGameOver}
+                title="GAME OVER"
+                message="Has perdido todas tus vidas."
+                singleButton
+                confirmText="Reiniciar"
+                onConfirm={handleGameOverRestart}
+                onCancel={handleGameOverRestart}
+            />
         </SafeAreaView>
+        </ImageBackground>
     );
 }
 
 const styles = StyleSheet.create({
     container: { flex: 1 },
     center: { justifyContent: 'center', alignItems: 'center' },
-    header: { flexDirection: 'row', alignItems: 'center', padding: rp(16), borderBottomWidth: 1 },
-    backButton: { padding: rp(4) },
+    header: { flexDirection: 'row', alignItems: 'center', padding: rp(16) },
+    backButton: { width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center', borderWidth: 1 },
     headerTitleContainer: { flex: 1, alignItems: 'center' },
     headerTitle: { fontSize: rf(18), fontWeight: '700' },
     livesContainer: { flexDirection: 'row', marginTop: 4 },
@@ -626,7 +695,9 @@ const styles = StyleSheet.create({
     scoreText: { fontSize: rf(18), fontWeight: '800' },
     floatingPoint: { position: 'absolute', top: 25, fontSize: rf(16), fontWeight: 'bold' },
 
-    content: { flex: 1, padding: rp(20) },
+    // Hueco de sobra para que el módulo flotante de navegación no tape el
+    // final de la tarjeta.
+    content: { flex: 1, padding: rp(20), paddingBottom: rp(150) },
     instructions: { fontSize: rf(18), textAlign: 'center', marginBottom: 32, lineHeight: 28, paddingHorizontal: rp(20) },
     checkboxContainer: { flexDirection: 'row', alignItems: 'center', marginBottom: 20, gap: 12 },
     checkbox: { width: 24, height: 24, borderWidth: 2, borderRadius: 6, alignItems: 'center', justifyContent: 'center' },
@@ -634,7 +705,10 @@ const styles = StyleSheet.create({
     startButton: { paddingVertical: rp(16), paddingHorizontal: rp(48), borderRadius: 32 },
     startButtonText: { color: '#FFF', fontSize: rf(18), fontWeight: '700' },
 
-    card: { borderRadius: 16, padding: rp(24), minHeight: 300, justifyContent: 'center', alignItems: 'center' },
+    card: { borderRadius: 16, minHeight: 300, justifyContent: 'center', alignItems: 'center' },
+    // La tarjeta pasa a ser un LinearGradient (padding:0 para que el degradado
+    // llegue hasta el borde redondeado) — el padding se recupera aquí dentro.
+    cardInner: { width: '100%', padding: rp(24), alignItems: 'center' },
     charName: { fontSize: rf(14), fontWeight: '700', marginBottom: 24, textTransform: 'uppercase' },
     dialogueText: { fontSize: rf(24), textAlign: 'center', lineHeight: 36 },
 
@@ -652,7 +726,19 @@ const styles = StyleSheet.create({
     feedbackText: { fontSize: rf(18), textAlign: 'center', fontWeight: '500' },
     retryButton: { flexDirection: 'row', alignItems: 'center', paddingVertical: rp(12), paddingHorizontal: rp(24), borderRadius: 24, marginTop: 12 },
 
-    navigation: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 24 },
-    navButton: { padding: rp(12) },
-    progress: { fontSize: rf(16), fontWeight: '600' },
+    // Módulo flotante de navegación (círculos + píldora), en vez de una fila
+    // plana dentro del contenido — mismo lenguaje que el resto de pantallas
+    // del modo Memoria.
+    floatingControls: { position: 'absolute', left: 16, right: 16, alignItems: 'center' },
+    progressPill: { paddingHorizontal: rp(14), paddingVertical: rp(6), borderRadius: 100, borderWidth: 1, marginBottom: 12 },
+    progress: { fontSize: rf(12), fontWeight: '500' },
+    controlsRow: { flexDirection: 'row', justifyContent: 'space-between', width: '100%' },
+    pillShadow: {
+        shadowColor: '#1a1625',
+        shadowOffset: { width: 0, height: 6 },
+        shadowOpacity: 0.2,
+        shadowRadius: 12,
+        elevation: 6,
+    },
+    navCircle: { width: 56, height: 56, borderRadius: 28, borderWidth: 1, alignItems: 'center', justifyContent: 'center' },
 });
