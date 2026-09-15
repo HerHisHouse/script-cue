@@ -926,7 +926,7 @@ export default function CoachModeScreen() {
 
                 <View style={styles.emptyActions}>
                   <TouchableOpacity
-                    style={[styles.actionButton, { backgroundColor: colors.primary, shadowColor: colors.primary }]}
+                    style={[styles.actionButton, primaryButtonBg, { shadowColor: colors.primary }]}
                     onPress={() => router.push(`/scripts/${id}/studio-v2`)}
                   >
                     <Play size={24} color="#FFFFFF" />
@@ -934,7 +934,7 @@ export default function CoachModeScreen() {
                   </TouchableOpacity>
 
                   <TouchableOpacity
-                    style={[styles.actionButton, { backgroundColor: colors.primary, shadowColor: colors.primary }]}
+                    style={[styles.actionButton, primaryButtonBg, { shadowColor: colors.primary }]}
                     onPress={() => router.push(`/scripts/${id}/casting`)}
                   >
                     <Clapperboard size={24} color="#FFFFFF" />
