@@ -336,13 +336,6 @@ export default function CoachModeScreen() {
     }
   }
 
-  // Move FileSystem import to top if not present, but for replace_file_content I can't easily add imports if they are far away.
-  // I will check imports first. coach.tsx currently imports: 
-  // Loop line 1: import React...
-  // It does NOT import * as FileSystem from 'expo-file-system'.
-  // I will add the import in a separate tool call or just use require if possible? No, require is messy for types.
-  // I will assume I can update imports in a separate call. I'll do that first.
-
   async function startAnalysis(compareWithId?: string) {
     if (!selectedRecording || !user) return;
 
