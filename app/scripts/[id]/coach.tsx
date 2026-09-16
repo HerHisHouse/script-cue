@@ -919,10 +919,13 @@ export default function CoachModeScreen() {
             contentContainerStyle={{ padding: rp(20) }}
             ListEmptyComponent={
               <View style={styles.emptyState}>
-                <Mic size={48} color={onBg2} style={{ opacity: 0.5 }} />
-                <Text style={[styles.emptyText, { color: onBg2 }]}>
-                  No hay grabaciones disponibles. Ve al &ldquo;Modo Estudio&rdquo; o &ldquo;Modo Casting&rdquo; para grabar una escena.
-                </Text>
+                <View style={[styles.infoCard, { backgroundColor: cardBg, borderColor: cardBorder }]}>
+                  <Mic size={48} color="#FFFFFF" style={{ marginBottom: 16 }} />
+                  <Text style={[styles.infoTitle, { color: onBg }]}>No hay grabaciones disponibles</Text>
+                  <Text style={[styles.infoDescription, { color: onBg2 }]}>
+                    Ve al &ldquo;Modo Estudio&rdquo; o &ldquo;Modo Casting&rdquo; para grabar una escena.
+                  </Text>
+                </View>
 
                 <View style={styles.emptyActions}>
                   <TouchableOpacity
@@ -1266,8 +1269,26 @@ const styles = StyleSheet.create({
   },
   recordingTitle: { fontSize: rf(16), fontWeight: '600' },
   recordingSubtitle: { fontSize: rf(12), marginTop: 4 },
-  emptyState: { alignItems: 'center', marginTop: 60, padding: rp(40) },
+  emptyState: { alignItems: 'center', marginTop: 60, paddingHorizontal: rp(20) },
   emptyText: { textAlign: 'center', marginTop: 16 },
+  infoCard: {
+    width: '100%',
+    borderRadius: 16,
+    borderWidth: 1,
+    padding: rp(24),
+    alignItems: 'center',
+  },
+  infoTitle: {
+    fontSize: rf(20),
+    fontWeight: '700',
+    textAlign: 'center',
+    marginBottom: 12,
+  },
+  infoDescription: {
+    fontSize: rf(14),
+    textAlign: 'center',
+    lineHeight: 20,
+  },
 
   // Player
   playerSection: {

@@ -13,6 +13,7 @@ export interface BottomSheetToggleProps {
   borderColor?: string;
   description?: string; // Optional subtitle
   infoText?: string;
+  trackColorActive?: string;
 }
 
 export function BottomSheetToggle({
@@ -24,7 +25,8 @@ export function BottomSheetToggle({
   textColor,
   borderColor,
   description,
-  infoText
+  infoText,
+  trackColorActive
 }: BottomSheetToggleProps) {
   const { colors } = useTheme();
 
@@ -59,7 +61,7 @@ export function BottomSheetToggle({
       <Switch
         value={value}
         onValueChange={onValueChange}
-        trackColor={{ false: colors.border, true: '#34C759' }} // iOS standard green for toggles
+        trackColor={{ false: colors.border, true: trackColorActive || '#34C759' }} // iOS standard green for toggles by default
       />
     </TouchableOpacity>
   );

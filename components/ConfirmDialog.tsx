@@ -47,7 +47,10 @@ export function ConfirmDialog({
   const { colors, isDark } = useTheme();
   const onBg = isDark ? '#ffffff' : '#2a2447';
   const onBg2 = isDark ? '#a0a0c0' : '#5c5678';
-  const accentColor = destructive ? colors.error : colors.primary;
+  // En modo oscuro, colors.primary (morado apagado) apenas se lee sobre el
+  // pill translúcido del botón — igual que el resto de acentos morados de la
+  // app, en oscuro pasa a blanco (ver [[scriptcue-dark-mode-card-conventions]] regla 7).
+  const accentColor = destructive ? colors.error : (isDark ? '#FFFFFF' : colors.primary);
   const pillStyle = isDark
     ? { backgroundColor: 'rgba(255,255,255,0.1)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.2)' as const }
     : { backgroundColor: 'rgba(124,106,247,0.12)' };
@@ -93,7 +96,7 @@ export function ConfirmDialog({
               {extraButtonText && onExtra ? (
                 <View style={styles.buttonsColumn}>
                   <TouchableOpacity style={[styles.buttonColumn, pillStyle]} onPress={onExtra}>
-                    <Text style={[styles.buttonText, { color: colors.primary }]}>{extraButtonText}</Text>
+                    <Text style={[styles.buttonText, { color: accentColor }]}>{extraButtonText}</Text>
                   </TouchableOpacity>
                   <TouchableOpacity style={[styles.buttonColumn, pillStyle]} onPress={onConfirm}>
                     <Text style={[styles.buttonText, { color: accentColor }]}>{confirmText}</Text>

@@ -5,7 +5,6 @@ import {
   StyleSheet,
   TouchableOpacity,
   ActivityIndicator,
-  Alert,
   Platform,
   FlatList,
   Dimensions,
@@ -21,10 +20,12 @@ import {
   Keyboard,
   Modal,
   useWindowDimensions,
+  ImageBackground,
 } from 'react-native';
 
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter, useLocalSearchParams, Stack } from 'expo-router';
+import { BlurView } from 'expo-blur';
 import Constants from 'expo-constants';
 import { activateKeepAwakeAsync, deactivateKeepAwake } from 'expo-keep-awake';
 import { rf, rp } from '@/utils/responsive';
@@ -41,6 +42,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/utils/supabase';
 import { BottomSheetMenu } from '@/components/BottomSheetMenu';
 import { BottomSheetToggle } from '@/components/BottomSheetToggle';
+import { ConfirmDialog } from '@/components/ConfirmDialog';
 import client from '@/utils/openaiClient';
 import { generateElevenLabsAudio } from '@/utils/elevenLabsClient';
 import { useTheme } from '@/contexts/ThemeContext';
@@ -111,6 +113,47 @@ export default function CastingModeScreen() {
   const insets = useSafeAreaInsets();
   const { width: windowWidth, height: windowHeight } = useWindowDimensions();
   const isLandscape = windowWidth > windowHeight;
+
+  // Misma paleta "sobre imagen de fondo" que el resto de pantallas rediseñadas
+  // (Modo Memoria, Editor, Modo Escena...).
+  const castingBg = () => (isDark ? require('@/assets/images/ui-dark-bg.png') : require('@/assets/images/ui-light-bg.png'));
+  const fg = isDark ? '#FFFFFF' : '#2A1B47';
+  const fgSecondary = isDark ? 'rgba(255,255,255,0.6)' : '#3d3660';
+  const glassBg = isDark ? 'rgba(124,106,247,0.14)' : 'rgba(230,230,236,0.6)';
+  const glassBorder = isDark ? 'rgba(255,255,255,0.2)' : 'rgba(42,27,71,0.18)';
+  const activeAccent = isDark ? '#FFFFFF' : colors.primary;
+  const chipInactiveBg = isDark ? 'rgba(255,255,255,0.08)' : 'rgba(104,58,121,0.08)';
+  const chipActiveBg = isDark ? 'rgba(124,106,247,0.30)' : 'rgba(104,58,121,0.15)';
+  // Mismo tratamiento que el botón "Guardar" del Editor: en modo oscuro,
+  // relleno morado translúcido con borde blanco en vez de un morado sólido.
+  const primaryButtonBg = isDark
+    ? { backgroundColor: 'rgba(124,106,247,0.80)', borderWidth: 1.5, borderColor: 'rgba(255,255,255,0.5)' }
+    : { backgroundColor: colors.primary };
+  // Cristal para los controles flotantes SOBRE el vídeo de la cámara — a
+  // diferencia del resto de la app, aquí no puede depender de isDark (el
+  // fondo real es el vídeo en directo, de cualquier color), así que siempre
+  // usa un tinte oscuro neutro para que se lea bien encima de cualquier
+  // imagen.
+  const camChromeTint = 'rgba(10,10,14,0.45)';
+  const camChromeBorder = 'rgba(255,255,255,0.25)';
+
+  // Sustituye a los Alert.alert nativos por el ConfirmDialog de cristal
+  // compartido con el resto de la app. Un único estado genérico cubre los
+  // distintos avisos del modo Casting (1, 2 o 3 botones).
+  type CastingAlertButton = { text: string; onPress?: () => void };
+  const [castingAlert, setCastingAlert] = useState<{
+    title: string;
+    message: string;
+    buttons: CastingAlertButton[];
+  } | null>(null);
+
+  function showCastingAlert(title: string, message: string, buttons?: CastingAlertButton[]) {
+    setCastingAlert({
+      title,
+      message,
+      buttons: buttons && buttons.length > 0 ? buttons : [{ text: 'Entendido' }],
+    });
+  }
 
   // Camera Component Loader
   const cameraRef = useRef<any>(null);
@@ -241,7 +284,7 @@ export default function CastingModeScreen() {
         await AsyncStorage.getItem('casting_hide_wideshot_info');
 
       if (hideInfo !== 'true') {
-        Alert.alert(
+        showCastingAlert(
           '🎬 Plano general automático',
           'Así funciona:\n\n' +
           '1️⃣ Colócate según la silueta guía para fijar tu plano general\n\n' +
@@ -577,7 +620,7 @@ export default function CastingModeScreen() {
       }
     } catch (e) {
       console.error('Error loading script:', e);
-      Alert.alert('Error', 'No se pudo cargar el guion');
+      showCastingAlert('Error', 'No se pudo cargar el guion');
     } finally {
       setLoading(false);
     }
@@ -1535,7 +1578,7 @@ export default function CastingModeScreen() {
 
     } catch (e) {
       console.error('Recording failed:', e);
-      Alert.alert('Error', 'No se pudo iniciar la grabación');
+      showCastingAlert('Error', 'No se pudo iniciar la grabación');
       setIsRecording(false);
       setIsPlaying(false);
     }
@@ -1613,7 +1656,7 @@ export default function CastingModeScreen() {
           file_size_bytes: 0,
         });
         setIsProcessing(false);
-        Alert.alert('¡Video guardado!', 'Tu grabación está guardada en este dispositivo (📱 Local).', [
+        showCastingAlert('¡Video guardado!', 'Tu grabación está guardada en este dispositivo (📱 Local).', [
           { text: 'Ver Grabaciones', onPress: () => router.replace('/(tabs)/recordings') }
         ]);
         return;
@@ -1683,7 +1726,7 @@ export default function CastingModeScreen() {
     } catch (e: any) {
       console.error(e);
       setIsProcessing(false);
-      Alert.alert('Error', e.message || 'Error guardando');
+      showCastingAlert('Error', e.message || 'Error guardando');
     }
   }
 
@@ -1706,7 +1749,7 @@ export default function CastingModeScreen() {
       lineTimingsRef.current = [];
       setLineTimingsCount(0);
 
-      Alert.alert('Grabación cancelada', 'La grabación ha sido descartada.');
+      showCastingAlert('Grabación cancelada', 'La grabación ha sido descartada.');
     }
   }
 
@@ -1729,22 +1772,19 @@ export default function CastingModeScreen() {
 
       // Solo si es la PRIMERA toma de la sesión (no hay sesión activa todavía),
       // mostrar la pregunta inicial completa
-      Alert.alert(
+      showCastingAlert(
         '🎬 ¿Otra toma?',
         '¿Quieres grabar otra toma de esta escena para comparar cuál te gusta más?',
         [
           {
             text: 'No, enviar esta',
-            style: 'default',
             onPress: () => proceedWithNormalFlow(uri, _hasHeadphonesArg),
           },
           {
             text: 'Sí, grabar otra',
-            style: 'default',
             onPress: () => saveTakeLocally(uri, _hasHeadphonesArg),
           },
-        ],
-        { cancelable: false }
+        ]
       );
       return;
     }
@@ -1810,7 +1850,7 @@ export default function CastingModeScreen() {
           if (!response.ok) {
             const errorData = await response.json().catch(() => ({}));
             if (response.status === 413) {
-              Alert.alert(
+              showCastingAlert(
                 '📹 Vídeo demasiado grande',
                 errorData.error || 'Graba en calidad Básica (480p) para escenas largas.',
                 [{ text: 'Entendido' }]
@@ -1818,7 +1858,7 @@ export default function CastingModeScreen() {
               return;
             }
             if (response.status === 502) {
-              Alert.alert(
+              showCastingAlert(
                 '⚠️ Error del servidor',
                 'El servidor no pudo procesar el vídeo. ' +
                 'Prueba con calidad Básica (480p) o graba una escena más corta.',
@@ -1861,7 +1901,7 @@ export default function CastingModeScreen() {
     } catch (e: any) {
       console.error('[Casting] Error enviando vídeo:', e);
       setIsProcessing(false);
-      Alert.alert(
+      showCastingAlert(
         'Error al enviar',
         e.message || 'No se pudo enviar el vídeo. Comprueba tu conexión.',
         [{ text: 'OK' }]
@@ -1952,7 +1992,7 @@ export default function CastingModeScreen() {
         ? 'Llevas 1 toma grabada de esta escena. Podrás compararla más adelante desde el Comparador de Tomas.'
         : `Llevas ${takeNumber} tomas grabadas de esta escena. ¿Quieres grabar otra más, o prefieres terminar aquí? Podrás compararlas más adelante desde el Comparador de Tomas.`;
 
-      Alert.alert(
+      showCastingAlert(
         `✅ Toma ${takeNumber} guardada`,
         savedMessage,
         [
@@ -1977,7 +2017,7 @@ export default function CastingModeScreen() {
     } catch (e: any) {
       console.error('[Comparador] Error guardando toma localmente:', e);
       setIsProcessing(false);
-      Alert.alert('Error', 'No se pudo guardar la toma. Inténtalo de nuevo.');
+      showCastingAlert('Error', 'No se pudo guardar la toma. Inténtalo de nuevo.');
     }
   }
 
@@ -2056,124 +2096,118 @@ export default function CastingModeScreen() {
 
       {/* --- SELECTION SCREEN --- */}
       {castingMode === 'selection' && (
-        <SafeAreaView style={[styles.configContainer, { backgroundColor: colors.surface }]}>
-          <View style={{ flex: 1, backgroundColor: colors.background }}>
-          <View style={[styles.configHeader, { backgroundColor: colors.surface }]}>
-            <TouchableOpacity onPress={() => router.replace(`/scripts/${id}`)} style={styles.configBackBtn}>
-              <ArrowLeft color={colors.text} size={rp(24)} />
+        <ImageBackground source={castingBg()} resizeMode="cover" style={{ flex: 1 }}>
+        <SafeAreaView style={[styles.configContainer, { backgroundColor: 'transparent' }]}>
+          <View style={styles.configHeader}>
+            <TouchableOpacity
+              onPress={() => router.replace(`/scripts/${id}`)}
+              style={[
+                styles.configBackBtn,
+                { width: rp(44), height: rp(44), borderRadius: rp(22), alignItems: 'center', justifyContent: 'center', backgroundColor: glassBg, borderColor: glassBorder, borderWidth: 1 },
+              ]}
+            >
+              <ArrowLeft color={fg} size={rp(24)} />
             </TouchableOpacity>
             <View style={styles.configTitleContainer}>
-              <Video color={colors.primary} size={rp(24)} />
-              <Text style={[styles.configTitle, { color: colors.text }]}>Modo Casting</Text>
+              <Video color={activeAccent} size={rp(24)} />
+              <Text style={[styles.configTitle, { color: fg }]}>Modo Casting</Text>
             </View>
             <View style={{ width: rp(44) }} />
           </View>
 
           <ScrollView
             style={{ flex: 1 }}
-            contentContainerStyle={{ padding: rp(20), gap: rp(16), flexGrow: 1, justifyContent: 'center' }}
+            contentContainerStyle={{ padding: rp(20), gap: rp(16) }}
           >
             <TouchableOpacity
-              style={[
-                styles.btn,
-                { backgroundColor: colors.card, padding: rp(24), borderRadius: rp(16), alignItems: 'center', width: '100%' },
-                !isDark && {
-                  shadowColor: '#000',
-                  shadowOffset: { width: 0, height: 6 },
-                  shadowOpacity: 0.08,
-                  shadowRadius: 20,
-                  elevation: 4,
-                  borderWidth: 1,
-                  borderColor: 'rgba(0,0,0,0.03)',
-                }
-              ]}
+              activeOpacity={0.85}
+              style={[styles.castingCardShadow, isDark && styles.noShadow]}
               onPress={() => { setQualityApplied(false); setCastingMode('free_input'); }}
             >
-              <MonitorPlay size={rp(48)} color="#10B981" style={{ marginBottom: 16 }} />
-              <Text style={{ color: colors.text, fontSize: rf(20), fontWeight: '700' }}>Presentación</Text>
-              <View style={{ marginTop: 12 }}>
-                <Text style={{ color: colors.textSecondary, fontSize: rf(14), marginBottom: 4 }}>
-                  Graba la presentación de tu casting:
-                </Text>
-                <Text style={{ color: colors.textSecondary, fontSize: rf(14), marginTop: 2 }}>• Teleprompter integrado</Text>
-                <Text style={{ color: colors.textSecondary, fontSize: rf(14), marginTop: 2 }}>• Plano General automático</Text>
-                <Text style={{ color: colors.textSecondary, fontSize: rf(14), marginTop: 2 }}>• Configuración del texto</Text>
+              <View style={[styles.castingCardClip, { borderColor: glassBorder }]}>
+                <BlurView intensity={40} tint={isDark ? 'dark' : 'light'} style={[styles.castingCard, { backgroundColor: glassBg }]}>
+                  <MonitorPlay size={rp(48)} color="#10B981" style={{ marginBottom: 16 }} />
+                  <Text style={[styles.castingCardTitle, { color: fg }]}>Presentación</Text>
+                  <View style={styles.castingCardDescBlock}>
+                    <Text style={[styles.castingCardSubtitle, { color: fg }]}>
+                      Graba la presentación de tu casting:
+                    </Text>
+                    <Text style={[styles.castingCardDesc, { color: fgSecondary }]}>• Teleprompter integrado</Text>
+                    <Text style={[styles.castingCardDesc, { color: fgSecondary }]}>• Plano General automático</Text>
+                    <Text style={[styles.castingCardDesc, { color: fgSecondary }]}>• Configuración del texto</Text>
+                  </View>
+                </BlurView>
               </View>
             </TouchableOpacity>
 
             <TouchableOpacity
-              style={[
-                styles.btn,
-                { backgroundColor: colors.card, padding: rp(24), borderRadius: rp(16), alignItems: 'center', width: '100%' },
-                !isDark && {
-                  shadowColor: '#000',
-                  shadowOffset: { width: 0, height: 6 },
-                  shadowOpacity: 0.08,
-                  shadowRadius: 20,
-                  elevation: 4,
-                  borderWidth: 1,
-                  borderColor: 'rgba(0,0,0,0.03)',
-                }
-              ]}
+              activeOpacity={0.85}
+              style={[styles.castingCardShadow, isDark && styles.noShadow]}
               onPress={() => { setQualityApplied(false); setCastingMode('script_config'); }}
             >
-              <Clapperboard size={rp(48)} color={colors.primary} style={{ marginBottom: 16 }} />
-              <Text style={{ color: colors.text, fontSize: rf(20), fontWeight: '700' }}>Selftape</Text>
-              <View style={{ marginTop: 12 }}>
-                <Text style={{ color: colors.textSecondary, fontSize: rf(14), marginBottom: 4 }}>
-                  Graba la escena de tu casting:
-                </Text>
-                <Text style={{ color: colors.textSecondary, fontSize: rf(14), marginTop: 2 }}>• Réplica en tiempo real</Text>
-                <Text style={{ color: colors.textSecondary, fontSize: rf(14), marginTop: 2 }}>• Guion cargado en teleprompter</Text>
-                <Text style={{ color: colors.textSecondary, fontSize: rf(14), marginTop: 2 }}>• Configuración de la escena</Text>
+              <View style={[styles.castingCardClip, { borderColor: glassBorder }]}>
+                <BlurView intensity={40} tint={isDark ? 'dark' : 'light'} style={[styles.castingCard, { backgroundColor: glassBg }]}>
+                  <Clapperboard size={rp(48)} color={colors.primary} style={{ marginBottom: 16 }} />
+                  <Text style={[styles.castingCardTitle, { color: fg }]}>Selftape</Text>
+                  <View style={styles.castingCardDescBlock}>
+                    <Text style={[styles.castingCardSubtitle, { color: fg }]}>
+                      Graba la escena de tu casting:
+                    </Text>
+                    <Text style={[styles.castingCardDesc, { color: fgSecondary }]}>• Réplica en tiempo real</Text>
+                    <Text style={[styles.castingCardDesc, { color: fgSecondary }]}>• Guion cargado en teleprompter</Text>
+                    <Text style={[styles.castingCardDesc, { color: fgSecondary }]}>• Configuración de la escena</Text>
+                  </View>
+                </BlurView>
               </View>
             </TouchableOpacity>
 
             <TouchableOpacity
-              style={[
-                styles.btn,
-                { backgroundColor: colors.card, padding: rp(24), borderRadius: rp(16), alignItems: 'center', width: '100%' },
-                !isDark && {
-                  shadowColor: '#000',
-                  shadowOffset: { width: 0, height: 6 },
-                  shadowOpacity: 0.08,
-                  shadowRadius: 20,
-                  elevation: 4,
-                  borderWidth: 1,
-                  borderColor: 'rgba(0,0,0,0.03)',
-                }
-              ]}
+              activeOpacity={0.85}
+              style={[styles.castingCardShadow, isDark && styles.noShadow]}
               onPress={() => router.push(`/scripts/${id}/take-comparator`)}
             >
-              <Layers size={rp(48)} color="#FBBF24" style={{ marginBottom: 16 }} />
-              <Text style={{ color: colors.text, fontSize: rf(20), fontWeight: '700' }}>Tomas</Text>
-              <View style={{ marginTop: 12 }}>
-                <Text style={{ color: colors.textSecondary, fontSize: rf(14), marginBottom: 4 }}>
-                  Revisa, compara y selecciona:
-                </Text>
-                <Text style={{ color: colors.textSecondary, fontSize: rf(14), marginTop: 2 }}>• Elige entre tus tomas grabadas</Text>
-                <Text style={{ color: colors.textSecondary, fontSize: rf(14), marginTop: 2 }}>• Selecciona tu favorita</Text>
-                <Text style={{ color: colors.textSecondary, fontSize: rf(14), marginTop: 2 }}>• Fija el tiempo de expiración</Text>
+              <View style={[styles.castingCardClip, { borderColor: glassBorder }]}>
+                <BlurView intensity={40} tint={isDark ? 'dark' : 'light'} style={[styles.castingCard, { backgroundColor: glassBg }]}>
+                  <Layers size={rp(48)} color="#FBBF24" style={{ marginBottom: 16 }} />
+                  <Text style={[styles.castingCardTitle, { color: fg }]}>Tomas</Text>
+                  <View style={styles.castingCardDescBlock}>
+                    <Text style={[styles.castingCardSubtitle, { color: fg }]}>
+                      Revisa, compara y selecciona:
+                    </Text>
+                    <Text style={[styles.castingCardDesc, { color: fgSecondary }]}>• Elige entre tus tomas grabadas</Text>
+                    <Text style={[styles.castingCardDesc, { color: fgSecondary }]}>• Selecciona tu favorita</Text>
+                    <Text style={[styles.castingCardDesc, { color: fgSecondary }]}>• Fija el tiempo de expiración</Text>
+                  </View>
+                </BlurView>
               </View>
             </TouchableOpacity>
           </ScrollView>
-          </View>
         </SafeAreaView>
+        </ImageBackground>
       )}
 
       {/* --- FREE INPUT SCREEN --- */}
       {castingMode === 'free_input' && (
-        <SafeAreaView style={[styles.configContainer, { backgroundColor: colors.surface }]}>
-          <View style={{ flex: 1, backgroundColor: colors.background }}>
-          <View style={[styles.configHeader, { backgroundColor: colors.surface }]}>
-            <TouchableOpacity onPress={() => setCastingMode('selection')} style={styles.configBackBtn}>
-              <ArrowLeft color={colors.text} size={rp(24)} />
+        <ImageBackground source={castingBg()} resizeMode="cover" style={{ flex: 1 }}>
+        <SafeAreaView style={[styles.configContainer, { backgroundColor: 'transparent' }]}>
+          <View style={styles.configHeader}>
+            <TouchableOpacity
+              onPress={() => setCastingMode('selection')}
+              style={[
+                styles.configBackBtn,
+                { width: rp(44), height: rp(44), borderRadius: rp(22), alignItems: 'center', justifyContent: 'center', backgroundColor: glassBg, borderColor: glassBorder, borderWidth: 1 },
+              ]}
+            >
+              <ArrowLeft color={fg} size={rp(24)} />
             </TouchableOpacity>
             <View style={styles.configTitleContainer}>
               <Type color="#10B981" size={rp(24)} />
-              <Text style={[styles.configTitle, { color: colors.text }]}>Edición de Texto</Text>
+              <Text style={[styles.configTitle, { color: fg }]}>Edición de Texto</Text>
             </View>
-            <TouchableOpacity onPress={startFreeCasting} style={[styles.startRecordingBtn, { paddingHorizontal: rp(16), paddingVertical: rp(8), marginTop: 0 }]}>
+            <TouchableOpacity
+              onPress={startFreeCasting}
+              style={[styles.startRecordingBtn, primaryButtonBg, { paddingHorizontal: rp(16), paddingVertical: rp(8), marginTop: 0 }]}
+            >
               <Text style={[styles.startRecordingText, { fontSize: rf(14) }]}>Continuar</Text>
             </TouchableOpacity>
           </View>
@@ -2184,15 +2218,15 @@ export default function CastingModeScreen() {
           >
             {/* Leyenda de ayuda */}
             <View style={{ paddingHorizontal: rp(16), paddingTop: rp(8), paddingBottom: rp(4) }}>
-              <Text style={{ color: colors.textSecondary, fontSize: rf(12), textAlign: 'center' }}>
+              <Text style={{ color: fgSecondary, fontSize: rf(12), textAlign: 'center' }}>
                 Escribe o pega el texto que quieras que aparezca en el teleprompter. Una vez dentro podrás editarlo a tu gusto
               </Text>
             </View>
 
             <View style={{ alignItems: 'flex-end', paddingHorizontal: rp(16), paddingVertical: rp(8) }}>
-              <TouchableOpacity onPress={() => Keyboard.dismiss()} style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: 'rgba(255,255,255,0.1)', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 8 }}>
-                <KeyboardIcon size={rp(16)} color={colors.text} style={{ marginRight: 4 }} />
-                <Text style={{ color: colors.text, fontSize: rf(12) }}>Ocultar teclado</Text>
+              <TouchableOpacity onPress={() => Keyboard.dismiss()} style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: chipInactiveBg, borderWidth: 1, borderColor: glassBorder, paddingHorizontal: 12, paddingVertical: 6, borderRadius: 8 }}>
+                <KeyboardIcon size={rp(16)} color={fg} style={{ marginRight: 4 }} />
+                <Text style={{ color: fg, fontSize: rf(12) }}>Ocultar teclado</Text>
               </TouchableOpacity>
             </View>
 
@@ -2202,46 +2236,53 @@ export default function CastingModeScreen() {
                 ref={freeTextInputRef}
                 style={{
                   flex: 1,
-                  backgroundColor: 'rgba(255,255,255,0.05)',
-                  color: colors.text,
+                  backgroundColor: glassBg,
+                  color: fg,
                   fontSize: rf(20),
                   padding: rp(20),
                   borderRadius: rp(12),
                   textAlignVertical: 'top',
                   borderWidth: 2,
-                  borderColor: colors.border,
+                  borderColor: glassBorder,
                   borderStyle: 'dashed'
                 }}
                 multiline
                 placeholder="Escribe o pega aquí tu texto libre..."
-                placeholderTextColor={colors.textSecondary}
+                placeholderTextColor={fgSecondary}
                 value={freeText}
                 onChangeText={handleFreeTextChange}
               />
             </View>
           </KeyboardAvoidingView>
-          </View>
         </SafeAreaView>
+        </ImageBackground>
       )}
 
       {/* Scene Configuration Screen */}
       {castingMode === 'script_config' && (
-        <SafeAreaView style={[styles.configContainer, { backgroundColor: colors.surface }]}>
+        <ImageBackground source={castingBg()} resizeMode="cover" style={{ flex: 1 }}>
+        <SafeAreaView style={[styles.configContainer, { backgroundColor: 'transparent' }]}>
           {/* Header */}
-          <View style={{ flex: 1, backgroundColor: colors.background }}>
-          <View style={[styles.configHeader, { backgroundColor: colors.surface }]}>
-            <TouchableOpacity onPress={() => router.replace(`/scripts/${id}`)} style={styles.configBackBtn}>
-              <ArrowLeft color={colors.text} size={rp(24)} />
+          <View style={{ flex: 1 }}>
+          <View style={styles.configHeader}>
+            <TouchableOpacity
+              onPress={() => router.replace(`/scripts/${id}`)}
+              style={[
+                styles.configBackBtn,
+                { width: rp(44), height: rp(44), borderRadius: rp(22), alignItems: 'center', justifyContent: 'center', backgroundColor: glassBg, borderColor: glassBorder, borderWidth: 1 },
+              ]}
+            >
+              <ArrowLeft color={fg} size={rp(24)} />
             </TouchableOpacity>
             <View style={styles.configTitleContainer}>
-              <Clapperboard color={colors.primary} size={rp(24)} />
-              <Text style={[styles.configTitle, { color: colors.text }]}>Configurar Escena</Text>
+              <Clapperboard color={activeAccent} size={rp(24)} />
+              <Text style={[styles.configTitle, { color: fg }]}>Configurar Escena</Text>
             </View>
             <TouchableOpacity
-              onPress={() => Alert.alert('Añadir acción', '"Añadir acción" sirve para configurar el tiempo que requieran las acciones por guion antes de decir una frase.')}
+              onPress={() => showCastingAlert('Añadir acción', '"Añadir acción" sirve para configurar el tiempo que requieran las acciones por guion antes de decir una frase.')}
               style={{ width: rp(44), alignItems: 'center', justifyContent: 'center' }}
             >
-              <Info color={colors.primary} size={rp(24)} />
+              <Info color={activeAccent} size={rp(24)} />
             </TouchableOpacity>
           </View>
 
@@ -2250,11 +2291,11 @@ export default function CastingModeScreen() {
 
             {/* Add Action Button at the very beginning */}
             {addingActionAfterLineId === 'start' ? (
-              <View style={styles.addActionForm}>
+              <View style={[styles.addActionForm, { backgroundColor: chipInactiveBg }]}>
                 <TextInput
-                  style={[styles.addActionInput, { color: colors.text, borderColor: colors.border }]}
+                  style={[styles.addActionInput, { color: fg, borderColor: glassBorder, backgroundColor: glassBg }]}
                   placeholder="Describe la acción..."
-                  placeholderTextColor={colors.textSecondary}
+                  placeholderTextColor={fgSecondary}
                   value={newActionText}
                   onChangeText={setNewActionText}
                   autoFocus
@@ -2262,13 +2303,13 @@ export default function CastingModeScreen() {
                 <View style={styles.addActionButtons}>
                   <TouchableOpacity
                     onPress={() => { setAddingActionAfterLineId(null); setNewActionText(''); }}
-                    style={[styles.addActionCancelBtn, { borderColor: colors.border }]}
+                    style={[styles.addActionCancelBtn, { borderColor: glassBorder }]}
                   >
-                    <Text style={{ color: colors.textSecondary }}>Cancelar</Text>
+                    <Text style={{ color: fgSecondary }}>Cancelar</Text>
                   </TouchableOpacity>
                   <TouchableOpacity
                     onPress={() => addActionCard('start', newActionText)}
-                    style={styles.addActionConfirmBtn}
+                    style={[styles.addActionConfirmBtn, primaryButtonBg]}
                   >
                     <Text style={{ color: '#fff', fontWeight: '600' }}>Añadir</Text>
                   </TouchableOpacity>
@@ -2277,10 +2318,10 @@ export default function CastingModeScreen() {
             ) : (
               <TouchableOpacity
                 onPress={() => setAddingActionAfterLineId('start')}
-                style={styles.addActionBtn}
+                style={[styles.addActionBtn, { borderColor: glassBorder }]}
               >
-                <Plus size={rp(14)} color={colors.textSecondary} />
-                <Text style={[styles.addActionText, { color: colors.textSecondary }]}>Añadir acción</Text>
+                <Plus size={rp(14)} color={fgSecondary} />
+                <Text style={[styles.addActionText, { color: fgSecondary }]}>Añadir acción</Text>
               </TouchableOpacity>
             )}
 
@@ -2320,30 +2361,30 @@ export default function CastingModeScreen() {
                   <View key={actionId} style={[styles.actionCard, {
                     backgroundColor: 'transparent',
                     borderLeftWidth: 4,
-                    borderLeftColor: colors.primary,
+                    borderLeftColor: activeAccent,
                     borderWidth: 1,
                     borderStyle: 'dashed',
-                    borderColor: colors.primary,
+                    borderColor: activeAccent,
                   }]}>
                     <View style={styles.actionCardHeader}>
-                      <Clapperboard color={colors.primary} size={rp(16)} />
-                      <Text style={[styles.actionCardLabel, { color: colors.primary }]}>ACCIÓN</Text>
+                      <Clapperboard color={activeAccent} size={rp(16)} />
+                      <Text style={[styles.actionCardLabel, { color: activeAccent }]}>ACCIÓN</Text>
                       {isManualAction && (
                         <TouchableOpacity onPress={() => removeActionCard(actionId)} style={styles.deleteActionBtn}>
                           <Trash2 color="#EF4444" size={rp(16)} />
                         </TouchableOpacity>
                       )}
                     </View>
-                    <Text style={[styles.actionCardText, { color: colors.text }]}>({text})</Text>
+                    <Text style={[styles.actionCardText, { color: fg }]}>({text})</Text>
                     <View style={styles.actionTimingRow}>
                       <TouchableOpacity
                         onPress={handleMinus}
-                        style={[styles.timingBtn, { backgroundColor: 'rgba(0,0,0,0.2)' }]}
+                        style={[styles.timingBtn, { backgroundColor: chipInactiveBg }]}
                       >
-                        <Minus size={rp(16)} color={colors.text} />
+                        <Minus size={rp(16)} color={fg} />
                       </TouchableOpacity>
                       <View style={styles.timingDisplay}>
-                        <Timer size={rp(14)} color={colors.primary} />
+                        <Timer size={rp(14)} color={activeAccent} />
                         <ActionTimingInput
                           actionId={actionId}
                           isManualAction={isManualAction}
@@ -2351,16 +2392,16 @@ export default function CastingModeScreen() {
                           adjustment={adjustment}
                           updateActionDuration={updateActionDuration}
                           adjustLineTiming={adjustLineTiming}
-                          colors={colors}
+                          colors={{ text: fg }}
                           styles={styles}
                         />
-                        <Text style={[styles.timingText, { color: colors.text }]}>s</Text>
+                        <Text style={[styles.timingText, { color: fg }]}>s</Text>
                       </View>
                       <TouchableOpacity
                         onPress={handlePlus}
-                        style={[styles.timingBtn, { backgroundColor: 'rgba(0,0,0,0.2)' }]}
+                        style={[styles.timingBtn, { backgroundColor: chipInactiveBg }]}
                       >
-                        <Plus size={rp(16)} color={colors.text} />
+                        <Plus size={rp(16)} color={fg} />
                       </TouchableOpacity>
                     </View>
                   </View>
@@ -2374,15 +2415,15 @@ export default function CastingModeScreen() {
 
               return (
                 <View key={line.id}>
-                  <View style={[styles.configLineCard, { backgroundColor: colors.card, borderLeftColor: line.color }]}>
+                  <View style={[styles.configLineCard, { backgroundColor: glassBg, borderLeftColor: line.color }]}>
                     {/* Line header */}
                     <View style={styles.configLineHeader}>
                       <View style={[styles.configCharBadge, { backgroundColor: line.color }]}>
                         <Text style={styles.configCharBadgeText}>{line.characterName.charAt(0)}</Text>
                       </View>
-                      <Text style={[styles.configCharName, { color: colors.text }]}>{line.characterName}</Text>
+                      <Text style={[styles.configCharName, { color: fg }]}>{line.characterName}</Text>
                       {line.isUserCharacter ? (
-                        <View style={styles.configYouBadge}>
+                        <View style={[styles.configYouBadge, { backgroundColor: colors.primary }]}>
                           <Text style={styles.configYouBadgeText}>TÚ</Text>
                         </View>
                       ) : (
@@ -2393,7 +2434,7 @@ export default function CastingModeScreen() {
                     </View>
 
                     {/* Line text */}
-                    <Text style={[styles.configLineText, { color: colors.text }]} numberOfLines={2}>
+                    <Text style={[styles.configLineText, { color: fg }]} numberOfLines={2}>
                       {renderTextWithStageDirections(
                         showStageDirections ? line.text : line.cleanText
                       )}
@@ -2402,19 +2443,19 @@ export default function CastingModeScreen() {
                     {/* AI badge shows "Auto" timing — user lines have no timer controls */}
                     {!line.isUserCharacter && (
                       <View style={styles.configAutoTiming}>
-                        <Timer size={rp(12)} color={colors.textSecondary} />
-                        <Text style={[styles.configAutoText, { color: colors.textSecondary }]}>Auto (TTS)</Text>
+                        <Timer size={rp(12)} color={fgSecondary} />
+                        <Text style={[styles.configAutoText, { color: fgSecondary }]}>Auto (TTS)</Text>
                       </View>
                     )}
                   </View>
 
                   {/* Add Action Button */}
                   {addingActionAfterLineId === line.id ? (
-                    <View style={styles.addActionForm}>
+                    <View style={[styles.addActionForm, { backgroundColor: chipInactiveBg }]}>
                       <TextInput
-                        style={[styles.addActionInput, { color: colors.text, borderColor: colors.border }]}
+                        style={[styles.addActionInput, { color: fg, borderColor: glassBorder, backgroundColor: glassBg }]}
                         placeholder="Describe la acción..."
-                        placeholderTextColor={colors.textSecondary}
+                        placeholderTextColor={fgSecondary}
                         value={newActionText}
                         onChangeText={setNewActionText}
                         autoFocus
@@ -2422,13 +2463,13 @@ export default function CastingModeScreen() {
                       <View style={styles.addActionButtons}>
                         <TouchableOpacity
                           onPress={() => { setAddingActionAfterLineId(null); setNewActionText(''); }}
-                          style={[styles.addActionCancelBtn, { borderColor: colors.border }]}
+                          style={[styles.addActionCancelBtn, { borderColor: glassBorder }]}
                         >
-                          <Text style={{ color: colors.textSecondary }}>Cancelar</Text>
+                          <Text style={{ color: fgSecondary }}>Cancelar</Text>
                         </TouchableOpacity>
                         <TouchableOpacity
                           onPress={() => addActionCard(line.id, newActionText)}
-                          style={styles.addActionConfirmBtn}
+                          style={[styles.addActionConfirmBtn, primaryButtonBg]}
                         >
                           <Text style={{ color: '#fff', fontWeight: '600' }}>Añadir</Text>
                         </TouchableOpacity>
@@ -2437,10 +2478,10 @@ export default function CastingModeScreen() {
                   ) : (
                     <TouchableOpacity
                       onPress={() => setAddingActionAfterLineId(line.id)}
-                      style={styles.addActionBtn}
+                      style={[styles.addActionBtn, { borderColor: glassBorder }]}
                     >
-                      <Plus size={rp(14)} color={colors.textSecondary} />
-                      <Text style={[styles.addActionText, { color: colors.textSecondary }]}>Añadir acción</Text>
+                      <Plus size={rp(14)} color={fgSecondary} />
+                      <Text style={[styles.addActionText, { color: fgSecondary }]}>Añadir acción</Text>
                     </TouchableOpacity>
                   )}
                 </View>
@@ -2452,7 +2493,7 @@ export default function CastingModeScreen() {
           <View style={styles.configFooter}>
             <TouchableOpacity
               onPress={startScriptCasting}
-              style={styles.startRecordingBtn}
+              style={[styles.startRecordingBtn, primaryButtonBg]}
             >
               <Video size={rp(20)} color="#fff" />
               <Text style={styles.startRecordingText}>Empezar a Grabar</Text>
@@ -2461,6 +2502,7 @@ export default function CastingModeScreen() {
           </View>
           </View>
         </SafeAreaView>
+        </ImageBackground>
       )}
 
       {/* CAMERA AND RECORDING VIEW */}
@@ -2497,33 +2539,46 @@ export default function CastingModeScreen() {
                     setCastingMode('selection');
                     if (isPlaying) setIsPlaying(false);
                   }
-                }} style={styles.iconBtn}>
+                }} style={[styles.iconBtn, { borderColor: camChromeBorder }]}>
+                  <BlurView intensity={50} tint="dark" style={[StyleSheet.absoluteFill, { backgroundColor: camChromeTint, borderRadius: rp(22) }]} />
                   <ArrowLeft color="white" size={rp(24)} />
                 </TouchableOpacity>
                 {castingType === 'free' && (
                   <TouchableOpacity
                     onPress={() => { setCastingMode('free_input'); isPlaying && setIsPlaying(false); }}
-                    style={{ backgroundColor: 'rgba(0,0,0,0.5)', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 20 }}
+                    style={{ paddingHorizontal: 12, paddingVertical: 6, borderRadius: 20, borderWidth: 1, borderColor: camChromeBorder, overflow: 'hidden' }}
                   >
+                    <BlurView intensity={50} tint="dark" style={[StyleSheet.absoluteFill, { backgroundColor: camChromeTint, borderRadius: 20 }]} />
                     <Text style={{ color: 'white', fontWeight: '600', fontSize: rf(14) }}>Editar T</Text>
+                  </TouchableOpacity>
+                )}
+                {isRecording && isLandscape && (
+                  <TouchableOpacity onPress={cancelRecording} style={styles.cancelRecordingBtn}>
+                    <X size={rp(16)} color="#EF4444" />
+                    <Text style={styles.cancelRecordingText}>Cancelar</Text>
                   </TouchableOpacity>
                 )}
               </View>
 
-              <View style={styles.timerBadge}>
+              <View style={[styles.timerBadge, { borderWidth: 1, borderColor: camChromeBorder }]}>
                 <View style={[styles.dot, isRecording && styles.recordingDot]} />
                 <Text style={styles.timerText}>{formatTime(recordingTime)}</Text>
               </View>
 
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
                 <View style={{ position: 'relative', zIndex: 100 }}>
-                  <TouchableOpacity onPress={() => setIsZoomMenuOpen(!isZoomMenuOpen)} style={[styles.activeZoomBtnHeader, { backgroundColor: 'rgba(0,0,0,0.5)' }]}>
+                  <TouchableOpacity
+                    onPress={() => setIsZoomMenuOpen(!isZoomMenuOpen)}
+                    style={[styles.activeZoomBtnHeader, { backgroundColor: 'transparent', borderWidth: 1, borderColor: camChromeBorder, overflow: 'hidden' }]}
+                  >
+                    <BlurView intensity={50} tint="dark" style={[StyleSheet.absoluteFill, { backgroundColor: camChromeTint, borderRadius: rp(22) }]} />
                     <Text style={styles.zoomTextHeader}>
                       {zoom === 0 ? '0.5x' : zoom === 0.08 ? '1x' : '2x'}
                     </Text>
                   </TouchableOpacity>
                   {isZoomMenuOpen && (
-                    <View style={{ position: 'absolute', top: 48, left: 0, right: 0, backgroundColor: 'rgba(0,0,0,0.72)', borderRadius: 20, paddingVertical: 6, alignItems: 'center', width: rp(44) }}>
+                    <View style={{ position: 'absolute', top: 48, left: 0, right: 0, borderRadius: 20, paddingVertical: 6, alignItems: 'center', width: rp(44), borderWidth: 1, borderColor: camChromeBorder, overflow: 'hidden' }}>
+                      <BlurView intensity={60} tint="dark" style={[StyleSheet.absoluteFill, { backgroundColor: camChromeTint, borderRadius: 20 }]} />
                       <TouchableOpacity onPress={() => { setZoom(0); setIsZoomMenuOpen(false) }} style={[styles.zoomBtnHeader, zoom === 0 && styles.activeZoomBtnHeader]}>
                         <Text style={styles.zoomTextHeader}>0.5x</Text>
                       </TouchableOpacity>
@@ -2542,7 +2597,8 @@ export default function CastingModeScreen() {
                     </View>
                   )}
                 </View>
-                <TouchableOpacity onPress={toggleCamera} style={styles.iconBtn}>
+                <TouchableOpacity onPress={toggleCamera} style={[styles.iconBtn, { borderColor: camChromeBorder }]}>
+                  <BlurView intensity={50} tint="dark" style={[StyleSheet.absoluteFill, { backgroundColor: camChromeTint, borderRadius: rp(22) }]} />
                   <SwitchCamera color="white" size={rp(24)} />
                 </TouchableOpacity>
               </View>
@@ -2802,9 +2858,9 @@ export default function CastingModeScreen() {
               </Animated.View>
             )}
 
-            {/* Botón de cancelar grabación (solo visible cuando está grabando) */}
-            {isRecording && (
-              <View style={[styles.cancelRecordingContainer, { top: isLandscape ? rp(70) : rp(130) }]}>
+            {/* Botón de cancelar grabación (vertical: debajo del back button; horizontal: se muestra dentro del header) */}
+            {isRecording && !isLandscape && (
+              <View style={[styles.cancelRecordingContainer, { top: insets.top + rp(84) }]}>
                 <TouchableOpacity
                   onPress={cancelRecording}
                   style={styles.cancelRecordingBtn}
@@ -2864,7 +2920,11 @@ export default function CastingModeScreen() {
                 )}
 
                 {/* Menu */}
-                <TouchableOpacity onPress={() => setShowMenu(!showMenu)} style={[styles.controlBtn, { backgroundColor: 'rgba(0,0,0,0.5)', width: rp(48), height: rp(48), borderRadius: rp(24), alignItems: 'center', justifyContent: 'center' }]}>
+                <TouchableOpacity
+                  onPress={() => setShowMenu(!showMenu)}
+                  style={[styles.controlBtn, { width: rp(48), height: rp(48), borderRadius: rp(24), alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: camChromeBorder, overflow: 'hidden' }]}
+                >
+                  <BlurView intensity={50} tint="dark" style={[StyleSheet.absoluteFill, { backgroundColor: camChromeTint, borderRadius: rp(24) }]} />
                   <MoreVertical color="white" size={rp(24)} />
                 </TouchableOpacity>
               </View>
@@ -2873,8 +2933,6 @@ export default function CastingModeScreen() {
                 visible={showMenu}
                 onClose={() => setShowMenu(false)}
                 title="Configuración"
-                backgroundColor="#1A1A1A"
-                titleColor="white"
               >
                 <ScrollView style={{ maxHeight: rp(400) }} showsVerticalScrollIndicator={false}>
                   {castingType === 'script' ? (
@@ -2882,50 +2940,52 @@ export default function CastingModeScreen() {
                       {/* Delay de inicio */}
                       <View style={[styles.menuItem, { paddingHorizontal: 20, justifyContent: 'space-between' }]}>
                         <View style={{ flexDirection: 'row', alignItems: 'center', gap: rp(12) }}>
-                          <Timer size={rp(20)} color="white" />
-                          <Text style={styles.menuText}>Espera inicial</Text>
+                          <Timer size={rp(20)} color={fg} />
+                          <Text style={[styles.menuText, { color: fg }]}>Espera inicial</Text>
                         </View>
                         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
-                          <TouchableOpacity onPress={() => setStartDelay(Math.max(0, startDelay - 5))} style={styles.volumeBtnMenu}>
-                            <Minus size={rp(18)} color="white" />
+                          <TouchableOpacity onPress={() => setStartDelay(Math.max(0, startDelay - 5))} style={[styles.volumeBtnMenu, { backgroundColor: chipInactiveBg }]}>
+                            <Minus size={rp(18)} color={fg} />
                           </TouchableOpacity>
                           <View style={{ width: 40, alignItems: 'center' }}>
-                            <Text style={styles.volumeTextMenu}>{startDelay === 0 ? 'Off' : `${startDelay}s`}</Text>
+                            <Text style={[styles.volumeTextMenu, { color: fg }]}>{startDelay === 0 ? 'Off' : `${startDelay}s`}</Text>
                           </View>
-                          <TouchableOpacity onPress={() => setStartDelay(Math.min(60, startDelay + 5))} style={styles.volumeBtnMenu}>
-                            <Plus size={rp(18)} color="white" />
+                          <TouchableOpacity onPress={() => setStartDelay(Math.min(60, startDelay + 5))} style={[styles.volumeBtnMenu, { backgroundColor: chipInactiveBg }]}>
+                            <Plus size={rp(18)} color={fg} />
                           </TouchableOpacity>
                         </View>
                       </View>
-                      <View style={{ height: 1, backgroundColor: '#333', marginVertical: 8 }} />
+                      <View style={{ height: 1, backgroundColor: glassBorder, marginVertical: 8 }} />
 
                       {/* Control de volumen IA */}
                       <View style={[styles.menuItem, { paddingHorizontal: 20, justifyContent: 'space-between' }]}>
                         <View style={{ flexDirection: 'row', alignItems: 'center', gap: rp(12) }}>
-                          <Volume2 size={rp(20)} color="white" />
-                          <Text style={styles.menuText}>Volumen réplica</Text>
+                          <Volume2 size={rp(20)} color={fg} />
+                          <Text style={[styles.menuText, { color: fg }]}>Volumen réplica</Text>
                         </View>
                         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
-                          <TouchableOpacity onPress={() => setTtsVolume(Math.max(0.1, ttsVolume - 0.1))} style={styles.volumeBtnMenu}>
-                            <Minus size={rp(18)} color="white" />
+                          <TouchableOpacity onPress={() => setTtsVolume(Math.max(0.1, ttsVolume - 0.1))} style={[styles.volumeBtnMenu, { backgroundColor: chipInactiveBg }]}>
+                            <Minus size={rp(18)} color={fg} />
                           </TouchableOpacity>
                           <View style={{ width: 40, alignItems: 'center' }}>
-                            <Text style={styles.volumeTextMenu}>{Math.round(ttsVolume * 100)}%</Text>
+                            <Text style={[styles.volumeTextMenu, { color: fg }]}>{Math.round(ttsVolume * 100)}%</Text>
                           </View>
-                          <TouchableOpacity onPress={() => setTtsVolume(Math.min(1.0, ttsVolume + 0.1))} style={styles.volumeBtnMenu}>
-                            <Plus size={rp(18)} color="white" />
+                          <TouchableOpacity onPress={() => setTtsVolume(Math.min(1.0, ttsVolume + 0.1))} style={[styles.volumeBtnMenu, { backgroundColor: chipInactiveBg }]}>
+                            <Plus size={rp(18)} color={fg} />
                           </TouchableOpacity>
                         </View>
                       </View>
-                      <View style={{ height: 1, backgroundColor: '#333', marginVertical: 8 }} />
+                      <View style={{ height: 1, backgroundColor: glassBorder, marginVertical: 8 }} />
 
                       <BottomSheetToggle
                         label="Ocultar mis líneas"
                         Icon={EyeOff}
                         value={hideUserLines}
                         onValueChange={setHideUserLines}
-                        textColor="white"
-                        iconColor="white"
+                        textColor={fg}
+                        iconColor={fg}
+                        borderColor={glassBorder}
+                        trackColorActive={colors.primary}
                       />
 
                       <BottomSheetToggle
@@ -2933,8 +2993,10 @@ export default function CastingModeScreen() {
                         Icon={Type}
                         value={hideTeleprompter}
                         onValueChange={setHideTeleprompter}
-                        textColor="white"
-                        iconColor="white"
+                        textColor={fg}
+                        iconColor={fg}
+                        borderColor={glassBorder}
+                        trackColorActive={colors.primary}
                       />
 
                       <BottomSheetToggle
@@ -2942,8 +3004,10 @@ export default function CastingModeScreen() {
                         Icon={Clapperboard}
                         value={showActions}
                         onValueChange={setShowActions}
-                        textColor="white"
-                        iconColor="white"
+                        textColor={fg}
+                        iconColor={fg}
+                        borderColor={glassBorder}
+                        trackColorActive={colors.primary}
                       />
 
                       <BottomSheetToggle
@@ -2951,8 +3015,10 @@ export default function CastingModeScreen() {
                         Icon={MessageSquare}
                         value={showStageDirections}
                         onValueChange={setShowStageDirections}
-                        textColor="white"
-                        iconColor="white"
+                        textColor={fg}
+                        iconColor={fg}
+                        borderColor={glassBorder}
+                        trackColorActive={colors.primary}
                       />
                     </>
                   ) : (
@@ -2963,111 +3029,111 @@ export default function CastingModeScreen() {
                         style={[styles.menuItem, { paddingHorizontal: 20, justifyContent: 'space-between' }]}
                       >
                         <View style={{ flexDirection: 'row', alignItems: 'center', gap: rp(12) }}>
-                          <Type size={rp(20)} color="white" />
-                          <Text style={[styles.menuText, { fontSize: rf(16) }]}>Edición de texto</Text>
+                          <Type size={rp(20)} color={fg} />
+                          <Text style={[styles.menuText, { color: fg, fontSize: rf(16) }]}>Edición de texto</Text>
                         </View>
-                        <ChevronRight size={rp(20)} color="white" style={{ transform: [{ rotate: isTextEditExpanded ? '90deg' : '0deg' }] }} />
+                        <ChevronRight size={rp(20)} color={fg} style={{ transform: [{ rotate: isTextEditExpanded ? '90deg' : '0deg' }] }} />
                       </TouchableOpacity>
 
                       {isTextEditExpanded && (
-                        <View style={{ backgroundColor: 'rgba(255,255,255,0.05)', paddingVertical: rp(12) }}>
+                        <View style={{ backgroundColor: chipInactiveBg, paddingVertical: rp(12) }}>
                           {/* Tamaño de texto */}
                           <View style={[styles.menuItem, { paddingHorizontal: 20, justifyContent: 'space-between' }]}>
-                            <Text style={[styles.menuText, { fontSize: rf(16) }]}>Tamaño</Text>
+                            <Text style={[styles.menuText, { color: fg, fontSize: rf(16) }]}>Tamaño</Text>
                             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
-                              <TouchableOpacity onPress={() => setFreeFontSize(Math.max(rf(16), freeFontSize - rf(4)))} style={styles.volumeBtnMenu}>
-                                <Minus size={rp(18)} color="white" />
+                              <TouchableOpacity onPress={() => setFreeFontSize(Math.max(rf(16), freeFontSize - rf(4)))} style={[styles.volumeBtnMenu, { backgroundColor: chipInactiveBg }]}>
+                                <Minus size={rp(18)} color={fg} />
                               </TouchableOpacity>
                               <View style={{ width: 40, alignItems: 'center' }}>
-                                <Text style={styles.volumeTextMenu}>{Math.round(freeFontSize)}</Text>
+                                <Text style={[styles.volumeTextMenu, { color: fg }]}>{Math.round(freeFontSize)}</Text>
                               </View>
-                              <TouchableOpacity onPress={() => setFreeFontSize(Math.min(rf(72), freeFontSize + rf(4)))} style={styles.volumeBtnMenu}>
-                                <Plus size={rp(18)} color="white" />
+                              <TouchableOpacity onPress={() => setFreeFontSize(Math.min(rf(72), freeFontSize + rf(4)))} style={[styles.volumeBtnMenu, { backgroundColor: chipInactiveBg }]}>
+                                <Plus size={rp(18)} color={fg} />
                               </TouchableOpacity>
                             </View>
                           </View>
 
                           {/* Espaciado */}
                           <View style={[styles.menuItem, { paddingHorizontal: 20, justifyContent: 'space-between' }]}>
-                            <Text style={[styles.menuText, { fontSize: rf(16) }]}>Espaciado</Text>
+                            <Text style={[styles.menuText, { color: fg, fontSize: rf(16) }]}>Espaciado</Text>
                             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
-                              <TouchableOpacity onPress={() => setGlobalSpacing(Math.max(-5, globalSpacing - 1))} style={styles.volumeBtnMenu}>
-                                <Minus size={rp(18)} color="white" />
+                              <TouchableOpacity onPress={() => setGlobalSpacing(Math.max(-5, globalSpacing - 1))} style={[styles.volumeBtnMenu, { backgroundColor: chipInactiveBg }]}>
+                                <Minus size={rp(18)} color={fg} />
                               </TouchableOpacity>
                               <View style={{ width: 40, alignItems: 'center' }}>
-                                <Text style={styles.volumeTextMenu}>{globalSpacing}</Text>
+                                <Text style={[styles.volumeTextMenu, { color: fg }]}>{globalSpacing}</Text>
                               </View>
-                              <TouchableOpacity onPress={() => setGlobalSpacing(Math.min(20, globalSpacing + 1))} style={styles.volumeBtnMenu}>
-                                <Plus size={rp(18)} color="white" />
+                              <TouchableOpacity onPress={() => setGlobalSpacing(Math.min(20, globalSpacing + 1))} style={[styles.volumeBtnMenu, { backgroundColor: chipInactiveBg }]}>
+                                <Plus size={rp(18)} color={fg} />
                               </TouchableOpacity>
                             </View>
                           </View>
 
                           {/* Formato */}
                           <View style={[styles.menuItem, { paddingHorizontal: 20, justifyContent: 'space-between' }]}>
-                            <Text style={[styles.menuText, { fontSize: rf(16) }]}>Formato</Text>
+                            <Text style={[styles.menuText, { color: fg, fontSize: rf(16) }]}>Formato</Text>
                             <View style={{ flexDirection: 'row', gap: 8 }}>
-                              <TouchableOpacity onPress={() => setGlobalFormatBold(!globalFormatBold)} style={[{ padding: rp(8), borderRadius: rp(8), backgroundColor: globalFormatBold ? '#10B981' : 'rgba(255,255,255,0.1)' }]}>
-                                <Bold size={rp(18)} color="white" />
+                              <TouchableOpacity onPress={() => setGlobalFormatBold(!globalFormatBold)} style={[{ padding: rp(8), borderRadius: rp(8) }, globalFormatBold ? { backgroundColor: chipActiveBg, borderWidth: 1, borderColor: colors.primary } : { backgroundColor: chipInactiveBg }]}>
+                                <Bold size={rp(18)} color={globalFormatBold ? activeAccent : fg} />
                               </TouchableOpacity>
-                              <TouchableOpacity onPress={() => setGlobalFormatItalic(!globalFormatItalic)} style={[{ padding: rp(8), borderRadius: rp(8), backgroundColor: globalFormatItalic ? '#10B981' : 'rgba(255,255,255,0.1)' }]}>
-                                <Italic size={rp(18)} color="white" />
+                              <TouchableOpacity onPress={() => setGlobalFormatItalic(!globalFormatItalic)} style={[{ padding: rp(8), borderRadius: rp(8) }, globalFormatItalic ? { backgroundColor: chipActiveBg, borderWidth: 1, borderColor: colors.primary } : { backgroundColor: chipInactiveBg }]}>
+                                <Italic size={rp(18)} color={globalFormatItalic ? activeAccent : fg} />
                               </TouchableOpacity>
-                              <TouchableOpacity onPress={() => setGlobalFormatUnderline(!globalFormatUnderline)} style={[{ padding: rp(8), borderRadius: rp(8), backgroundColor: globalFormatUnderline ? '#10B981' : 'rgba(255,255,255,0.1)' }]}>
-                                <Underline size={rp(18)} color="white" />
+                              <TouchableOpacity onPress={() => setGlobalFormatUnderline(!globalFormatUnderline)} style={[{ padding: rp(8), borderRadius: rp(8) }, globalFormatUnderline ? { backgroundColor: chipActiveBg, borderWidth: 1, borderColor: colors.primary } : { backgroundColor: chipInactiveBg }]}>
+                                <Underline size={rp(18)} color={globalFormatUnderline ? activeAccent : fg} />
                               </TouchableOpacity>
                             </View>
                           </View>
 
                           {/* Alineación */}
                           <View style={[styles.menuItem, { paddingHorizontal: 20, justifyContent: 'space-between' }]}>
-                            <Text style={[styles.menuText, { fontSize: rf(16) }]}>Alineación</Text>
+                            <Text style={[styles.menuText, { color: fg, fontSize: rf(16) }]}>Alineación</Text>
                             <View style={{ flexDirection: 'row', gap: 8 }}>
-                              <TouchableOpacity onPress={() => setGlobalFormatAlign('left')} style={[{ padding: rp(8), borderRadius: rp(8), backgroundColor: globalFormatAlign === 'left' ? '#10B981' : 'rgba(255,255,255,0.1)' }]}>
-                                <AlignLeft size={rp(18)} color="white" />
+                              <TouchableOpacity onPress={() => setGlobalFormatAlign('left')} style={[{ padding: rp(8), borderRadius: rp(8) }, globalFormatAlign === 'left' ? { backgroundColor: chipActiveBg, borderWidth: 1, borderColor: colors.primary } : { backgroundColor: chipInactiveBg }]}>
+                                <AlignLeft size={rp(18)} color={globalFormatAlign === 'left' ? activeAccent : fg} />
                               </TouchableOpacity>
-                              <TouchableOpacity onPress={() => setGlobalFormatAlign('center')} style={[{ padding: rp(8), borderRadius: rp(8), backgroundColor: globalFormatAlign === 'center' ? '#10B981' : 'rgba(255,255,255,0.1)' }]}>
-                                <AlignCenter size={rp(18)} color="white" />
+                              <TouchableOpacity onPress={() => setGlobalFormatAlign('center')} style={[{ padding: rp(8), borderRadius: rp(8) }, globalFormatAlign === 'center' ? { backgroundColor: chipActiveBg, borderWidth: 1, borderColor: colors.primary } : { backgroundColor: chipInactiveBg }]}>
+                                <AlignCenter size={rp(18)} color={globalFormatAlign === 'center' ? activeAccent : fg} />
                               </TouchableOpacity>
-                              <TouchableOpacity onPress={() => setGlobalFormatAlign('right')} style={[{ padding: rp(8), borderRadius: rp(8), backgroundColor: globalFormatAlign === 'right' ? '#10B981' : 'rgba(255,255,255,0.1)' }]}>
-                                <AlignRight size={rp(18)} color="white" />
+                              <TouchableOpacity onPress={() => setGlobalFormatAlign('right')} style={[{ padding: rp(8), borderRadius: rp(8) }, globalFormatAlign === 'right' ? { backgroundColor: chipActiveBg, borderWidth: 1, borderColor: colors.primary } : { backgroundColor: chipInactiveBg }]}>
+                                <AlignRight size={rp(18)} color={globalFormatAlign === 'right' ? activeAccent : fg} />
                               </TouchableOpacity>
                             </View>
                           </View>
 
                           {/* Color texto */}
                           <TouchableOpacity onPress={() => setShowColorPicker(!showColorPicker)} style={[styles.menuItem, { paddingHorizontal: 20, justifyContent: 'space-between' }]}>
-                            <Text style={[styles.menuText, { fontSize: rf(16) }]}>Color de texto</Text>
-                            <View style={{ width: 24, height: 24, borderRadius: 12, backgroundColor: globalFormatColor, borderWidth: 1, borderColor: 'white' }} />
+                            <Text style={[styles.menuText, { color: fg, fontSize: rf(16) }]}>Color de texto</Text>
+                            <View style={{ width: 24, height: 24, borderRadius: 12, backgroundColor: globalFormatColor, borderWidth: 1, borderColor: glassBorder }} />
                           </TouchableOpacity>
                           {showColorPicker && (
                             <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: 20, gap: 12, paddingBottom: 12 }}>
                               {['white', '#FBBF24', '#10B981', '#0EA5E9', '#EF4444', '#A78BFA', '#F97316', '#000000'].map(c => (
-                                <TouchableOpacity key={c} onPress={() => { setGlobalFormatColor(c); setShowColorPicker(false); }} style={{ width: 32, height: 32, borderRadius: 16, backgroundColor: c, borderWidth: globalFormatColor === c ? 3 : 1, borderColor: globalFormatColor === c ? 'white' : 'rgba(255,255,255,0.3)' }} />
+                                <TouchableOpacity key={c} onPress={() => { setGlobalFormatColor(c); setShowColorPicker(false); }} style={{ width: 32, height: 32, borderRadius: 16, backgroundColor: c, borderWidth: globalFormatColor === c ? 3 : 1, borderColor: globalFormatColor === c ? activeAccent : glassBorder }} />
                               ))}
                             </ScrollView>
                           )}
 
                           {/* Color Fondo */}
                           <TouchableOpacity onPress={() => setShowBgColorPicker(!showBgColorPicker)} style={[styles.menuItem, { paddingHorizontal: 20, justifyContent: 'space-between' }]}>
-                            <Text style={[styles.menuText, { fontSize: rf(16) }]}>Fondo de pantalla</Text>
-                            <View style={{ width: 24, height: 24, borderRadius: 12, backgroundColor: globalBackground === 'transparent' ? '#333' : globalBackground, borderWidth: 1, borderColor: 'white', alignItems: 'center', justifyContent: 'center' }}>
-                              {globalBackground === 'transparent' && <Video size={14} color="white" />}
+                            <Text style={[styles.menuText, { color: fg, fontSize: rf(16) }]}>Fondo de pantalla</Text>
+                            <View style={{ width: 24, height: 24, borderRadius: 12, backgroundColor: globalBackground === 'transparent' ? chipInactiveBg : globalBackground, borderWidth: 1, borderColor: glassBorder, alignItems: 'center', justifyContent: 'center' }}>
+                              {globalBackground === 'transparent' && <Video size={14} color={fg} />}
                             </View>
                           </TouchableOpacity>
                           {showBgColorPicker && (
                             <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: 20, gap: 12, paddingBottom: 12 }}>
-                              <TouchableOpacity onPress={() => { setGlobalBackground('transparent'); setShowBgColorPicker(false); }} style={{ width: 32, height: 32, borderRadius: 16, backgroundColor: '#333', borderWidth: globalBackground === 'transparent' ? 3 : 1, borderColor: globalBackground === 'transparent' ? 'white' : 'rgba(255,255,255,0.3)', alignItems: 'center', justifyContent: 'center' }}>
-                                <Video size={16} color="white" />
+                              <TouchableOpacity onPress={() => { setGlobalBackground('transparent'); setShowBgColorPicker(false); }} style={{ width: 32, height: 32, borderRadius: 16, backgroundColor: chipInactiveBg, borderWidth: globalBackground === 'transparent' ? 3 : 1, borderColor: globalBackground === 'transparent' ? activeAccent : glassBorder, alignItems: 'center', justifyContent: 'center' }}>
+                                <Video size={16} color={fg} />
                               </TouchableOpacity>
                               {['#000000', '#111111', '#10B981', '#3B82F6', '#EF4444', '#8B5CF6', '#F59E0B'].map(c => (
-                                <TouchableOpacity key={c} onPress={() => { setGlobalBackground(c); setShowBgColorPicker(false); }} style={{ width: 32, height: 32, borderRadius: 16, backgroundColor: c, borderWidth: globalBackground === c ? 3 : 1, borderColor: globalBackground === c ? 'white' : 'rgba(255,255,255,0.3)' }} />
+                                <TouchableOpacity key={c} onPress={() => { setGlobalBackground(c); setShowBgColorPicker(false); }} style={{ width: 32, height: 32, borderRadius: 16, backgroundColor: c, borderWidth: globalBackground === c ? 3 : 1, borderColor: globalBackground === c ? activeAccent : glassBorder }} />
                               ))}
                             </ScrollView>
                           )}
                         </View>
                       )}
-                      <View style={{ height: 1, backgroundColor: '#333', marginVertical: 8 }} />
+                      <View style={{ height: 1, backgroundColor: glassBorder, marginVertical: 8 }} />
 
                       {/* 2. Plano General Automático */}
                       <BottomSheetToggle
@@ -3075,24 +3141,26 @@ export default function CastingModeScreen() {
                         Icon={Maximize2}
                         value={autoWideShotEnabled}
                         onValueChange={handleAutoWideShotToggle}
-                        iconColor="white"
-                        textColor="white"
+                        iconColor={fg}
+                        textColor={fg}
+                        borderColor={glassBorder}
+                        trackColorActive={colors.primary}
                         infoText="Activa el toggle si necesitas hacer un plano general al final de tu presentación. Solo tendrás que dar 2 palmadas."
                       />
 
                       {/* Mensaje de plano de trabajo manual (visible si el toggle está activo) */}
                       {autoWideShotEnabled && (
                         <View style={{ paddingHorizontal: 20, marginTop: 8 }}>
-                          <Text style={{ color: 'rgba(255,255,255,0.6)', fontSize: rf(12), marginBottom: 8 }}>
-                            Ajusta tu plano de trabajo con el zoom (0.5x/1x/2x) 
+                          <Text style={{ color: fgSecondary, fontSize: rf(12), marginBottom: 8 }}>
+                            Ajusta tu plano de trabajo con el zoom (0.5x/1x/2x)
                             y colócate libremente
                           </Text>
-                          <Text style={{ color: 'rgba(255,255,255,0.4)', fontSize: rf(11), marginTop: 6, textAlign: 'center' }}>
+                          <Text style={{ color: fgSecondary, fontSize: rf(11), marginTop: 6, textAlign: 'center' }}>
                             Da dos palmadas durante la grabación para hacer zoom out al plano general
                           </Text>
                         </View>
                       )}
-                      <View style={{ height: 1, backgroundColor: '#333', marginVertical: 8 }} />
+                      <View style={{ height: 1, backgroundColor: glassBorder, marginVertical: 8 }} />
 
                       {/* 3. Modo Espejo */}
                       <BottomSheetToggle
@@ -3100,47 +3168,49 @@ export default function CastingModeScreen() {
                         Icon={FlipHorizontal}
                         value={isMirrored}
                         onValueChange={setIsMirrored}
-                        iconColor="white"
-                        textColor="white"
+                        iconColor={fg}
+                        textColor={fg}
+                        borderColor={glassBorder}
+                        trackColorActive={colors.primary}
                       />
-                      <View style={{ height: 1, backgroundColor: '#333', marginVertical: 8 }} />
+                      <View style={{ height: 1, backgroundColor: glassBorder, marginVertical: 8 }} />
 
                       {/* 4. Espera inicial */}
                       <View style={[styles.menuItem, { paddingHorizontal: 20, justifyContent: 'space-between' }]}>
                         <View style={{ flexDirection: 'row', alignItems: 'center', gap: rp(12) }}>
-                          <Timer size={rp(20)} color="white" />
-                          <Text style={styles.menuText}>Espera inicial</Text>
+                          <Timer size={rp(20)} color={fg} />
+                          <Text style={[styles.menuText, { color: fg }]}>Espera inicial</Text>
                         </View>
                         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
-                          <TouchableOpacity onPress={() => setStartDelay(Math.max(0, startDelay - 5))} style={styles.volumeBtnMenu}>
-                            <Minus size={rp(18)} color="white" />
+                          <TouchableOpacity onPress={() => setStartDelay(Math.max(0, startDelay - 5))} style={[styles.volumeBtnMenu, { backgroundColor: chipInactiveBg }]}>
+                            <Minus size={rp(18)} color={fg} />
                           </TouchableOpacity>
                           <View style={{ width: 40, alignItems: 'center' }}>
-                            <Text style={styles.volumeTextMenu}>{startDelay === 0 ? 'Off' : `${startDelay}s`}</Text>
+                            <Text style={[styles.volumeTextMenu, { color: fg }]}>{startDelay === 0 ? 'Off' : `${startDelay}s`}</Text>
                           </View>
-                          <TouchableOpacity onPress={() => setStartDelay(Math.min(60, startDelay + 5))} style={styles.volumeBtnMenu}>
-                            <Plus size={rp(18)} color="white" />
+                          <TouchableOpacity onPress={() => setStartDelay(Math.min(60, startDelay + 5))} style={[styles.volumeBtnMenu, { backgroundColor: chipInactiveBg }]}>
+                            <Plus size={rp(18)} color={fg} />
                           </TouchableOpacity>
                         </View>
                       </View>
-                      <View style={{ height: 1, backgroundColor: '#333', marginVertical: 8 }} />
+                      <View style={{ height: 1, backgroundColor: glassBorder, marginVertical: 8 }} />
 
                       {/* 5. Velocidad */}
                       <View style={{ marginVertical: 8 }}>
                         <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12, paddingHorizontal: 20 }}>
-                          <Snail size={rp(20)} color="white" />
-                          <Text style={[styles.menuText, { flex: 1, textAlign: 'center' }]}>Velocidad</Text>
-                          <Rabbit size={rp(20)} color="white" />
+                          <Snail size={rp(20)} color={fg} />
+                          <Text style={[styles.menuText, { color: fg, flex: 1, textAlign: 'center' }]}>Velocidad</Text>
+                          <Rabbit size={rp(20)} color={fg} />
                         </View>
                         <View style={styles.volumeControlMenu}>
-                          <TouchableOpacity onPress={() => setFreeScrollSpeed(Math.max(1, freeScrollSpeed - 1))} style={styles.volumeBtnMenu}>
-                            <Minus size={rp(18)} color="white" />
+                          <TouchableOpacity onPress={() => setFreeScrollSpeed(Math.max(1, freeScrollSpeed - 1))} style={[styles.volumeBtnMenu, { backgroundColor: chipInactiveBg }]}>
+                            <Minus size={rp(18)} color={fg} />
                           </TouchableOpacity>
                           <View style={styles.volumeDisplayMenu}>
-                            <Text style={styles.volumeTextMenu}>{freeScrollSpeed}</Text>
+                            <Text style={[styles.volumeTextMenu, { color: fg }]}>{freeScrollSpeed}</Text>
                           </View>
-                          <TouchableOpacity onPress={() => setFreeScrollSpeed(Math.min(20, freeScrollSpeed + 1))} style={styles.volumeBtnMenu}>
-                            <Plus size={rp(18)} color="white" />
+                          <TouchableOpacity onPress={() => setFreeScrollSpeed(Math.min(20, freeScrollSpeed + 1))} style={[styles.volumeBtnMenu, { backgroundColor: chipInactiveBg }]}>
+                            <Plus size={rp(18)} color={fg} />
                           </TouchableOpacity>
                         </View>
                       </View>
@@ -3186,33 +3256,37 @@ export default function CastingModeScreen() {
         transparent={true}
         animationType="fade"
        supportedOrientations={['portrait', 'landscape', 'landscape-left', 'landscape-right']}>
-        <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.8)', justifyContent: 'center', alignItems: 'center', padding: rp(20) }}>
-          <ScrollView 
+        <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', alignItems: 'center', padding: rp(20) }}>
+          <ScrollView
             bounces={false}
             showsVerticalScrollIndicator={true}
             style={{ width: '100%', maxWidth: 500, maxHeight: '100%' }}
             contentContainerStyle={{ flexGrow: 1, justifyContent: 'center' }}
           >
-            <View style={[styles.qualitySection, { width: '100%', backgroundColor: '#1A1A24', borderColor: '#2A2A35' }]}>
+            <View style={[styles.qualityShadowWrapper, !isDark && styles.qualityShadow]}>
+              <View style={[styles.qualityClip, { borderColor: glassBorder }]}>
+                <BlurView intensity={isDark ? 55 : 65} tint={isDark ? 'dark' : 'light'} style={[StyleSheet.absoluteFill, { borderRadius: rp(20) }]} />
+                <View style={[StyleSheet.absoluteFill, { backgroundColor: glassBg, borderRadius: rp(20) }]} />
+                <View style={styles.qualitySection}>
               <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: rp(16), gap: rp(8) }}>
-                <Video size={rp(24)} color="#a78bfa" />
-                <Text style={[styles.qualitySectionTitle, { marginBottom: 0 }]}>
+                <Video size={rp(24)} color={activeAccent} />
+                <Text style={[styles.qualitySectionTitle, { color: fg, marginBottom: 0 }]}>
                   Calidad del vídeo
                 </Text>
               </View>
-              <Text style={styles.qualitySectionSubtitle}>
+              <Text style={[styles.qualitySectionSubtitle, { color: fgSecondary }]}>
                 Selecciona la calidad para grabar el vídeo
               </Text>
 
               <View style={styles.qualityOptions}>
                 <TouchableOpacity
-                  style={[styles.qualityOption, { borderColor: '#2A2A35', borderWidth: 1, backgroundColor: '#21212C', flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }]}
+                  style={[styles.qualityOption, { borderColor: glassBorder, backgroundColor: chipInactiveBg, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }]}
                   onPress={() => setIsQualityDropdownOpen(!isQualityDropdownOpen)}
                 >
-                  <Text style={[styles.qualityOptionLabel, { color: '#FFF' }]}>
+                  <Text style={[styles.qualityOptionLabel, { color: fg }]}>
                     {videoQuality === 'high' ? 'Alta (1080p)' : videoQuality === 'medium' ? 'Media (720p)' : 'Baja (480p)'}
                   </Text>
-                  <Text style={{ color: '#a78bfa', fontSize: rp(16) }}>{isQualityDropdownOpen ? '▲' : '▼'}</Text>
+                  <Text style={{ color: activeAccent, fontSize: rp(16) }}>{isQualityDropdownOpen ? '▲' : '▼'}</Text>
                 </TouchableOpacity>
 
                 {isQualityDropdownOpen && (
@@ -3236,12 +3310,15 @@ export default function CastingModeScreen() {
                         desc: '480p — Archivos más pequeños',
                         size: '~12MB/min'
                       },
-                    ].map((option) => (
+                    ].map((option) => {
+                      const isSelected = videoQuality === option.value;
+                      return (
                       <TouchableOpacity
                         key={option.value}
                         style={[
                           styles.qualityOption,
-                          videoQuality === option.value && styles.qualityOptionSelected,
+                          { borderColor: glassBorder, backgroundColor: chipInactiveBg },
+                          isSelected && { borderColor: colors.primary, backgroundColor: chipActiveBg },
                         ]}
                         onPress={() => {
                           setVideoQuality(option.value as any);
@@ -3249,22 +3326,20 @@ export default function CastingModeScreen() {
                         }}
                       >
                         <View style={{ flex: 1 }}>
-                          <Text style={[
-                            styles.qualityOptionLabel,
-                            videoQuality === option.value && styles.qualityOptionLabelSelected
-                          ]}>
+                          <Text style={[styles.qualityOptionLabel, { color: isSelected ? fg : fgSecondary }]}>
                             {option.label}
                           </Text>
-                          <Text style={styles.qualityOptionDesc}>{option.desc}</Text>
+                          <Text style={[styles.qualityOptionDesc, { color: fgSecondary }]}>{option.desc}</Text>
                         </View>
-                        <Text style={styles.qualityOptionSize}>{option.size}</Text>
-                        {videoQuality === option.value && (
+                        <Text style={[styles.qualityOptionSize, { color: fgSecondary }]}>{option.size}</Text>
+                        {isSelected && (
                           <View style={styles.qualityCheckmark}>
-                            <Text style={{ color: '#a78bfa', fontSize: rf(16) }}>✓</Text>
+                            <Text style={{ color: activeAccent, fontSize: rf(16) }}>✓</Text>
                           </View>
                         )}
                       </TouchableOpacity>
-                    ))}
+                      );
+                    })}
                   </View>
                 )}
               </View>
@@ -3272,58 +3347,52 @@ export default function CastingModeScreen() {
               {/* Sección auriculares */}
               {castingMode === 'script_config' && (
                 <View style={{ marginTop: rp(24) }}>
-                  <Text style={[styles.qualitySectionTitle, { marginBottom: rp(4) }]}>
+                  <Text style={[styles.qualitySectionTitle, { color: fg, marginBottom: rp(4) }]}>
                     🎧 ¿Usarás auriculares?
                   </Text>
-                  <Text style={styles.qualitySectionSubtitle}>
+                  <Text style={[styles.qualitySectionSubtitle, { color: fgSecondary }]}>
                     Lo recomendamos para una mayor calidad de audio
                   </Text>
 
                   <View style={{ flexDirection: 'row', gap: rp(10), marginTop: rp(12) }}>
-                    
+
                     <TouchableOpacity
                       style={[
                         styles.qualityOption,
-                        { flex: 1, flexDirection: 'column', alignItems: 'center' },
-                        hasHeadphones === true && styles.qualityOptionSelected,
+                        { flex: 1, flexDirection: 'column', alignItems: 'center', borderColor: glassBorder, backgroundColor: chipInactiveBg },
+                        hasHeadphones === true && { borderColor: colors.primary, backgroundColor: chipActiveBg },
                       ]}
                       onPress={() => setHasHeadphones(true)}
                     >
                       <Text style={{ fontSize: rf(28), marginBottom: rp(8) }}>🎧</Text>
-                      <Text style={[
-                        styles.qualityOptionLabel,
-                        hasHeadphones === true && styles.qualityOptionLabelSelected
-                      ]}>
+                      <Text style={[styles.qualityOptionLabel, { color: hasHeadphones === true ? fg : fgSecondary }]}>
                         Sí
                       </Text>
-                      <Text style={styles.qualityOptionDesc}>
+                      <Text style={[styles.qualityOptionDesc, { color: fgSecondary }]}>
                         Mejora el audio y evita ecos
                       </Text>
                       {hasHeadphones === true && (
-                        <Text style={{ color: '#a78bfa', fontSize: rf(16), marginTop: rp(4) }}>✓</Text>
+                        <Text style={{ color: activeAccent, fontSize: rf(16), marginTop: rp(4) }}>✓</Text>
                       )}
                     </TouchableOpacity>
 
                     <TouchableOpacity
                       style={[
                         styles.qualityOption,
-                        { flex: 1, flexDirection: 'column', alignItems: 'center' },
-                        hasHeadphones === false && styles.qualityOptionSelected,
+                        { flex: 1, flexDirection: 'column', alignItems: 'center', borderColor: glassBorder, backgroundColor: chipInactiveBg },
+                        hasHeadphones === false && { borderColor: colors.primary, backgroundColor: chipActiveBg },
                       ]}
                       onPress={() => setHasHeadphones(false)}
                     >
                       <Text style={{ fontSize: rf(28), marginBottom: rp(8) }}>📱</Text>
-                      <Text style={[
-                        styles.qualityOptionLabel,
-                        hasHeadphones === false && styles.qualityOptionLabelSelected
-                      ]}>
+                      <Text style={[styles.qualityOptionLabel, { color: hasHeadphones === false ? fg : fgSecondary }]}>
                         No
                       </Text>
-                      <Text style={styles.qualityOptionDesc}>
+                      <Text style={[styles.qualityOptionDesc, { color: fgSecondary }]}>
                         Es posible tener algo de eco en la mezcla final
                       </Text>
                       {hasHeadphones === false && (
-                        <Text style={{ color: '#a78bfa', fontSize: rf(16), marginTop: rp(4) }}>✓</Text>
+                        <Text style={{ color: activeAccent, fontSize: rf(16), marginTop: rp(4) }}>✓</Text>
                       )}
                     </TouchableOpacity>
 
@@ -3334,60 +3403,82 @@ export default function CastingModeScreen() {
               {/* Sección subtítulos (Oculto en Selftape por ahora) */}
               {castingMode !== 'script_config' && (
                 <View style={{ marginTop: rp(24) }}>
-                  <Text style={[styles.qualitySectionTitle, { marginBottom: rp(4) }]}>
+                  <Text style={[styles.qualitySectionTitle, { color: fg, marginBottom: rp(4) }]}>
                     💬 Subtítulos
                   </Text>
-                  <Text style={styles.qualitySectionSubtitle}>
+                  <Text style={[styles.qualitySectionSubtitle, { color: fgSecondary }]}>
                     Se incrustan automáticamente en el vídeo final
                   </Text>
-  
+
                   <TouchableOpacity
                     style={[
                       styles.qualityOption,
-                      { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: rp(12) },
+                      { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: rp(12), borderColor: glassBorder, backgroundColor: chipInactiveBg },
                     ]}
                     onPress={() => setAddSubtitles(!addSubtitles)}
                     activeOpacity={0.8}
                   >
                     <View style={{ flex: 1, marginRight: rp(12) }}>
-                      <Text style={styles.qualityOptionLabel}>Añadir subtítulos</Text>
-                      <Text style={styles.qualityOptionDesc}>
+                      <Text style={[styles.qualityOptionLabel, { color: fg }]}>Añadir subtítulos</Text>
+                      <Text style={[styles.qualityOptionDesc, { color: fgSecondary }]}>
                         Útil para revisar diálogo o accesibilidad
                       </Text>
                     </View>
                     <Switch
                       value={addSubtitles}
                       onValueChange={setAddSubtitles}
-                      trackColor={{ false: '#3A3A4A', true: '#7c3aed' }}
-                      thumbColor={addSubtitles ? '#a78bfa' : '#888'}
+                      trackColor={{ false: isDark ? '#374151' : '#9CA3AF', true: colors.primary }}
+                      thumbColor={Platform.OS === 'android' ? '#FFFFFF' : undefined}
+                      ios_backgroundColor={isDark ? '#374151' : '#9CA3AF'}
                     />
                   </TouchableOpacity>
                 </View>
               )}
 
               <TouchableOpacity
-                style={{
-                  backgroundColor: (qualityApplied || videoQuality) && (castingMode !== 'script_config' || hasHeadphones !== null)
-                    ? '#10B981'
-                    : '#444',
-                  paddingVertical: rp(14),
-                  borderRadius: rp(12),
-                  alignItems: 'center',
-                  marginTop: rp(24),
-                  opacity: (castingMode !== 'script_config' || hasHeadphones !== null) ? 1 : 0.5,
-                }}
+                style={[
+                  { paddingVertical: rp(14), borderRadius: rp(12), alignItems: 'center', marginTop: rp(24) },
+                  (castingMode !== 'script_config' || hasHeadphones !== null) ? primaryButtonBg : { backgroundColor: chipInactiveBg, opacity: 0.5 },
+                ]}
                 disabled={castingMode === 'script_config' && hasHeadphones === null}
                 onPress={() => {
                   setShowQualityModal(false);
                   setQualityApplied(true);
                 }}
               >
-                <Text style={{ color: 'white', fontWeight: 'bold', fontSize: rf(16) }}>Aplicar</Text>
+                <Text style={{ color: '#FFFFFF', fontWeight: 'bold', fontSize: rf(16) }}>Aplicar</Text>
               </TouchableOpacity>
+                </View>
+              </View>
             </View>
           </ScrollView>
         </View>
       </Modal>
+
+      <ConfirmDialog
+        visible={!!castingAlert}
+        title={castingAlert?.title || ''}
+        message={castingAlert?.message || ''}
+        singleButton={(castingAlert?.buttons.length ?? 1) === 1}
+        cancelText={castingAlert && castingAlert.buttons.length === 2 ? castingAlert.buttons[0].text : undefined}
+        confirmText={
+          castingAlert
+            ? (castingAlert.buttons.length === 2 ? castingAlert.buttons[1].text : castingAlert.buttons[0].text)
+            : 'Entendido'
+        }
+        destructive={/error/i.test(castingAlert?.title || '')}
+        onCancel={() => {
+          if (castingAlert && castingAlert.buttons.length === 2) castingAlert.buttons[0].onPress?.();
+          setCastingAlert(null);
+        }}
+        onConfirm={() => {
+          if (castingAlert) {
+            const btn = castingAlert.buttons.length === 2 ? castingAlert.buttons[1] : castingAlert.buttons[0];
+            btn.onPress?.();
+          }
+          setCastingAlert(null);
+        }}
+      />
     </View>
   );
 }
@@ -3417,9 +3508,13 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   iconBtn: {
-    padding: rp(10),
-    backgroundColor: 'rgba(0,0,0,0.3)',
-    borderRadius: rp(20),
+    width: rp(44),
+    height: rp(44),
+    borderRadius: rp(22),
+    borderWidth: 1,
+    overflow: 'hidden',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   timerBadge: {
     flexDirection: 'row',
@@ -3809,15 +3904,14 @@ const styles = StyleSheet.create({
   },
   cancelRecordingContainer: {
     position: 'absolute',
-    top: rp(130),
-    right: rp(16),
+    left: rp(16),
     zIndex: 1000,
   },
   cancelRecordingBtn: {
     backgroundColor: 'rgba(0,0,0,0.8)',
     paddingVertical: rp(8),
     paddingHorizontal: rp(12),
-    borderRadius: 8,
+    borderRadius: rp(20),
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
@@ -3945,6 +4039,61 @@ const styles = StyleSheet.create({
   configTitle: {
     fontSize: rf(18),
     fontWeight: '700',
+  },
+  // Tarjetas de la pantalla de selección (Presentación/Selftape/Tomas) —
+  // mismo formato de cristal que las tarjetas de juego del modo Memoria.
+  castingCardShadow: {
+    width: '100%',
+    borderRadius: rp(20),
+    shadowColor: '#1a1625',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.28,
+    shadowRadius: 16,
+    elevation: 8,
+  },
+  noShadow: {
+    shadowOpacity: 0,
+    elevation: 0,
+  },
+  castingCardClip: {
+    borderRadius: rp(20),
+    borderWidth: 1,
+    overflow: 'hidden',
+  },
+  castingCard: {
+    width: '100%',
+    paddingVertical: rp(24),
+    paddingHorizontal: rp(20),
+    alignItems: 'center',
+    borderRadius: rp(20),
+  },
+  castingCardTitle: {
+    fontSize: rf(20),
+    fontWeight: '700',
+    textAlign: 'center',
+  },
+  // Bloque de descripción alineado a la izquierda (no centrado): al centrar
+  // cada línea por separado, la viñeta "•" caía en una posición horizontal
+  // distinta según lo larga que fuera cada línea — con la izquierda todas
+  // arrancan del mismo margen.
+  // Sin alignSelf: 'stretch' a propósito — así este bloque se encoge al
+  // ancho de su línea más larga y queda centrado bajo el icono/título (como
+  // antes), pero el texto de dentro sigue alineado a la izquierda entre sí,
+  // así todas las viñetas arrancan del mismo margen.
+  castingCardDescBlock: {
+    marginTop: 12,
+  },
+  castingCardSubtitle: {
+    fontSize: rf(15),
+    fontWeight: '600',
+    textAlign: 'left',
+    marginBottom: 6,
+  },
+  castingCardDesc: {
+    fontSize: rf(14),
+    fontWeight: '400',
+    textAlign: 'left',
+    marginTop: 2,
   },
   configInstructions: {
     marginHorizontal: rp(16),
@@ -4308,28 +4457,40 @@ const styles = StyleSheet.create({
     borderRadius: rp(22),
     alignItems: 'center',
     justifyContent: 'center',
+    overflow: 'hidden',
   },
   zoomTextHeader: {
     color: 'white',
     fontSize: rf(13),
     fontWeight: '700'
   },
-  qualitySection: {
-    backgroundColor: 'rgba(255,255,255,0.04)',
-    borderRadius: rp(16),
-    padding: rp(16),
-    marginBottom: rp(16),
+  // Modal de calidad de vídeo — mismo cristal (sombra flotante + blur) que
+  // el resto de tarjetas/menús ya rediseñados de la app.
+  qualityShadowWrapper: {
+    width: '100%',
+    borderRadius: rp(20),
+  },
+  qualityShadow: {
+    shadowColor: '#1a1625',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.28,
+    shadowRadius: 16,
+    elevation: 8,
+  },
+  qualityClip: {
+    borderRadius: rp(20),
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.08)',
+    overflow: 'hidden',
+  },
+  qualitySection: {
+    padding: rp(16),
   },
   qualitySectionTitle: {
-    color: '#ffffff',
     fontSize: rf(15),
     fontWeight: '700',
     marginBottom: rp(4),
   },
   qualitySectionSubtitle: {
-    color: '#9090b0',
     fontSize: rf(13),
     marginBottom: rp(14),
   },
@@ -4339,31 +4500,19 @@ const styles = StyleSheet.create({
   qualityOption: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: 'rgba(255,255,255,0.05)',
     borderRadius: rp(10),
     padding: rp(12),
     borderWidth: 1.5,
-    borderColor: 'rgba(255,255,255,0.1)',
-  },
-  qualityOptionSelected: {
-    borderColor: '#a78bfa',
-    backgroundColor: 'rgba(124,106,247,0.12)',
   },
   qualityOptionLabel: {
-    color: '#9090b0',
     fontSize: rf(14),
     fontWeight: '600',
     marginBottom: rp(2),
   },
-  qualityOptionLabelSelected: {
-    color: '#ffffff',
-  },
   qualityOptionDesc: {
-    color: '#666',
     fontSize: rf(12),
   },
   qualityOptionSize: {
-    color: '#9090b0',
     fontSize: rf(11),
     marginRight: rp(8),
   },

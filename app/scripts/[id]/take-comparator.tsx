@@ -1,20 +1,22 @@
 import React, { useState, useEffect, useRef } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, FlatList,
-  ActivityIndicator, Alert, TextInput, Modal,
+  ActivityIndicator, TextInput, Modal, ImageBackground,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, useLocalSearchParams } from 'expo-router';
+import { BlurView } from 'expo-blur';
 import { Video, ResizeMode } from 'expo-av';
 import * as FileSystem from 'expo-file-system/legacy';
 import * as Sharing from 'expo-sharing';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { ArrowLeft, Play, Star, Edit3, Share2, Download, Trash2, Settings, Info } from 'lucide-react-native';
+import { ArrowLeft, Play, Star, Edit3, Share2, Download, Trash2, Settings, Info, Layers } from 'lucide-react-native';
 import { useTheme } from '@/contexts/ThemeContext';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/utils/supabase';
 import { getSettings } from '@/utils/appSettings';
 import { rf, rp } from '@/utils/responsive';
+import { ConfirmDialog } from '@/components/ConfirmDialog';
 
 type TakeStatus = 'pending_processing' | 'processing_preview' | 'ready' | 'error';
 
@@ -214,8 +216,38 @@ async function cleanupExpiredTakes() {
 export default function TakeComparatorScreen() {
   const router = useRouter();
   const { id } = useLocalSearchParams();
-  const { colors } = useTheme();
+  const { colors, isDark } = useTheme();
   const { user } = useAuth();
+
+  const castingBg = () => (isDark ? require('@/assets/images/ui-dark-bg.png') : require('@/assets/images/ui-light-bg.png'));
+  const fg = isDark ? '#FFFFFF' : '#2A1B47';
+  const fgSecondary = isDark ? 'rgba(255,255,255,0.6)' : '#3d3660';
+  const glassBg = isDark ? 'rgba(124,106,247,0.14)' : 'rgba(230,230,236,0.6)';
+  const glassBorder = isDark ? 'rgba(255,255,255,0.2)' : 'rgba(42,27,71,0.18)';
+  const activeAccent = isDark ? '#FFFFFF' : colors.primary;
+  const chipInactiveBg = isDark ? 'rgba(255,255,255,0.08)' : 'rgba(104,58,121,0.08)';
+  const primaryButtonBg = isDark
+    ? { backgroundColor: 'rgba(124,106,247,0.80)', borderWidth: 1.5, borderColor: 'rgba(255,255,255,0.5)' }
+    : { backgroundColor: colors.primary };
+
+  // Sustituye a los Alert.alert nativos por el ConfirmDialog de cristal
+  // compartido con el resto de la app (mismo patrón que casting.tsx).
+  type TakeAlertButton = { text: string; onPress?: () => void };
+  const [takeAlert, setTakeAlert] = useState<{
+    title: string;
+    message: string;
+    buttons: TakeAlertButton[];
+    destructive?: boolean;
+  } | null>(null);
+
+  function showTakeAlert(title: string, message: string, buttons?: TakeAlertButton[], destructive?: boolean) {
+    setTakeAlert({
+      title,
+      message,
+      buttons: buttons && buttons.length > 0 ? buttons : [{ text: 'Entendido' }],
+      destructive,
+    });
+  }
 
   const [allTakes, setAllTakes] = useState<Take[]>([]);
   const [loading, setLoading] = useState(true);
@@ -296,7 +328,7 @@ export default function TakeComparatorScreen() {
 
   async function playTake(take: Take) {
     if (take.status !== 'ready' || !take.previewLocalPath) {
-      Alert.alert('Toma aún procesando', 'Esta toma todavía se está preparando.');
+      showTakeAlert('Toma aún procesando', 'Esta toma todavía se está preparando.');
       return;
     }
 
@@ -314,7 +346,7 @@ export default function TakeComparatorScreen() {
       setVideoUri(take.previewLocalPath);
       setPlayingTakeId(take.id);
     } catch (e: any) {
-      Alert.alert('Toma no disponible', e.message || 'No se pudo reproducir esta toma.');
+      showTakeAlert('Toma no disponible', e.message || 'No se pudo reproducir esta toma.');
     } finally {
       setDownloadingTakeId(null);
     }
@@ -344,7 +376,7 @@ export default function TakeComparatorScreen() {
   // ── PARTE A: Compartir ─────────────────────────────────────────────────
   async function shareTake(take: Take) {
     if (take.status !== 'ready' || !take.previewLocalPath) {
-      Alert.alert('Toma no disponible', 'Espera a que termine de procesarse.');
+      showTakeAlert('Toma no disponible', 'Espera a que termine de procesarse.');
       return;
     }
 
@@ -360,7 +392,7 @@ export default function TakeComparatorScreen() {
 
       const isAvailable = await Sharing.isAvailableAsync();
       if (!isAvailable) {
-        Alert.alert('Error', 'No se puede compartir en este dispositivo.');
+        showTakeAlert('Error', 'No se puede compartir en este dispositivo.');
         return;
       }
 
@@ -369,7 +401,7 @@ export default function TakeComparatorScreen() {
         dialogTitle: take.customName || `Toma ${take.takeNumber}`,
       });
     } catch (e: any) {
-      Alert.alert('Error al compartir', e.message || 'No se pudo compartir la toma.');
+      showTakeAlert('Error al compartir', e.message || 'No se pudo compartir la toma.');
     } finally {
       setSharingTakeId(null);
     }
@@ -378,7 +410,7 @@ export default function TakeComparatorScreen() {
   // ── PARTE B: Descargar a local permanente ───────────────────────────────
   async function downloadTakePermanently(take: Take) {
     if (take.status !== 'ready' || !take.previewLocalPath) {
-      Alert.alert('Toma no disponible', 'Espera a que termine de procesarse.');
+      showTakeAlert('Toma no disponible', 'Espera a que termine de procesarse.');
       return;
     }
 
@@ -411,10 +443,10 @@ export default function TakeComparatorScreen() {
         await AsyncStorage.setItem(`takes_${take.sessionId}`, JSON.stringify(updated));
       }
 
-      Alert.alert('✅ Guardado', 'La toma se ha guardado en tu dispositivo y no se borrará automáticamente.');
+      showTakeAlert('✅ Guardado', 'La toma se ha guardado en tu dispositivo y no se borrará automáticamente.');
       loadAllTakes();
     } catch (e: any) {
-      Alert.alert('Error al guardar', e.message || 'No se pudo guardar la toma.');
+      showTakeAlert('Error al guardar', e.message || 'No se pudo guardar la toma.');
     } finally {
       setSavingTakeId(null);
     }
@@ -423,24 +455,24 @@ export default function TakeComparatorScreen() {
   // ── PARTE C: Promocionar a Grabaciones ──────────────────────────────────
   async function promoteToRecording(take: Take) {
     if (take.status !== 'ready') {
-      Alert.alert('Toma aún procesando', 'Espera a que termine de procesarse antes de usarla.');
+      showTakeAlert('Toma aún procesando', 'Espera a que termine de procesarse antes de usarla.');
       return;
     }
 
     const fileInfo = await FileSystem.getInfoAsync(take.localPath);
     if (!fileInfo.exists) {
-      Alert.alert(
+      showTakeAlert(
         'Archivo no disponible',
         'El vídeo original de esta toma ya no está en tu dispositivo. Si guardaste una copia local permanente, puedes intentar compartirla manualmente.'
       );
       return;
     }
 
-    Alert.alert(
+    showTakeAlert(
       '🎬 Usar esta toma',
       'Esta toma se procesará y aparecerá en Grabaciones como tu selftape definitivo. Las demás tomas de esta sesión seguirán disponibles aquí por si las necesitas más adelante.',
       [
-        { text: 'Cancelar', style: 'cancel' },
+        { text: 'Cancelar' },
         { text: 'Confirmar', onPress: () => doPromoteToRecording(take) },
       ]
     );
@@ -486,7 +518,7 @@ export default function TakeComparatorScreen() {
         throw new Error('El servidor no confirmó el envío.');
       }
 
-      Alert.alert('✅ Enviada a Grabaciones', 'Tu selftape se está procesando y aparecerá pronto en Grabaciones.');
+      showTakeAlert('✅ Enviada a Grabaciones', 'Tu selftape se está procesando y aparecerá pronto en Grabaciones.');
 
       const takesData = await AsyncStorage.getItem(`takes_${take.sessionId}`);
       if (takesData) {
@@ -496,7 +528,7 @@ export default function TakeComparatorScreen() {
       }
       loadAllTakes();
     } catch (e: any) {
-      Alert.alert('Error', 'No se pudo enviar la toma. Inténtalo de nuevo.');
+      showTakeAlert('Error', 'No se pudo enviar la toma. Inténtalo de nuevo.');
     } finally {
       setPromotingTakeId(null);
     }
@@ -504,13 +536,14 @@ export default function TakeComparatorScreen() {
 
   // ── PARTE D: Borrar ──────────────────────────────────────────────────────
   function deleteTake(take: Take) {
-    Alert.alert(
+    showTakeAlert(
       'Borrar toma',
       `¿Seguro que quieres borrar "${take.customName || `Toma ${take.takeNumber}`}"? Esta acción no se puede deshacer.`,
       [
-        { text: 'Cancelar', style: 'cancel' },
-        { text: 'Borrar', style: 'destructive', onPress: () => doDeleteTake(take) },
-      ]
+        { text: 'Cancelar' },
+        { text: 'Borrar', onPress: () => doDeleteTake(take) },
+      ],
+      true
     );
   }
 
@@ -538,7 +571,7 @@ export default function TakeComparatorScreen() {
       loadAllTakes();
     } catch (e) {
       console.error('[Comparador] Error borrando toma:', e);
-      Alert.alert('Error', 'No se pudo borrar la toma.');
+      showTakeAlert('Error', 'No se pudo borrar la toma.');
     }
   }
 
@@ -582,37 +615,70 @@ export default function TakeComparatorScreen() {
   }
 
   return (
-    <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
+    <ImageBackground source={castingBg()} resizeMode="cover" style={{ flex: 1 }}>
+    <SafeAreaView style={[styles.container, { backgroundColor: 'transparent' }]}>
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
-          <ArrowLeft color={colors.text} size={rp(24)} />
+        <TouchableOpacity
+          onPress={() => router.back()}
+          style={[
+            styles.backBtn,
+            { width: rp(44), height: rp(44), borderRadius: rp(22), alignItems: 'center', justifyContent: 'center', backgroundColor: glassBg, borderColor: glassBorder, borderWidth: 1 },
+          ]}
+        >
+          <ArrowLeft color={fg} size={rp(24)} />
         </TouchableOpacity>
         <View style={{ flexDirection: 'row', alignItems: 'center', flex: 1, justifyContent: 'center', gap: rp(6) }}>
-          <Text style={[styles.headerTitle, { color: colors.text }]}>Tomas</Text>
+          <Text style={[styles.headerTitle, { color: fg }]}>Tomas</Text>
           <TouchableOpacity
-            onPress={() => Alert.alert(
+            onPress={() => showTakeAlert(
               'Revisión de Tomas',
               'En este panel encontrarás todas las tomas que grabes de este guion. Puedes renombrarlas, visualizarlas, marcar favoritas...\n\nSelecciona "Usar toma" con la versión definitiva para que aparezca en Grabaciones.\n\nPulsa ⚙️ para seleccionar el borrado automático de las tomas descartadas para liberar espacio de almacenamiento.',
               [{ text: 'Entendido' }]
             )}
             style={{ padding: 4 }}
           >
-            <Info color={colors.textSecondary} size={rp(18)} />
+            <Info color={activeAccent} size={rp(18)} />
           </TouchableOpacity>
         </View>
-        <TouchableOpacity onPress={() => setShowSettingsModal(true)} style={styles.backBtn}>
-          <Settings color={colors.text} size={rp(22)} />
+        <TouchableOpacity
+          onPress={() => setShowSettingsModal(true)}
+          style={[
+            styles.backBtn,
+            { width: rp(44), height: rp(44), borderRadius: rp(22), alignItems: 'center', justifyContent: 'center', backgroundColor: glassBg, borderColor: glassBorder, borderWidth: 1 },
+          ]}
+        >
+          <Settings color={activeAccent} size={rp(22)} />
         </TouchableOpacity>
       </View>
 
       {loading ? (
-        <ActivityIndicator size="large" color={colors.primary} style={{ marginTop: 40 }} />
+        <ActivityIndicator size="large" color={activeAccent} style={{ marginTop: 40 }} />
       ) : allTakes.length === 0 ? (
         <View style={styles.emptyState}>
-          <Text style={[styles.emptyStateText, { color: colors.textSecondary }]}>
-            Todavía no tienes tomas guardadas.{'\n'}
-            Graba en Selftape y elige &quot;Sí, grabar otra&quot; para empezar a comparar.
-          </Text>
+          <View
+            style={[
+              styles.emptyCard,
+              {
+                backgroundColor: isDark ? 'rgba(124,106,247,0.08)' : 'rgba(255,255,255,0.55)',
+                borderColor: isDark ? 'rgba(167,139,250,0.25)' : 'rgba(124,106,247,0.15)',
+              },
+              !isDark && {
+                shadowColor: '#1a1625',
+                shadowOffset: { width: 0, height: 8 },
+                shadowOpacity: 0.28,
+                shadowRadius: 16,
+                elevation: 8,
+              },
+            ]}
+          >
+            <View style={[styles.emptyIconCircle, { backgroundColor: isDark ? 'rgba(167,139,250,0.15)' : 'rgba(124,106,247,0.12)' }]}>
+              <Layers size={30} color={activeAccent} />
+            </View>
+            <Text style={[styles.emptyTitle, { color: fg }]}>No hay tomas</Text>
+            <Text style={[styles.emptyStateText, { color: fgSecondary }]}>
+              Graba en Selftape y elige &quot;Sí, grabar otra&quot; para empezar a comparar tus tomas aquí.
+            </Text>
+          </View>
         </View>
       ) : (
         <FlatList
@@ -620,17 +686,17 @@ export default function TakeComparatorScreen() {
           keyExtractor={(item) => item.id}
           contentContainerStyle={{ padding: rp(16) }}
           renderItem={({ item }) => (
-            <View style={[styles.takeCard, { backgroundColor: colors.card }]}>
+            <View style={[styles.takeCard, { backgroundColor: glassBg, borderColor: glassBorder, borderWidth: 1 }]}>
               <View style={styles.takeCardHeader}>
-                <Text style={[styles.takeTitle, { color: colors.text }]}>
+                <Text style={[styles.takeTitle, { color: fg }]}>
                   {item.savedLocally ? '📱 ' : ''}{item.customName || `Toma ${item.takeNumber}`}
                 </Text>
                 {renderStatusBadge(item.status)}
               </View>
               {item.scriptTitle ? (
-                <Text style={[styles.takeScript, { color: colors.textSecondary }]}>{item.scriptTitle}</Text>
+                <Text style={[styles.takeScript, { color: fgSecondary }]}>{item.scriptTitle}</Text>
               ) : null}
-              <Text style={[styles.takeDate, { color: colors.textSecondary }]}>
+              <Text style={[styles.takeDate, { color: fgSecondary }]}>
                 {new Date(item.createdAt).toLocaleDateString('es-ES', {
                   day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit',
                 })}
@@ -643,15 +709,15 @@ export default function TakeComparatorScreen() {
                   disabled={item.status !== 'ready' || downloadingTakeId === item.id}
                 >
                   {downloadingTakeId === item.id ? (
-                    <ActivityIndicator size="small" color={colors.primary} />
+                    <ActivityIndicator size="small" color={activeAccent} />
                   ) : (
                     <Play
                       size={rp(18)}
-                      color={item.status === 'ready' ? colors.primary : colors.textSecondary}
+                      color={item.status === 'ready' ? activeAccent : fgSecondary}
                     />
                   )}
                   <Text style={{
-                    color: item.status === 'ready' ? colors.primary : colors.textSecondary,
+                    color: item.status === 'ready' ? activeAccent : fgSecondary,
                     fontSize: rf(12),
                   }}>
                     Reproducir
@@ -661,10 +727,10 @@ export default function TakeComparatorScreen() {
                 <TouchableOpacity onPress={() => toggleFavorite(item)} style={styles.takeActionBtn}>
                   <Star
                     size={rp(18)}
-                    color={item.isFavorite ? '#FBBF24' : colors.textSecondary}
+                    color={item.isFavorite ? '#FBBF24' : fgSecondary}
                     fill={item.isFavorite ? '#FBBF24' : 'transparent'}
                   />
-                  <Text style={{ color: colors.textSecondary, fontSize: rf(12) }}>Favorita</Text>
+                  <Text style={{ color: fgSecondary, fontSize: rf(12) }}>Favorita</Text>
                 </TouchableOpacity>
 
                 <TouchableOpacity
@@ -674,8 +740,8 @@ export default function TakeComparatorScreen() {
                   }}
                   style={styles.takeActionBtn}
                 >
-                  <Edit3 size={rp(18)} color={colors.textSecondary} />
-                  <Text style={{ color: colors.textSecondary, fontSize: rf(12) }}>Renombrar</Text>
+                  <Edit3 size={rp(18)} color={fgSecondary} />
+                  <Text style={{ color: fgSecondary, fontSize: rf(12) }}>Renombrar</Text>
                 </TouchableOpacity>
 
                 <TouchableOpacity
@@ -684,11 +750,11 @@ export default function TakeComparatorScreen() {
                   disabled={item.status !== 'ready' || sharingTakeId === item.id}
                 >
                   {sharingTakeId === item.id ? (
-                    <ActivityIndicator size="small" color={colors.textSecondary} />
+                    <ActivityIndicator size="small" color={fgSecondary} />
                   ) : (
-                    <Share2 size={rp(18)} color={item.status === 'ready' ? colors.textSecondary : colors.border} />
+                    <Share2 size={rp(18)} color={item.status === 'ready' ? fgSecondary : glassBorder} />
                   )}
-                  <Text style={{ color: colors.textSecondary, fontSize: rf(12) }}>Compartir</Text>
+                  <Text style={{ color: fgSecondary, fontSize: rf(12) }}>Compartir</Text>
                 </TouchableOpacity>
 
                 <TouchableOpacity
@@ -697,11 +763,11 @@ export default function TakeComparatorScreen() {
                   disabled={item.status !== 'ready' || savingTakeId === item.id}
                 >
                   {savingTakeId === item.id ? (
-                    <ActivityIndicator size="small" color={colors.textSecondary} />
+                    <ActivityIndicator size="small" color={fgSecondary} />
                   ) : (
-                    <Download size={rp(18)} color={item.status === 'ready' ? colors.textSecondary : colors.border} />
+                    <Download size={rp(18)} color={item.status === 'ready' ? fgSecondary : glassBorder} />
                   )}
-                  <Text style={{ color: colors.textSecondary, fontSize: rf(12) }}>Guardar</Text>
+                  <Text style={{ color: fgSecondary, fontSize: rf(12) }}>Guardar</Text>
                 </TouchableOpacity>
 
                 <TouchableOpacity onPress={() => deleteTake(item)} style={styles.takeActionBtn}>
@@ -719,7 +785,8 @@ export default function TakeComparatorScreen() {
                   onPress={() => promoteToRecording(item)}
                   style={[
                     styles.promoteBtn,
-                    { backgroundColor: colors.primary, opacity: item.status !== 'ready' ? 0.5 : 1 },
+                    primaryButtonBg,
+                    { opacity: item.status !== 'ready' ? 0.5 : 1 },
                   ]}
                   disabled={item.status !== 'ready' || promotingTakeId === item.id}
                 >
@@ -756,7 +823,7 @@ export default function TakeComparatorScreen() {
               shouldPlay
               onError={(e) => {
                 console.error('[Comparador] Error reproduciendo:', e);
-                Alert.alert('Error', 'No se pudo cargar el vídeo.');
+                showTakeAlert('Error', 'No se pudo cargar el vídeo.');
                 setPlayingTakeId(null);
                 setVideoUri(null);
               }}
@@ -769,21 +836,26 @@ export default function TakeComparatorScreen() {
       {renamingTake && (
         <Modal visible transparent animationType="fade">
           <View style={styles.renameModalOverlay}>
-            <View style={[styles.renameModalContent, { backgroundColor: colors.card }]}>
-              <Text style={[styles.renameModalTitle, { color: colors.text }]}>Renombrar toma</Text>
-              <TextInput
-                value={renameText}
-                onChangeText={setRenameText}
-                style={[styles.renameInput, { color: colors.text, borderColor: colors.border }]}
-                autoFocus
-              />
-              <View style={styles.renameModalButtons}>
-                <TouchableOpacity onPress={() => { setRenamingTake(null); setRenameText(''); }}>
-                  <Text style={{ color: colors.textSecondary }}>Cancelar</Text>
-                </TouchableOpacity>
-                <TouchableOpacity onPress={confirmRename}>
-                  <Text style={{ color: colors.primary, fontWeight: '700' }}>Guardar</Text>
-                </TouchableOpacity>
+            <View style={[styles.renameModalClip, { borderColor: glassBorder }]}>
+              <BlurView intensity={isDark ? 55 : 65} tint={isDark ? 'dark' : 'light'} style={[StyleSheet.absoluteFill, { borderRadius: rp(16) }]} />
+              <View style={[StyleSheet.absoluteFill, { backgroundColor: glassBg, borderRadius: rp(16) }]} />
+              <View style={styles.renameModalContent}>
+                <Text style={[styles.renameModalTitle, { color: fg }]}>Renombrar toma</Text>
+                <TextInput
+                  value={renameText}
+                  onChangeText={setRenameText}
+                  style={[styles.renameInput, { color: fg, borderColor: glassBorder, backgroundColor: chipInactiveBg }]}
+                  placeholderTextColor={fgSecondary}
+                  autoFocus
+                />
+                <View style={styles.renameModalButtons}>
+                  <TouchableOpacity onPress={() => { setRenamingTake(null); setRenameText(''); }}>
+                    <Text style={{ color: fgSecondary }}>Cancelar</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity onPress={confirmRename}>
+                    <Text style={{ color: activeAccent, fontWeight: '700' }}>Guardar</Text>
+                  </TouchableOpacity>
+                </View>
               </View>
             </View>
           </View>
@@ -794,35 +866,65 @@ export default function TakeComparatorScreen() {
       {showSettingsModal && (
         <Modal visible transparent animationType="fade">
           <View style={styles.renameModalOverlay}>
-            <View style={[styles.renameModalContent, { backgroundColor: colors.card }]}>
-              <Text style={[styles.renameModalTitle, { color: colors.text }]}>Expiración de tomas locales</Text>
-              <Text style={{ color: colors.textSecondary, fontSize: rf(13), marginBottom: rp(16), lineHeight: rf(18) }}>
-                Las tomas se borrarán automáticamente pasado este tiempo. Las tomas que guardes en tu dispositivo
-                (botón &quot;Guardar&quot;) nunca se borrarán automáticamente, sin importar este ajuste.
-              </Text>
-              {EXPIRATION_OPTIONS.map(opt => (
-                <TouchableOpacity
-                  key={opt.value}
-                  onPress={() => selectExpiration(opt.value)}
-                  style={styles.expirationOption}
-                >
-                  <Text style={{
-                    color: expirationDays === opt.value ? colors.primary : colors.text,
-                    fontWeight: expirationDays === opt.value ? '700' : '400',
-                    fontSize: rf(14),
-                  }}>
-                    {expirationDays === opt.value ? '● ' : '○ '}{opt.label}
-                  </Text>
+            <View style={[styles.renameModalClip, { borderColor: glassBorder }]}>
+              <BlurView intensity={isDark ? 55 : 65} tint={isDark ? 'dark' : 'light'} style={[StyleSheet.absoluteFill, { borderRadius: rp(16) }]} />
+              <View style={[StyleSheet.absoluteFill, { backgroundColor: glassBg, borderRadius: rp(16) }]} />
+              <View style={styles.renameModalContent}>
+                <Text style={[styles.renameModalTitle, { color: fg }]}>Expiración de tomas locales</Text>
+                <Text style={{ color: fgSecondary, fontSize: rf(13), marginBottom: rp(16), lineHeight: rf(18) }}>
+                  Las tomas se borrarán automáticamente pasado este tiempo. Las tomas que guardes en tu dispositivo
+                  (botón &quot;Guardar&quot;) nunca se borrarán automáticamente, sin importar este ajuste.
+                </Text>
+                {EXPIRATION_OPTIONS.map(opt => (
+                  <TouchableOpacity
+                    key={opt.value}
+                    onPress={() => selectExpiration(opt.value)}
+                    style={styles.expirationOption}
+                  >
+                    <Text style={{
+                      color: expirationDays === opt.value ? activeAccent : fg,
+                      fontWeight: expirationDays === opt.value ? '700' : '400',
+                      fontSize: rf(14),
+                    }}>
+                      {expirationDays === opt.value ? '● ' : '○ '}{opt.label}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+                <TouchableOpacity onPress={() => setShowSettingsModal(false)} style={{ alignSelf: 'flex-end', marginTop: rp(12) }}>
+                  <Text style={{ color: fgSecondary }}>Cerrar</Text>
                 </TouchableOpacity>
-              ))}
-              <TouchableOpacity onPress={() => setShowSettingsModal(false)} style={{ alignSelf: 'flex-end', marginTop: rp(12) }}>
-                <Text style={{ color: colors.textSecondary }}>Cerrar</Text>
-              </TouchableOpacity>
+              </View>
             </View>
           </View>
         </Modal>
       )}
+
+      <ConfirmDialog
+        visible={!!takeAlert}
+        title={takeAlert?.title || ''}
+        message={takeAlert?.message || ''}
+        singleButton={(takeAlert?.buttons.length ?? 1) === 1}
+        cancelText={takeAlert && takeAlert.buttons.length === 2 ? takeAlert.buttons[0].text : undefined}
+        confirmText={
+          takeAlert
+            ? (takeAlert.buttons.length === 2 ? takeAlert.buttons[1].text : takeAlert.buttons[0].text)
+            : 'Entendido'
+        }
+        destructive={takeAlert?.destructive || /error/i.test(takeAlert?.title || '')}
+        onCancel={() => {
+          if (takeAlert && takeAlert.buttons.length === 2) takeAlert.buttons[0].onPress?.();
+          setTakeAlert(null);
+        }}
+        onConfirm={() => {
+          if (takeAlert) {
+            const btn = takeAlert.buttons.length === 2 ? takeAlert.buttons[1] : takeAlert.buttons[0];
+            btn.onPress?.();
+          }
+          setTakeAlert(null);
+        }}
+      />
     </SafeAreaView>
+    </ImageBackground>
   );
 }
 
@@ -834,7 +936,24 @@ const styles = StyleSheet.create({
   },
   backBtn: { padding: rp(8) },
   headerTitle: { fontSize: rf(18), fontWeight: '700' },
-  emptyState: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: rp(40) },
+  emptyState: { flex: 1, justifyContent: 'center', alignItems: 'center', paddingHorizontal: rp(40) },
+  emptyCard: {
+    width: '100%',
+    borderRadius: 24,
+    borderWidth: 1,
+    paddingVertical: rp(32),
+    paddingHorizontal: rp(24),
+    alignItems: 'center',
+  },
+  emptyIconCircle: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: rp(16),
+  },
+  emptyTitle: { fontSize: rf(20), fontWeight: '600', marginBottom: 8, textAlign: 'center' },
   emptyStateText: { fontSize: rf(14), textAlign: 'center', lineHeight: rf(22) },
   takeCard: { borderRadius: rp(14), padding: rp(16), marginBottom: rp(12) },
   takeCardHeader: {
@@ -877,7 +996,8 @@ const styles = StyleSheet.create({
     flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'center',
     alignItems: 'center', padding: rp(24),
   },
-  renameModalContent: { borderRadius: rp(16), padding: rp(20), width: '100%' },
+  renameModalClip: { borderRadius: rp(16), overflow: 'hidden', borderWidth: 1, width: '100%' },
+  renameModalContent: { padding: rp(20), width: '100%' },
   renameModalTitle: { fontSize: rf(16), fontWeight: '700', marginBottom: rp(16) },
   renameInput: {
     borderWidth: 1, borderRadius: rp(10), padding: rp(12),
