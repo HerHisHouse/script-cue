@@ -294,7 +294,7 @@ export default function AnalysisScreen() {
     if (mode === 'select') {
         return (
             <ImageBackground source={analysisBg()} resizeMode="cover" style={styles.container}>
-            <SafeAreaView style={[styles.container, { backgroundColor: 'transparent' }]}>
+            <SafeAreaView style={[styles.container, { backgroundColor: 'transparent' }]} edges={['top', 'left', 'right']}>
                 <View style={[styles.header, { borderBottomColor: cardBorder }]}>
                     <TouchableOpacity onPress={() => router.back()} style={[styles.backButton, glassHeaderBtn]}>
                         <ArrowLeft size={20} color="#FFFFFF" />
@@ -372,7 +372,7 @@ export default function AnalysisScreen() {
     if (mode === 'manual') {
         return (
             <ImageBackground source={analysisBg()} resizeMode="cover" style={styles.container}>
-            <SafeAreaView style={[styles.container, { backgroundColor: 'transparent' }]}>
+            <SafeAreaView style={[styles.container, { backgroundColor: 'transparent' }]} edges={['top', 'left', 'right']}>
                 <View style={[styles.header, { borderBottomColor: cardBorder }]}>
                     <TouchableOpacity onPress={() => setMode('select')} style={[styles.backButton, glassHeaderBtn]}>
                         <ArrowLeft size={20} color="#FFFFFF" />
@@ -507,7 +507,7 @@ export default function AnalysisScreen() {
 
         return (
             <ImageBackground source={analysisBg()} resizeMode="cover" style={styles.container}>
-            <SafeAreaView style={[styles.container, { backgroundColor: 'transparent' }]}>
+            <SafeAreaView style={[styles.container, { backgroundColor: 'transparent' }]} edges={['top', 'left', 'right']}>
                 <View style={[styles.header, { borderBottomColor: cardBorder }]}>
                     <TouchableOpacity onPress={() => setMode('select')} style={[styles.backButton, glassHeaderBtn]}>
                         <ArrowLeft size={20} color="#FFFFFF" />
@@ -596,7 +596,7 @@ export default function AnalysisScreen() {
     if (mode === 'ai') {
         return (
             <ImageBackground source={analysisBg()} resizeMode="cover" style={styles.container}>
-            <SafeAreaView style={[styles.container, { backgroundColor: 'transparent' }]}>
+            <SafeAreaView style={[styles.container, { backgroundColor: 'transparent' }]} edges={['top', 'left', 'right']}>
                 <View style={[styles.header, { borderBottomColor: cardBorder }]}>
                     <TouchableOpacity onPress={() => setMode('select')} style={[styles.backButton, glassHeaderBtn, generating && { opacity: 0.5 }]} disabled={generating}>
                         <ArrowLeft size={20} color="#FFFFFF" />

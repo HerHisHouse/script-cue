@@ -326,7 +326,7 @@ export default function MemoryModeScreen() {
   if (!gameStarted) {
     return (
       <ImageBackground source={bg()} resizeMode="cover" style={styles.container}>
-        <SafeAreaView style={[styles.container, { backgroundColor: 'transparent' }]}>
+        <SafeAreaView style={[styles.container, { backgroundColor: 'transparent' }]} edges={['top', 'left', 'right']}>
           <View style={styles.header}>
             <TouchableOpacity onPress={() => router.back()} style={[styles.backButton, { backgroundColor: glassBg, borderColor: glassBorder }]}>
               <ArrowLeft size={24} color={fg} />
@@ -391,7 +391,7 @@ export default function MemoryModeScreen() {
 
   return (
     <ImageBackground source={bg()} resizeMode="cover" style={styles.container}>
-      <SafeAreaView style={[styles.container, { backgroundColor: 'transparent' }]}>
+      <SafeAreaView style={[styles.container, { backgroundColor: 'transparent' }]} edges={['top', 'left', 'right']}>
         {/* Header */}
         <View style={styles.header}>
           <TouchableOpacity onPress={() => router.back()} style={[styles.backButton, { backgroundColor: glassBg, borderColor: glassBorder }]}>

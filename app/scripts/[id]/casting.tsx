@@ -2097,7 +2097,7 @@ export default function CastingModeScreen() {
       {/* --- SELECTION SCREEN --- */}
       {castingMode === 'selection' && (
         <ImageBackground source={castingBg()} resizeMode="cover" style={{ flex: 1 }}>
-        <SafeAreaView style={[styles.configContainer, { backgroundColor: 'transparent' }]}>
+        <SafeAreaView style={[styles.configContainer, { backgroundColor: 'transparent' }]} edges={['top', 'left', 'right']}>
           <View style={styles.configHeader}>
             <TouchableOpacity
               onPress={() => router.replace(`/scripts/${id}`)}
@@ -2189,7 +2189,7 @@ export default function CastingModeScreen() {
       {/* --- FREE INPUT SCREEN --- */}
       {castingMode === 'free_input' && (
         <ImageBackground source={castingBg()} resizeMode="cover" style={{ flex: 1 }}>
-        <SafeAreaView style={[styles.configContainer, { backgroundColor: 'transparent' }]}>
+        <SafeAreaView style={[styles.configContainer, { backgroundColor: 'transparent' }]} edges={['top', 'left', 'right']}>
           <View style={styles.configHeader}>
             <TouchableOpacity
               onPress={() => setCastingMode('selection')}
@@ -2261,7 +2261,7 @@ export default function CastingModeScreen() {
       {/* Scene Configuration Screen */}
       {castingMode === 'script_config' && (
         <ImageBackground source={castingBg()} resizeMode="cover" style={{ flex: 1 }}>
-        <SafeAreaView style={[styles.configContainer, { backgroundColor: 'transparent' }]}>
+        <SafeAreaView style={[styles.configContainer, { backgroundColor: 'transparent' }]} edges={['top', 'left', 'right']}>
           {/* Header */}
           <View style={{ flex: 1 }}>
           <View style={styles.configHeader}>
@@ -2490,7 +2490,7 @@ export default function CastingModeScreen() {
           </ScrollView>
 
           {/* Start Recording Button */}
-          <View style={styles.configFooter}>
+          <View style={[styles.configFooter, { paddingBottom: rp(24) + insets.bottom }]}>
             <TouchableOpacity
               onPress={startScriptCasting}
               style={[styles.startRecordingBtn, primaryButtonBg]}

@@ -285,7 +285,7 @@ export default function QuizModeScreen() {
     if (showShortSceneMessage) {
         return (
             <ImageBackground source={bg()} resizeMode="cover" style={styles.container}>
-                <SafeAreaView style={[styles.messageContainer, { backgroundColor: 'transparent' }]}>
+                <SafeAreaView style={[styles.messageContainer, { backgroundColor: 'transparent' }]} edges={['top', 'left', 'right']}>
                     <AlertTriangle size={60} color={colors.error} />
                     <Text style={[styles.messageTitle, { color: fg }]}>
                         Escena muy corta
@@ -313,7 +313,7 @@ export default function QuizModeScreen() {
     if (showWelcome) {
         return (
             <ImageBackground source={bg()} resizeMode="cover" style={styles.container}>
-                <SafeAreaView style={[styles.welcomeContainer, { backgroundColor: 'transparent' }]}>
+                <SafeAreaView style={[styles.welcomeContainer, { backgroundColor: 'transparent' }]} edges={['top', 'left', 'right']}>
                     {errorMsg ? (
                         <View style={styles.center}>
                             <Text style={{ color: colors.error, marginBottom: 20 }}>{errorMsg}</Text>
@@ -381,7 +381,7 @@ export default function QuizModeScreen() {
 
     if (!currentQ && !loading && !gameFinished) return (
         <ImageBackground source={bg()} resizeMode="cover" style={styles.container}>
-            <SafeAreaView style={[styles.container, styles.center, { backgroundColor: 'transparent' }]}>
+            <SafeAreaView style={[styles.container, styles.center, { backgroundColor: 'transparent' }]} edges={['top', 'left', 'right']}>
                 <Text style={{ color: fg }}>No hay suficientes preguntas disponibles.</Text>
                 <TouchableOpacity onPress={() => router.back()}>
                     <Text style={{ color: activeAccent, marginTop: 20 }}>Volver</Text>
@@ -392,7 +392,7 @@ export default function QuizModeScreen() {
 
     return (
         <ImageBackground source={bg()} resizeMode="cover" style={styles.container}>
-        <SafeAreaView style={[styles.container, { backgroundColor: 'transparent' }]}>
+        <SafeAreaView style={[styles.container, { backgroundColor: 'transparent' }]} edges={['top', 'left', 'right']}>
                 {/* Header */}
                 <View style={styles.header}>
                     <TouchableOpacity onPress={() => router.back()} style={[styles.headerBackButton, { backgroundColor: glassBg, borderColor: glassBorder }]}>

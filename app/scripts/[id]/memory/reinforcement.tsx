@@ -625,7 +625,7 @@ export default function ReinforcementScreen() {
     if (failedItems.length === 0) {
         return (
             <ImageBackground source={bg()} resizeMode="cover" style={styles.container}>
-                <SafeAreaView style={[styles.container, { backgroundColor: 'transparent' }]}>
+                <SafeAreaView style={[styles.container, { backgroundColor: 'transparent' }]} edges={['top', 'left', 'right']}>
                     <View style={styles.header}>
                         <TouchableOpacity onPress={() => router.back()} style={[styles.backButton, { backgroundColor: glassBg, borderColor: glassBorder }]}>
                             <ArrowLeft size={24} color={fg} />
@@ -653,7 +653,7 @@ export default function ReinforcementScreen() {
 
     return (
         <ImageBackground source={bg()} resizeMode="cover" style={styles.container}>
-        <SafeAreaView style={[styles.container, { backgroundColor: 'transparent' }]}>
+        <SafeAreaView style={[styles.container, { backgroundColor: 'transparent' }]} edges={['top', 'left', 'right']}>
                 <View style={styles.header}>
                     <TouchableOpacity onPress={() => router.back()} style={[styles.backButton, { backgroundColor: glassBg, borderColor: glassBorder }]}>
                         <ArrowLeft size={24} color={fg} />

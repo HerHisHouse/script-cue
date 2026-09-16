@@ -12,7 +12,7 @@ import {
   Modal,
   ImageBackground,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { BlurView } from 'expo-blur';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { useRouter, useLocalSearchParams, Stack } from 'expo-router';
@@ -87,6 +87,7 @@ export default function CoachModeScreen() {
   const { id } = useLocalSearchParams();
   const { colors, isDark } = useTheme();
   const { user } = useAuth();
+  const insets = useSafeAreaInsets();
 
   // Paleta "sobre imagen de fondo" del diseño glass, igual que Modo Análisis / Editar guion
   const onBg = isDark ? '#ffffff' : '#2a2447';
@@ -858,7 +859,7 @@ export default function CoachModeScreen() {
   if (!selectedRecording) {
     return (
       <ImageBackground source={coachBg()} resizeMode="cover" style={styles.container}>
-      <SafeAreaView style={[styles.container, { backgroundColor: 'transparent' }]}>
+      <SafeAreaView style={[styles.container, { backgroundColor: 'transparent' }]} edges={['top', 'left', 'right']}>
         <Stack.Screen options={{ headerShown: false }} />
         <View style={[styles.header, { borderBottomColor: cardBorder }]}>
           <TouchableOpacity onPress={() => router.back()} style={[styles.backButton, glassHeaderBtn]}>
@@ -909,7 +910,7 @@ export default function CoachModeScreen() {
             data={recordings}
             renderItem={renderRecordingItem}
             keyExtractor={(item) => item.id}
-            contentContainerStyle={{ padding: rp(20) }}
+            contentContainerStyle={{ padding: rp(20), paddingBottom: rp(20) + insets.bottom }}
             ListEmptyComponent={
               <View style={styles.emptyState}>
                 <View style={[styles.infoCard, { backgroundColor: cardBg, borderColor: cardBorder }]}>
@@ -1004,7 +1005,7 @@ export default function CoachModeScreen() {
   // --- VIEW: ANALYSIS / DETAILS ---
   return (
     <ImageBackground source={coachBg()} resizeMode="cover" style={styles.container}>
-    <SafeAreaView style={[styles.container, { backgroundColor: 'transparent' }]}>
+    <SafeAreaView style={[styles.container, { backgroundColor: 'transparent' }]} edges={['top', 'left', 'right']}>
       <Stack.Screen options={{ headerShown: false }} />
       <View style={[styles.header, { borderBottomColor: cardBorder }]}>
         <TouchableOpacity onPress={() => setSelectedRecording(null)} style={[styles.backButton, glassHeaderBtn]}>
@@ -1019,7 +1020,7 @@ export default function CoachModeScreen() {
         </TouchableOpacity>
       </View>
 
-      <ScrollView style={styles.content}>
+      <ScrollView style={styles.content} contentContainerStyle={{ paddingBottom: rp(24) + insets.bottom }}>
         {/* PLAYER SECTION */}
         <View style={styles.playerSection}>
           {selectedRecording.type === 'video' ? (

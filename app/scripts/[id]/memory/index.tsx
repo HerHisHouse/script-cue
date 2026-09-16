@@ -7,7 +7,7 @@ import {
     ScrollView,
     ImageBackground,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter, useLocalSearchParams, useFocusEffect } from 'expo-router';
 import { useTheme } from '@/contexts/ThemeContext';
 import { BlurView } from 'expo-blur';
@@ -66,6 +66,7 @@ export default function MemoryMenuScreen() {
     const router = useRouter();
     const { id } = useLocalSearchParams();
     const { isDark } = useTheme();
+    const insets = useSafeAreaInsets();
 
     const [streak, setStreak] = useState(0);
     const [totalScore, setTotalScore] = useState(0);
@@ -98,7 +99,7 @@ export default function MemoryMenuScreen() {
             resizeMode="cover"
             style={styles.container}
         >
-            <SafeAreaView style={[styles.container, { backgroundColor: 'transparent' }]}>
+            <SafeAreaView style={[styles.container, { backgroundColor: 'transparent' }]} edges={['top', 'left', 'right']}>
                 <View style={styles.header}>
                     <TouchableOpacity onPress={() => router.back()} style={[styles.backButton, { backgroundColor: glassBg, borderColor: glassBorder }]}>
                         <ArrowLeft size={24} color={fg} />
@@ -109,7 +110,7 @@ export default function MemoryMenuScreen() {
                     <View style={{ width: 40 }} />
                 </View>
 
-                <ScrollView style={styles.content} contentContainerStyle={styles.contentContainer}>
+                <ScrollView style={styles.content} contentContainerStyle={[styles.contentContainer, { paddingBottom: rp(24) + insets.bottom }]}>
 
                     {/* Racha / Puntos */}
                     <View style={[styles.statsCard, { backgroundColor: glassBg, borderColor: glassBorder }]}>

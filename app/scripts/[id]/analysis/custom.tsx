@@ -284,7 +284,7 @@ export default function CustomAnalysisScreen() {
     return (
         <GestureHandlerRootView style={{ flex: 1 }}>
             <ImageBackground source={customBg()} resizeMode="cover" style={styles.container}>
-            <SafeAreaView style={[styles.container, { backgroundColor: 'transparent' }]}>
+            <SafeAreaView style={[styles.container, { backgroundColor: 'transparent' }]} edges={['top', 'left', 'right']}>
                 <View style={[styles.header, { borderBottomColor: cardBorder }]}>
                     <TouchableOpacity onPress={() => router.back()} style={[styles.headerButton, glassHeaderBtn]}>
                         <ArrowLeft size={20} color="#FFFFFF" />

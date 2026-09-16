@@ -3,7 +3,7 @@ import {
   View, Text, StyleSheet, TouchableOpacity, FlatList,
   ActivityIndicator, TextInput, Modal, ImageBackground,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { BlurView } from 'expo-blur';
 import { Video, ResizeMode } from 'expo-av';
@@ -217,6 +217,7 @@ export default function TakeComparatorScreen() {
   const router = useRouter();
   const { id } = useLocalSearchParams();
   const { colors, isDark } = useTheme();
+  const insets = useSafeAreaInsets();
   const { user } = useAuth();
 
   const castingBg = () => (isDark ? require('@/assets/images/ui-dark-bg.png') : require('@/assets/images/ui-light-bg.png'));
@@ -616,7 +617,7 @@ export default function TakeComparatorScreen() {
 
   return (
     <ImageBackground source={castingBg()} resizeMode="cover" style={{ flex: 1 }}>
-    <SafeAreaView style={[styles.container, { backgroundColor: 'transparent' }]}>
+    <SafeAreaView style={[styles.container, { backgroundColor: 'transparent' }]} edges={['top', 'left', 'right']}>
       <View style={styles.header}>
         <TouchableOpacity
           onPress={() => router.back()}
@@ -684,7 +685,7 @@ export default function TakeComparatorScreen() {
         <FlatList
           data={allTakes}
           keyExtractor={(item) => item.id}
-          contentContainerStyle={{ padding: rp(16) }}
+          contentContainerStyle={{ padding: rp(16), paddingBottom: rp(16) + insets.bottom }}
           renderItem={({ item }) => (
             <View style={[styles.takeCard, { backgroundColor: glassBg, borderColor: glassBorder, borderWidth: 1 }]}>
               <View style={styles.takeCardHeader}>
