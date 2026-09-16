@@ -4,6 +4,7 @@ import { FileText, Mic, Settings, Folder, Users } from 'lucide-react-native';
 import { useTheme } from '@/contexts/ThemeContext';
 import { View, TouchableOpacity, Text, StyleSheet } from 'react-native';
 import { BlurView } from 'expo-blur';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { rf, rp } from '@/utils/responsive';
 
 const ICONS: Record<string, any> = {
@@ -21,6 +22,7 @@ const ICONS: Record<string, any> = {
 // de cada pestaña como sí hace un tab bar real).
 function FloatingTabBar({ state, descriptors, navigation }: BottomTabBarProps) {
   const { isDark } = useTheme();
+  const insets = useSafeAreaInsets();
   const active = isDark ? '#FFFFFF' : '#2A1B47';
   const inactive = isDark ? 'rgba(255,255,255,0.55)' : 'rgba(42,27,71,0.55)';
   const iconActiveBg = isDark ? 'rgba(255,255,255,0.18)' : 'rgba(104,58,121,0.15)';
@@ -28,36 +30,48 @@ function FloatingTabBar({ state, descriptors, navigation }: BottomTabBarProps) {
   const overlayTint = isDark ? 'rgba(124,106,247,0.14)' : 'rgba(235,230,245,0.22)';
 
   return (
-    <View style={[styles.floatingWrapper, { borderColor }]}>
-      <BlurView intensity={isDark ? 55 : 65} tint={isDark ? 'dark' : 'light'} style={StyleSheet.absoluteFill} />
-      <View style={[StyleSheet.absoluteFill, { backgroundColor: overlayTint }]} />
-      <View style={styles.floatingContent}>
-        {state.routes.map((route, index) => {
-          const { options } = descriptors[route.key];
-          const isFocused = state.index === index;
-          const Icon = ICONS[route.name];
-
-          const onPress = () => {
-            const event = navigation.emit({ type: 'tabPress', target: route.key, canPreventDefault: true });
-            if (!isFocused && !event.defaultPrevented) {
-              navigation.navigate(route.name);
-            }
-          };
-
-          return (
-            <TouchableOpacity key={route.key} style={styles.item} activeOpacity={0.7} onPress={onPress}>
-              <View style={[styles.iconCircle, { backgroundColor: isFocused ? iconActiveBg : 'transparent' }]}>
-                <Icon size={24} color={isFocused ? active : inactive} />
-                {route.name === 'community' && !isFocused && <View style={styles.badge} />}
-              </View>
-              <Text style={[styles.label, { color: isFocused ? active : inactive }]} numberOfLines={1}>
-                {options.title}
-              </Text>
-            </TouchableOpacity>
-          );
-        })}
+    <>
+      {/* Franja borrosa bajo la pastilla flotante — sin esto, lo que pasa por
+          debajo (entre el borde inferior de la pastilla y el borde físico del
+          terminal) se ve nítido, cortando el efecto cristal. Mismo blur que
+          la pastilla pero difuminado sin recorte, para que no se note el
+          borde entre ambas capas. */}
+      <View style={[styles.bottomBlurStrip, { height: insets.bottom + 56 }]} pointerEvents="none">
+        <BlurView intensity={isDark ? 35 : 45} tint={isDark ? 'dark' : 'light'} style={StyleSheet.absoluteFill} />
+        <View style={[StyleSheet.absoluteFill, { backgroundColor: isDark ? 'rgba(10,8,20,0.22)' : 'rgba(235,230,245,0.18)' }]} />
       </View>
-    </View>
+
+      <View style={[styles.floatingWrapper, { borderColor }]}>
+        <BlurView intensity={isDark ? 55 : 65} tint={isDark ? 'dark' : 'light'} style={StyleSheet.absoluteFill} />
+        <View style={[StyleSheet.absoluteFill, { backgroundColor: overlayTint }]} />
+        <View style={styles.floatingContent}>
+          {state.routes.map((route, index) => {
+            const { options } = descriptors[route.key];
+            const isFocused = state.index === index;
+            const Icon = ICONS[route.name];
+
+            const onPress = () => {
+              const event = navigation.emit({ type: 'tabPress', target: route.key, canPreventDefault: true });
+              if (!isFocused && !event.defaultPrevented) {
+                navigation.navigate(route.name);
+              }
+            };
+
+            return (
+              <TouchableOpacity key={route.key} style={styles.item} activeOpacity={0.7} onPress={onPress}>
+                <View style={[styles.iconCircle, { backgroundColor: isFocused ? iconActiveBg : 'transparent' }]}>
+                  <Icon size={24} color={isFocused ? active : inactive} />
+                  {route.name === 'community' && !isFocused && <View style={styles.badge} />}
+                </View>
+                <Text style={[styles.label, { color: isFocused ? active : inactive }]} numberOfLines={1}>
+                  {options.title}
+                </Text>
+              </TouchableOpacity>
+            );
+          })}
+        </View>
+      </View>
+    </>
   );
 }
 
@@ -76,6 +90,13 @@ export default function TabLayout() {
 }
 
 const styles = StyleSheet.create({
+  bottomBlurStrip: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: 0,
+    overflow: 'hidden',
+  },
   floatingWrapper: {
     position: 'absolute',
     left: 16,
