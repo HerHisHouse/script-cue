@@ -19,8 +19,9 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import DraggableFlatList, { ScaleDecorator } from 'react-native-draggable-flatlist';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import * as Haptics from 'expo-haptics';
-import { ArrowLeft, Edit, Trash2, Plus, CheckCircle, X, Save, Check } from 'lucide-react-native';
+import { ArrowLeft, Edit, Trash2, Plus, CheckCircle, X, Save, Check, FileText } from 'lucide-react-native';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
+import { WebView } from 'react-native-webview';
 
 const REVIEW_INFO_KEY = 'hideReviewInfoV2';
 
@@ -147,18 +148,27 @@ export default function ReviewScreen() {
   const [characters, setCharacters] = useState<any[]>([]);
   const [selectedChar, setSelectedChar] = useState<any>(null);
 
+  // ── Visor del PDF original (Fase 1: comparar el orden de diálogos contra
+  // el documento real sin salir de la app) ──────────────────────────────────
+  const [scriptPdfPath, setScriptPdfPath] = useState<string | null>(null);
+  const [showPdfViewer, setShowPdfViewer] = useState(false);
+  const [pdfSignedUrl, setPdfSignedUrl] = useState<string | null>(null);
+  const [pdfViewerLoading, setPdfViewerLoading] = useState(false);
+
   // ── Load ──────────────────────────────────────────────────────────────────
   useEffect(() => {
     if (!id || !user) return;
     const init = async () => {
       try {
         const { data: script } = await supabase
-          .from('scripts').select('reviewed').eq('id', id).single();
+          .from('scripts').select('reviewed, pdf_url').eq('id', id).single();
 
         if (script?.reviewed && force !== '1') {
           router.replace(`/scripts/${id}` as any);
           return;
         }
+
+        setScriptPdfPath(script?.pdf_url || null);
 
         const hidden = await AsyncStorage.getItem(REVIEW_INFO_KEY);
         if (!hidden) {
@@ -338,6 +348,34 @@ export default function ReviewScreen() {
     }
   };
 
+  // ── Visor del PDF original ──────────────────────────────────────────────────
+  const openPdfViewer = async () => {
+    if (!scriptPdfPath) {
+      Alert.alert(
+        'PDF no disponible',
+        'Este guion no tiene un PDF original asociado (por ejemplo, si se creó escaneando páginas con la cámara).'
+      );
+      return;
+    }
+
+    setPdfViewerLoading(true);
+    try {
+      const { data, error } = await supabase.storage
+        .from('scripts')
+        .createSignedUrl(scriptPdfPath, 3600);
+
+      if (error || !data?.signedUrl) throw error || new Error('No se recibió URL firmada');
+
+      setPdfSignedUrl(data.signedUrl);
+      setShowPdfViewer(true);
+    } catch (e) {
+      console.error('[Review] Error obteniendo URL del PDF:', e);
+      Alert.alert('Error', 'No se pudo abrir el PDF original. Inténtalo de nuevo.');
+    } finally {
+      setPdfViewerLoading(false);
+    }
+  };
+
   // ── Render ────────────────────────────────────────────────────────────────
   if (loading) {
     return (
@@ -367,16 +405,25 @@ export default function ReviewScreen() {
               {lines.length} líneas · Usa ≡ para reordenar
             </Text>
           </View>
-          <TouchableOpacity onPress={async () => {
-            const hidden = await AsyncStorage.getItem('hideAddLineInfoV2');
-            if (hidden !== 'true') {
-              setShowAddLineInfo(true);
-            } else {
-              setShowAddModal(true);
-            }
-          }} style={[s.headerIconBtn, glassHeaderBtn]}>
-            <Plus size={18} color={isDark ? onBg : '#FFFFFF'} />
-          </TouchableOpacity>
+          <View style={{ flexDirection: 'row', gap: 8 }}>
+            <TouchableOpacity onPress={openPdfViewer} style={[s.headerIconBtn, glassHeaderBtn]} disabled={pdfViewerLoading}>
+              {pdfViewerLoading ? (
+                <ActivityIndicator size="small" color={isDark ? onBg : '#FFFFFF'} />
+              ) : (
+                <FileText size={18} color={isDark ? onBg : '#FFFFFF'} />
+              )}
+            </TouchableOpacity>
+            <TouchableOpacity onPress={async () => {
+              const hidden = await AsyncStorage.getItem('hideAddLineInfoV2');
+              if (hidden !== 'true') {
+                setShowAddLineInfo(true);
+              } else {
+                setShowAddModal(true);
+              }
+            }} style={[s.headerIconBtn, glassHeaderBtn]}>
+              <Plus size={18} color={isDark ? onBg : '#FFFFFF'} />
+            </TouchableOpacity>
+          </View>
         </View>
 
         {/* ── Draggable list ── */}
@@ -806,6 +853,48 @@ export default function ReviewScreen() {
           onConfirm={() => { setShowConfirmDialog(false); doConfirm(); }}
           onCancel={() => setShowConfirmDialog(false)}
         />
+
+        {/* Visor del PDF original — comparar el orden de diálogos contra el
+            documento real sin salir de la app (Fase 1) */}
+        <Modal
+          visible={showPdfViewer}
+          animationType="slide"
+          onRequestClose={() => setShowPdfViewer(false)}
+          supportedOrientations={['portrait', 'landscape', 'landscape-left', 'landscape-right']}
+        >
+          <SafeAreaView style={{ flex: 1, backgroundColor: '#1a1625' }}>
+            <View style={[s.header, { backgroundColor: 'transparent', borderBottomWidth: 0 }]}>
+              <TouchableOpacity
+                onPress={() => { setShowPdfViewer(false); setPdfSignedUrl(null); }}
+                style={[s.headerIconBtn, glassHeaderBtn]}
+              >
+                <X size={20} color="#FFFFFF" />
+              </TouchableOpacity>
+              <View style={{ flex: 1, alignItems: 'center' }}>
+                <Text style={[s.headerTitle, { color: '#FFFFFF', textAlign: 'center' }]}>PDF original</Text>
+              </View>
+              <View style={{ width: 40 }} />
+            </View>
+
+            {pdfSignedUrl && (
+              <WebView
+                source={{ uri: pdfSignedUrl }}
+                style={{ flex: 1, backgroundColor: '#FFFFFF' }}
+                startInLoadingState
+                renderLoading={() => (
+                  <View style={[StyleSheet.absoluteFill, { alignItems: 'center', justifyContent: 'center', backgroundColor: '#1a1625' }]}>
+                    <ActivityIndicator size="large" color="#FFFFFF" />
+                  </View>
+                )}
+                onError={() => {
+                  Alert.alert('Error', 'No se pudo cargar el PDF original.');
+                  setShowPdfViewer(false);
+                  setPdfSignedUrl(null);
+                }}
+              />
+            )}
+          </SafeAreaView>
+        </Modal>
 
       </SafeAreaView>
     </GestureHandlerRootView>
