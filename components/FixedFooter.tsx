@@ -91,7 +91,7 @@ export function FixedFooter({ activeKey, variant = 'default', dark = true }: Pro
         {/* Franja borrosa bajo la pastilla flotante, igual que en app/(tabs)/_layout.tsx —
             evita que lo que pasa por debajo de la pastilla (hasta el borde físico
             del terminal) se vea nítido y corte el efecto cristal. */}
-        <View style={[styles.bottomBlurStrip, { height: bottomInset + 56 }]} pointerEvents="none">
+        <View style={[styles.bottomBlurStrip, { height: bottomInset + 8 }]} pointerEvents="none">
           <BlurView intensity={dark ? 35 : 45} tint={dark ? 'dark' : 'light'} style={StyleSheet.absoluteFill} />
           <View style={[StyleSheet.absoluteFill, { backgroundColor: dark ? 'rgba(10,8,20,0.22)' : 'rgba(235,230,245,0.18)' }]} />
         </View>

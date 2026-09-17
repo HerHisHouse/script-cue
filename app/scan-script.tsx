@@ -77,11 +77,17 @@ export default function ScanScriptScreen() {
 
   if (!permission) {
     return (
-      <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
-        <View style={styles.loadingContainer}>
-          <ActivityIndicator size="large" color={colors.primary} />
-        </View>
-      </SafeAreaView>
+      <ImageBackground
+        source={isDark ? require('@/assets/images/ui-dark-bg.png') : require('@/assets/images/ui-light-bg.png')}
+        resizeMode="cover"
+        style={styles.container}
+      >
+        <SafeAreaView style={[styles.container, { backgroundColor: 'transparent' }]}>
+          <View style={styles.loadingContainer}>
+            <ActivityIndicator size="large" color={accentOnGlass} />
+          </View>
+        </SafeAreaView>
+      </ImageBackground>
     );
   }
 

@@ -36,7 +36,7 @@ function FloatingTabBar({ state, descriptors, navigation }: BottomTabBarProps) {
           terminal) se ve nítido, cortando el efecto cristal. Mismo blur que
           la pastilla pero difuminado sin recorte, para que no se note el
           borde entre ambas capas. */}
-      <View style={[styles.bottomBlurStrip, { height: insets.bottom + 56 }]} pointerEvents="none">
+      <View style={[styles.bottomBlurStrip, { height: insets.bottom + 8 }]} pointerEvents="none">
         <BlurView intensity={isDark ? 35 : 45} tint={isDark ? 'dark' : 'light'} style={StyleSheet.absoluteFill} />
         <View style={[StyleSheet.absoluteFill, { backgroundColor: isDark ? 'rgba(10,8,20,0.22)' : 'rgba(235,230,245,0.18)' }]} />
       </View>

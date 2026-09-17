@@ -175,11 +175,17 @@ export default function CommunityScreen() {
   // ─── LOADING ──────────────────────────────────────────────────────────────
   if (estado === 'cargando') {
     return (
-      <SafeAreaView style={[styles.container, { backgroundColor: colors.surface }]} edges={['top', 'left', 'right']}>
-        <View style={{ flex: 1, backgroundColor: colors.background, justifyContent: 'center', alignItems: 'center' }}>
+      <ImageBackground
+        source={isDark ? require('@/assets/images/ui-dark-bg.png') : require('@/assets/images/ui-light-bg.png')}
+        resizeMode="cover"
+        style={styles.container}
+      >
+      <SafeAreaView style={[styles.container, { backgroundColor: 'transparent' }]} edges={['top', 'left', 'right']}>
+        <View style={{ flex: 1, backgroundColor: 'transparent', justifyContent: 'center', alignItems: 'center' }}>
           <ActivityIndicator size="large" color={PURPLE} />
         </View>
       </SafeAreaView>
+      </ImageBackground>
     );
   }
 

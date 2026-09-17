@@ -25,7 +25,7 @@ import * as ScreenOrientation from 'expo-screen-orientation';
 import { BlurView } from 'expo-blur';
 import { PinchGestureHandler, State } from 'react-native-gesture-handler';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Headphones, Trash2, Clock, FileAudio, MoreVertical, Edit2, Share2, Search, Grid3x3, List, Send, ChevronRight, ChevronDown, Circle, X, Maximize2, Minimize2, Video as VideoIcon, CheckSquare, Square, MinusSquare, Download, Filter, ArrowUpAZ, Check, Calendar, Cloud, Smartphone } from 'lucide-react-native';
+import { Headphones, Trash2, Clock, FileAudio, MoreVertical, Edit2, Share2, Search, Grid3x3, List, Send, ChevronRight, ChevronDown, Circle, X, Maximize2, Minimize2, Video as VideoIcon, CheckSquare, Square, MinusSquare, Download, Filter, ArrowUpAZ, Check, Calendar, Cloud, Smartphone, FileText } from 'lucide-react-native';
 import { PlayerDisc } from '@/components/player/PlayerDisc';
 import { PlayerVideoFrame } from '@/components/player/PlayerVideoFrame';
 import { AnimatedWaveform } from '@/components/player/AnimatedWaveform';
@@ -3120,6 +3120,20 @@ export default function RecordingsScreen() {
                   <Text style={[styles.emptyText, { color: isDark ? '#a0a0c0' : '#5c5678', textAlign: 'center' }]}>
                     Tus sesiones grabadas en el Modo Estudio y Casting aparecerán aquí.
                   </Text>
+                  <TouchableOpacity
+                    accessibilityRole="button"
+                    accessibilityLabel="Ir a Guiones"
+                    style={[
+                      styles.emptyCta,
+                      isDark
+                        ? { backgroundColor: 'rgba(124,106,247,0.80)', borderWidth: 1.5, borderColor: 'rgba(255,255,255,0.5)' }
+                        : { backgroundColor: colors.primary },
+                    ]}
+                    onPress={() => router.replace('/(tabs)')}
+                  >
+                    <FileText size={18} color="#FFFFFF" />
+                    <Text style={styles.emptyCtaText}>Ir a Guiones</Text>
+                  </TouchableOpacity>
                 </View>
               </View>
             )}
@@ -3982,6 +3996,20 @@ const styles = StyleSheet.create({
     fontSize: rf(16),
     textAlign: 'center',
     lineHeight: 24,
+  },
+  emptyCta: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginTop: rp(20),
+    paddingVertical: rp(12),
+    paddingHorizontal: rp(20),
+    borderRadius: 24,
+  },
+  emptyCtaText: {
+    color: '#FFFFFF',
+    fontSize: rf(15),
+    fontWeight: '700',
   },
   backdrop: {
     position: 'absolute',

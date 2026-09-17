@@ -732,6 +732,20 @@ export default function ProjectsScreen() {
                       ? 'Puedes enviar guiones y grabaciones aquí o crear nuevas carpetas.'
                       : 'Puedes organizar tus proyectos por carpetas y enviar los guiones y grabaciones dentro.'}
                   </Text>
+                  <TouchableOpacity
+                    accessibilityRole="button"
+                    accessibilityLabel="Nueva carpeta"
+                    style={[
+                      styles.emptyCta,
+                      isDark
+                        ? { backgroundColor: 'rgba(124,106,247,0.80)', borderWidth: 1.5, borderColor: 'rgba(255,255,255,0.5)' }
+                        : { backgroundColor: colors.primary },
+                    ]}
+                    onPress={() => setShowNewFolderModal(true)}
+                  >
+                    <Plus size={18} color="#FFFFFF" />
+                    <Text style={styles.emptyCtaText}>Nueva carpeta</Text>
+                  </TouchableOpacity>
                 </View>
               </View>
             )
@@ -1298,6 +1312,20 @@ const styles = StyleSheet.create({
     fontSize: rf(16),
     textAlign: 'center',
     lineHeight: 24,
+  },
+  emptyCta: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginTop: rp(20),
+    paddingVertical: rp(12),
+    paddingHorizontal: rp(20),
+    borderRadius: 24,
+  },
+  emptyCtaText: {
+    color: '#FFFFFF',
+    fontSize: rf(15),
+    fontWeight: '700',
   },
   modalOverlay: {
     flex: 1,
