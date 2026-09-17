@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, Alert,
   TextInput, Modal, ScrollView, ActivityIndicator,
@@ -21,9 +21,10 @@ import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import * as Haptics from 'expo-haptics';
 import { ArrowLeft, Edit, Trash2, Plus, CheckCircle, X, Save, Check, FileText } from 'lucide-react-native';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
+import { CoachTour, CoachTourRect, CoachTourStepContent } from '@/components/CoachTour';
 import { WebView } from 'react-native-webview';
 
-const REVIEW_INFO_KEY = 'hideReviewInfoV2';
+const REVIEW_TOUR_KEY = 'hideReviewTourV1';
 
 export default function ReviewScreen() {
   const router = useRouter();
@@ -139,13 +140,32 @@ export default function ReviewScreen() {
       console.error('Error updating voice_direction:', e);
     }
   };
-  const [showReviewInfo, setShowReviewInfo] = useState(false);
-  const [dontShowReviewInfoAgain, setDontShowReviewInfoAgain] = useState(false);
+  // ── Tour interactivo (coach marks) ──────────────────────────────────────────
+  const [tourVisible, setTourVisible] = useState(false);
+  const [tourStepIndex, setTourStepIndex] = useState(0);
+  const [tourTargetRect, setTourTargetRect] = useState<CoachTourRect | null>(null);
+  const tourStepsRef = useRef<{ content: CoachTourStepContent; prepare: () => Promise<CoachTourRect | null> }[]>([]);
+  const flatListRef = useRef<any>(null);
+  const dragHandleRef = useRef<any>(null);
+  const emotionButtonRef = useRef<any>(null);
+  const addButtonRef = useRef<any>(null);
+  const pdfButtonRef = useRef<any>(null);
 
   const [showAddLineInfo, setShowAddLineInfo] = useState(false);
   const [dontShowAddLineInfoAgain, setDontShowAddLineInfoAgain] = useState(false);
 
   const [characters, setCharacters] = useState<any[]>([]);
+
+  // Índice de la primera línea que muestra el selector de emoción (voz
+  // Expresiva/ElevenLabs o Natural/Hume) — usado tanto por el tour como por
+  // la propia lista para saber a qué tarjeta engancharle el ref de medición.
+  const emotionTourIndex = React.useMemo(() => {
+    return lines.findIndex(l => {
+      if (l.isAction || l.isUserCharacter) return false;
+      const charData = characters.find(c => c.name.toLowerCase().trim() === l.characterName.toLowerCase().trim());
+      return charData?.voice_provider === 'elevenlabs' || charData?.voice_provider === 'hume';
+    });
+  }, [lines, characters]);
   const [selectedChar, setSelectedChar] = useState<any>(null);
 
   // ── Visor del PDF original (Fase 1: comparar el orden de diálogos contra
@@ -170,11 +190,6 @@ export default function ReviewScreen() {
 
         setScriptPdfPath(script?.pdf_url || null);
 
-        const hidden = await AsyncStorage.getItem(REVIEW_INFO_KEY);
-        if (!hidden) {
-          setShowReviewInfo(true);
-        }
-
         const [loadedLines, charsResult] = await Promise.all([
           loadDialogueLines(id),
           supabase.from('characters').select('*').eq('script_id', id),
@@ -190,6 +205,108 @@ export default function ReviewScreen() {
     };
     init();
   }, [id, user]);
+
+  // ── Tour interactivo (coach marks) ──────────────────────────────────────────
+  // Mide el elemento de un ref ya montado y devuelve su posición real en pantalla.
+  const measureRef = (ref: React.RefObject<any>): Promise<CoachTourRect | null> => {
+    return new Promise(resolve => {
+      if (!ref.current || typeof ref.current.measureInWindow !== 'function') {
+        resolve(null);
+        return;
+      }
+      ref.current.measureInWindow((x: number, y: number, width: number, height: number) => {
+        resolve(width > 0 && height > 0 ? { x, y, width, height } : null);
+      });
+    });
+  };
+
+  const buildTourSteps = () => {
+    const steps: { content: CoachTourStepContent; prepare: () => Promise<CoachTourRect | null> }[] = [
+      {
+        content: {
+          title: 'Reordena las líneas',
+          description: 'Mantén pulsado el icono ≡ y arrastra la tarjeta para cambiar el orden de los diálogos o acciones.',
+        },
+        prepare: async () => {
+          flatListRef.current?.scrollToOffset?.({ offset: 0, animated: false });
+          await new Promise(r => setTimeout(r, 350));
+          return measureRef(dragHandleRef);
+        },
+      },
+      {
+        content: {
+          title: 'Añade líneas o acciones',
+          description: 'Pulsa aquí para crear una nueva línea de diálogo o una tarjeta de acción manualmente.',
+        },
+        prepare: async () => measureRef(addButtonRef),
+      },
+      {
+        content: {
+          title: 'Previsualiza el guion original',
+          description: 'Pulsa aquí para abrir el PDF que importaste y comprobar el orden real de los diálogos.',
+        },
+        prepare: async () => measureRef(pdfButtonRef),
+      },
+    ];
+
+    // Solo tiene sentido este paso si hay al menos una línea con voz Expresiva
+    // (ElevenLabs) o Natural (Hume) — es la única condición bajo la que se
+    // muestra el selector de emoción en la tarjeta.
+    if (emotionTourIndex !== -1) {
+      steps.push({
+        content: {
+          title: 'Configura la emoción',
+          description: 'Si el personaje usa una voz Expresiva o Natural, puedes elegir cómo interpreta cada frase.',
+        },
+        prepare: async () => {
+          flatListRef.current?.scrollToIndex?.({ index: emotionTourIndex, animated: true, viewPosition: 0.4 });
+          await new Promise(r => setTimeout(r, 500));
+          return measureRef(emotionButtonRef);
+        },
+      });
+    }
+
+    return steps;
+  };
+
+  const goToTourStep = async (index: number) => {
+    const steps = tourStepsRef.current;
+    if (index >= steps.length) {
+      finishTour();
+      return;
+    }
+    const rect = await steps[index].prepare();
+    setTourStepIndex(index);
+    setTourTargetRect(rect);
+  };
+
+  const startTour = async () => {
+    const steps = buildTourSteps();
+    if (steps.length === 0) return;
+    tourStepsRef.current = steps;
+    setTourVisible(true);
+    await goToTourStep(0);
+  };
+
+  const finishTour = async () => {
+    setTourVisible(false);
+    setTourTargetRect(null);
+    setTourStepIndex(0);
+    await AsyncStorage.setItem(REVIEW_TOUR_KEY, 'true');
+  };
+
+  useEffect(() => {
+    if (loading) return;
+    let cancelled = false;
+    (async () => {
+      const hidden = await AsyncStorage.getItem(REVIEW_TOUR_KEY);
+      if (!hidden && !cancelled) {
+        setTimeout(() => { if (!cancelled) startTour(); }, 500);
+      }
+    })();
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loading]);
 
   // ── Persist order ─────────────────────────────────────────────────────────
   const syncOrder = useCallback(async (newLines: DialogueLine[]) => {
@@ -406,14 +523,14 @@ export default function ReviewScreen() {
             </Text>
           </View>
           <View style={{ flexDirection: 'row', gap: 8 }}>
-            <TouchableOpacity onPress={openPdfViewer} style={[s.headerIconBtn, glassHeaderBtn]} disabled={pdfViewerLoading}>
+            <TouchableOpacity ref={pdfButtonRef} onPress={openPdfViewer} style={[s.headerIconBtn, glassHeaderBtn]} disabled={pdfViewerLoading}>
               {pdfViewerLoading ? (
                 <ActivityIndicator size="small" color={isDark ? onBg : '#FFFFFF'} />
               ) : (
                 <FileText size={18} color={isDark ? onBg : '#FFFFFF'} />
               )}
             </TouchableOpacity>
-            <TouchableOpacity onPress={async () => {
+            <TouchableOpacity ref={addButtonRef} onPress={async () => {
               const hidden = await AsyncStorage.getItem('hideAddLineInfoV2');
               if (hidden !== 'true') {
                 setShowAddLineInfo(true);
@@ -428,12 +545,14 @@ export default function ReviewScreen() {
 
         {/* ── Draggable list ── */}
         <DraggableFlatList
+          ref={flatListRef}
           data={lines}
           keyExtractor={item => item.id}
           onDragBegin={() => Haptics.selectionAsync()}
           onDragEnd={({ data }) => { setLines(data); syncOrder(data); }}
           containerStyle={{ flex: 1, backgroundColor: 'transparent' }}
           contentContainerStyle={{ paddingHorizontal: rp(16), paddingTop: rp(12), paddingBottom: 140 }}
+          onScrollToIndexFailed={() => {}}
           renderItem={({ item, drag, isActive, getIndex }) => {
             const index = getIndex() ?? 0;
             const charColor = item.isAction ? colors.primary : (item.isUserCharacter ? '#10B981' : (item.color || colors.primary));
@@ -475,6 +594,7 @@ export default function ReviewScreen() {
                         <View style={{ alignItems: 'flex-start' }}>
                           <Text style={[s.emotionLabel, { color: onBg2 }]}>Configurar emoción</Text>
                           <TouchableOpacity
+                            ref={index === emotionTourIndex ? emotionButtonRef : undefined}
                             style={{ flexDirection: 'row', alignItems: 'center' }}
                             onPress={() => {
                               setActiveEmotionLineId(item.id);
@@ -511,7 +631,9 @@ export default function ReviewScreen() {
                     </View>
                   </View>
                   {/* Drag handle */}
-                  <TouchableOpacity onPressIn={drag} delayPressIn={0}
+                  <TouchableOpacity
+                    ref={index === 0 ? dragHandleRef : undefined}
+                    onPressIn={drag} delayPressIn={0}
                     style={[s.dragHandle, { borderLeftColor: cardBorder }]} activeOpacity={0.5}>
                     <View style={{ gap: 4 }}>
                       {[0, 1, 2].map(i => (
@@ -737,58 +859,17 @@ export default function ReviewScreen() {
           </KeyboardAvoidingView>
         </Modal>
 
-        {/* Review Info Modal */}
-        <Modal
-          visible={showReviewInfo}
-          transparent={true}
-          animationType="fade"
-          onRequestClose={() => setShowReviewInfo(false)}
-         supportedOrientations={['portrait', 'landscape', 'landscape-left', 'landscape-right']}>
-          <View style={s.modalOverlay}>
-            <View style={s.modalContent}>
-              <BlurView intensity={isDark ? 55 : 75} tint={isDark ? 'dark' : 'light'} style={StyleSheet.absoluteFill} />
-              <View style={[StyleSheet.absoluteFill, { backgroundColor: isDark ? 'rgba(124,106,247,0.40)' : 'rgba(235,230,245,0.40)' }]} />
-              <View style={{ padding: rp(24), paddingBottom: Math.max(insets.bottom + rp(20), rp(40)) }}>
-              <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: rp(16), gap: 12 }}>
-                <Edit size={24} color={colors.primary} />
-                <Text style={[s.modalTitle, { color: onBg, marginBottom: 0 }]}>Revisa el guion</Text>
-              </View>
-
-              <Text style={{ color: onBg, fontSize: rf(14), lineHeight: rf(22), marginBottom: rp(20) }}>
-                El sistema puede cometer errores al transcribir el guion.
-                {'\n\n'}
-                Revisa el texto, comprueba las tarjetas de las acciones y los diálogos, reordena las líneas si es necesario puedes crear nuevas pulsando &quot;+&quot;. Confirma cuando esté listo. Después se generarán las voces automáticamente.
-              </Text>
-
-              <TouchableOpacity
-                style={{ flexDirection: 'row', alignItems: 'center', marginBottom: rp(24), gap: 10 }}
-                onPress={() => setDontShowReviewInfoAgain(!dontShowReviewInfoAgain)}
-              >
-                <View style={{
-                  width: 20, height: 20, borderRadius: 4, borderWidth: 2, alignItems: 'center', justifyContent: 'center',
-                  borderColor: dontShowReviewInfoAgain ? colors.primary : cardBorder,
-                  backgroundColor: dontShowReviewInfoAgain ? colors.primary : 'transparent'
-                }}>
-                  {dontShowReviewInfoAgain && <Check size={14} color="#FFFFFF" />}
-                </View>
-                <Text style={{ color: onBg2, fontSize: rf(13) }}>No volver a mostrar este mensaje</Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={[s.actionBtn, { backgroundColor: colors.primary }]}
-                onPress={async () => {
-                  if (dontShowReviewInfoAgain) {
-                    await AsyncStorage.setItem(REVIEW_INFO_KEY, 'true');
-                  }
-                  setShowReviewInfo(false);
-                }}
-              >
-                <Text style={{ color: '#fff', fontSize: rf(14), fontWeight: '600' }}>Entendido</Text>
-              </TouchableOpacity>
-              </View>
-            </View>
-          </View>
-        </Modal>
+        {/* Tour interactivo: sustituye al antiguo aviso de texto plano */}
+        <CoachTour
+          visible={tourVisible}
+          step={tourStepsRef.current[tourStepIndex]?.content || null}
+          stepIndex={tourStepIndex}
+          totalSteps={tourStepsRef.current.length}
+          targetRect={tourTargetRect}
+          isLast={tourStepIndex >= tourStepsRef.current.length - 1}
+          onNext={() => goToTourStep(tourStepIndex + 1)}
+          onSkip={finishTour}
+        />
 
         {/* Add Line Info Modal */}
         <Modal
