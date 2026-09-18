@@ -4,6 +4,7 @@ import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 import { ScreenHeader } from '@/components/ScreenHeader';
 import { useRouter } from 'expo-router';
 import { User, LogOut, Sun, Moon, ChevronDown, Smartphone, Camera, Pencil, Check, X, Mail, MessageCircle, Lightbulb, Trash2 } from 'lucide-react-native';
+import { FontAwesome5 } from '@expo/vector-icons';
 import { useAuth } from '@/contexts/AuthContext';
 import { useTheme } from '@/contexts/ThemeContext';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
@@ -14,6 +15,12 @@ import * as ScreenOrientation from 'expo-screen-orientation';
 import * as ImagePicker from 'expo-image-picker';
 import { supabase } from '@/utils/supabase';
 import { rf, rp } from '@/utils/responsive';
+
+const SOCIAL_LINKS = [
+  { name: 'Instagram', icon: 'instagram' as const, url: 'https://www.instagram.com/scriptcue?stkn=MXdlc21yczdiazl2cA%3D%3D&utm_source=qr' },
+  { name: 'TikTok', icon: 'tiktok' as const, url: 'https://www.tiktok.com/@scriptcue.app?_r=1&_t=ZN-99pVcCOrnGQ' },
+  { name: 'YouTube', icon: 'youtube' as const, url: 'https://youtube.com/@scriptcueapp?si=0tcDT9cChdnW6xbl' },
+];
 
 export default function SettingsScreen() {
   const router = useRouter();
@@ -282,6 +289,15 @@ export default function SettingsScreen() {
         'No se encontró una app de correo configurada. Escríbenos directamente a:\n\ninfo@scriptcue.es',
         [{ text: 'OK' }]
       );
+    }
+  }
+
+  async function openSocialLink(url: string) {
+    const canOpen = await Linking.canOpenURL(url);
+    if (canOpen) {
+      await Linking.openURL(url);
+    } else {
+      Alert.alert('Error', 'No se pudo abrir el enlace.');
     }
   }
 
@@ -719,6 +735,24 @@ export default function SettingsScreen() {
             )}
           </View>
 
+          {/* SÍGUENOS */}
+          <View style={styles.section}>
+            <Text style={[styles.sectionTitle, { color: onBg2 }]}>Síguenos</Text>
+            <View style={[styles.infoCard, { ...cardShadow, backgroundColor: cardBg, borderWidth: 1, borderColor: cardBorder, justifyContent: 'center', gap: rp(28) }]}>
+              {SOCIAL_LINKS.map(social => (
+                <TouchableOpacity
+                  key={social.name}
+                  onPress={() => openSocialLink(social.url)}
+                  accessibilityRole="button"
+                  accessibilityLabel={social.name}
+                  style={[styles.socialIconCircle, { backgroundColor: isDark ? 'rgba(167,139,250,0.15)' : 'rgba(124,106,247,0.12)' }]}
+                >
+                  <FontAwesome5 name={social.icon} size={20} color={isDark ? '#FFFFFF' : colors.primary} />
+                </TouchableOpacity>
+              ))}
+            </View>
+          </View>
+
           <View style={styles.section}>
             <Text style={[styles.sectionTitle, { color: onBg2 }]}>Acerca de</Text>
             <View style={[styles.infoCard, { ...cardShadow, backgroundColor: cardBg, borderWidth: 1, borderColor: cardBorder }]}>
@@ -968,6 +1002,13 @@ const styles = StyleSheet.create({
   },
   infoText: {
     marginLeft: rp(12),
+  },
+  socialIconCircle: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   appName: {
     fontSize: rf(16),
