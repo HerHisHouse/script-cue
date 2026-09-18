@@ -581,7 +581,7 @@ export default function ReviewScreen() {
                         {item.isAction ? 'TARJETA DE ACCIÓN' : item.characterName}
                         {!item.isAction && (
                           <Text style={[s.badge, { color: onBg2 }]}>
-                            {item.isUserCharacter ? '  · TÚ' : '  · SC'}
+                            {item.isUserCharacter ? '  · TÚ' : '  · ScriptCue'}
                           </Text>
                         )}
                       </Text>

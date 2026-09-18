@@ -2428,7 +2428,7 @@ export default function CastingModeScreen() {
                         </View>
                       ) : (
                         <View style={[styles.configAiBadge, { backgroundColor: line.color }]}>
-                          <Text style={styles.configAiBadgeText}>SC</Text>
+                          <Text style={styles.configAiBadgeText}>ScriptCue</Text>
                         </View>
                       )}
                     </View>
@@ -2787,7 +2787,7 @@ export default function CastingModeScreen() {
                               </View>
                             ) : (
                               <View style={[styles.aiBadge, { backgroundColor: line.color }]}>
-                                <Text style={styles.aiBadgeText}>SC</Text>
+                                <Text style={styles.aiBadgeText}>ScriptCue</Text>
                               </View>
                             )}
                           </View>
