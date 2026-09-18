@@ -2,7 +2,7 @@ import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, ActivityIndicator, Alert, Platform, ScrollView, ImageBackground, Animated, Easing, Keyboard, useWindowDimensions } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter, useLocalSearchParams, Stack } from 'expo-router';
-import { ArrowLeft, Save, Edit3, X, Check, PenTool, Undo, Redo, Type, Bold, Italic, Underline, Strikethrough, Palette, ChevronDown, ChevronUp, AlignLeft, AlignCenter, AlignRight, Menu, Pilcrow, Pencil, Highlighter, Share2 } from 'lucide-react-native';
+import { ArrowLeft, Save, Edit3, X, Check, PenTool, Undo, Redo, Type, Bold, Italic, Underline, Strikethrough, Palette, ChevronDown, ChevronUp, ChevronRight, ChevronLeft, AlignLeft, AlignCenter, AlignRight, Menu, Pilcrow, Pencil, Highlighter, Share2, Users } from 'lucide-react-native';
 import { WebView } from 'react-native-webview';
 import { BlurView } from 'expo-blur';
 import Svg, { Path, G, Image as SvgImage } from 'react-native-svg';
@@ -17,6 +17,9 @@ import { rf, rp } from '@/utils/responsive';
 import ViewAndMarkOverlay from './components/ViewAndMarkOverlay';
 import ExportOptionsSheet from './components/ExportOptionsSheet';
 import { COLORS, type PathData } from './components/drawingShared';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { CHARACTER_COLORS, GREEN_COLOR } from '@/utils/characterColors';
+import { ConfirmDialog } from '@/components/ConfirmDialog';
 
 // --- Constants ---
 // Pausa mínima (sin ninguna edición de texto) para que la siguiente edición
@@ -34,6 +37,17 @@ const HIGHLIGHT_COLORS: { key: string; label: string; color: string; swatch: str
     { key: 'blue', label: 'Azul', color: 'rgba(0,122,255,0.35)', swatch: '#007AFF' },
     { key: 'orange', label: 'Naranja', color: 'rgba(255,149,0,0.4)', swatch: '#FF9500' },
 ];
+
+// Convierte un color de personaje (hex sólido) a un rgba translúcido, para
+// usarlo como resaltado de marcador sin tapar el texto — mismo criterio de
+// opacidad que HIGHLIGHT_COLORS de arriba.
+function hexToRgba(hex: string, alpha: number): string {
+    const clean = hex.replace('#', '');
+    const r = parseInt(clean.substring(0, 2), 16);
+    const g = parseInt(clean.substring(2, 4), 16);
+    const b = parseInt(clean.substring(4, 6), 16);
+    return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+}
 
 // Formatos predefinidos de guion cinematográfico estándar. Cada uno aplica un
 // conjunto completo de propiedades (no solo el tamaño) al párrafo donde esté
@@ -229,6 +243,7 @@ export default function ScriptEditorScreen() {
 
     // Paleta "sobre imagen de fondo" del diseño glass, igual que Modo Estudio / Importar Guion
     const onBg = isDark ? '#ffffff' : '#2a2447';
+    const onBg2 = isDark ? '#a0a0c0' : '#5c5678';
     const cardBorder = isDark ? 'rgba(167,139,250,0.25)' : 'rgba(124,106,247,0.15)';
     const glassHeaderBtn = isDark
         ? { backgroundColor: 'rgba(124,106,247,0.14)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.2)' }
@@ -366,6 +381,18 @@ export default function ScriptEditorScreen() {
     const [showColorMenu, setShowColorMenu] = useState(false);
     const [showHighlightMenu, setShowHighlightMenu] = useState(false);
 
+    // ── Marcar personaje: sub-panel dentro del propio menú del marcador ────────
+    // 'colors' = grid habitual de colores sueltos; 'characterList' = lista de
+    // personajes del guion; 'userColorPicker' = paleta filtrada solo para "mi
+    // personaje" (el resto se marcan directo con su color ya asignado).
+    const [highlightPanel, setHighlightPanel] = useState<'colors' | 'characterList' | 'userColorPicker'>('colors');
+    const [markIncludeDialogue, setMarkIncludeDialogue] = useState(true);
+    const [scriptCharacters, setScriptCharacters] = useState<{ id: string; name: string; color: string; is_user_character: boolean }[]>([]);
+    // Color elegido para "mi personaje" — por defecto el verde estándar de la
+    // app, pero cada actor marca lo suyo con el color que prefiera; se recuerda
+    // por guion en AsyncStorage.
+    const [userMarkColor, setUserMarkColor] = useState<string>(GREEN_COLOR);
+
     const anyMenuOpen = showFormatMenu || showAlignMenu || showSizeMenu || showColorMenu || showHighlightMenu;
     function closeAllMenus() {
         setShowFormatMenu(false);
@@ -373,6 +400,7 @@ export default function ScriptEditorScreen() {
         setShowSizeMenu(false);
         setShowColorMenu(false);
         setShowHighlightMenu(false);
+        setHighlightPanel('colors');
     }
 
     // Barra inferior flotante (mismo patrón que PlayerControlsCapsule en Grabaciones):
@@ -1044,6 +1072,109 @@ export default function ScriptEditorScreen() {
         }
     }
 
+    // Botón "Atrás": si hay cambios sin guardar (texto, marcado o dibujo —
+    // actionHistoryRef acumula los tres tipos en la misma pila), avisa antes
+    // de salir en vez de descartarlos en silencio.
+    const [showUnsavedBackDialog, setShowUnsavedBackDialog] = useState(false);
+    function handleBackPress() {
+        if (actionHistoryRef.current.length === 0) {
+            router.back();
+            return;
+        }
+        setShowUnsavedBackDialog(true);
+    }
+
+    // ── Marcar personaje: datos ─────────────────────────────────────────────────
+    // Personajes del guion (nombre + color ya asignado) para la lista de "Marcar
+    // personaje" del menú del marcador, y el color preferido guardado para "mi
+    // personaje" (si el actor cambió el verde por defecto en este guion).
+    useEffect(() => {
+        if (!id) return;
+        (async () => {
+            const { data } = await supabase
+                .from('characters')
+                .select('id, name, color, is_user_character')
+                .eq('script_id', id)
+                .order('name');
+            setScriptCharacters(data || []);
+        })();
+        AsyncStorage.getItem(`editorMarkColor_${id}`).then((saved) => {
+            if (saved) setUserMarkColor(saved);
+        });
+    }, [id]);
+
+    // Colores de otros personajes (no el mío) ya ocupados en este guion — el
+    // verde queda siempre disponible para "mi personaje" porque nunca se le
+    // asigna a nadie más (ver GREEN_COLOR).
+    const otherCharacterColors = useMemo(() => {
+        return new Set(scriptCharacters.filter((c) => !c.is_user_character).map((c) => c.color));
+    }, [scriptCharacters]);
+
+    const userMarkColorOptions = useMemo(() => {
+        const all = [GREEN_COLOR, ...CHARACTER_COLORS.map((c) => c.value)];
+        return all.filter((color, index) => all.indexOf(color) === index && (color === GREEN_COLOR || !otherCharacterColors.has(color)));
+    }, [otherCharacterColors]);
+
+    // Envuelve el nombre del personaje (y, si se pide, su diálogo) en un resaltado
+    // — reutiliza el mismo mensaje "content" que ya integra el resto de ediciones
+    // de texto con el deshacer/rehacer y el guardado (ver onMessage del WebView).
+    function applyCharacterMark(characterName: string, color: string, includeDialogue: boolean) {
+        const script = `
+            (function() {
+                var upperName = ${JSON.stringify(characterName.trim().toUpperCase())};
+                var color = ${JSON.stringify(color)};
+                var includeDialogue = ${includeDialogue ? 'true' : 'false'};
+                function markParagraph(p) {
+                    var existing = (p.childNodes.length === 1 && p.firstChild.nodeType === 1 && p.firstChild.getAttribute && p.firstChild.getAttribute('data-char-mark') === 'true') ? p.firstChild : null;
+                    if (existing) {
+                        existing.style.backgroundColor = color;
+                    } else {
+                        var span = document.createElement('span');
+                        span.setAttribute('data-char-mark', 'true');
+                        span.style.backgroundColor = color;
+                        while (p.firstChild) { span.appendChild(p.firstChild); }
+                        p.appendChild(span);
+                    }
+                }
+                var paras = document.querySelectorAll('#editor-root p[data-line-type="character"]');
+                for (var i = 0; i < paras.length; i++) {
+                    var p = paras[i];
+                    if (p.textContent.trim().toUpperCase() !== upperName) continue;
+                    markParagraph(p);
+                    if (includeDialogue) {
+                        var next = p.nextElementSibling;
+                        if (next && next.getAttribute('data-line-type') === 'dialogue') {
+                            markParagraph(next);
+                        }
+                    }
+                }
+                window.ReactNativeWebView.postMessage(JSON.stringify({ type: 'content', data: document.getElementById('editor-root').innerHTML }));
+            })();
+            true;
+        `;
+        webViewRef.current?.injectJavaScript(script);
+    }
+
+    function handleMarkCharacterPress(character: { id: string; name: string; color: string; is_user_character: boolean }) {
+        if (character.is_user_character) {
+            setHighlightPanel('userColorPicker');
+            return;
+        }
+        applyCharacterMark(character.name, hexToRgba(character.color, 0.4), markIncludeDialogue);
+        closeAllMenus();
+    }
+
+    const userCharacter = scriptCharacters.find((c) => c.is_user_character);
+
+    async function handlePickUserMarkColor(color: string) {
+        setUserMarkColor(color);
+        if (id) await AsyncStorage.setItem(`editorMarkColor_${id}`, color);
+        if (userCharacter) {
+            applyCharacterMark(userCharacter.name, hexToRgba(color, 0.4), markIncludeDialogue);
+        }
+        closeAllMenus();
+    }
+
     // Deshacer/rehacer del texto NO usa document.execCommand('undo'/'redo'): en
     // WebKit ese historial nativo no revierte de forma fiable los resaltados
     // aplicados vía hiliteColor/backColor (son comandos no estándar, con soporte
@@ -1591,6 +1722,12 @@ export default function ScriptEditorScreen() {
 
             setDrawingLayerImage(base64);
             // No se borran los trazos (paths) al guardar: se dejan editables.
+
+            // Ya está persistido: limpiar la pila de deshacer/rehacer para que el
+            // aviso de "cambios sin guardar" del botón Atrás no salte en falso al
+            // volver a la pantalla principal del editor después de guardar aquí.
+            actionHistoryRef.current = [];
+            actionRedoRef.current = [];
 
             Alert.alert('Guardado', 'Anotaciones guardadas correctamente.');
 
@@ -2199,7 +2336,7 @@ export default function ScriptEditorScreen() {
 
             {/* Main Header */}
             <View style={[styles.header, { borderBottomColor: cardBorder }]}>
-                <TouchableOpacity onPress={() => router.back()} style={[styles.backButton, glassHeaderBtn]}>
+                <TouchableOpacity onPress={handleBackPress} style={[styles.backButton, glassHeaderBtn]}>
                     <ArrowLeft size={20} color="#FFFFFF" />
                 </TouchableOpacity>
 
@@ -2441,7 +2578,7 @@ export default function ScriptEditorScreen() {
                                 <Pilcrow size={20} color={showSizeMenu ? activeAccent : onBg} />
                             </TouchableOpacity>
                             <TouchableOpacity
-                                onPress={() => { setShowHighlightMenu(!showHighlightMenu); setShowFormatMenu(false); setShowAlignMenu(false); setShowSizeMenu(false); setShowColorMenu(false); }}
+                                onPress={() => { setShowHighlightMenu(!showHighlightMenu); setHighlightPanel('colors'); setShowFormatMenu(false); setShowAlignMenu(false); setShowSizeMenu(false); setShowColorMenu(false); }}
                                 style={[styles.toolbarButton, { backgroundColor: chipInactiveBg }, showHighlightMenu && [styles.toolbarButtonActive, { backgroundColor: chipActiveBg, borderColor: colors.primary }]]}
                             >
                                 <Highlighter size={20} color={showHighlightMenu ? activeAccent : onBg} />
@@ -2622,24 +2759,108 @@ export default function ScriptEditorScreen() {
                         <View style={[styles.bottomPopupClip, { borderColor: cardBorder }]}>
                             <BlurView intensity={isDark ? 85 : 90} tint={isDark ? 'dark' : 'light'} style={StyleSheet.absoluteFill} />
                             <View style={[StyleSheet.absoluteFill, { backgroundColor: popupOverlayTint }]} />
-                            <View style={styles.colorGrid}>
-                                {HIGHLIGHT_COLORS.map((preset) => (
-                                    <TouchableOpacity
-                                        key={preset.key}
-                                        onPress={() => applyHighlight(preset.color)}
-                                        style={[
-                                            styles.colorButton,
-                                            preset.key === 'none'
-                                                ? { backgroundColor: 'transparent', borderColor: onBg, alignItems: 'center', justifyContent: 'center' }
-                                                : { backgroundColor: preset.swatch },
-                                        ]}
-                                    >
-                                        {preset.key === 'none' && (
-                                            <Text style={{ color: onBg, fontSize: 14, fontWeight: '700' }}>✕</Text>
-                                        )}
-                                    </TouchableOpacity>
-                                ))}
-                            </View>
+
+                            {highlightPanel === 'colors' && (
+                                <View>
+                                    <View style={[styles.colorGrid, { paddingHorizontal: rp(12) }]}>
+                                        {HIGHLIGHT_COLORS.map((preset) => (
+                                            <TouchableOpacity
+                                                key={preset.key}
+                                                onPress={() => applyHighlight(preset.color)}
+                                                style={[
+                                                    styles.colorButton,
+                                                    preset.key === 'none'
+                                                        ? { backgroundColor: 'transparent', borderColor: onBg, alignItems: 'center', justifyContent: 'center' }
+                                                        : { backgroundColor: preset.swatch },
+                                                ]}
+                                            >
+                                                {preset.key === 'none' && (
+                                                    <Text style={{ color: onBg, fontSize: 14, fontWeight: '700' }}>✕</Text>
+                                                )}
+                                            </TouchableOpacity>
+                                        ))}
+                                    </View>
+                                    {scriptCharacters.length > 0 && (
+                                        <TouchableOpacity
+                                            onPress={() => setHighlightPanel('characterList')}
+                                            style={[styles.markCharacterRow, { borderTopColor: cardBorder }]}
+                                        >
+                                            <Users size={16} color={onBg2} />
+                                            <Text style={[styles.markCharacterRowText, { color: onBg2 }]}>Marcar todas las líneas de un personaje</Text>
+                                            <ChevronRight size={16} color={onBg2} />
+                                        </TouchableOpacity>
+                                    )}
+                                </View>
+                            )}
+
+                            {highlightPanel === 'characterList' && (
+                                <View>
+                                    <View style={styles.markPanelHeader}>
+                                        <TouchableOpacity onPress={() => setHighlightPanel('colors')} style={styles.markBackBtn}>
+                                            <ChevronLeft size={18} color={onBg} />
+                                        </TouchableOpacity>
+                                        <Text style={[styles.markPanelTitle, { color: onBg }]}>Marcar personaje</Text>
+                                        <View style={{ width: 28 }} />
+                                    </View>
+                                    <View style={[styles.markToggleRow, { borderColor: cardBorder }]}>
+                                        <TouchableOpacity
+                                            onPress={() => setMarkIncludeDialogue(false)}
+                                            style={[styles.markToggleOption, !markIncludeDialogue && { backgroundColor: chipActiveBg }]}
+                                        >
+                                            <Text style={[styles.markToggleText, { color: !markIncludeDialogue ? activeAccent : onBg2 }]}>Solo nombre</Text>
+                                        </TouchableOpacity>
+                                        <TouchableOpacity
+                                            onPress={() => setMarkIncludeDialogue(true)}
+                                            style={[styles.markToggleOption, markIncludeDialogue && { backgroundColor: chipActiveBg }]}
+                                        >
+                                            <Text style={[styles.markToggleText, { color: markIncludeDialogue ? activeAccent : onBg2 }]}>Nombre + diálogo</Text>
+                                        </TouchableOpacity>
+                                    </View>
+                                    <ScrollView style={{ maxHeight: 170 }} showsVerticalScrollIndicator nestedScrollEnabled>
+                                        {scriptCharacters.map((character, index) => (
+                                            <TouchableOpacity
+                                                key={character.id}
+                                                onPress={() => handleMarkCharacterPress(character)}
+                                                style={[
+                                                    styles.dropdownItem,
+                                                    index < scriptCharacters.length - 1 && { borderBottomWidth: 1, borderBottomColor: cardBorder },
+                                                ]}
+                                            >
+                                                <View style={[styles.markSwatch, { backgroundColor: character.is_user_character ? userMarkColor : character.color }]} />
+                                                <Text style={[styles.dropdownItemText, styles.dropdownItemTextFlex, { color: onBg }]}>
+                                                    {character.name}{character.is_user_character ? '  ·  TÚ' : ''}
+                                                </Text>
+                                                <ChevronRight size={16} color={onBg2} />
+                                            </TouchableOpacity>
+                                        ))}
+                                    </ScrollView>
+                                </View>
+                            )}
+
+                            {highlightPanel === 'userColorPicker' && (
+                                <View>
+                                    <View style={styles.markPanelHeader}>
+                                        <TouchableOpacity onPress={() => setHighlightPanel('characterList')} style={styles.markBackBtn}>
+                                            <ChevronLeft size={18} color={onBg} />
+                                        </TouchableOpacity>
+                                        <Text style={[styles.markPanelTitle, { color: onBg }]}>Tu color</Text>
+                                        <View style={{ width: 28 }} />
+                                    </View>
+                                    <View style={[styles.colorGrid, { paddingHorizontal: rp(12) }]}>
+                                        {userMarkColorOptions.map((color) => (
+                                            <TouchableOpacity
+                                                key={color}
+                                                onPress={() => handlePickUserMarkColor(color)}
+                                                style={[
+                                                    styles.colorButton,
+                                                    { backgroundColor: color },
+                                                    userMarkColor === color && [styles.colorButtonActive, { borderColor: onBg }],
+                                                ]}
+                                            />
+                                        ))}
+                                    </View>
+                                </View>
+                            )}
                         </View>
                     </View>
                 )}
@@ -2673,6 +2894,19 @@ export default function ScriptEditorScreen() {
                     }}
                 />
             )}
+
+            <ConfirmDialog
+                visible={showUnsavedBackDialog}
+                title="¿Guardar cambios?"
+                message="Has hecho cambios sin guardar en este guion (texto, marcado o dibujo). ¿Quieres guardarlos antes de salir?"
+                extraButtonText="Guardar y salir"
+                onExtra={() => { setShowUnsavedBackDialog(false); handleSave(); }}
+                confirmText="Salir sin guardar"
+                destructive
+                onConfirm={() => { setShowUnsavedBackDialog(false); router.back(); }}
+                cancelText="Cancelar"
+                onCancel={() => setShowUnsavedBackDialog(false)}
+            />
         </SafeAreaView>
         </ImageBackground>
     );
@@ -2909,5 +3143,58 @@ const styles = StyleSheet.create({
     colorButtonActive: {
         borderWidth: 3,
         transform: [{ scale: 1.1 }],
+    },
+    markCharacterRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 8,
+        marginTop: 10,
+        paddingTop: 10,
+        paddingHorizontal: rp(16),
+        borderTopWidth: 1,
+    },
+    markCharacterRowText: {
+        flex: 1,
+        fontSize: rf(13),
+        fontWeight: '500',
+    },
+    markPanelHeader: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        paddingHorizontal: rp(12),
+        paddingBottom: 8,
+    },
+    markBackBtn: {
+        width: 28,
+        height: 28,
+        alignItems: 'center',
+        justifyContent: 'center',
+    },
+    markPanelTitle: {
+        fontSize: rf(14),
+        fontWeight: '700',
+    },
+    markToggleRow: {
+        flexDirection: 'row',
+        marginHorizontal: rp(12),
+        marginBottom: 8,
+        borderRadius: 10,
+        borderWidth: 1,
+        overflow: 'hidden',
+    },
+    markToggleOption: {
+        flex: 1,
+        paddingVertical: 8,
+        alignItems: 'center',
+    },
+    markToggleText: {
+        fontSize: rf(12),
+        fontWeight: '600',
+    },
+    markSwatch: {
+        width: 18,
+        height: 18,
+        borderRadius: 9,
     },
 });

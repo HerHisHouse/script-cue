@@ -136,7 +136,7 @@ export default function ExportOptionsSheet({
                                         >
                                             <FileText size={16} color={format === 'pdf' ? activeAccent : onBg} />
                                             <Text style={[styles.segmentText, { color: format === 'pdf' ? activeAccent : onBg }]}>PDF</Text>
-                                            <Text style={[styles.segmentCaption, { opacity: 0 }]}>-</Text>
+                                            <Text style={[styles.segmentCaption, { color: format === 'pdf' ? activeAccent : onBg2 }]}>(formato estándar)</Text>
                                         </TouchableOpacity>
                                         <TouchableOpacity
                                             onPress={() => handleFormatChange('image')}

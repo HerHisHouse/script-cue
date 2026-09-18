@@ -21,6 +21,7 @@ import { VoiceSelector } from '@/components/VoiceSelector';
 import { VoiceOption, VoiceProvider, getDefaultVoiceForGender } from '@/utils/voiceService';
 import { BETA_LIMITS, isUserBetaLimited } from '@/constants/betaLimits';
 import { trackEvent } from '@/utils/analytics';
+import { CHARACTER_COLORS, GREEN_COLOR } from '@/utils/characterColors';
 
 // Tipo extendido para incluir propiedades dinámicas de configuración de personajes
 type ExtendedAppSettings = {
@@ -31,20 +32,6 @@ type ExtendedAppSettings = {
 function mergeSettings(current: AppSettings, extended: ExtendedAppSettings): AppSettings {
   return { ...current, ...extended } as AppSettings;
 }
-
-const CHARACTER_COLORS = [
-  { value: '#3B82F6', label: 'Azul' },
-  { value: '#8B5CF6', label: 'Morado' },
-  { value: '#EF4444', label: 'Rojo' },
-  { value: '#F97316', label: 'Naranja' },
-  { value: '#EC4899', label: 'Rosa' },
-  { value: '#F59E0B', label: 'Amarillo' },
-  { value: '#06B6D4', label: 'Cian' },
-  { value: '#14B8A6', label: 'Verde azulado' },
-  { value: '#6B7280', label: 'Gris' },
-];
-
-const GREEN_COLOR = '#10B981';
 
 function getAvailableColor(existingCharacters: CharacterConfig[]): string {
   const usedColors = new Set(existingCharacters.map(c => c.color));
