@@ -8,7 +8,6 @@ import {
   Platform,
   FlatList,
   Dimensions,
-  PanResponder,
   Animated,
   Easing,
   LayoutAnimation,
@@ -34,7 +33,7 @@ import { Audio, InterruptionModeIOS, InterruptionModeAndroid } from 'expo-av';
 import * as FileSystem from 'expo-file-system/legacy'; // Fix: Use legacy API
 import { transcribeAudio } from '@/services/transcription'; // Import transcription service
 import { calculateSimilarity } from '@/utils/stringUtils'; // Helper for similarity
-import { ArrowLeft, Mic, RotateCcw, Play, Pause, Square, Video, SwitchCamera, Settings2, SkipBack, SkipForward, MoreVertical, EyeOff, Eye, Minus, Plus, Volume2, GripHorizontal, X, Timer, Clapperboard, Trash2, ChevronRight, MessageSquare, FileText, Type, Snail, Rabbit, FlipHorizontal, Bold, Italic, Underline, AlignLeft, AlignCenter, AlignRight, Keyboard as KeyboardIcon, Info, MonitorPlay, Maximize2, CheckCircle2, Layers } from 'lucide-react-native';
+import { ArrowLeft, Mic, RotateCcw, Play, Pause, Square, Video, SwitchCamera, Settings2, SkipBack, SkipForward, MoreVertical, EyeOff, Eye, Minus, Plus, Volume2, X, Timer, Clapperboard, Trash2, ChevronRight, MessageSquare, FileText, Type, Snail, Rabbit, FlipHorizontal, Bold, Italic, Underline, AlignLeft, AlignCenter, AlignRight, Keyboard as KeyboardIcon, Info, MonitorPlay, Maximize2, CheckCircle2, Layers } from 'lucide-react-native';
 import * as Haptics from 'expo-haptics';
 import SilhouetteGuide, { ShotType } from '@/components/SilhouetteGuide';
 import { FontAwesome5 } from '@expo/vector-icons';
@@ -136,6 +135,21 @@ export default function CastingModeScreen() {
   // imagen.
   const camChromeTint = 'rgba(10,10,14,0.45)';
   const camChromeBorder = 'rgba(255,255,255,0.25)';
+  // Mismo criterio: el texto del teleprompter va directo sobre el vídeo en
+  // directo, así que lleva una sombra fija (no depende de isDark) para
+  // seguir siendo legible sobre cualquier imagen de fondo.
+  const teleprompterTextShadow = {
+    textShadowColor: 'rgba(0,0,0,0.75)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 6,
+  } as const;
+  // Altura de la fila de controles flotantes de la cámara (atrás/Editar T/
+  // timer/zoom/cambiar cámara) — misma cifra que ya usa el chip de
+  // "Cancelar" para colocarse justo debajo de esa fila. Se reutiliza para que
+  // el formato "Guion" (cascada) con posición "Arriba" nunca quede tapado
+  // por esos controles, en vertical y en horizontal (la fila mide lo mismo
+  // en ambas orientaciones).
+  const teleprompterTopSafeOffset = insets.top + rp(84);
 
   // Sustituye a los Alert.alert nativos por el ConfirmDialog de cristal
   // compartido con el resto de la app. Un único estado genérico cubre los
@@ -217,8 +231,55 @@ export default function CastingModeScreen() {
   const [perCharacterVoices, setPerCharacterVoices] = useState<Record<string, { provider?: string; systemVoiceId?: string }>>({});
 
   // Teleprompter UI State
-  const [teleprompterHeightPercent, setTeleprompterHeightPercent] = useState(0.4); // Default 40%
-  const panY = useRef(new Animated.Value(0)).current;
+  // Formato de visualización del teleprompter en Selftape (Presentación no usa
+  // esto — su texto libre siempre se ve directo en pantalla): "scroll" muestra
+  // el guion completo en cascada resaltando la línea activa (etiqueta "Guion"
+  // en la UI), "single" muestra solo la frase que toca ahora mismo (etiqueta
+  // "Frase"), más minimalista.
+  const [teleprompterDisplayMode, setTeleprompterDisplayMode] = useState<'single' | 'scroll'>('scroll');
+  // Tamaño de letra del texto del teleprompter — factor multiplicador sobre
+  // el tamaño base, igual de idea que Medium/Large/X Large/XX Large.
+  const [teleprompterFontSize, setTeleprompterFontSize] = useState<'medium' | 'large' | 'xlarge' | 'xxlarge'>('medium');
+  // Solo aplica al formato "Guion" (cascada): si la línea activa se coloca
+  // pegada arriba (respetando la zona de los controles de la cámara) o
+  // centrada en pantalla.
+  const [teleprompterReadingPosition, setTeleprompterReadingPosition] = useState<'top' | 'center'>('center');
+
+  useEffect(() => {
+    (async () => {
+      const [savedMode, savedFontSize, savedPosition] = await Promise.all([
+        AsyncStorage.getItem('castingTeleprompterMode'),
+        AsyncStorage.getItem('castingTeleprompterFontSize'),
+        AsyncStorage.getItem('castingTeleprompterReadingPosition'),
+      ]);
+      if (savedMode === 'single' || savedMode === 'scroll') setTeleprompterDisplayMode(savedMode);
+      if (savedFontSize === 'medium' || savedFontSize === 'large' || savedFontSize === 'xlarge' || savedFontSize === 'xxlarge') {
+        setTeleprompterFontSize(savedFontSize);
+      }
+      if (savedPosition === 'top' || savedPosition === 'center') setTeleprompterReadingPosition(savedPosition);
+    })();
+  }, []);
+
+  function changeTeleprompterMode(mode: 'single' | 'scroll') {
+    setTeleprompterDisplayMode(mode);
+    AsyncStorage.setItem('castingTeleprompterMode', mode);
+  }
+  function changeTeleprompterFontSize(size: 'medium' | 'large' | 'xlarge' | 'xxlarge') {
+    setTeleprompterFontSize(size);
+    AsyncStorage.setItem('castingTeleprompterFontSize', size);
+  }
+  function changeTeleprompterReadingPosition(position: 'top' | 'center') {
+    setTeleprompterReadingPosition(position);
+    AsyncStorage.setItem('castingTeleprompterReadingPosition', position);
+  }
+
+  const TELEPROMPTER_FONT_SCALE: Record<typeof teleprompterFontSize, number> = {
+    medium: 1,
+    large: 1.15,
+    xlarge: 1.3,
+    xxlarge: 1.5,
+  };
+  const teleprompterFontScale = TELEPROMPTER_FONT_SCALE[teleprompterFontSize];
 
   // Menu & Options State
   const [showMenu, setShowMenu] = useState(false);
@@ -423,8 +484,6 @@ export default function CastingModeScreen() {
 
   // Teleprompter UI State
   const screenHeight = Dimensions.get('window').height;
-  // Use Animated.Value for smooth 60fps resizing
-  const teleprompterHeight = useRef(new Animated.Value(screenHeight * 0.4)).current;
   const [showVolumeControl, setShowVolumeControl] = useState(false);
 
   // Video Processing State
@@ -463,28 +522,6 @@ export default function CastingModeScreen() {
     });
     return () => zoomAnimValue.removeListener(listenerId);
   }, []);
-
-  const panResponder = useRef(
-    PanResponder.create({
-      onMoveShouldSetPanResponder: () => true,
-      onPanResponderGrant: () => {
-        // Extract offset to continue from current position
-        // @ts-ignore - _value is internal but standard for this pattern or use listener
-        teleprompterHeight.setOffset(teleprompterHeight._value);
-        teleprompterHeight.setValue(0);
-      },
-      onPanResponderMove: (_, gestureState) => {
-        // Dragging UP (negative dy) should INCREASE height -> subtract dy (or add -dy)
-        // Dragging DOWN (positive dy) should DECREASE height -> subtract dy
-        teleprompterHeight.setValue(-gestureState.dy);
-      },
-      onPanResponderRelease: () => {
-        teleprompterHeight.flattenOffset();
-        // Optional: Clamp values if needed, though Animated.View handles it visually
-        // We could add a listener to clamp, but let's keep it simple for fluidity
-      },
-    })
-  ).current;
 
   // Refs
   const flatListRef = useRef<FlatList>(null);
@@ -1120,19 +1157,26 @@ export default function CastingModeScreen() {
   }, [actionTimeLeft, isPlaying, isRecording]);
 
   useEffect(() => {
-    // Auto-scroll to current index - Subir hasta el margen superior
+    // Auto-scroll al índice activo — centrado o pegado arriba (respetando
+    // los controles de la cámara) según "Posición de lectura", ya que el
+    // teleprompter en cascada ahora ocupa toda la altura (sin panel).
     if (configuredLines.length > 0 && flatListRef.current) {
       flatListRef.current.scrollToIndex({
         index: currentIndex,
         animated: true,
-        viewPosition: 0 // Scroll to top of viewport
+        viewPosition: teleprompterReadingPosition === 'top' ? 0 : 0.5,
+        // viewOffset POSITIVO reduce el scroll aplicado, dejando la línea justo
+        // a esa distancia del borde superior real (no al revés — con signo
+        // negativo empuja el contenido MÁS arriba, que es justo el bug que
+        // tapaba la primera acción/línea detrás de los controles).
+        viewOffset: teleprompterReadingPosition === 'top' ? (teleprompterTopSafeOffset + rp(16)) : 0,
       });
     }
 
     if (isPlaying && !loading && configuredLines.length > 0 && castingType !== 'free') {
       handleLineLogic();
     }
-  }, [currentIndex, isPlaying, castingType, loading, configuredLines.length]);
+  }, [currentIndex, isPlaying, castingType, loading, configuredLines.length, teleprompterReadingPosition]);
 
   async function handleLineLogic() {
     const item = configuredLines[currentIndex];
@@ -2673,13 +2717,15 @@ export default function CastingModeScreen() {
               </View>
             )}
 
-            {/* Teleprompter Overlay */}
+            {/* Teleprompter Overlay — texto directo sobre la cámara, sin panel/tarjeta
+                de por medio (mismo criterio que Presentación), en línea con la nueva
+                UI minimalista. */}
             {!hideTeleprompter && (
               <Animated.View
-                pointerEvents={castingType === 'free' ? 'box-none' : 'auto'}
+                pointerEvents="box-none"
                 style={[
                   styles.teleprompterContainer,
-                  castingType === 'free' ? {
+                  {
                     height: '100%',
                     position: 'absolute',
                     top: 0,
@@ -2689,132 +2735,120 @@ export default function CastingModeScreen() {
                     backgroundColor: 'transparent',
                     borderTopLeftRadius: 0,
                     borderTopRightRadius: 0,
-                  } : {
-                    height: teleprompterHeight.interpolate({
-                      inputRange: [rp(150), screenHeight * 0.8],
-                      outputRange: [rp(150), screenHeight * 0.8],
-                      extrapolate: 'clamp'
-                    })
-                  }
+                  },
                 ]}
               >
-                {/* Drag Handle (Top) - Only for scripts */}
-                {castingType !== 'free' && (
-                  <View
-                    {...panResponder.panHandlers}
-                    style={styles.dragHandleContainer}
-                  >
-                    <GripHorizontal color="rgba(255,255,255,0.5)" size={rp(24)} />
-                  </View>
-                )}
-
                 {castingType === 'script' ? (
-                  <FlatList
-                    ref={flatListRef}
-                    data={configuredLines}
-                    keyExtractor={(item) => 'afterLineId' in item ? item.id : item.id}
-                    contentContainerStyle={{ paddingTop: rp(20), paddingBottom: rp(100), paddingLeft: Math.max(insets.left, rp(24)), paddingRight: Math.max(insets.right, rp(24)) }}
-                    renderItem={({ item, index }) => {
-                      const isActive = index === currentIndex;
+                  teleprompterDisplayMode === 'single' ? (
+                    // ── Formato "Frase": solo la que toca ahora mismo, siempre centrada ──
+                    (() => {
+                      const item = configuredLines[currentIndex];
+                      if (!item) return null;
                       const isManualAction = 'afterLineId' in item;
                       const isScriptAction = 'isAction' in item && (item as DialogueLine).isAction === true;
                       const isAction = isManualAction || isScriptAction;
 
-                      // Calculate opacity: active = 1, neighbors = 0.6, others = 0.3
-                      let opacity = 0.3;
-                      if (isActive) opacity = 1;
-                      else if (Math.abs(index - currentIndex) <= 1) opacity = 0.6;
-
-                      // Render Action Card
                       if (isAction) {
                         if (!showActions) return null;
-
-                        const actionId = item.id;
                         const text = isManualAction ? (item as ActionCard).text : (item as DialogueLine).text;
                         const duration = isManualAction ? (item as ActionCard).duration : getLineDuration(item as DialogueLine);
-                        const displayDuration = isActive && actionTimeLeft !== null ? actionTimeLeft : duration;
-
+                        const displayDuration = actionTimeLeft !== null ? actionTimeLeft : duration;
                         return (
-                          <View
-                            style={[
-                              styles.teleprompterActionCard,
-                              isActive && styles.teleprompterActionCardActive,
-                              {
-                                opacity,
-                                borderLeftWidth: 4,
-                                borderLeftColor: colors.primary,
-                                borderColor: colors.primary,
-                                borderWidth: 2,
-                                borderStyle: 'dashed',
-                                backgroundColor: 'transparent'
-                              }
-                            ]}
-                          >
-                            <View style={styles.teleprompterActionHeader}>
-                              <Clapperboard color={colors.primary} size={rp(16)} />
-                              <Text style={[styles.teleprompterActionLabel, { color: '#FFFFFF' }]}>ACCIÓN</Text>
-                              <View style={styles.teleprompterActionDuration}>
-                                <Timer size={rp(12)} color={colors.primary} />
-                                <Text style={[styles.teleprompterActionDurationText, { color: colors.text }]}>{displayDuration}s</Text>
-                              </View>
+                          <View style={styles.guionModeContainer} pointerEvents="none">
+                            <View style={styles.guionActionHeaderRow}>
+                              <Clapperboard color={colors.primary} size={rp(18)} />
+                              <Text style={[styles.guionActionLabel, { color: colors.primary }, teleprompterTextShadow]}>ACCIÓN · {displayDuration}s</Text>
                             </View>
-                            <Text style={[styles.teleprompterActionText, { color: '#FFFFFF' }, isActive && { fontWeight: '700' }]}>
-                              ({text})
-                            </Text>
+                            <Text style={[styles.guionActionText, { fontSize: rf(22) * teleprompterFontScale, lineHeight: rf(30) * teleprompterFontScale }, teleprompterTextShadow]}>({text})</Text>
                           </View>
                         );
                       }
 
-                      // Render Dialogue Line
                       const line = item as DialogueLine;
                       return (
-                        <TouchableOpacity
-                          onPress={() => setCurrentIndex(index)}
-                          style={[
-                            styles.dialogueCard,
-                            isActive && styles.activeCard,
-                            { opacity, borderLeftColor: line.color }
-                          ]}
-                        >
-                          <View style={styles.cardHeader}>
-                            <View style={[styles.charBadge, { backgroundColor: line.color }]}>
-                              <Text style={styles.charBadgeText}>{line.characterName.charAt(0)}</Text>
-                            </View>
-                            <Text style={[styles.cardCharName, isActive && { color: '#fff' }]}>{line.characterName}</Text>
-                            {line.isUserCharacter ? (
-                              <View style={styles.youBadge}>
-                                <Text style={styles.youBadgeText}>TÚ</Text>
-                              </View>
-                            ) : (
-                              <View style={[styles.aiBadge, { backgroundColor: line.color }]}>
-                                <Text style={styles.aiBadgeText}>ScriptCue</Text>
-                              </View>
-                            )}
-                          </View>
-
-                          {/* Show hidden text placeholder or actual text */}
+                        <View style={styles.guionModeContainer} pointerEvents="none">
+                          <Text style={[styles.guionCharName, { color: line.color }, teleprompterTextShadow]}>
+                            {line.characterName}{line.isUserCharacter ? '  ·  TÚ' : '  ·  ScriptCue'}
+                          </Text>
                           {hideUserLines && line.isUserCharacter ? (
-                            <View style={styles.hiddenTextContainer}>
+                            <View style={styles.guionHiddenContainer}>
                               <EyeOff size={rp(32)} color="#10B981" />
-                              <Text style={styles.hiddenText}>Línea oculta</Text>
+                              <Text style={[styles.guionHiddenText, teleprompterTextShadow]}>Línea oculta</Text>
                             </View>
                           ) : (
-                            <Text style={[styles.cardText, isActive && { color: '#fff', fontWeight: '600' }]}>
+                            <Text style={[styles.guionLineText, { fontSize: rf(27) * teleprompterFontScale, lineHeight: rf(36) * teleprompterFontScale }, teleprompterTextShadow]}>
                               {renderTextWithStageDirections(
                                 showStageDirections ? line.text : line.cleanText
                               )}
                             </Text>
                           )}
-                        </TouchableOpacity>
+                        </View>
                       );
-                    }}
-                    onScrollToIndexFailed={info => {
-                      const wait = new Promise(resolve => setTimeout(resolve, 500));
-                      wait.then(() => {
-                        flatListRef.current?.scrollToIndex({ index: info.index, animated: true, viewPosition: 0 });
-                      });
-                    }}
-                  />
+                    })()
+                  ) : (
+                    // ── Formato "Guion": guion completo en cascada ───────────────────
+                    <FlatList
+                      ref={flatListRef}
+                      data={configuredLines}
+                      keyExtractor={(item) => 'afterLineId' in item ? item.id : item.id}
+                      showsVerticalScrollIndicator={false}
+                      contentContainerStyle={{ paddingVertical: '50%', paddingLeft: Math.max(insets.left, rp(24)), paddingRight: Math.max(insets.right, rp(24)) }}
+                      renderItem={({ item, index }) => {
+                        const isActive = index === currentIndex;
+                        const isManualAction = 'afterLineId' in item;
+                        const isScriptAction = 'isAction' in item && (item as DialogueLine).isAction === true;
+                        const isAction = isManualAction || isScriptAction;
+
+                        // Calculate opacity: active = 1, neighbors = 0.6, others = 0.3
+                        let opacity = 0.3;
+                        if (isActive) opacity = 1;
+                        else if (Math.abs(index - currentIndex) <= 1) opacity = 0.6;
+
+                        if (isAction) {
+                          if (!showActions) return null;
+                          const text = isManualAction ? (item as ActionCard).text : (item as DialogueLine).text;
+                          const duration = isManualAction ? (item as ActionCard).duration : getLineDuration(item as DialogueLine);
+                          const displayDuration = isActive && actionTimeLeft !== null ? actionTimeLeft : duration;
+                          return (
+                            <View style={[styles.teleprompterLineRow, { opacity }]}>
+                              <Text style={[styles.teleprompterActionInlineText, { fontSize: rf(17) * teleprompterFontScale, lineHeight: rf(24) * teleprompterFontScale }, teleprompterTextShadow]}>
+                                [Acción: {text} · {displayDuration}s]
+                              </Text>
+                            </View>
+                          );
+                        }
+
+                        const line = item as DialogueLine;
+                        return (
+                          <TouchableOpacity onPress={() => setCurrentIndex(index)} style={[styles.teleprompterLineRow, { opacity }]}>
+                            <Text style={[styles.teleprompterCharNameInline, { color: line.color }, teleprompterTextShadow]}>
+                              {line.characterName}{line.isUserCharacter ? '  ·  TÚ' : '  ·  ScriptCue'}
+                            </Text>
+                            {hideUserLines && line.isUserCharacter ? (
+                              <Text style={[styles.teleprompterHiddenInline, teleprompterTextShadow]}>Línea oculta</Text>
+                            ) : (
+                              <Text style={[styles.teleprompterLineText, isActive && styles.teleprompterLineTextActive, { fontSize: rf(19) * teleprompterFontScale, lineHeight: rf(27) * teleprompterFontScale }, teleprompterTextShadow]}>
+                                {renderTextWithStageDirections(
+                                  showStageDirections ? line.text : line.cleanText
+                                )}
+                              </Text>
+                            )}
+                          </TouchableOpacity>
+                        );
+                      }}
+                      onScrollToIndexFailed={info => {
+                        const wait = new Promise(resolve => setTimeout(resolve, 500));
+                        wait.then(() => {
+                          flatListRef.current?.scrollToIndex({
+                            index: info.index,
+                            animated: true,
+                            viewPosition: teleprompterReadingPosition === 'top' ? 0 : 0.5,
+                            viewOffset: teleprompterReadingPosition === 'top' ? (teleprompterTopSafeOffset + rp(16)) : 0,
+                          });
+                        });
+                      }}
+                    />
+                  )
                 ) : (
                   <ScrollView
                     ref={freeScrollViewRef}
@@ -2937,6 +2971,87 @@ export default function CastingModeScreen() {
                 <ScrollView style={{ maxHeight: rp(400) }} showsVerticalScrollIndicator={false}>
                   {castingType === 'script' ? (
                     <>
+                      {/* Formato de visualización del teleprompter */}
+                      <View style={{ paddingHorizontal: 20, paddingBottom: 14 }}>
+                        <Text style={[styles.menuSectionLabel, { color: fgSecondary }]}>VISUALIZACIÓN</Text>
+                        <View style={[styles.segmentedRow, { backgroundColor: chipInactiveBg }]}>
+                          {([
+                            { key: 'single', label: 'Frase' },
+                            { key: 'scroll', label: 'Guion' },
+                          ] as const).map((option) => (
+                            <TouchableOpacity
+                              key={option.key}
+                              onPress={() => changeTeleprompterMode(option.key)}
+                              style={[
+                                styles.segmentedOption,
+                                teleprompterDisplayMode === option.key && { backgroundColor: chipActiveBg, borderColor: colors.primary, borderWidth: 1 },
+                              ]}
+                            >
+                              <Text style={[styles.segmentedOptionText, { color: teleprompterDisplayMode === option.key ? activeAccent : fgSecondary }]}>
+                                {option.label}
+                              </Text>
+                            </TouchableOpacity>
+                          ))}
+                        </View>
+                      </View>
+                      <View style={{ height: 1, backgroundColor: glassBorder, marginVertical: 8 }} />
+
+                      {/* Tamaño de letra */}
+                      <View style={{ paddingHorizontal: 20, paddingBottom: 14 }}>
+                        <Text style={[styles.menuSectionLabel, { color: fgSecondary }]}>TAMAÑO DE LETRA</Text>
+                        <View style={[styles.segmentedRow, { backgroundColor: chipInactiveBg }]}>
+                          {([
+                            { key: 'medium', label: 'M' },
+                            { key: 'large', label: 'L' },
+                            { key: 'xlarge', label: 'XL' },
+                            { key: 'xxlarge', label: 'XXL' },
+                          ] as const).map((option) => (
+                            <TouchableOpacity
+                              key={option.key}
+                              onPress={() => changeTeleprompterFontSize(option.key)}
+                              style={[
+                                styles.segmentedOption,
+                                teleprompterFontSize === option.key && { backgroundColor: chipActiveBg, borderColor: colors.primary, borderWidth: 1 },
+                              ]}
+                            >
+                              <Text style={[styles.segmentedOptionText, { color: teleprompterFontSize === option.key ? activeAccent : fgSecondary }]}>
+                                {option.label}
+                              </Text>
+                            </TouchableOpacity>
+                          ))}
+                        </View>
+                      </View>
+                      <View style={{ height: 1, backgroundColor: glassBorder, marginVertical: 8 }} />
+
+                      {/* Posición de lectura — solo tiene sentido en formato "Guion" (cascada) */}
+                      {teleprompterDisplayMode === 'scroll' && (
+                        <>
+                          <View style={{ paddingHorizontal: 20, paddingBottom: 14 }}>
+                            <Text style={[styles.menuSectionLabel, { color: fgSecondary }]}>POSICIÓN DE LECTURA</Text>
+                            <View style={[styles.segmentedRow, { backgroundColor: chipInactiveBg }]}>
+                              {([
+                                { key: 'top', label: 'Arriba' },
+                                { key: 'center', label: 'Centro' },
+                              ] as const).map((option) => (
+                                <TouchableOpacity
+                                  key={option.key}
+                                  onPress={() => changeTeleprompterReadingPosition(option.key)}
+                                  style={[
+                                    styles.segmentedOption,
+                                    teleprompterReadingPosition === option.key && { backgroundColor: chipActiveBg, borderColor: colors.primary, borderWidth: 1 },
+                                  ]}
+                                >
+                                  <Text style={[styles.segmentedOptionText, { color: teleprompterReadingPosition === option.key ? activeAccent : fgSecondary }]}>
+                                    {option.label}
+                                  </Text>
+                                </TouchableOpacity>
+                              ))}
+                            </View>
+                          </View>
+                          <View style={{ height: 1, backgroundColor: glassBorder, marginVertical: 8 }} />
+                        </>
+                      )}
+
                       {/* Delay de inicio */}
                       <View style={[styles.menuItem, { paddingHorizontal: 20, justifyContent: 'space-between' }]}>
                         <View style={{ flexDirection: 'row', alignItems: 'center', gap: rp(12) }}>
@@ -3554,41 +3669,42 @@ const styles = StyleSheet.create({
     flex: 1,
     paddingHorizontal: rp(24),
   },
-  dialogueCard: {
-    backgroundColor: 'rgba(255,255,255,0.1)',
-    borderRadius: rp(12),
-    padding: rp(16),
-    marginBottom: rp(12),
-    borderLeftWidth: rp(4),
-  },
-  activeCard: {
-    backgroundColor: 'rgba(255,255,255,0.25)',
-    transform: [{ scale: 1.02 }],
-  },
-  cardHeader: {
-    flexDirection: 'row',
+  // Teleprompter (Selftape) — texto directo sobre la cámara, sin tarjeta.
+  teleprompterLineRow: {
+    marginVertical: rp(14),
     alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: rp(8),
-    gap: rp(8),
   },
-  charBadge: {
-    width: rp(24),
-    height: rp(24),
-    borderRadius: rp(12),
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  charBadgeText: {
-    color: 'white',
-    fontSize: rf(10),
+  teleprompterCharNameInline: {
+    fontSize: rf(12),
     fontWeight: '700',
+    letterSpacing: 0.5,
+    textTransform: 'uppercase',
+    textAlign: 'center',
+    marginBottom: rp(6),
   },
-  cardCharName: {
-    color: 'rgba(255,255,255,0.7)',
-    fontSize: rf(10),
+  teleprompterLineText: {
+    color: 'rgba(255,255,255,0.85)',
+    fontSize: rf(19),
+    fontWeight: '400',
+    textAlign: 'center',
+    lineHeight: rf(27),
+  },
+  teleprompterLineTextActive: {
+    color: '#FFFFFF',
     fontWeight: '600',
-    marginBottom: rp(2),
+  },
+  teleprompterHiddenInline: {
+    color: 'rgba(255,255,255,0.6)',
+    fontSize: rf(15),
+    fontStyle: 'italic',
+    textAlign: 'center',
+  },
+  teleprompterActionInlineText: {
+    color: 'rgba(255,255,255,0.85)',
+    fontSize: rf(17),
+    fontStyle: 'italic',
+    textAlign: 'center',
+    lineHeight: rf(24),
   },
   lineText: {
     fontSize: rf(13),
@@ -3616,12 +3732,6 @@ const styles = StyleSheet.create({
     color: 'white',
     fontSize: rf(16),
     fontWeight: '600',
-  },
-  cardText: {
-    color: 'rgba(255,255,255,0.9)',
-    fontSize: rf(18),
-    lineHeight: rp(26),
-    textAlign: 'center',
   },
   controls: {
     flexDirection: 'row',
@@ -3666,19 +3776,6 @@ const styles = StyleSheet.create({
     backgroundColor: '#059669',
     borderColor: '#10B981',
   },
-  youBadge: {
-    backgroundColor: '#10B981',
-    paddingHorizontal: rp(6),
-    paddingVertical: rp(3),
-    borderRadius: rp(4),
-    marginLeft: rp(6),
-  },
-  youBadgeText: {
-    fontSize: rf(9),
-    fontWeight: '700',
-    color: '#FFFFFF',
-    letterSpacing: rp(0.5),
-  },
   bottomSheetOverlay: {
     flex: 1,
     justifyContent: 'flex-end',
@@ -3708,17 +3805,78 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(255,255,255,0.2)',
     marginVertical: rp(4),
   },
-  hiddenTextContainer: {
+  menuSectionLabel: {
+    fontSize: rf(11),
+    fontWeight: '700',
+    letterSpacing: 1,
+    textTransform: 'uppercase',
+    marginBottom: rp(10),
+  },
+  segmentedRow: {
     flexDirection: 'row',
+    borderRadius: 10,
+    padding: 3,
+    gap: 4,
+  },
+  segmentedOption: {
+    flex: 1,
+    paddingVertical: rp(8),
+    borderRadius: 8,
     alignItems: 'center',
+  },
+  segmentedOptionText: {
+    fontSize: rf(13),
+    fontWeight: '600',
+  },
+  // Teleprompter (Selftape) — formato "Guion": solo la frase activa.
+  guionModeContainer: {
+    flex: 1,
     justifyContent: 'center',
-    paddingVertical: rp(24),
+    alignItems: 'center',
+    paddingHorizontal: rp(32),
+  },
+  guionCharName: {
+    fontSize: rf(19),
+    fontWeight: '700',
+    letterSpacing: 1,
+    textTransform: 'uppercase',
+    textAlign: 'center',
+    marginBottom: rp(24),
+  },
+  guionLineText: {
+    color: '#FFFFFF',
+    fontSize: rf(27),
+    fontWeight: '600',
+    textAlign: 'center',
+    lineHeight: rf(36),
+  },
+  guionHiddenContainer: {
+    alignItems: 'center',
     gap: rp(12),
   },
-  hiddenText: {
+  guionHiddenText: {
     color: '#10B981',
-    fontSize: rf(16),
+    fontSize: rf(17),
     fontWeight: '600',
+  },
+  guionActionHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: rp(8),
+    marginBottom: rp(16),
+  },
+  guionActionLabel: {
+    fontSize: rf(14),
+    fontWeight: '700',
+    letterSpacing: 1,
+    textTransform: 'uppercase',
+  },
+  guionActionText: {
+    color: '#FFFFFF',
+    fontSize: rf(22),
+    fontStyle: 'italic',
+    textAlign: 'center',
+    lineHeight: rf(30),
   },
   controlsContainer: {
     position: 'absolute',
@@ -3791,15 +3949,6 @@ const styles = StyleSheet.create({
     color: 'white',
     fontSize: 14,
     fontWeight: '600',
-  },
-  dragHandleContainer: {
-    height: 30,
-    width: '100%',
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: 'rgba(0,0,0,0.3)',
-    borderBottomWidth: 1,
-    borderBottomColor: 'rgba(255,255,255,0.1)',
   },
   volumeWrapper: {
     position: 'absolute',
@@ -3921,16 +4070,6 @@ const styles = StyleSheet.create({
   cancelRecordingText: {
     color: '#EF4444',
     fontSize: rf(12),
-    fontWeight: '700',
-  },
-  aiBadge: {
-    paddingHorizontal: rp(8),
-    paddingVertical: rp(4),
-    borderRadius: 4,
-  },
-  aiBadgeText: {
-    color: '#FFFFFF',
-    fontSize: rf(11),
     fontWeight: '700',
   },
   volumeControlMenu: {
@@ -4369,51 +4508,6 @@ const styles = StyleSheet.create({
     color: 'white',
     fontSize: rf(16),
     fontWeight: '700',
-  },
-  // Teleprompter Action Card Styles
-  teleprompterActionCard: {
-    backgroundColor: 'rgba(245, 158, 11, 0.2)',
-    borderLeftWidth: rp(4),
-    borderLeftColor: '#F59E0B',
-    padding: rp(16),
-    borderRadius: rp(12),
-    marginBottom: rp(12),
-  },
-  teleprompterActionCardActive: {
-    backgroundColor: 'rgba(245, 158, 11, 0.4)',
-    transform: [{ scale: 1.02 }],
-  },
-  teleprompterActionHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: rp(8),
-    marginBottom: rp(8),
-  },
-  teleprompterActionLabel: {
-    color: '#F59E0B',
-    fontSize: rf(11),
-    fontWeight: '700',
-    flex: 1,
-  },
-  teleprompterActionDuration: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: rp(4),
-    backgroundColor: 'rgba(245, 158, 11, 0.3)',
-    paddingHorizontal: rp(8),
-    paddingVertical: rp(4),
-    borderRadius: rp(8),
-  },
-  teleprompterActionDurationText: {
-    color: '#F59E0B',
-    fontSize: rf(12),
-    fontWeight: '600',
-  },
-  teleprompterActionText: {
-    color: '#FCD34D',
-    fontSize: rf(16),
-    fontStyle: 'italic',
-    lineHeight: rf(22),
   },
   zoomControls: {
     position: 'absolute',
