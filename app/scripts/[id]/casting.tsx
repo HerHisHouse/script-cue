@@ -330,6 +330,9 @@ export default function CastingModeScreen() {
 
   // Menu & Options State
   const [showMenu, setShowMenu] = useState(false);
+  // Altura real de la barra inferior de controles (para que el formato "Frase"
+  // nunca se meta por debajo de ella, ni en vertical ni en horizontal).
+  const [controlsHeight, setControlsHeight] = useState(rp(120));
   const [hideUserLines, setHideUserLines] = useState(false);
   const [hideTeleprompter, setHideTeleprompter] = useState(false);
   const [showActions, setShowActions] = useState(true); // Show action cards in teleprompter
@@ -2799,25 +2802,45 @@ export default function CastingModeScreen() {
                       const isScriptAction = 'isAction' in item && (item as DialogueLine).isAction === true;
                       const isAction = isManualAction || isScriptAction;
 
+                      // Banda segura: por debajo de la fila de controles de arriba
+                      // (atrás/timer/zoom) y por encima de la barra de abajo. Dentro
+                      // el texto va centrado si cabe y hace scroll si es largo (igual
+                      // que "Guion" en el modo Coche). `key` reinicia el scroll al
+                      // cambiar de línea.
+                      const renderBand = (children: React.ReactNode) => (
+                        <View
+                          style={{ position: 'absolute', top: teleprompterTopSafeOffset + rp(8), bottom: controlsHeight + rp(8), left: 0, right: 0 }}
+                        >
+                          <ScrollView
+                            key={currentIndex}
+                            style={{ flex: 1 }}
+                            contentContainerStyle={[styles.guionScrollContent, { paddingLeft: Math.max(insets.left, rp(32)), paddingRight: Math.max(insets.right, rp(32)) }]}
+                            showsVerticalScrollIndicator={false}
+                          >
+                            {children}
+                          </ScrollView>
+                        </View>
+                      );
+
                       if (isAction) {
                         if (!showActions) return null;
                         const text = isManualAction ? (item as ActionCard).text : (item as DialogueLine).text;
                         const duration = isManualAction ? (item as ActionCard).duration : getLineDuration(item as DialogueLine);
                         const displayDuration = actionTimeLeft !== null ? actionTimeLeft : duration;
-                        return (
-                          <View style={styles.guionModeContainer} pointerEvents="none">
+                        return renderBand(
+                          <>
                             <View style={styles.guionActionHeaderRow}>
                               <Clapperboard color={colors.primary} size={rp(18)} />
                               <Text style={[styles.guionActionLabel, { color: colors.primary }, teleprompterTextShadow]}>ACCIÓN · {displayDuration}s</Text>
                             </View>
                             <Text style={[styles.guionActionText, { fontSize: rf(22) * teleprompterFontScale, lineHeight: rf(30) * teleprompterFontScale }, teleprompterTextShadow]}>({text})</Text>
-                          </View>
+                          </>
                         );
                       }
 
                       const line = item as DialogueLine;
-                      return (
-                        <View style={styles.guionModeContainer} pointerEvents="none">
+                      return renderBand(
+                        <>
                           <Text style={[styles.guionCharName, { color: line.color }, teleprompterTextShadow]}>
                             {line.characterName}{line.isUserCharacter ? '  ·  TÚ' : '  ·  ScriptCue'}
                           </Text>
@@ -2833,7 +2856,7 @@ export default function CastingModeScreen() {
                               )}
                             </Text>
                           )}
-                        </View>
+                        </>
                       );
                     })()
                   ) : (
@@ -2956,7 +2979,7 @@ export default function CastingModeScreen() {
               </View>
             )}
 
-            <View style={styles.controlsContainer}>
+            <View style={styles.controlsContainer} onLayout={(e) => setControlsHeight(e.nativeEvent.layout.height)}>
               <View style={styles.controls}>
                 {/* Previous */}
                 {castingType !== 'free' && (
@@ -3880,6 +3903,11 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   // Teleprompter (Selftape) — formato "Guion": solo la frase activa.
+  guionScrollContent: {
+    flexGrow: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
   guionModeContainer: {
     flex: 1,
     justifyContent: 'center',

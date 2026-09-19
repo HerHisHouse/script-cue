@@ -181,7 +181,7 @@ export default function CarModeScreen() {
   const [loopEnabled, setLoopEnabled] = useState(true); // Default: loop enabled for Car Mode
   const [showStageDirections, setShowStageDirections] = useState(false); // Toggle for stage directions
   const [showMenu, setShowMenu] = useState(false);
-  const [viewMode, setViewMode] = useState('Guion'); // Menu visibility
+  const [viewMode, setViewMode] = useState('Frase'); // Formato de visualización: 'Frase' (una línea) | 'Guion' (cascada)
   const [isGeneratingAudio, setIsGeneratingAudio] = useState(false); // Audio generation in progress
   const [generatingProgress, setGeneratingProgress] = useState(0); // Progress 0-100
   const [generatingMode, setGeneratingMode] = useState<'full' | 'italiana' | null>(null);
@@ -228,7 +228,7 @@ export default function CarModeScreen() {
 
   // Auto-scroll for teleprompter
   useEffect(() => {
-    if (viewMode === 'Teleprompter' && flatListRef.current && dialogueLines.length > 0 && currentIndex < dialogueLines.length) {
+    if (viewMode === 'Guion' && flatListRef.current && dialogueLines.length > 0 && currentIndex < dialogueLines.length) {
       try {
         flatListRef.current.scrollToIndex({ index: currentIndex, animated: true, viewPosition: 0.5 });
       } catch (e) {
@@ -1621,7 +1621,7 @@ export default function CarModeScreen() {
           </Text>
 
           {/* Texto del diálogo — grande y centrado como ActOnCue */}
-          {viewMode === 'Teleprompter' ? (
+          {viewMode === 'Guion' ? (
             <FlatList
               ref={flatListRef}
               data={dialogueLines}
@@ -1770,14 +1770,14 @@ export default function CarModeScreen() {
             Visualización
           </Text>
 
-          {/* Toggle Script / Teleprompter */}
+          {/* Toggle Frase / Guion */}
           <View style={{
             flexDirection: 'row',
             backgroundColor: 'rgba(255,255,255,0.08)',
             borderRadius: 10,
             padding: 3,
           }}>
-            {['Guion', 'Teleprompter'].map((option) => (
+            {['Frase', 'Guion'].map((option) => (
               <TouchableOpacity
                 key={option}
                 style={{
