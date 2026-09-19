@@ -6,6 +6,7 @@ import { View, TouchableOpacity, Text, StyleSheet } from 'react-native';
 import { BlurView } from 'expo-blur';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { rf, rp } from '@/utils/responsive';
+import { WINDOW_BG_DARK, WINDOW_BG_LIGHT } from '@/constants/windowBackground';
 
 const ICONS: Record<string, any> = {
   index: FileText,
@@ -76,10 +77,16 @@ function FloatingTabBar({ state, descriptors, navigation }: BottomTabBarProps) {
 }
 
 export default function TabLayout() {
+  const { isDark } = useTheme();
   return (
     <Tabs
       tabBar={(props) => <FloatingTabBar {...props} />}
-      screenOptions={{ headerShown: false }}>
+      screenOptions={{
+        headerShown: false,
+        // Fondo por defecto de React Navigation = gris #F2F2F2 (era el hueco
+        // que se veía al girar); se sustituye por el tono de los fondos de la app.
+        sceneStyle: { backgroundColor: isDark ? WINDOW_BG_DARK : WINDOW_BG_LIGHT },
+      }}>
       <Tabs.Screen name="index" options={{ title: 'Guiones' }} />
       <Tabs.Screen name="recordings" options={{ title: 'Grabaciones' }} />
       <Tabs.Screen name="projects" options={{ title: 'Proyectos' }} />

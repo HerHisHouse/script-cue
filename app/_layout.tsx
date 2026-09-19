@@ -3,9 +3,11 @@ import { Stack, useRouter, useSegments } from 'expo-router';
 import React, { useEffect } from 'react';
 import { LogBox, Platform, PermissionsAndroid } from 'react-native';
 import { AuthProvider, useAuth } from '@/contexts/AuthContext';
-import { ThemeProvider } from '@/contexts/ThemeContext';
+import { ThemeProvider, useTheme } from '@/contexts/ThemeContext';
+import { WINDOW_BG_DARK, WINDOW_BG_LIGHT } from '@/constants/windowBackground';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import * as ScreenOrientation from 'expo-screen-orientation';
+import * as SystemUI from 'expo-system-ui';
 import { getSettings } from '@/utils/appSettings';
 import { Audio } from 'expo-av';
 import { Camera } from 'expo-camera';
@@ -28,6 +30,17 @@ function AppRoot() {
   const segments = useSegments();
   const router = useRouter();
   const insets = useSafeAreaInsets();
+  const { isDark } = useTheme();
+
+  // Color de la ventana nativa (detrás de toda la app). Al girar el móvil, iOS
+  // redimensiona la ventana antes de que React Native re-maquete el contenido;
+  // durante esos milisegundos se ve lo que haya detrás. Sin esto era el gris
+  // claro del sistema (media pantalla "en blanco"). Se usa el tono medio del
+  // degradado de fondo de la app (ui-dark-bg / ui-light-bg) para que el
+  // hueco apenas se note.
+  useEffect(() => {
+    SystemUI.setBackgroundColorAsync(isDark ? WINDOW_BG_DARK : WINDOW_BG_LIGHT).catch(() => { });
+  }, [isDark]);
 
   // Oculta WARNs de desarrollo conocidos: deprecación de expo-av y aviso de Reanimated
   LogBox.ignoreLogs([
@@ -137,10 +150,13 @@ function AppRoot() {
   }, []);
 
   return (
-    <View style={{ flex: 1, paddingBottom: Platform.OS === 'android' ? insets.bottom : 0 }}>
+    <View style={{ flex: 1, backgroundColor: isDark ? WINDOW_BG_DARK : WINDOW_BG_LIGHT, paddingBottom: Platform.OS === 'android' ? insets.bottom : 0 }}>
       <Stack
         screenOptions={{
           headerShown: false,
+          // Sin esto cada pantalla pinta el fondo por defecto del sistema
+          // mientras se re-maqueta al girar el dispositivo.
+          contentStyle: { backgroundColor: isDark ? WINDOW_BG_DARK : WINDOW_BG_LIGHT },
         }}
       >
         <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
@@ -164,14 +180,25 @@ function AppRoot() {
   );
 }
 
+// Raíz de React Native: es lo que se ve mientras se re-maqueta el contenido al
+// girar. Era negro fijo; ahora sigue el tema (por eso vive dentro de ThemeProvider).
+function RootBackground({ children }: { children: React.ReactNode }) {
+  const { isDark } = useTheme();
+  return (
+    <GestureHandlerRootView style={{ flex: 1, backgroundColor: isDark ? WINDOW_BG_DARK : WINDOW_BG_LIGHT }}>
+      {children}
+    </GestureHandlerRootView>
+  );
+}
+
 export default function RootLayout() {
   return (
-    <GestureHandlerRootView style={{ flex: 1, backgroundColor: '#000000' }}>
-      <ThemeProvider>
+    <ThemeProvider>
+      <RootBackground>
         <AuthProvider>
           <AppRoot />
         </AuthProvider>
-      </ThemeProvider>
-    </GestureHandlerRootView>
+      </RootBackground>
+    </ThemeProvider>
   );
 }

@@ -3,7 +3,7 @@ import { View, Text, StyleSheet, TouchableOpacity, Alert, Image, Switch, ScrollV
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ScreenHeader } from '@/components/ScreenHeader';
 import { useRouter } from 'expo-router';
-import { User, LogOut, Sun, Moon, ChevronDown, Smartphone, Camera, Pencil, Check, X, Mail, MessageCircle, Lightbulb, Trash2 } from 'lucide-react-native';
+import { User, LogOut, Sun, Moon, ChevronDown, Smartphone, Camera, Pencil, Mail, MessageCircle, Lightbulb, Trash2 } from 'lucide-react-native';
 import { FontAwesome5 } from '@expo/vector-icons';
 import { useAuth } from '@/contexts/AuthContext';
 import { useTheme } from '@/contexts/ThemeContext';
@@ -410,7 +410,8 @@ export default function SettingsScreen() {
               {/* Nombre + email */}
               <View style={styles.profileInfo}>
                 {editingName ? (
-                  <View style={styles.nameEditRow}>
+                  <View style={styles.nameEditContainer}>
+                    <Text style={[styles.nameEditLabel, { color: onBg2 }]}>NOMBRE</Text>
                     <TextInput
                       style={[
                         styles.nameInput,
@@ -422,27 +423,38 @@ export default function SettingsScreen() {
                       ]}
                       value={nameInput}
                       onChangeText={setNameInput}
+                      placeholder="Tu nombre"
+                      placeholderTextColor={onBg2}
                       autoFocus
+                      selectTextOnFocus
+                      autoCapitalize="words"
+                      autoCorrect={false}
                       maxLength={40}
                       returnKeyType="done"
                       onSubmitEditing={saveName}
                     />
-                    <TouchableOpacity
-                      onPress={saveName}
-                      disabled={savingName}
-                      style={[styles.nameActionBtn, { backgroundColor: colors.primary }]}
-                    >
-                      {savingName
-                        ? <ActivityIndicator size="small" color="#fff" />
-                        : <Check size={16} color="#fff" />
-                      }
-                    </TouchableOpacity>
-                    <TouchableOpacity
-                      onPress={() => setEditingName(false)}
-                      style={[styles.nameActionBtn, { backgroundColor: isDark ? '#374151' : '#E5E7EB' }]}
-                    >
-                      <X size={16} color={onBg} />
-                    </TouchableOpacity>
+                    <Text style={[styles.nameCounter, { color: onBg2 }]}>{nameInput.length}/40</Text>
+                    <View style={styles.nameActionsRow}>
+                      <TouchableOpacity
+                        onPress={() => setEditingName(false)}
+                        disabled={savingName}
+                        activeOpacity={0.8}
+                        style={[styles.nameActionBtn, { backgroundColor: isDark ? 'rgba(255,255,255,0.08)' : '#E5E7EB' }]}
+                      >
+                        <Text style={[styles.nameActionText, { color: onBg }]}>Cancelar</Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity
+                        onPress={saveName}
+                        disabled={savingName || !nameInput.trim()}
+                        activeOpacity={0.8}
+                        style={[styles.nameActionBtn, { backgroundColor: colors.primary, opacity: !nameInput.trim() ? 0.5 : 1 }]}
+                      >
+                        {savingName
+                          ? <ActivityIndicator size="small" color="#fff" />
+                          : <Text style={[styles.nameActionText, { color: '#fff' }]}>Guardar</Text>
+                        }
+                      </TouchableOpacity>
+                    </View>
                   </View>
                 ) : (
                   <View style={styles.nameDisplayRow}>
@@ -949,6 +961,10 @@ const styles = StyleSheet.create({
   },
   profileInfo: {
     alignItems: 'center',
+    // Ocupa todo el ancho de la tarjeta (profileCard centra a sus hijos y, sin
+    // esto, se ajustaba al contenido); así el editor de nombre no cambia de
+    // tamaño según lo que se escriba.
+    alignSelf: 'stretch',
   },
   profileName: {
     fontSize: rf(24),
@@ -970,29 +986,52 @@ const styles = StyleSheet.create({
   editNameBtn: {
     padding: 4,
   },
-  nameEditRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
+  // Editor de nombre: ocupa todo el ancho de la tarjeta (profileInfo centra a
+  // sus hijos, así que sin width explícito el campo se encogía al mínimo).
+  nameEditContainer: {
+    width: '100%',
     alignSelf: 'stretch',
-    gap: rp(6),
-    marginBottom: 4,
+    marginBottom: rp(8),
+  },
+  nameEditLabel: {
+    fontSize: rf(11),
+    fontWeight: '700',
+    letterSpacing: 1,
+    textAlign: 'center',
+    marginBottom: rp(8),
   },
   nameInput: {
-    flex: 1,
-    fontSize: rf(15),
-    fontWeight: '600',
+    width: '100%',
+    fontSize: rf(20),
+    fontWeight: '700',
+    textAlign: 'center',
     borderWidth: 1.5,
-    borderRadius: 8,
-    paddingHorizontal: rp(10),
-    paddingVertical: rp(6),
-    minHeight: 36,
+    borderRadius: 14,
+    paddingHorizontal: rp(16),
+    paddingVertical: rp(12),
+    minHeight: 52,
+  },
+  nameCounter: {
+    fontSize: rf(11),
+    textAlign: 'right',
+    marginTop: rp(6),
+    marginRight: rp(4),
+  },
+  nameActionsRow: {
+    flexDirection: 'row',
+    gap: rp(10),
+    marginTop: rp(12),
   },
   nameActionBtn: {
-    width: 34,
-    height: 34,
-    borderRadius: 8,
+    flex: 1,
+    minHeight: 46,
+    borderRadius: 12,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  nameActionText: {
+    fontSize: rf(15),
+    fontWeight: '700',
   },
   infoCard: {
     flexDirection: 'row',
