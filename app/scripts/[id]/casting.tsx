@@ -401,15 +401,20 @@ export default function CastingModeScreen() {
 
   // ── Plano General Automático (solo Teleprompter Libre) ──────────────
   const [autoWideShotEnabled, setAutoWideShotEnabled] = useState(false);
+  // BottomSheetMenu tarda 250 ms en animar su cierre y luego desmonta su Modal.
+  const MENU_DISMISS_DELAY_MS = 450;
 
   async function handleAutoWideShotToggle(value: boolean) {
     if (value) {
-      const AsyncStorage = 
-        (await import('@react-native-async-storage/async-storage')).default;
-      const hideInfo = 
-        await AsyncStorage.getItem('casting_hide_wideshot_info');
+      const hideInfo = await AsyncStorage.getItem('casting_hide_wideshot_info');
 
       if (hideInfo !== 'true') {
+        // iOS no puede presentar el aviso (otro Modal) mientras el menú de
+        // configuración, que también es un Modal, sigue en pantalla: el aviso
+        // no se veía, el toggle no cambiaba y la pantalla quedaba bloqueada.
+        // Se cierra el menú y se espera a que termine su animación de salida.
+        setShowMenu(false);
+        await new Promise((resolve) => setTimeout(resolve, MENU_DISMISS_DELAY_MS));
         showCastingAlert(
           '🎬 Plano general automático',
           'Así funciona:\n\n' +
