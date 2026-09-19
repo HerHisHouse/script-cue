@@ -26,6 +26,7 @@ import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 import { useRouter, useLocalSearchParams, Stack } from 'expo-router';
 import { BlurView } from 'expo-blur';
 import { GlassBackdrop } from '@/components/GlassBackdrop';
+import { withAlpha } from '@/utils/colorUtils';
 import Constants from 'expo-constants';
 import { activateKeepAwakeAsync, deactivateKeepAwake } from 'expo-keep-awake';
 import { rf, rp } from '@/utils/responsive';
@@ -34,7 +35,7 @@ import { Audio, InterruptionModeIOS, InterruptionModeAndroid } from 'expo-av';
 import * as FileSystem from 'expo-file-system/legacy'; // Fix: Use legacy API
 import { transcribeAudio } from '@/services/transcription'; // Import transcription service
 import { calculateSimilarity } from '@/utils/stringUtils'; // Helper for similarity
-import { ArrowLeft, Mic, RotateCcw, Play, Pause, Square, Video, SwitchCamera, Settings2, SkipBack, SkipForward, MoreVertical, EyeOff, Eye, Minus, Plus, Volume2, X, Timer, Clapperboard, Trash2, ChevronRight, MessageSquare, FileText, Type, Snail, Rabbit, FlipHorizontal, Bold, Italic, Underline, AlignLeft, AlignCenter, AlignRight, Keyboard as KeyboardIcon, Info, MonitorPlay, Maximize2, CheckCircle2, Layers } from 'lucide-react-native';
+import { ArrowLeft, Mic, RotateCcw, Play, Pause, Square, Video, SwitchCamera, Settings2, SkipBack, SkipForward, MoreVertical, EyeOff, Eye, Minus, Plus, Volume2, X, Timer, Clapperboard, Trash2, ChevronRight, MessageSquare, FileText, Type, Snail, Rabbit, FlipHorizontal, Bold, Italic, Underline, AlignLeft, AlignCenter, AlignRight, Keyboard as KeyboardIcon, Info, MonitorPlay, Maximize2, CheckCircle2, Layers, Highlighter } from 'lucide-react-native';
 import * as Haptics from 'expo-haptics';
 import SilhouetteGuide, { ShotType } from '@/components/SilhouetteGuide';
 // Fase M1: NO se importan hooks de vision-camera aquí (useCameraDevice, etc.) —
@@ -291,19 +292,24 @@ export default function CastingModeScreen() {
   // pegada arriba (respetando la zona de los controles de la cámara) o
   // centrada en pantalla.
   const [teleprompterReadingPosition, setTeleprompterReadingPosition] = useState<'top' | 'center'>('center');
+  // Capa translúcida del color de cada personaje detrás de sus líneas (solo
+  // formatos Frase/Guion de Selftape). Desactivada por defecto.
+  const [teleprompterShading, setTeleprompterShading] = useState(false);
 
   useEffect(() => {
     (async () => {
-      const [savedMode, savedFontSize, savedPosition] = await Promise.all([
+      const [savedMode, savedFontSize, savedPosition, savedShading] = await Promise.all([
         AsyncStorage.getItem('castingTeleprompterMode'),
         AsyncStorage.getItem('castingTeleprompterFontSize'),
         AsyncStorage.getItem('castingTeleprompterReadingPosition'),
+        AsyncStorage.getItem('castingTeleprompterShading'),
       ]);
       if (savedMode === 'single' || savedMode === 'scroll') setTeleprompterDisplayMode(savedMode);
       if (savedFontSize === 'medium' || savedFontSize === 'large' || savedFontSize === 'xlarge' || savedFontSize === 'xxlarge') {
         setTeleprompterFontSize(savedFontSize);
       }
       if (savedPosition === 'top' || savedPosition === 'center') setTeleprompterReadingPosition(savedPosition);
+      if (savedShading === 'true') setTeleprompterShading(true);
     })();
   }, []);
 
@@ -319,6 +325,15 @@ export default function CastingModeScreen() {
     setTeleprompterReadingPosition(position);
     AsyncStorage.setItem('castingTeleprompterReadingPosition', position);
   }
+
+  function changeTeleprompterShading(enabled: boolean) {
+    setTeleprompterShading(enabled);
+    AsyncStorage.setItem('castingTeleprompterShading', String(enabled));
+  }
+  // Estilo de la capa de color de un personaje (null si el resaltado está apagado).
+  const characterShadeStyle = (color: string) => teleprompterShading
+    ? { backgroundColor: withAlpha(color, 0.2), borderRadius: rp(16), paddingHorizontal: rp(16), paddingVertical: rp(10) }
+    : null;
 
   const TELEPROMPTER_FONT_SCALE: Record<typeof teleprompterFontSize, number> = {
     medium: 1,
@@ -2840,7 +2855,7 @@ export default function CastingModeScreen() {
 
                       const line = item as DialogueLine;
                       return renderBand(
-                        <>
+                        <View style={[{ alignItems: 'center', maxWidth: '100%' }, characterShadeStyle(line.color)]}>
                           <Text style={[styles.guionCharName, { color: line.color }, teleprompterTextShadow]}>
                             {line.characterName}{line.isUserCharacter ? '  ·  TÚ' : '  ·  ScriptCue'}
                           </Text>
@@ -2856,7 +2871,7 @@ export default function CastingModeScreen() {
                               )}
                             </Text>
                           )}
-                        </>
+                        </View>
                       );
                     })()
                   ) : (
@@ -2895,18 +2910,21 @@ export default function CastingModeScreen() {
                         const line = item as DialogueLine;
                         return (
                           <TouchableOpacity onPress={() => setCurrentIndex(index)} style={[styles.teleprompterLineRow, { opacity }]}>
-                            <Text style={[styles.teleprompterCharNameInline, { color: line.color }, teleprompterTextShadow]}>
-                              {line.characterName}{line.isUserCharacter ? '  ·  TÚ' : '  ·  ScriptCue'}
-                            </Text>
-                            {hideUserLines && line.isUserCharacter ? (
-                              <Text style={[styles.teleprompterHiddenInline, teleprompterTextShadow]}>Línea oculta</Text>
-                            ) : (
-                              <Text style={[styles.teleprompterLineText, isActive && styles.teleprompterLineTextActive, { fontSize: rf(19) * teleprompterFontScale, lineHeight: rf(27) * teleprompterFontScale }, teleprompterTextShadow]}>
-                                {renderTextWithStageDirections(
-                                  showStageDirections ? line.text : line.cleanText
-                                )}
+                            {/* La capa va en este contenedor interior (no en la fila, que ocupa todo el ancho) para ajustarse al texto */}
+                            <View style={[{ alignItems: 'center', maxWidth: '100%' }, characterShadeStyle(line.color)]}>
+                              <Text style={[styles.teleprompterCharNameInline, { color: line.color }, teleprompterTextShadow]}>
+                                {line.characterName}{line.isUserCharacter ? '  ·  TÚ' : '  ·  ScriptCue'}
                               </Text>
-                            )}
+                              {hideUserLines && line.isUserCharacter ? (
+                                <Text style={[styles.teleprompterHiddenInline, teleprompterTextShadow]}>Línea oculta</Text>
+                              ) : (
+                                <Text style={[styles.teleprompterLineText, isActive && styles.teleprompterLineTextActive, { fontSize: rf(19) * teleprompterFontScale, lineHeight: rf(27) * teleprompterFontScale }, teleprompterTextShadow]}>
+                                  {renderTextWithStageDirections(
+                                    showStageDirections ? line.text : line.cleanText
+                                  )}
+                                </Text>
+                              )}
+                            </View>
                           </TouchableOpacity>
                         );
                       }}
@@ -3204,6 +3222,17 @@ export default function CastingModeScreen() {
                         Icon={MessageSquare}
                         value={showStageDirections}
                         onValueChange={setShowStageDirections}
+                        textColor={fg}
+                        iconColor={fg}
+                        borderColor={glassBorder}
+                        trackColorActive={colors.primary}
+                      />
+
+                      <BottomSheetToggle
+                        label="Resaltado por personaje"
+                        Icon={Highlighter}
+                        value={teleprompterShading}
+                        onValueChange={changeTeleprompterShading}
                         textColor={fg}
                         iconColor={fg}
                         borderColor={glassBorder}
