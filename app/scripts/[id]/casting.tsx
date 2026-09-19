@@ -188,9 +188,19 @@ export default function CastingModeScreen() {
         // Android se queda con expo-camera hasta validarse ahí también —
         // require() condicional para que el módulo de vision-camera ni
         // siquiera se cargue en Android.
-        component = Platform.OS === 'ios'
-          ? require('../../../components/VisionCameraView')
-          : require('../../../components/ExpoCameraView');
+        if (Platform.OS === 'ios') {
+          // vision-camera falla al inicializarse en el simulador de iOS (sin
+          // cámara), así que ahí caemos a expo-camera. En dispositivo real
+          // carga con normalidad.
+          try {
+            component = require('../../../components/VisionCameraView');
+          } catch (visionError) {
+            console.warn('vision-camera no disponible, usando expo-camera:', visionError);
+            component = require('../../../components/ExpoCameraView');
+          }
+        } else {
+          component = require('../../../components/ExpoCameraView');
+        }
 
         if (component) {
           CameraComponent.current = component.default || component;
