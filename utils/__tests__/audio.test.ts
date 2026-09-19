@@ -1,3 +1,9 @@
+// Los módulos nativos de Expo/React Native no se pueden cargar en Node/Jest;
+// estos tests solo cubren lógica pura, así que se sustituyen por dobles vacíos.
+jest.mock('expo-av', () => ({ Audio: {} }));
+jest.mock('expo-file-system/legacy', () => ({}));
+jest.mock('react-native', () => ({ Platform: { OS: 'ios' } }));
+
 import { getSmoothedVolumeSteps } from '../audio';
 
 describe('getSmoothedVolumeSteps', () => {

@@ -1,8 +1,11 @@
 import { widthPercentageToDP as wp, heightPercentageToDP as hp, widthPercentageToDP } from 'react-native-responsive-screen';
 import { Dimensions } from 'react-native';
 
-// Obtener dimensiones de pantalla
-const { width: SCREEN_WIDTH } = Dimensions.get('window');
+// Lado corto de la pantalla: no cambia al girar el dispositivo. Con el ancho
+// a secas, arrancar la app en horizontal tomaba el lado largo y el factor de
+// escala dejaba de aplicarse en móviles pequeños.
+const { width: WINDOW_WIDTH, height: WINDOW_HEIGHT } = Dimensions.get('window');
+const SCREEN_WIDTH = Math.min(WINDOW_WIDTH, WINDOW_HEIGHT);
 
 // Base de diseño (iPhone X/11/12/13)
 const BASE_WIDTH = 375;

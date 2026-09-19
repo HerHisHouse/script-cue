@@ -1,3 +1,7 @@
+// Los módulos nativos de Expo no se pueden cargar en Node/Jest; estos tests solo
+// cubren lógica pura, así que se sustituyen por dobles vacíos.
+jest.mock('expo-file-system/legacy', () => ({}));
+
 import { performRename, RenameError } from '../rename';
 
 // Minimal supabase mock for integration-like flow
