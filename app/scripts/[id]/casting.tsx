@@ -1384,7 +1384,7 @@ export default function CastingModeScreen() {
     } catch (e) {
       console.warn('[Casting VAD] No se pudo abrir el micrófono:', e);
       // Fallback: timer estimado por número de palabras
-      useTimerFallback();
+      startTimerFallback();
     }
   }
 
@@ -1415,7 +1415,7 @@ export default function CastingModeScreen() {
     isUserSpeakingRef.current = false;
   }
 
-  function useTimerFallback() {
+  function startTimerFallback() {
     const item = configuredLines[currentIndex];
     if (!item || 'afterLineId' in item) return;
 
