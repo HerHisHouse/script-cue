@@ -979,10 +979,10 @@ export default function RecordingsScreen() {
         playbackRate: isPlaying ? 1.0 : 0.0,
       };
 
-      // @ts-ignore - expo-av types don't include setNowPlayingInfo yet
-      if (Audio.setNowPlayingInfo) {
-        // @ts-ignore
-        await Audio.setNowPlayingInfo(nowPlayingInfo);
+      // Los tipos de expo-av aún no incluyen setNowPlayingInfo
+      const nowPlayingAudio = Audio as any;
+      if (nowPlayingAudio.setNowPlayingInfo) {
+        await nowPlayingAudio.setNowPlayingInfo(nowPlayingInfo);
       }
     } catch (error) {
       console.log('Error updating Now Playing info:', error);

@@ -1205,7 +1205,7 @@ export default function ImportScriptScreen() {
                 <Text style={[styles.importAlertTitle, { color: colors.primary }]}>Formato recomendado</Text>
               </View>
               <Text style={[styles.importAlertText, { color: onBg2 }]}>
-                Para un análisis más preciso del texto, es mejor que el guion tenga un formato estándar de "guion cinematográfico". Con personajes y diálogos. De momento no sirven convocatorias de publicidad con actings.
+                Para un análisis más preciso del texto, es mejor que el guion tenga un formato estándar de &quot;guion cinematográfico&quot;. Con personajes y diálogos. De momento no sirven convocatorias de publicidad con actings.
               </Text>
               <TouchableOpacity
                 style={styles.importAlertCheckbox}

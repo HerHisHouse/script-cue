@@ -2163,7 +2163,7 @@ export default function StudioV2Screen() {
 
     // Degradado de la tarjeta de diálogo: sutil arriba, se intensifica hacia abajo,
     // siempre con el color del propio personaje (o el morado de acento para acción).
-    const dialogueCardGradient = (charColor: string) => (
+    const dialogueCardGradient = (charColor: string): readonly [string, string] => (
         isDark ? [`${charColor}1A`, `${charColor}4D`] : [`${charColor}12`, `${charColor}30`]
     );
 

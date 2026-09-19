@@ -121,7 +121,7 @@ export default function TermsScreen() {
 
                     <Text style={[styles.sectionTitle, { color: onBg }]}>8. Limitaciones de Responsabilidad</Text>
                     <Text style={[styles.paragraph, { color: onBg2 }]}>
-                        La Aplicación se ofrece "tal cual es".{'\n\n'}
+                        La Aplicación se ofrece &quot;tal cual es&quot;.{'\n\n'}
                         No garantizamos que:{'\n'}
                         • Esté libre de errores.{'\n'}
                         • Funcione sin interrupciones.{'\n'}
@@ -182,7 +182,7 @@ export default function TermsScreen() {
 
                     <Text style={[styles.sectionTitle, { color: onBg }]}>12. Aceptación</Text>
                     <Text style={[styles.paragraph, { color: onBg2 }]}>
-                        Al hacer clic en "Acepto los Términos y Condiciones" durante el registro, confirmas que has leído, comprendido y aceptado este documento.
+                        Al hacer clic en &quot;Acepto los Términos y Condiciones&quot; durante el registro, confirmas que has leído, comprendido y aceptado este documento.
                     </Text>
                 </ScrollView>
             </SafeAreaView>

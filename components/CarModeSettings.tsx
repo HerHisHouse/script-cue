@@ -103,7 +103,7 @@ export function CarModeSettings({
                                         {voiceCommands.siguiente && <Text style={styles.checkmark}>✓</Text>}
                                     </View>
                                     <View style={{ flex: 1 }}>
-                                        <Text style={styles.commandLabel}>"Siguiente"</Text>
+                                        <Text style={styles.commandLabel}>&quot;Siguiente&quot;</Text>
                                         <Text style={styles.commandDescription}>Avanza a la siguiente línea</Text>
                                     </View>
                                 </TouchableOpacity>
@@ -116,7 +116,7 @@ export function CarModeSettings({
                                         {voiceCommands.atras && <Text style={styles.checkmark}>✓</Text>}
                                     </View>
                                     <View style={{ flex: 1 }}>
-                                        <Text style={styles.commandLabel}>"Atrás"</Text>
+                                        <Text style={styles.commandLabel}>&quot;Atrás&quot;</Text>
                                         <Text style={styles.commandDescription}>Retrocede a la línea anterior</Text>
                                     </View>
                                 </TouchableOpacity>
@@ -129,7 +129,7 @@ export function CarModeSettings({
                                         {voiceCommands.pause && <Text style={styles.checkmark}>✓</Text>}
                                     </View>
                                     <View style={{ flex: 1 }}>
-                                        <Text style={styles.commandLabel}>"Pause"</Text>
+                                        <Text style={styles.commandLabel}>&quot;Pause&quot;</Text>
                                         <Text style={styles.commandDescription}>Pausa la escena</Text>
                                     </View>
                                 </TouchableOpacity>
@@ -142,7 +142,7 @@ export function CarModeSettings({
                                         {voiceCommands.play && <Text style={styles.checkmark}>✓</Text>}
                                     </View>
                                     <View style={{ flex: 1 }}>
-                                        <Text style={styles.commandLabel}>"Play"</Text>
+                                        <Text style={styles.commandLabel}>&quot;Play&quot;</Text>
                                         <Text style={styles.commandDescription}>Reanuda la escena</Text>
                                     </View>
                                 </TouchableOpacity>
@@ -155,7 +155,7 @@ export function CarModeSettings({
                                         {voiceCommands.stop && <Text style={styles.checkmark}>✓</Text>}
                                     </View>
                                     <View style={{ flex: 1 }}>
-                                        <Text style={styles.commandLabel}>"Stop"</Text>
+                                        <Text style={styles.commandLabel}>&quot;Stop&quot;</Text>
                                         <Text style={styles.commandDescription}>Finaliza la escena</Text>
                                     </View>
                                 </TouchableOpacity>

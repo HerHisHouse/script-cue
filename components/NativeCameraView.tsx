@@ -16,38 +16,40 @@ interface NativeCameraProps {
     zoom: number;
 }
 
+// Vista de error cuando VisionCamera no está en el build. Es un componente aparte
+// para que sus hooks se llamen siempre en el mismo orden (no dentro de un `if`).
+const UnavailableCamera = forwardRef((_props: NativeCameraProps, ref) => {
+    useImperativeHandle(ref, () => ({
+        startRecording: () => { console.warn("Native Camera not available"); },
+        stopRecording: () => {},
+        cancelRecording: () => {},
+        minZoom: 1,
+        neutralZoom: 1,
+        hasPermission: false,
+        requestPermissions: async () => false
+    }));
+
+    return (
+        <View style={[StyleSheet.absoluteFill, { backgroundColor: '#000', justifyContent: 'center', alignItems: 'center', padding: 30 }]}>
+            <Text style={{ color: '#fff', textAlign: 'center', fontSize: rf(16), marginBottom: 20 }}>
+                Error: El módulo nativo de cámara no está disponible en este build.
+            </Text>
+            <Text style={{ color: '#ccc', textAlign: 'center', fontSize: rf(12) }}>
+                Asegúrate de haber ejecutado &apos;pod install&apos; y rebuild en Xcode.
+            </Text>
+        </View>
+    );
+});
+UnavailableCamera.displayName = 'UnavailableCamera';
+
 const NativeCameraView = forwardRef((props: NativeCameraProps, ref) => {
-    const { isActive, facing, zoom } = props;
-
     // Check if the native module exists (VisionCamera was successfully imported)
-    const isModuleAvailable = !!VisionCamera;
-
-    if (!isModuleAvailable) {
-        useImperativeHandle(ref, () => ({
-            startRecording: () => { console.warn("Native Camera not available"); },
-            stopRecording: () => {},
-            cancelRecording: () => {},
-            minZoom: 1,
-            neutralZoom: 1,
-            hasPermission: false,
-            requestPermissions: async () => false
-        }));
-
-        return (
-            <View style={[StyleSheet.absoluteFill, { backgroundColor: '#000', justifyContent: 'center', alignItems: 'center', padding: 30 }]}>
-                <Text style={{ color: '#fff', textAlign: 'center', fontSize: rf(16), marginBottom: 20 }}>
-                    Error: El módulo nativo de cámara no está disponible en este build.
-                </Text>
-                <Text style={{ color: '#ccc', textAlign: 'center', fontSize: rf(12) }}>
-                    Asegúrate de haber ejecutado 'pod install' y rebuild en Xcode.
-                </Text>
-            </View>
-        );
-    }
+    if (!VisionCamera) return <UnavailableCamera {...props} ref={ref} />;
 
     // Now we can safely use hooks from vision-camera because we are in a branch where it exists
     return <ValidatedNativeCamera {...props} ref={ref} />;
 });
+NativeCameraView.displayName = 'NativeCameraView';
 
 // Separate component to safely use hooks
 const ValidatedNativeCamera = forwardRef((props: NativeCameraProps, ref) => {
@@ -92,6 +94,15 @@ const ValidatedNativeCamera = forwardRef((props: NativeCameraProps, ref) => {
         }
     }));
 
+    // Mapear los valores de escala solicitados por el usuario a la escala nativa de Vision Camera
+    const nativeZoom = React.useMemo(() => {
+        if (!device) return 1;
+        if (zoom === 0) return device.minZoom || 1;
+        if (zoom === 0.08) return device.neutralZoom || 1;
+        if (zoom === 0.15) return (device.neutralZoom || 1) * 1.875; // Aproximadamente 2x según escala 0.08 -> 0.15
+        return zoom * 12.5; // Fallback razonable
+    }, [zoom, device]);
+
     if (!hasCameraPermission || !hasMicrophonePermission) {
         return (
             <View style={[StyleSheet.absoluteFill, { backgroundColor: '#000', justifyContent: 'center', alignItems: 'center', padding: 30 }]}>
@@ -116,15 +127,6 @@ const ValidatedNativeCamera = forwardRef((props: NativeCameraProps, ref) => {
         );
     }
 
-    // Mapear los valores de escala solicitados por el usuario a la escala nativa de Vision Camera
-    const nativeZoom = React.useMemo(() => {
-        if (!device) return 1;
-        if (zoom === 0) return device.minZoom || 1;
-        if (zoom === 0.08) return device.neutralZoom || 1;
-        if (zoom === 0.15) return (device.neutralZoom || 1) * 1.875; // Aproximadamente 2x según escala 0.08 -> 0.15
-        return zoom * 12.5; // Fallback razonable
-    }, [zoom, device]);
-
     return (
         <Camera
             ref={cameraRef}
@@ -137,5 +139,7 @@ const ValidatedNativeCamera = forwardRef((props: NativeCameraProps, ref) => {
         />
     );
 });
+
+ValidatedNativeCamera.displayName = 'ValidatedNativeCamera';
 
 export default NativeCameraView;

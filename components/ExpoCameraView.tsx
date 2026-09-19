@@ -93,4 +93,6 @@ const ExpoCameraView = forwardRef((props: ExpoCameraProps, ref) => {
     );
 });
 
+ExpoCameraView.displayName = 'ExpoCameraView';
+
 export default ExpoCameraView;

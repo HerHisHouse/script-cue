@@ -38,7 +38,7 @@ export default function PrivacyScreen() {
 
                 <ScrollView style={styles.content} contentContainerStyle={styles.contentContainer}>
                     <Text style={[styles.paragraph, { color: onBg2 }]}>
-                        Esta Política de Privacidad describe cómo Script Cue ("la Aplicación", "nosotros") recopila, utiliza y protege los datos personales del usuario ("tú").
+                        Esta Política de Privacidad describe cómo Script Cue (&quot;la Aplicación&quot;, &quot;nosotros&quot;) recopila, utiliza y protege los datos personales del usuario (&quot;tú&quot;).
                     </Text>
 
                     <Text style={[styles.sectionTitle, { color: onBg }]}>1. Responsable del Tratamiento</Text>
