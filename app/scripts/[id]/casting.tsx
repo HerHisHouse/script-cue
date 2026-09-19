@@ -25,6 +25,7 @@ import {
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter, useLocalSearchParams, Stack } from 'expo-router';
 import { BlurView } from 'expo-blur';
+import { GlassBackdrop } from '@/components/GlassBackdrop';
 import Constants from 'expo-constants';
 import { activateKeepAwakeAsync, deactivateKeepAwake } from 'expo-keep-awake';
 import { rf, rp } from '@/utils/responsive';
@@ -2633,7 +2634,7 @@ export default function CastingModeScreen() {
                     if (isPlaying) setIsPlaying(false);
                   }
                 }} style={[styles.iconBtn, { borderColor: camChromeBorder }]}>
-                  <BlurView intensity={50} tint="dark" style={[StyleSheet.absoluteFill, { backgroundColor: camChromeTint, borderRadius: rp(22) }]} />
+                  <GlassBackdrop tint={camChromeTint} intensity={50} />
                   <ArrowLeft color="white" size={rp(24)} />
                 </TouchableOpacity>
                 {castingType === 'free' && (
@@ -2641,7 +2642,7 @@ export default function CastingModeScreen() {
                     onPress={() => { setCastingMode('free_input'); isPlaying && setIsPlaying(false); }}
                     style={{ paddingHorizontal: 12, paddingVertical: 6, borderRadius: 20, borderWidth: 1, borderColor: camChromeBorder, overflow: 'hidden' }}
                   >
-                    <BlurView intensity={50} tint="dark" style={[StyleSheet.absoluteFill, { backgroundColor: camChromeTint, borderRadius: 20 }]} />
+                    <GlassBackdrop tint={camChromeTint} intensity={50} />
                     <Text style={{ color: 'white', fontWeight: '600', fontSize: rf(14) }}>Editar T</Text>
                   </TouchableOpacity>
                 )}
@@ -2664,14 +2665,14 @@ export default function CastingModeScreen() {
                     onPress={() => setIsZoomMenuOpen(!isZoomMenuOpen)}
                     style={[styles.activeZoomBtnHeader, { backgroundColor: 'transparent', borderWidth: 1, borderColor: camChromeBorder, overflow: 'hidden' }]}
                   >
-                    <BlurView intensity={50} tint="dark" style={[StyleSheet.absoluteFill, { backgroundColor: camChromeTint, borderRadius: rp(22) }]} />
+                    <GlassBackdrop tint={camChromeTint} intensity={50} />
                     <Text style={styles.zoomTextHeader}>
                       {Platform.OS === 'ios' ? formatZoomLabel(zoom / getNeutralZoomValue(zoomStops)) : (zoom === 0 ? '0.5x' : zoom === 0.08 ? '1x' : '2x')}
                     </Text>
                   </TouchableOpacity>
                   {isZoomMenuOpen && (
                     <View style={{ position: 'absolute', top: 48, left: 0, right: 0, borderRadius: 20, paddingVertical: 6, alignItems: 'center', width: rp(44), borderWidth: 1, borderColor: camChromeBorder, overflow: 'hidden' }}>
-                      <BlurView intensity={60} tint="dark" style={[StyleSheet.absoluteFill, { backgroundColor: camChromeTint, borderRadius: 20 }]} />
+                      <GlassBackdrop tint={camChromeTint} intensity={60} />
                       {zoomStops.map((stop) => (
                         <TouchableOpacity
                           key={stop.label}
@@ -2691,7 +2692,7 @@ export default function CastingModeScreen() {
                   )}
                 </View>
                 <TouchableOpacity onPress={toggleCamera} style={[styles.iconBtn, { borderColor: camChromeBorder }]}>
-                  <BlurView intensity={50} tint="dark" style={[StyleSheet.absoluteFill, { backgroundColor: camChromeTint, borderRadius: rp(22) }]} />
+                  <GlassBackdrop tint={camChromeTint} intensity={50} />
                   <SwitchCamera color="white" size={rp(24)} />
                 </TouchableOpacity>
               </View>
@@ -3008,7 +3009,7 @@ export default function CastingModeScreen() {
                   onPress={() => setShowMenu(!showMenu)}
                   style={[styles.controlBtn, { width: rp(48), height: rp(48), borderRadius: rp(24), alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: camChromeBorder, overflow: 'hidden' }]}
                 >
-                  <BlurView intensity={50} tint="dark" style={[StyleSheet.absoluteFill, { backgroundColor: camChromeTint, borderRadius: rp(24) }]} />
+                  <GlassBackdrop tint={camChromeTint} intensity={50} />
                   <MoreVertical color="white" size={rp(24)} />
                 </TouchableOpacity>
               </View>
