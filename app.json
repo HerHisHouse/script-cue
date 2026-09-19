@@ -33,7 +33,8 @@
         }
       },
       "bundleIdentifier": "es.scriptcue.app",
-      "buildNumber": "42"
+      "buildNumber": "42",
+      "appleTeamId": "SWU7VZ8J25"
     },
     "web": {
       "bundler": "metro",
