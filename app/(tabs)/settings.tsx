@@ -734,15 +734,6 @@ export default function SettingsScreen() {
                   </View>
                   <Text style={{ color: onBg2 }}>›</Text>
                 </TouchableOpacity>
-
-                <View style={[styles.rowDivider, { backgroundColor: cardBorder }]} />
-
-                <TouchableOpacity style={styles.settingsRow} onPress={() => router.push('/legal/ai-usage')}>
-                  <View style={styles.legalCardContent}>
-                    <Text style={[styles.legalCardTitle, { color: onBg }]}>Uso de Inteligencia Artificial</Text>
-                    <Text style={[styles.legalCardDesc, { color: onBg2 }]}>Información sobre el uso de IA</Text>
-                  </View>
-                </TouchableOpacity>
               </View>
             )}
           </View>

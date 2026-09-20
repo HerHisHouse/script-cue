@@ -56,7 +56,6 @@ export default function AuthScreen() {
   // Legal checkboxes for signup
   const [acceptedTerms, setAcceptedTerms] = useState(false);
   const [acceptedPrivacy, setAcceptedPrivacy] = useState(false);
-  const [acceptedAI, setAcceptedAI] = useState(false);
 
   // Validaciones
   const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -67,7 +66,7 @@ export default function AuthScreen() {
   const doPasswordsMatch = password === confirmPassword;
 
   const canSubmit = isSignUp
-    ? isUsernameValid && isEmailValid && isPasswordValid && doPasswordsMatch && acceptedTerms && acceptedPrivacy && acceptedAI && !loading
+    ? isUsernameValid && isEmailValid && isPasswordValid && doPasswordsMatch && acceptedTerms && acceptedPrivacy && !loading
     : !!email.trim() && !!password.trim() && isEmailValid && !loading;
 
   async function handleSubmit() {
@@ -443,30 +442,6 @@ export default function AuthScreen() {
                     >
                       Política de Privacidad
                     </Text>
-                  </Text>
-                </TouchableOpacity>
-
-                <TouchableOpacity
-                  style={styles.checkboxRow}
-                  onPress={() => setAcceptedAI(!acceptedAI)}
-                  accessibilityRole="checkbox"
-                  accessibilityState={{ checked: acceptedAI }}
-                >
-                  <View style={[styles.checkbox, { borderColor: cardBorder }, acceptedAI && { backgroundColor: colors.primary, borderColor: colors.primary }]}>
-                    {acceptedAI && <Text style={styles.checkmark}>✓</Text>}
-                  </View>
-                  <Text style={[styles.checkboxText, { color: onBg }]}>
-                    Acepto el{' '}
-                    <Text
-                      style={[styles.link, { color: colors.primary }]}
-                      onPress={(e) => {
-                        e.stopPropagation();
-                        router.push('/legal/ai-usage');
-                      }}
-                    >
-                      uso de IA
-                    </Text>
-                    {' '}como herramienta creativa y educativa
                   </Text>
                 </TouchableOpacity>
               </View>
