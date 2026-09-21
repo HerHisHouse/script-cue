@@ -1,5 +1,9 @@
 process.env.FONTCONFIG_PATH = '/etc/fonts';
 
+// Antes de leer ninguna variable: las claves pegadas en el panel suelen traer un salto de línea.
+const trimmedEnvVars = require('./env').trimEnv();
+if (trimmedEnvVars.length) console.warn('[Env] Variables con espacios/saltos de línea sobrantes (recortadas):', trimmedEnvVars.join(', '));
+
 const express = require('express');
 const cors = require('cors');
 const ffmpeg = require('fluent-ffmpeg');

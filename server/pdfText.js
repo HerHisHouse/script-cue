@@ -8,9 +8,9 @@ const PDFTOTEXT_TIMEOUT_MS = 30000;
  * Default reading order, not `-layout`: layout mode adds ~50% more characters as indentation,
  * which eats into the 50k-character limit sent to OpenAI and breaks the regex fallback parser.
  */
-function runPdftotext(buffer) {
+function runPdftotext(buffer, extraArgs = []) {
     return new Promise((resolve, reject) => {
-        const child = spawn(process.env.PDFTOTEXT_BIN || 'pdftotext', ['-enc', 'UTF-8', '-nopgbrk', '-', '-'], {
+        const child = spawn(process.env.PDFTOTEXT_BIN || 'pdftotext', [...extraArgs, '-enc', 'UTF-8', '-nopgbrk', '-', '-'], {
             stdio: ['pipe', 'pipe', 'pipe'],
         });
         const out = [];
@@ -58,4 +58,19 @@ async function extractPdfText(buffer) {
     return { text: (parsed && parsed.text) || '', engine: 'pdf-parse' };
 }
 
-module.exports = { extractPdfText };
+/**
+ * Same text but keeping the horizontal layout (indentation), for the OpenAI parser: character
+ * cues are centered, dialogue is indented and actions sit at the left margin, which is what
+ * tells them apart. Poppler only: returns null if it is unavailable (the plain text is used then).
+ */
+async function extractPdfLayoutText(buffer) {
+    try {
+        const text = await runPdftotext(buffer, ['-layout']);
+        return text && text.trim().length > 0 ? text : null;
+    } catch (e) {
+        console.warn('pdftotext -layout unavailable, using plain text:', e.message);
+        return null;
+    }
+}
+
+module.exports = { extractPdfText, extractPdfLayoutText };

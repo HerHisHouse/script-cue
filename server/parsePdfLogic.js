@@ -1,4 +1,6 @@
-const { extractPdfText } = require('./pdfText');
+const { extractPdfText, extractPdfLayoutText } = require('./pdfText');
+const { sanitizeParsedScript } = require('./scriptSanitizer');
+const { redactSecrets } = require('./env');
 const mammoth = require('mammoth');
 const { repairEmptyParentheticals } = require('./textRepair');
 
@@ -15,17 +17,25 @@ async function parseScreenplayWithOpenAI(text) {
     const apiKey = process.env.OPENAI_API_KEY;
     if (!apiKey) throw new Error('OPENAI_API_KEY not configured');
 
-    const systemPrompt = `You are an expert screenplay parser. Your job is to extract dialogues AND action lines from a screenplay into JSON format.
-    
+    const systemPrompt = `You are an expert screenplay parser. Your job is to extract dialogues AND action lines from a screenplay into JSON format. The screenplay is usually in Spanish.
+
+    HOW A SCREENPLAY IS LAID OUT (the text keeps the original horizontal indentation when available):
+    - CHARACTER NAMES are written in CAPITAL LETTERS, centered or indented far from the left margin, alone on their line, right before their dialogue.
+    - DIALOGUE is the indented block under a character name.
+    - ACTION LINES (what is seen or happens) sit at the LEFT MARGIN, not indented, in normal sentence case.
+    - SCENE HEADERS start with INT./EXT.
+
     CRITICAL RULES:
-    1. Extract ALL dialogues and ALL action lines (scene descriptions/actions).
-    2. Ignore ONLY scene headers (INT./EXT.), transitions, or page numbers.
-    3. For each scene, extract the dialogues AND the action lines in the exact order they appear.
-    4. For action lines, set "characterName" to "ACCIÓN" and "text" to the action line content.
-    5. INCLUDE parentheticals (stage directions like (susurrando)) IN THE DIALOGUE TEXT. DO NOT extract parentheticals as action lines!
+    1. Extract ALL dialogues and ALL action lines, in the exact order they appear. Never reorder, merge across characters, summarize or invent. Copy the text verbatim.
+    2. Ignore ONLY scene headers (INT./EXT.), transitions (CORTE A:, FADE OUT), page numbers and (MORE)/(CONTINUED) markers.
+    3. CHARACTERS: only a name that is followed by spoken dialogue is a character. Output the bare name, e.g. "JUAN".
+    4. (CONT'D) / (cont'd) / (CONT.) / (V.O.) / (O.S.) / (O.C.) written after a name are NOT part of the name and do NOT mean a new character. "JUAN (cont'd)" is just JUAN continuing to speak: output characterName "JUAN".
+    5. ACTION LINES: every paragraph at the left margin is an action. Set "characterName" to "ACCIÓN" and "text" to the paragraph. Each action paragraph is its own entry. NEVER put action text inside a dialogue and NEVER attribute an action paragraph to a character, even if it mentions that character or comes right after their line. A dialogue ends where the next left-margin paragraph, character name or scene header begins.
+    6. IGNORE the cover / title page: title, author ("Escrito por"), production companies, logos, foundations, emails, phone numbers, websites, dates. They are NOT characters and NOT actions. Only the story starts at the first scene header.
+    7. INCLUDE parentheticals (stage directions like (susurrando) written under a character name) IN THE DIALOGUE TEXT. DO NOT extract them as action lines.
        Example: "(susurrando) Esto es un secreto." -> dialogue text: "(susurrando) Esto es un secreto."
-    6. Ignore ONLY character name modifiers like (CONT'D), (V.O.), (O.S.) that appear after the character name.
-    
+    8. Parentheses inside an action paragraph, such as ages "PABLO (14)", stay in the action text.
+
     Output format:
     {
       "scenes": [
@@ -53,11 +63,10 @@ async function parseScreenplayWithOpenAI(text) {
         }
       ]
     }
-    
-    IMPORTANT: 
+
+    IMPORTANT:
     - Return ONLY valid JSON
     - Include ALL dialogues and actions from the script
-    - KEEP stage directions like (susurrando), (emocionado) in the dialogue text. DO NOT create "ACCIÓN" for them.
     - Each content block must have characterName and text
     - Set hasQuestion=true if dialogue ends with "?"
     - Set hasExclamation=true if dialogue contains "!"`;
@@ -74,7 +83,7 @@ async function parseScreenplayWithOpenAI(text) {
             model: 'gpt-4o-mini',
             messages: [
                 { role: 'system', content: systemPrompt },
-                { role: 'user', content: `Extract all dialogues and actions from this screenplay:\n\n${textToSend}` }
+                { role: 'user', content: `Extract all dialogues and actions from this screenplay (the horizontal indentation of the original page is preserved when available):\n\n${textToSend}` }
             ],
             temperature: 0.1,
             response_format: { type: "json_object" }
@@ -213,6 +222,7 @@ module.exports = {
         const { scriptId, fileContent, filePath, fileName, text: rawText, preserveFormatting } = req.body;
         const authHeader = req.headers.authorization;
         let text = "";
+        let layoutText = null; // same text with its indentation (PDF + poppler only), for OpenAI
 
         if (rawText && rawText.trim().length > 0) {
           text = rawText;
@@ -250,10 +260,12 @@ module.exports = {
             }
             console.log(`PDF text extracted with ${extracted.engine}`);
             text = extracted.text;
+            layoutText = await extractPdfLayoutText(fileBuffer);
           }
         }
 
         text = repairEmptyParentheticals(text);
+        if (layoutText) layoutText = repairEmptyParentheticals(layoutText);
 
         // STEP 1: Save raw text
         console.log("Saving raw text to script_raw...");
@@ -324,15 +336,16 @@ module.exports = {
                 }
               }
             } catch (openaiError) {
-              console.error("Error converting to HTML:", openaiError);
+              console.error("Error converting to HTML:", redactSecrets(openaiError && openaiError.message));
             }
           }
         }
 
         // STEP 4: Parse scenes and lines
         let parsed;
+        let parserUsed = 'openai';
         try {
-          const res = await parseScreenplayWithOpenAI(text);
+          const res = await parseScreenplayWithOpenAI(layoutText || text);
           parsed = res.parsed;
           await logApiUsage(supabase, {
             user_id: null,
@@ -342,9 +355,16 @@ module.exports = {
             action_type: 'parse-pdf-structured'
           });
         } catch (openaiError) {
-          console.error("OpenAI parsing failed, falling back to local regex parser:", openaiError);
+          // The local parser is much less accurate (no action cards, any UPPERCASE line becomes a
+          // character), so make it very visible in the logs when it is the one being used.
+          console.error("⚠️ OpenAI parsing failed, FALLING BACK to the local regex parser (lower quality):", redactSecrets(openaiError && openaiError.message));
           parsed = parseScreenplay(text);
+          parserUsed = 'fallback-regex';
         }
+
+        const sanitized = sanitizeParsedScript(parsed);
+        parsed = { scenes: sanitized.scenes };
+        console.log(`Parsed with ${parserUsed}: ${parsed.scenes.length} scenes, ${sanitized.dropped} entries dropped by the sanitizer`);
 
         await supabase.from('scenes').delete().eq('script_id', scriptId);
 
@@ -449,7 +469,8 @@ module.exports = {
         res.json({
             success: true,
             message: "Script processed successfully.",
-            sceneCount: (parsed.scenes || []).length
+            sceneCount: (parsed.scenes || []).length,
+            parser: parserUsed
         });
       } catch (error) {
         console.error("Error parsing PDF:", error);
