@@ -26,7 +26,8 @@ import { supabase } from '@/utils/supabase';
 import { DialogueLine } from '@/utils/dialogueParser';
 import { loadDialogueLines } from '@/utils/loadDialogueLines';
 import { planInsertAfter, sortLinesInScriptOrder } from '@/utils/lineOrdering';
-import { calculateSimilarity } from '@/utils/stringUtils';
+import { bracketsToParentheses, calculateSimilarity } from '@/utils/stringUtils';
+import { persistLineOrder } from '@/utils/persistLineOrder';
 import {
     ArrowLeft,
     Mic,
@@ -195,28 +196,8 @@ export default function StudioV2Screen() {
         try {
             console.log('Syncing new order to Supabase...');
 
-            // Prepare updates including scene_id to satisfy RLS policy
-            const updates = newLines.map((line, index) => ({
-                id: line.id,
-                order_index: index + 1, // 1-based index
-                scene_id: line.sceneId, // Required for RLS check
-                character_name: line.characterName, // Required not null schema
-                content: line.text // Required not null schema
-            }));
-
-            const { error } = await supabase
-                .from('lines')
-                .upsert(
-                    updates.map(u => ({
-                        id: u.id,
-                        order_index: u.order_index,
-                        scene_id: u.scene_id,
-                        character_name: u.character_name,
-                        content: u.content
-                    }))
-                );
-
-            if (error) throw error;
+            // Solo order_index: no se reescribe `content` (ver persistLineOrder.ts)
+            await persistLineOrder(newLines.map(line => line.id));
             console.log('Order synced successfully');
 
             // Also reorder dialogue pairs in script_html to reflect the new order in the text editor
@@ -1625,7 +1606,7 @@ export default function StudioV2Screen() {
             // Update in Supabase
             const { error } = await supabase
                 .from('lines')
-                .update({ content: editedText.trim() })
+                .update({ content: bracketsToParentheses(editedText.trim()) })
                 .eq('id', editingLineId);
 
             if (error) throw error;
@@ -1695,7 +1676,7 @@ export default function StudioV2Screen() {
                                         
                                         // Construimos el bloque nuevo con el texto editado
                                         const newCharName = originalCharName.toUpperCase();
-                                        const newText = editedText.trim();
+                                        const newText = bracketsToParentheses(editedText.trim());
                                         const newLineHtml = `<p class="character">${newCharName}</p>\n<p class="dialogue">${newText}</p>`;
                                         
                                         // Reemplazamos el bloque viejo por el nuevo

@@ -19,3 +19,13 @@ export function stripStageDirections(text: string): string {
   if (!text) return text;
   return text.replace(/\[.*?\]/g, '').replace(/\(.*?\)/g, '').trim();
 }
+
+/**
+ * Inverse of the display conversion in loadDialogueLines (`(x)` -> `[x]`): the DB stores
+ * stage directions with parentheses, which is what the importer writes and what the script
+ * editor / shared PDF expect. Use it before saving text the user edited on screen.
+ */
+export function bracketsToParentheses(text: string): string {
+  if (!text) return text;
+  return text.replace(/\[([^\]]+)\]/g, '($1)');
+}

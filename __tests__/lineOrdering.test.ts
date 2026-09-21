@@ -1,4 +1,5 @@
 import { planInsertAfter, sortLinesInScriptOrder } from '../utils/lineOrdering';
+import { bracketsToParentheses } from '../utils/stringUtils';
 
 const row = (name: string, order_index: number | null, scene: number | null) => ({
     name,
@@ -64,5 +65,18 @@ describe('planInsertAfter', () => {
         const plan = planInsertAfter([r('a', 1), r('b', 2)], 'zzz');
         expect(plan.newOrderIndex).toBe(3);
         expect(plan.updates).toEqual([]);
+    });
+});
+
+describe('bracketsToParentheses', () => {
+    it('devuelve las acotaciones a paréntesis', () => {
+        expect(bracketsToParentheses('[amenazante] ¿El qué?')).toBe('(amenazante) ¿El qué?');
+        expect(bracketsToParentheses('PABLO [14] y JUAN[43]')).toBe('PABLO (14) y JUAN(43)');
+    });
+
+    it('no toca texto sin corchetes ni corchetes sin cerrar', () => {
+        expect(bracketsToParentheses('(ya) vale')).toBe('(ya) vale');
+        expect(bracketsToParentheses('a [b')).toBe('a [b');
+        expect(bracketsToParentheses('')).toBe('');
     });
 });

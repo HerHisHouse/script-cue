@@ -13,6 +13,8 @@ import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/utils/supabase';
 import { DialogueLine } from '@/utils/dialogueParser';
 import { loadDialogueLines } from '@/utils/loadDialogueLines';
+import { persistLineOrder } from '@/utils/persistLineOrder';
+import { bracketsToParentheses } from '@/utils/stringUtils';
 import { generateAndCacheAudio, invalidateCacheForLine } from '@/utils/ttsCache';
 import { rf, rp } from '@/utils/responsive';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -311,12 +313,11 @@ export default function ReviewScreen() {
   // ── Persist order ─────────────────────────────────────────────────────────
   const syncOrder = useCallback(async (newLines: DialogueLine[]) => {
     if (!user) return;
-    const updates = newLines.map((l, i) => ({
-      id: l.id, order_index: i + 1,
-      scene_id: l.sceneId, character_name: l.characterName, content: l.text,
-    }));
-    const { error } = await supabase.from('lines').upsert(updates);
-    if (error) console.error('[Review] syncOrder error:', error);
+    try {
+      await persistLineOrder(newLines.map(l => l.id));
+    } catch (error) {
+      console.error('[Review] syncOrder error:', error);
+    }
   }, [user]);
 
   // ── Edit (via bottom-sheet modal — keyboard-safe) ─────────────────────────
@@ -341,7 +342,7 @@ export default function ReviewScreen() {
 
       const { error } = await supabase
         .from('lines').update({
-          content: editText,
+          content: bracketsToParentheses(editText),
           character_name: charName
         }).eq('id', editingLine.id);
       if (error) throw error;
