@@ -14,6 +14,7 @@ import { useRouter, useLocalSearchParams } from 'expo-router';
 import { useTheme } from '@/contexts/ThemeContext';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/utils/supabase';
+import { RENDER_SERVER_URL } from '@/utils/serverUrl';
 import { ArrowLeft, Check, X, Heart, Trophy, Brain, AlertTriangle, Info } from 'lucide-react-native';
 import { saveScore } from '@/utils/gamification';
 import { rf, rp } from '@/utils/responsive';
@@ -75,7 +76,7 @@ export default function QuizModeScreen() {
     const fadeAnim = useRef(new Animated.Value(0)).current;
     const [bonusMessage, setBonusMessage] = useState<string | null>(null);
 
-    const SERVER_URL = process.env.EXPO_PUBLIC_RENDER_SERVER_URL || 'http://localhost:3000';
+    const SERVER_URL = RENDER_SERVER_URL;
 
     useEffect(() => {
         if (!scriptId || !user) return;

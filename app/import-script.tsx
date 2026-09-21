@@ -10,6 +10,7 @@ import * as FileSystem from 'expo-file-system/legacy';
 import { useAuth } from '@/contexts/AuthContext';
 import { useTheme } from '@/contexts/ThemeContext';
 import { supabase } from '@/utils/supabase';
+import { RENDER_SERVER_URL } from '@/utils/serverUrl';
 import { logger } from '@/utils/logger';
 import { getSettings, setSettings, AppSettings } from '@/utils/appSettings';
 import * as Speech from 'expo-speech';
@@ -763,7 +764,7 @@ export default function ImportScriptScreen() {
       }
 
       // ---------- START: Replace existing parse-pdf fetch block ---------- 
-      const functionUrl = `${process.env.EXPO_PUBLIC_RENDER_SERVER_URL || 'https://script-cue-merge-server.onrender.com'}/api/parse-pdf`;
+      const functionUrl = `${RENDER_SERVER_URL}/api/parse-pdf`;
 
       try {
 

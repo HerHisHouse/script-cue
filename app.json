@@ -25,7 +25,7 @@
         ],
         "NSAppTransportSecurity": {
           "NSExceptionDomains": {
-            "script-cue-merge-server.onrender.com": {
+            "script-cue-api.onrender.com": {
               "NSExceptionAllowsInsecureHTTPLoads": true,
               "NSIncludesSubdomains": true
             }

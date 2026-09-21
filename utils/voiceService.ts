@@ -1,6 +1,7 @@
 import { Audio } from 'expo-av';
 import * as FileSystem from 'expo-file-system/legacy';
 import client from './openaiClient';
+import { RENDER_SERVER_URL } from './serverUrl';
 import { generateElevenLabsAudio } from './elevenLabsClient';
 
 // ============================================
@@ -163,7 +164,7 @@ export async function getAzureVoices(forceRefresh = false): Promise<VoiceOption[
   if (cachedAzureVoices && !forceRefresh) return cachedAzureVoices;
   if (azureVoicesPromise && !forceRefresh) return azureVoicesPromise;
 
-  const renderUrl = process.env.EXPO_PUBLIC_RENDER_SERVER_URL;
+  const renderUrl = RENDER_SERVER_URL;
   if (!renderUrl) {
     console.warn('RENDER_SERVER_URL not configured');
     return [];
@@ -343,7 +344,7 @@ export async function playVoicePreview(voice: VoiceOption): Promise<void> {
     const tempPath = `${FileSystem.cacheDirectory}voice_preview_${Date.now()}.mp3`;
 
     if (voice.provider === 'elevenlabs' || voice.provider === 'azure' || voice.provider === 'openai' || voice.provider === 'hume') {
-      const renderUrl = process.env.EXPO_PUBLIC_RENDER_SERVER_URL;
+      const renderUrl = RENDER_SERVER_URL;
       if (!renderUrl) {
         throw new Error(`RENDER_SERVER_URL no configurado para preview de ${voice.provider}`);
       }

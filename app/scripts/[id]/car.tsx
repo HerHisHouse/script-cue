@@ -22,6 +22,7 @@ import { useRouter, useLocalSearchParams } from 'expo-router';
 import { useTheme } from '@/contexts/ThemeContext';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/utils/supabase';
+import { RENDER_SERVER_URL } from '@/utils/serverUrl';
 import { DialogueLine } from '@/utils/dialogueParser';
 import { loadDialogueLines } from '@/utils/loadDialogueLines';
 import { calculateLineDuration } from '@/utils/sceneConfig';
@@ -1140,7 +1141,7 @@ export default function CarModeScreen() {
 
       // Send to Render for merging
       console.log('[GenerateScene] Calling Render to merge...');
-      const renderUrl = process.env.EXPO_PUBLIC_RENDER_SERVER_URL || 'https://script-cue-merge-server.onrender.com';
+      const renderUrl = RENDER_SERVER_URL;
       const mergeResponse = await fetch(`${renderUrl}/merge`, { // Fixed endpoint
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },

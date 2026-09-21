@@ -23,6 +23,7 @@ import { useRouter, useLocalSearchParams, Stack, useFocusEffect } from 'expo-rou
 import { useTheme } from '@/contexts/ThemeContext';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/utils/supabase';
+import { RENDER_SERVER_URL } from '@/utils/serverUrl';
 import { DialogueLine } from '@/utils/dialogueParser';
 import { loadDialogueLines } from '@/utils/loadDialogueLines';
 import { planInsertAfter, sortLinesInScriptOrder } from '@/utils/lineOrdering';
@@ -1124,7 +1125,7 @@ export default function StudioV2Screen() {
     // Wake up Render server to avoid cold start delays
     async function wakeUpRenderServer() {
         try {
-            const renderUrl = process.env.EXPO_PUBLIC_RENDER_SERVER_URL || 'https://script-cue-merge-server.onrender.com';
+            const renderUrl = RENDER_SERVER_URL;
             console.log('[Studio] Waking up Render server:', renderUrl);
 
             // Send a simple ping request (timeout after 5 seconds, don't wait for response)
@@ -1420,7 +1421,7 @@ export default function StudioV2Screen() {
             console.log('[Merge] Sending to server:', serverSegments.length, 'segments');
 
             // Get merge server URL from env
-            const mergeServerUrl = process.env.EXPO_PUBLIC_RENDER_SERVER_URL || 'https://script-cue-merge-server.onrender.com';
+            const mergeServerUrl = RENDER_SERVER_URL;
             console.log('[Merge] Server URL:', mergeServerUrl);
 
             let mergedPath: string | null = null;

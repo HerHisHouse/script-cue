@@ -47,6 +47,7 @@ import {
 } from 'lucide-react-native';
 import { Audio, Video, ResizeMode } from 'expo-av';
 import { supabase } from '@/utils/supabase';
+import { RENDER_SERVER_URL } from '@/utils/serverUrl';
 import { useTheme } from '@/contexts/ThemeContext';
 import { useAuth } from '@/contexts/AuthContext';
 import type { Recording } from '@/types/database';
@@ -345,7 +346,7 @@ export default function CoachModeScreen() {
     else setComparingWith(null);
 
     try {
-      const renderUrl = process.env.EXPO_PUBLIC_RENDER_SERVER_URL || 'https://script-cue-merge-server.onrender.com';
+      const renderUrl = RENDER_SERVER_URL;
 
       // Create abort controller for timeout
       const controller = new AbortController();

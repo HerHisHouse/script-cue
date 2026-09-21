@@ -27,6 +27,7 @@ import { useRouter, useLocalSearchParams, Stack } from 'expo-router';
 import { BlurView } from 'expo-blur';
 import { GlassBackdrop } from '@/components/GlassBackdrop';
 import { withAlpha } from '@/utils/colorUtils';
+import { RENDER_SERVER_URL } from '@/utils/serverUrl';
 import Constants from 'expo-constants';
 import { activateKeepAwakeAsync, deactivateKeepAwake } from 'expo-keep-awake';
 import { rf, rp } from '@/utils/responsive';
@@ -635,7 +636,7 @@ export default function CastingModeScreen() {
   // Función para despertar el servidor de Render
   async function wakeUpRenderServer() {
     try {
-      const renderUrl = process.env.EXPO_PUBLIC_RENDER_SERVER_URL || 'https://script-cue-merge-server.onrender.com';
+      const renderUrl = RENDER_SERVER_URL;
       console.log('[Casting] Waking up Render server...');
 
       // Hacer una petición simple para despertar el servidor

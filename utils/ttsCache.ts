@@ -1,4 +1,5 @@
 import { supabase } from './supabase';
+import { RENDER_SERVER_URL } from './serverUrl';
 import client from './openaiClient';
 import { generateElevenLabsAudio } from './elevenLabsClient';
 import * as FileSystem from 'expo-file-system/legacy';
@@ -233,7 +234,7 @@ export async function generateAndCacheAudio(
 
         // 5. Generación
         if (provider === 'azure') {
-            const renderUrl = process.env.EXPO_PUBLIC_RENDER_SERVER_URL;
+            const renderUrl = RENDER_SERVER_URL;
             if (!renderUrl) {
                 console.warn('[Azure TTS] RENDER_SERVER_URL not configured, falling back to system TTS');
                 return null;
@@ -263,7 +264,7 @@ export async function generateAndCacheAudio(
             }
             arrayBuffer = await response.arrayBuffer();
         } else if (provider === 'hume') {
-            const renderUrl = process.env.EXPO_PUBLIC_RENDER_SERVER_URL;
+            const renderUrl = RENDER_SERVER_URL;
             if (!renderUrl) {
                 console.warn('[Hume TTS] RENDER_SERVER_URL not configured, falling back to ElevenLabs');
                 return null;
