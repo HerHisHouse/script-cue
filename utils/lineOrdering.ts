@@ -35,3 +35,26 @@ export function sortLinesInScriptOrder<T extends OrderableLineRow>(rows: T[]): T
         })
         .map(({ row }) => row);
 }
+
+/**
+ * Plans the renumbering needed to insert a new line right after `afterId`.
+ * `orderedRows` must already be in script order (see sortLinesInScriptOrder).
+ * Renumbers the whole script as global 1..N so the result does not depend on which
+ * convention the script had before; only rows whose index actually changes are returned.
+ * If `afterId` is not found, the new line goes at the end.
+ */
+export function planInsertAfter<T extends { id: string; order_index: number | null }>(
+    orderedRows: T[],
+    afterId: string
+): { newOrderIndex: number; updates: { id: string; order_index: number }[] } {
+    const position = orderedRows.findIndex((r) => r.id === afterId);
+    const insertAt = position === -1 ? orderedRows.length : position + 1;
+
+    const updates: { id: string; order_index: number }[] = [];
+    orderedRows.forEach((row, i) => {
+        const target = i < insertAt ? i + 1 : i + 2;
+        if (row.order_index !== target) updates.push({ id: row.id, order_index: target });
+    });
+
+    return { newOrderIndex: insertAt + 1, updates };
+}

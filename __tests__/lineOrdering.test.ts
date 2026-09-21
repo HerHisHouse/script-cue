@@ -1,4 +1,4 @@
-import { sortLinesInScriptOrder } from '../utils/lineOrdering';
+import { planInsertAfter, sortLinesInScriptOrder } from '../utils/lineOrdering';
 
 const row = (name: string, order_index: number | null, scene: number | null) => ({
     name,
@@ -38,5 +38,31 @@ describe('sortLinesInScriptOrder', () => {
         const copy = [...rows];
         expect(sortLinesInScriptOrder(rows).map((r) => r.name)).toEqual(['p', 'q']);
         expect(rows).toEqual(copy);
+    });
+});
+
+describe('planInsertAfter', () => {
+    const r = (id: string, order_index: number | null) => ({ id, order_index });
+
+    it('inserta en medio y solo desplaza las líneas posteriores (índices globales)', () => {
+        const plan = planInsertAfter([r('a', 1), r('b', 2), r('c', 3)], 'a');
+        expect(plan.newOrderIndex).toBe(2);
+        expect(plan.updates).toEqual([{ id: 'b', order_index: 3 }, { id: 'c', order_index: 4 }]);
+    });
+
+    it('pasa un guion con índices por escena a índices globales', () => {
+        // Escena 1: 0,1 — escena 2: 0,1 (ya ordenadas)
+        const plan = planInsertAfter([r('a', 0), r('b', 1), r('c', 0), r('d', 1)], 'b');
+        expect(plan.newOrderIndex).toBe(3);
+        expect(plan.updates).toEqual([
+            { id: 'a', order_index: 1 }, { id: 'b', order_index: 2 },
+            { id: 'c', order_index: 4 }, { id: 'd', order_index: 5 },
+        ]);
+    });
+
+    it('inserta al final si la línea de referencia no existe', () => {
+        const plan = planInsertAfter([r('a', 1), r('b', 2)], 'zzz');
+        expect(plan.newOrderIndex).toBe(3);
+        expect(plan.updates).toEqual([]);
     });
 });

@@ -25,6 +25,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/utils/supabase';
 import { DialogueLine } from '@/utils/dialogueParser';
 import { loadDialogueLines } from '@/utils/loadDialogueLines';
+import { planInsertAfter, sortLinesInScriptOrder } from '@/utils/lineOrdering';
 import { calculateSimilarity } from '@/utils/stringUtils';
 import {
     ArrowLeft,
@@ -1773,84 +1774,6 @@ export default function StudioV2Screen() {
         }
     }
 
-    async function moveLineUp(lineId: string) {
-        if (isPlaying || isRecording || isSpeaking || isListening) {
-            Alert.alert('No disponible', 'Detén la reproducción o grabación antes de reordenar.');
-            return;
-        }
-
-        const lineIndex = dialogueLines.findIndex(l => l.id === lineId);
-        if (lineIndex <= 0) return; // Can't move first line up
-
-        const currentLine = dialogueLines[lineIndex];
-        const previousLine = dialogueLines[lineIndex - 1];
-
-        setIsUpdating(true);
-        try {
-            // Swap order_index in database manually
-            const updates = [
-                supabase.from('lines').update({ order_index: previousLine.orderIndex }).eq('id', currentLine.id),
-                supabase.from('lines').update({ order_index: currentLine.orderIndex }).eq('id', previousLine.id)
-            ];
-            await Promise.all(updates);
-
-            // Reload data to reflect changes
-            await loadData();
-
-            // Adjust currentIndex if needed
-            if (currentIndex === lineIndex) {
-                setCurrentIndex(lineIndex - 1);
-            } else if (currentIndex === lineIndex - 1) {
-                setCurrentIndex(lineIndex);
-            }
-
-        } catch (error: any) {
-            console.error('Error moving line:', error);
-            Alert.alert('Error', 'No se pudo mover la línea: ' + error.message);
-        } finally {
-            setIsUpdating(false);
-        }
-    }
-
-    async function moveLineDown(lineId: string) {
-        if (isPlaying || isRecording || isSpeaking || isListening) {
-            Alert.alert('No disponible', 'Detén la reproducción o grabación antes de reordenar.');
-            return;
-        }
-
-        const lineIndex = dialogueLines.findIndex(l => l.id === lineId);
-        if (lineIndex >= dialogueLines.length - 1) return; // Can't move last line down
-
-        const currentLine = dialogueLines[lineIndex];
-        const nextLine = dialogueLines[lineIndex + 1];
-
-        setIsUpdating(true);
-        try {
-            // Swap order_index in database manually
-            const updates = [
-                supabase.from('lines').update({ order_index: nextLine.orderIndex }).eq('id', currentLine.id),
-                supabase.from('lines').update({ order_index: currentLine.orderIndex }).eq('id', nextLine.id)
-            ];
-            await Promise.all(updates);
-
-            // Reload data to reflect changes
-            await loadData();
-
-            // Adjust currentIndex if needed
-            if (currentIndex === lineIndex) {
-                setCurrentIndex(lineIndex + 1);
-            } else if (currentIndex === lineIndex + 1) {
-                setCurrentIndex(lineIndex);
-            }
-
-        } catch (error: any) {
-            console.error('Error moving line:', error);
-            Alert.alert('Error', 'No se pudo mover la línea: ' + error.message);
-        } finally {
-            setIsUpdating(false);
-        }
-    }
-
     async function deleteLine(lineId: string) {
         if (isPlaying || isRecording || isSpeaking || isListening) {
             Alert.alert('No disponible', 'Detén la reproducción o grabación antes de eliminar.');
@@ -1879,14 +1802,9 @@ export default function StudioV2Screen() {
 
                             if (deleteError) throw deleteError;
 
-                            // Reorder subsequent lines (decrease order_index for lines after this one)
-                            const linesToUpdate = dialogueLines.slice(lineIndex + 1);
-                            for (const lineToUpdate of linesToUpdate) {
-                                await supabase
-                                    .from('lines')
-                                    .update({ order_index: lineToUpdate.orderIndex - 1 })
-                                    .eq('id', lineToUpdate.id);
-                            }
+                            // No se renumera: borrar deja un hueco en order_index y el orden relativo
+                            // no cambia. (Antes se reescribía con "orderIndex", que es la posición en
+                            // el array cargado y no el order_index real de BD, y provocaba colisiones.)
 
                             // Reload data
                             await loadData();
@@ -1949,32 +1867,30 @@ export default function StudioV2Screen() {
             }
 
             // "orderIndex" en DialogueLine es solo la posición en el array cargado
-            // (ver loadDialogueLines.ts), no el order_index real de BD — y ese es
-            // además un valor anidado POR ESCENA, no un índice plano de todo el
-            // guion. Para insertar "justo después de esta línea" hay que leer el
-            // order_index real de las líneas de ESTA MISMA escena directamente de
-            // la base de datos.
-            const { data: sceneLines, error: sceneLinesError } = await supabase
+            // (ver loadDialogueLines.ts), no el order_index real de BD, y en BD conviven
+            // índices por escena (importador/editor) y globales (Revisar/Studio). Para
+            // insertar "justo después de esta línea" se leen las líneas reales de TODO el
+            // guion, se ordenan igual que al cargar y se renumeran de forma global.
+            const { data: scriptLines, error: scriptLinesError } = await supabase
                 .from('lines')
-                .select('id, order_index')
-                .eq('scene_id', sceneId)
+                .select('id, order_index, scenes!inner(order_index, scene_number, script_id)')
+                .eq('scenes.script_id', id as string)
                 .order('order_index', { ascending: true });
 
-            if (sceneLinesError) throw sceneLinesError;
+            if (scriptLinesError) throw scriptLinesError;
 
-            const currentDbLine = (sceneLines || []).find(l => l.id === currentLine.id);
-            const currentOrderIndex = currentDbLine?.order_index ?? ((sceneLines || []).length);
-            const newOrderIndex = currentOrderIndex + 1;
+            const orderedLines = sortLinesInScriptOrder(
+                (scriptLines || []).map((l: any) => ({ ...l, scenes: Array.isArray(l.scenes) ? l.scenes[0] : l.scenes }))
+            );
+            const { newOrderIndex, updates } = planInsertAfter(orderedLines, currentLine.id);
 
-            // Hacer hueco: subir en 1 el order_index de las líneas de ESTA MISMA
-            // escena que queden después del hueco que vamos a abrir (las de otras
-            // escenas no se tocan, su propio order_index es independiente).
-            const linesToUpdate = (sceneLines || []).filter(l => l.order_index >= newOrderIndex);
-            for (const line of linesToUpdate) {
-                await supabase
+            // Hacer hueco: solo las líneas cuyo índice cambia.
+            for (const update of updates) {
+                const { error: shiftError } = await supabase
                     .from('lines')
-                    .update({ order_index: line.order_index + 1 })
-                    .eq('id', line.id);
+                    .update({ order_index: update.order_index })
+                    .eq('id', update.id);
+                if (shiftError) throw shiftError;
             }
 
             // Insert new line
