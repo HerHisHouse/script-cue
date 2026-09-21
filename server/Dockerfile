@@ -5,6 +5,7 @@ RUN apt-get update && apt-get install -y \
     fontconfig \
     fonts-dejavu-core \
     fonts-liberation \
+    poppler-utils \
     && fc-cache -f -v \
     && rm -rf /var/lib/apt/lists/*
 

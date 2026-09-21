@@ -1,4 +1,4 @@
-const pdfParse = require('pdf-parse');
+const { extractPdfText } = require('./pdfText');
 const mammoth = require('mammoth');
 const { repairEmptyParentheticals } = require('./textRepair');
 
@@ -244,11 +244,12 @@ module.exports = {
             }
             text = result.value;
           } else {
-            const parsedPdf = await pdfParse(fileBuffer);
-            if (!parsedPdf || !parsedPdf.text || parsedPdf.text.trim().length === 0) {
+            const extracted = await extractPdfText(fileBuffer);
+            if (!extracted.text || extracted.text.trim().length === 0) {
               throw new Error("Failed to extract text from PDF");
             }
-            text = parsedPdf.text;
+            console.log(`PDF text extracted with ${extracted.engine}`);
+            text = extracted.text;
           }
         }
 
