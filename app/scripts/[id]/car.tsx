@@ -22,6 +22,7 @@ import { useRouter, useLocalSearchParams } from 'expo-router';
 import { useTheme } from '@/contexts/ThemeContext';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/utils/supabase';
+import { normalizeVoiceProvider } from '@/utils/voiceDefaults';
 import { serverAuthHeaders } from '@/utils/serverAuth';
 import { RENDER_SERVER_URL } from '@/utils/serverUrl';
 import { DialogueLine } from '@/utils/dialogueParser';
@@ -424,7 +425,7 @@ export default function CarModeScreen() {
 
 
     const voiceConfig = getVoiceConfigForCharacter(line.characterName);
-    const effectiveProvider = voiceConfig?.provider || 'openai';
+    const effectiveProvider = normalizeVoiceProvider(voiceConfig?.provider);
     const voiceId = voiceConfig?.voiceId || undefined;
 
     console.log(`[Car Mode] Playing line for ${line.characterName}: provider=${effectiveProvider}, voiceId=${voiceId}`);
@@ -457,7 +458,7 @@ export default function CarModeScreen() {
       });
     };
 
-    if (effectiveProvider === 'openai' || effectiveProvider === 'elevenlabs' || effectiveProvider === 'azure' || effectiveProvider === 'hume') {
+    if (effectiveProvider === 'elevenlabs' || effectiveProvider === 'azure' || effectiveProvider === 'hume') {
       try {
         if (mySequence !== sequenceRef.current) return;
 

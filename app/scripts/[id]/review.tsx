@@ -11,6 +11,7 @@ import { BlurView } from 'expo-blur';
 import { useTheme } from '@/contexts/ThemeContext';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/utils/supabase';
+import { normalizeVoiceProvider } from '@/utils/voiceDefaults';
 import { DialogueLine } from '@/utils/dialogueParser';
 import { loadDialogueLines } from '@/utils/loadDialogueLines';
 import { persistLineOrder } from '@/utils/persistLineOrder';
@@ -450,8 +451,9 @@ export default function ReviewScreen() {
         const line = aiLines[i];
         setConfirmProgress(i + 1);
         const char = charRows?.find(c => c.name.toLowerCase().trim() === line.characterName.toLowerCase().trim());
-        const provider = char?.voice_provider || 'openai';
-        const voiceId = char?.voice_id || 'nova';
+        // Sin voz configurada (o 'openai' antiguo): voz del sistema, no se genera audio en la nube
+        const provider = normalizeVoiceProvider(char?.voice_provider);
+        const voiceId = char?.voice_id || undefined;
         try {
           await generateAndCacheAudio(id as string, line.id, line.characterName, line.text, { provider, voiceId }, user.id, line.voiceDirection);
         } catch (e) {

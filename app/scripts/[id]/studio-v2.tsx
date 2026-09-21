@@ -23,6 +23,7 @@ import { useRouter, useLocalSearchParams, Stack, useFocusEffect } from 'expo-rou
 import { useTheme } from '@/contexts/ThemeContext';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/utils/supabase';
+import { normalizeVoiceProvider } from '@/utils/voiceDefaults';
 import { serverAuthHeaders } from '@/utils/serverAuth';
 import { RENDER_SERVER_URL } from '@/utils/serverUrl';
 import { DialogueLine } from '@/utils/dialogueParser';
@@ -132,7 +133,7 @@ export default function StudioV2Screen() {
     );
 
     // TTS State
-    const [ttsProvider, setTtsProvider] = useState<'openai' | 'elevenlabs' | 'google' | 'system'>('openai');
+    const [ttsProvider, setTtsProvider] = useState<'openai' | 'elevenlabs' | 'google' | 'system'>('system');
     const [characterVoices, setCharacterVoices] = useState<Record<string, { provider: string; systemVoiceId?: string }>>({});
     const soundRef = useRef<Audio.Sound | null>(null);
 
@@ -512,7 +513,7 @@ export default function StudioV2Screen() {
         (async () => {
             try {
                 const settings = await getSettings();
-                setTtsProvider(settings.ttsProvider || 'openai');
+                setTtsProvider(settings.ttsProvider || 'system');
 
                 // Load character-specific voice settings
                 const extendedSettings = settings as any;
@@ -627,7 +628,7 @@ export default function StudioV2Screen() {
                 }
 
                 // Handle provider fallbacks
-                if (effectiveProvider === 'google') effectiveProvider = 'openai';
+                effectiveProvider = normalizeVoiceProvider(effectiveProvider);
 
                 if (effectiveProvider === 'system') {
                     const systemVoiceId = voiceId || characterConfig?.systemVoiceId;
@@ -1718,7 +1719,7 @@ export default function StudioV2Screen() {
 
                 if (character) {
                     const voiceConfig = {
-                        provider: (character.voice_provider || 'openai') as 'openai' | 'elevenlabs' | 'azure' | 'system',
+                        provider: normalizeVoiceProvider(character.voice_provider) as 'openai' | 'elevenlabs' | 'azure' | 'system',
                         voiceId: character.voice_id || undefined
                     };
 
@@ -2007,7 +2008,7 @@ export default function StudioV2Screen() {
 
                 // Get character voice configuration
                 const voiceConfig = {
-                    provider: (selectedCharacter.voice_provider || 'openai') as 'openai' | 'elevenlabs' | 'azure' | 'system',
+                    provider: normalizeVoiceProvider(selectedCharacter.voice_provider) as 'openai' | 'elevenlabs' | 'azure' | 'system',
                     voiceId: selectedCharacter.voice_id || undefined
                 };
 

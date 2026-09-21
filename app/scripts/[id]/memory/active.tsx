@@ -13,6 +13,7 @@ import { useRouter, useLocalSearchParams } from 'expo-router';
 import { useTheme } from '@/contexts/ThemeContext';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/utils/supabase';
+import { normalizeVoiceProvider } from '@/utils/voiceDefaults';
 import { DialogueLine } from '@/utils/dialogueParser';
 import { loadDialogueLines } from '@/utils/loadDialogueLines';
 import { stripStageDirections } from '@/utils/stringUtils';
@@ -119,7 +120,7 @@ export default function MemoryModeScreen() {
   const scrollViewRef = useRef<ScrollView>(null);
 
   // TTS Provider
-  const [ttsProvider, setTtsProvider] = useState<'openai' | 'elevenlabs' | 'google' | 'system'>('openai');
+  const [ttsProvider, setTtsProvider] = useState<'openai' | 'elevenlabs' | 'google' | 'system'>('system');
 
   // Load Data
   useEffect(() => {
@@ -169,7 +170,7 @@ export default function MemoryModeScreen() {
     (async () => {
       try {
         const settings = await getSettings();
-        setTtsProvider(settings.ttsProvider || 'openai');
+        setTtsProvider(settings.ttsProvider || 'system');
 
         // Check if user wants to skip intro
         const prefs = await getIntroPreferences();
@@ -218,19 +219,19 @@ export default function MemoryModeScreen() {
       );
 
       // Determine provider and voiceId
-      let effectiveProvider = ttsProvider === 'google' ? 'openai' : ttsProvider;
+      let effectiveProvider = normalizeVoiceProvider(ttsProvider);
       let voiceId: string | null = null;
 
       if (character?.voice_id && character?.voice_provider) {
-        effectiveProvider = character.voice_provider;
+        effectiveProvider = normalizeVoiceProvider(character.voice_provider);
         voiceId = character.voice_id;
         console.log(`[Memory Active] Using character voice: ${voiceId} (${effectiveProvider})`);
       }
 
-      const provider = effectiveProvider === 'system' ? 'openai' : effectiveProvider;
+      const provider = effectiveProvider;
 
       let audioUri = null;
-      if (user) {
+      if (user && provider !== 'system') {
          audioUri = await generateAndCacheAudio(
              id as string,
              currentLine.id,

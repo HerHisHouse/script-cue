@@ -14,6 +14,7 @@ import { useRouter, useLocalSearchParams } from 'expo-router';
 import { useTheme } from '@/contexts/ThemeContext';
 import { useAuth } from '@/contexts/AuthContext';
 import { DialogueLine } from '@/utils/dialogueParser';
+import { normalizeVoiceProvider } from '@/utils/voiceDefaults';
 import { loadDialogueLines } from '@/utils/loadDialogueLines';
 import { ArrowLeft, Mic, Clock, ChevronLeft, ChevronRight, RotateCcw, Heart, Volume2, Check } from 'lucide-react-native';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -72,7 +73,7 @@ export default function EchoModeScreen() {
     const [score, setScore] = useState(0);
 
     // TTS
-    const [ttsProvider, setTtsProvider] = useState<'openai' | 'elevenlabs' | 'google' | 'system'>('openai');
+    const [ttsProvider, setTtsProvider] = useState<'openai' | 'elevenlabs' | 'google' | 'system'>('system');
     const [isSpeaking, setIsSpeaking] = useState(false);
     const soundRef = useRef<Audio.Sound | null>(null);
 
@@ -107,7 +108,7 @@ export default function EchoModeScreen() {
         (async () => {
             try {
                 const settings = await getSettings();
-                setTtsProvider(settings.ttsProvider || 'openai');
+                setTtsProvider(settings.ttsProvider || 'system');
             } catch (e) {
                 console.error('Error loading TTS settings:', e);
             }
@@ -267,19 +268,19 @@ export default function EchoModeScreen() {
             );
 
             // Determine provider and voiceId
-            let effectiveProvider = ttsProvider === 'google' ? 'openai' : ttsProvider;
+            let effectiveProvider = normalizeVoiceProvider(ttsProvider);
             let voiceId: string | null = null;
 
             if (character?.voice_id && character?.voice_provider) {
-                effectiveProvider = character.voice_provider;
+                effectiveProvider = normalizeVoiceProvider(character.voice_provider);
                 voiceId = character.voice_id;
                 console.log(`[Memory Echo] Using character voice: ${voiceId} (${effectiveProvider})`);
             }
 
-            const provider = effectiveProvider === 'system' ? 'openai' : effectiveProvider;
+            const provider = effectiveProvider;
 
             let audioUri = null;
-            if (user) {
+            if (user && provider !== 'system') {
                 audioUri = await generateAndCacheAudio(
                     id as string,
                     line.id,

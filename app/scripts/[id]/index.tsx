@@ -39,7 +39,7 @@ export default function ScriptDetailScreen() {
   const [deleting, setDeleting] = useState(false);
 
   // TTS settings for quick selection before study mode
-  const [ttsProvider, setTtsProvider] = useState<'openai' | 'elevenlabs' | 'google' | 'system'>('openai');
+  const [ttsProvider, setTtsProvider] = useState<'openai' | 'elevenlabs' | 'google' | 'system'>('system');
   const [availableVoices, setAvailableVoices] = useState<any[]>([]);
   const [elevenLabsVoices, setElevenLabsVoices] = useState<any[]>([]);
   const [azureVoices, setAzureVoices] = useState<any[]>([]);
@@ -100,7 +100,7 @@ export default function ScriptDetailScreen() {
     (async () => {
       try {
         const s = await getSettings();
-        setTtsProvider(s.ttsProvider || 'openai');
+        setTtsProvider(s.ttsProvider || 'system');
         setSystemLang(s.systemTtsLanguage || 'es-ES');
         setSystemVoiceId(s.systemTtsVoiceId);
         // Cargar voces por personaje para este guion desde ajustes

@@ -1,6 +1,5 @@
 import { Audio } from 'expo-av';
 import * as FileSystem from 'expo-file-system/legacy';
-import client from './openaiClient';
 import { serverAuthHeaders } from './serverAuth';
 import { RENDER_SERVER_URL } from './serverUrl';
 import { generateElevenLabsAudio } from './elevenLabsClient';

@@ -1060,7 +1060,7 @@ export default function ImportScriptScreen() {
                       <Text style={[styles.label, { color: onBg, marginTop: 12 }]}>Voz del personaje</Text>
                       <VoiceSelector
                         selectedVoiceId={char.voiceId || char.systemVoiceId}
-                        provider={(char.voiceProvider || char.provider || 'openai') as 'openai' | 'elevenlabs' | 'azure' | 'hume' | 'system'}
+                        provider={(char.voiceProvider || char.provider || 'system') as 'openai' | 'elevenlabs' | 'azure' | 'hume' | 'system'}
                         characterName={char.name}
                         onVoiceSelect={(voiceId, provider) => {
                           if (provider === 'system') {

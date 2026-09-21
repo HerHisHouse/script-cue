@@ -6,7 +6,7 @@ export type AppSettings = {
   autoAdvanceFallbackMs: number; // e.g. 7000
   // Si está activo, no se sube a Supabase Storage y se usa sólo copia local
   useLocalOnly: boolean;
-  ttsProvider: 'openai' | 'elevenlabs' | 'google' | 'system';
+  ttsProvider: 'elevenlabs' | 'system';
   systemTtsLanguage?: string;
   systemTtsVoiceId?: string;
   // Rate/Pitch por plataforma (para TTS del sistema)
@@ -27,7 +27,7 @@ const DEFAULTS: AppSettings = {
   vadRequiredMs: 800,
   autoAdvanceFallbackMs: 7000,
   useLocalOnly: false,
-  ttsProvider: 'openai',
+  ttsProvider: 'system',
   systemTtsLanguage: 'es-ES',
   systemTtsVoiceId: undefined,
   systemTtsRateWeb: 1.0,
@@ -45,7 +45,9 @@ export async function getSettings(): Promise<AppSettings> {
     const raw = await AsyncStorage.getItem(SETTINGS_KEY);
     if (!raw) return DEFAULTS;
     const parsed = JSON.parse(raw);
-    return { ...DEFAULTS, ...parsed } as AppSettings;
+    const merged = { ...DEFAULTS, ...parsed } as AppSettings;
+    // Ajustes guardados antes ('openai', 'google') pasan a la voz del sistema.
+    return { ...merged, ttsProvider: merged.ttsProvider === 'elevenlabs' ? 'elevenlabs' : 'system' };
   } catch {
     return DEFAULTS;
   }

@@ -31,7 +31,7 @@ export default function SettingsScreen() {
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [deletingAccount, setDeletingAccount] = useState(false);
   const [localOnly, setLocalOnly] = useState(false);
-  const [ttsProvider, setTtsProvider] = useState<'openai' | 'elevenlabs' | 'google' | 'system'>('openai');
+  const [ttsProvider, setTtsProvider] = useState<'openai' | 'elevenlabs' | 'google' | 'system'>('system');
   const [availableVoices, setAvailableVoices] = useState<any[]>([]);
   const [systemLang, setSystemLang] = useState<string>('es-ES');
   const [systemVoiceId, setSystemVoiceId] = useState<string | undefined>(undefined);
@@ -59,7 +59,7 @@ export default function SettingsScreen() {
       try {
         const s = await getSettings();
         setLocalOnly(!!s.useLocalOnly);
-        setTtsProvider(s.ttsProvider || 'openai');
+        setTtsProvider(s.ttsProvider || 'system');
         setSystemLang(s.systemTtsLanguage || 'es-ES');
         setSystemVoiceId(s.systemTtsVoiceId);
         // Inicializar rate/pitch según plataforma

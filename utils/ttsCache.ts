@@ -1,7 +1,7 @@
 import { supabase } from './supabase';
 import { serverAuthHeaders } from './serverAuth';
+import { normalizeVoiceProvider } from './voiceDefaults';
 import { RENDER_SERVER_URL } from './serverUrl';
-import client from './openaiClient';
 import { generateElevenLabsAudio } from './elevenLabsClient';
 import * as FileSystem from 'expo-file-system/legacy';
 import * as Crypto from 'expo-crypto';
@@ -24,22 +24,6 @@ interface TTSCacheEntry {
 interface VoiceConfig {
     provider: 'openai' | 'elevenlabs' | 'azure' | 'system' | 'hume';
     voiceId?: string; // OpenAI voice, ElevenLabs voice ID, or Azure voice name
-}
-
-/**
- * Map voice gender to appropriate OpenAI voice
- * OpenAI voices: alloy, echo, fable, onyx, nova, shimmer
- */
-function getOpenAIVoiceByGender(gender: 'male' | 'female' | 'neutral' | null | undefined): string {
-    if (gender === 'male') {
-        // Male voices: echo (deeper), fable (British accent)
-        return 'echo';
-    } else if (gender === 'female') {
-        // Female voices: nova (warm), shimmer (soft)
-        return 'nova';
-    }
-    // Neutral or undefined: alloy (neutral)
-    return 'alloy';
 }
 
 /**
@@ -201,7 +185,12 @@ export async function generateAndCacheAudio(
         const { cleanText, direction: detectedDirection } = detectEmotionFromLine(text);
         const finalDirection = savedDirection || detectedDirection;
         const emotion = finalDirection.emotion || 'neutral';
-        let provider = voiceConfig.provider;
+        // Legacy values ('openai') and 'system' have no cloud generation: the caller plays the device voice.
+        let provider = normalizeVoiceProvider(voiceConfig.provider);
+        if (provider === 'system') {
+            console.log(`[TTS] Voz del sistema para ${characterName}: no se genera audio en la nube`);
+            return null;
+        }
         const voiceId = voiceConfig.voiceId || null;
 
         const lineWithDirection = {
@@ -226,8 +215,6 @@ export async function generateAndCacheAudio(
             return cached;
         }
         console.log(`[TTS] ⚡ Cache MISS → generando audio NUEVO para ${characterName} (${provider}, ${emotion})`);
-
-        if (provider === 'system') return null;
 
         console.log(`🎙️ Generating NEW audio for ${characterName} (${provider})...`);
 
@@ -310,13 +297,6 @@ export async function generateAndCacheAudio(
         } else if (provider === 'elevenlabs') {
             console.log(`[ElevenLabs] → Enviando a API: "${providerInput as string}"`);
             arrayBuffer = await generateElevenLabsAudio(providerInput as string, voiceId || "21m00Tcm4TlvDq8ikWAM");
-        } else if (provider === 'openai') {
-            const response = await client.audio.speech.create({
-                model: "tts-1",
-                voice: (voiceId || 'alloy') as any,
-                input: providerInput as string,
-            });
-            arrayBuffer = await response.arrayBuffer();
         }
 
         if (!arrayBuffer) throw new Error('Generation failed');
@@ -413,26 +393,16 @@ export async function preGenerateScriptAudio(
             // Si el personaje tiene voice_id configurado, usarlo directamente
             if (character?.voice_id && character?.voice_provider) {
                 voiceConfig = {
-                    provider: character.voice_provider as 'openai' | 'elevenlabs',
+                    provider: normalizeVoiceProvider(character.voice_provider),
                     voiceId: character.voice_id
                 };
             } else if (!voiceConfig) {
-                // No specific config, use OpenAI with gender-appropriate voice
-                const voiceId = getOpenAIVoiceByGender(character?.voice_gender);
-                voiceConfig = { 
-                    provider: 'openai' as const,
-                    voiceId
-                };
-            } else if (voiceConfig.provider === 'openai' && !voiceConfig.voiceId) {
-                // OpenAI selected but no specific voice, use gender-appropriate voice
-                voiceConfig = {
-                    ...voiceConfig,
-                    voiceId: getOpenAIVoiceByGender(character?.voice_gender)
-                };
+                // Sin configuración: voz del sistema (no se genera audio en la nube)
+                voiceConfig = { provider: 'system' as const };
             }
 
             // Skip system TTS
-            if (voiceConfig.provider === 'system') {
+            if (normalizeVoiceProvider(voiceConfig.provider) === 'system') {
                 completed++;
                 onProgress?.(completed, total);
                 continue;

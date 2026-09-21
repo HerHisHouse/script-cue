@@ -29,6 +29,7 @@ import { GlassBackdrop } from '@/components/GlassBackdrop';
 import { withAlpha } from '@/utils/colorUtils';
 import { serverAuthHeaders } from '@/utils/serverAuth';
 import { RENDER_SERVER_URL } from '@/utils/serverUrl';
+import { normalizeVoiceProvider } from '@/utils/voiceDefaults';
 import Constants from 'expo-constants';
 import { activateKeepAwakeAsync, deactivateKeepAwake } from 'expo-keep-awake';
 import { rf, rp } from '@/utils/responsive';
@@ -51,7 +52,6 @@ import { supabase } from '@/utils/supabase';
 import { BottomSheetMenu } from '@/components/BottomSheetMenu';
 import { BottomSheetToggle } from '@/components/BottomSheetToggle';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
-import client from '@/utils/openaiClient';
 import { generateElevenLabsAudio } from '@/utils/elevenLabsClient';
 import { useTheme } from '@/contexts/ThemeContext';
 import { getSettings } from '@/utils/appSettings';
@@ -826,26 +826,19 @@ export default function CastingModeScreen() {
 
           if (character?.voice_id && character?.voice_provider) {
             // Use voice from character configuration
-            provider = character.voice_provider;
+            provider = normalizeVoiceProvider(character.voice_provider);
             voiceId = character.voice_id;
             console.log(`[Casting] Using character voice: ${voiceId} (${provider})`);
           } else {
             // Fall back to settings
             const voiceConfig = perCharacterVoices[characterName];
-            provider = voiceConfig?.provider || 'openai';
+            provider = normalizeVoiceProvider(voiceConfig?.provider);
             voiceId = (voiceConfig as any)?.voiceId || (voiceConfig as any)?.systemVoiceId || null;
           }
 
-          if (provider === 'system') continue;
+          const effectiveProvider = normalizeVoiceProvider(provider);
+          if (effectiveProvider === 'system') continue;
 
-          const effectiveProvider = (provider === 'google' ? 'openai' : provider) as 'openai' | 'elevenlabs' | 'azure' | 'hume';
-
-          // FIX: If provider is OpenAI but voiceId looks like a system voice (com.apple...), 
-          // ignore it and use null (default OpenAI voice) to find the cached audio.
-          if (effectiveProvider === 'openai' && voiceId && voiceId.includes('com.apple')) {
-            console.log(`[Cache Debug] Ignoring system voice ID for OpenAI provider: ${voiceId}`);
-            voiceId = null;
-          }
 
           console.log(`[Cache Debug] Line: ${line.orderIndex}, Char: ${characterName}`);
           console.log(`[Cache Debug] Provider: ${effectiveProvider}, VoiceId: ${voiceId}`);
@@ -901,24 +894,19 @@ export default function CastingModeScreen() {
 
     // Prioridad 1: la configuración de voz guardada en la tabla 'characters' (voice_id + voice_provider)
     if (character?.voice_id && character?.voice_provider) {
-      let voiceId = character.voice_id;
-      // Sanity check: si el provider es openai pero el voice_id parece una voz del sistema (com.apple...), ignorarlo
-      if (character.voice_provider === 'openai' && voiceId.includes('com.apple')) {
-        voiceId = null as any;
-      }
-      return { provider: character.voice_provider, voiceId };
+      const voiceId = character.voice_id;
+      return { provider: normalizeVoiceProvider(character.voice_provider), voiceId };
     }
 
     // Prioridad 2: configuración por personaje en settings (characterVoicesByScript)
     const voiceConfig = perCharacterVoices[characterName];
     if (voiceConfig?.provider) {
       const voiceId = (voiceConfig as any)?.voiceId || voiceConfig?.systemVoiceId || null;
-      return { provider: voiceConfig.provider, voiceId };
+      return { provider: normalizeVoiceProvider(voiceConfig.provider), voiceId };
     }
 
     // Prioridad 3: settings globales de la app
-    const globalProvider = settings?.ttsProvider || 'openai';
-    return { provider: globalProvider, voiceId: null };
+    return { provider: normalizeVoiceProvider(settings?.ttsProvider), voiceId: null };
   }
 
   async function speakLine(line: DialogueLine) {
@@ -1012,7 +1000,7 @@ export default function CastingModeScreen() {
       // 4. Intentar obtener del cache en disco (Supabase Storage / FileSystem) o generar
       const text = line.cleanText || line.text;
 
-      const effectiveProvider = (provider === 'google' ? 'openai' : provider) as 'openai' | 'elevenlabs' | 'azure' | 'hume';
+      const effectiveProvider = normalizeVoiceProvider(provider);
       const effectiveVoiceId = voiceId;
 
       let audioUri = null;
