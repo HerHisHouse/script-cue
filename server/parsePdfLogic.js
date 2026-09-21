@@ -1,5 +1,6 @@
 const pdfParse = require('pdf-parse');
 const mammoth = require('mammoth');
+const { repairEmptyParentheticals } = require('./textRepair');
 
 async function logApiUsage(supabase, payload) {
     try {
@@ -250,6 +251,8 @@ module.exports = {
             text = parsedPdf.text;
           }
         }
+
+        text = repairEmptyParentheticals(text);
 
         // STEP 1: Save raw text
         console.log("Saving raw text to script_raw...");
