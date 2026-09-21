@@ -4,9 +4,22 @@ const { redactSecrets } = require('./env');
 const mammoth = require('mammoth');
 const { repairEmptyParentheticals } = require('./textRepair');
 
-async function logApiUsage(supabase, payload) {
+// Same figure as API_COSTS.openai_analysis in index.js (EUR per token).
+const OPENAI_ANALYSIS_EUR_PER_TOKEN = 0.000005;
+
+// Writes to the real columns of `api_usage` (see migration 20260716113000): tokens_count, mode,
+// estimated_cost_eur... This helper used to insert `tokens_used` / `action_type`, which do not exist,
+// so every insert failed silently and the analysis cost was never recorded.
+async function logApiUsage(supabase, { user_id, provider, tokens_used = 0, script_id, action_type }) {
     try {
-        const { error } = await supabase.from('api_usage').insert(payload);
+        const { error } = await supabase.from('api_usage').insert({
+            user_id: user_id || null,
+            provider,
+            tokens_count: tokens_used,
+            estimated_cost_eur: tokens_used * OPENAI_ANALYSIS_EUR_PER_TOKEN,
+            script_id: script_id || null,
+            mode: action_type || null,
+        });
         if (error) console.warn('Failed to log API usage:', error);
     } catch (e) {
         console.warn('Failed to log API usage:', e);
@@ -267,6 +280,15 @@ module.exports = {
         text = repairEmptyParentheticals(text);
         if (layoutText) layoutText = repairEmptyParentheticals(layoutText);
 
+        // Owner of the script, to attribute the OpenAI usage to them (shown in /usage/summary)
+        let ownerId = null;
+        try {
+          const { data: owner } = await supabase.from("scripts").select("user_id").eq("id", scriptId).single();
+          ownerId = owner?.user_id ?? null;
+        } catch (ownerError) {
+          console.warn("Could not resolve script owner for usage logging:", ownerError && ownerError.message);
+        }
+
         // STEP 1: Save raw text
         console.log("Saving raw text to script_raw...");
         await supabase
@@ -324,7 +346,7 @@ module.exports = {
                 const htmlContent = openaiData.choices[0]?.message?.content || "";
                 
                 await logApiUsage(supabase, {
-                  user_id: null,
+                  user_id: ownerId,
                   provider: 'openai_analysis',
                   tokens_used: openaiData.usage?.total_tokens || 0,
                   script_id: scriptId,
@@ -348,7 +370,7 @@ module.exports = {
           const res = await parseScreenplayWithOpenAI(layoutText || text);
           parsed = res.parsed;
           await logApiUsage(supabase, {
-            user_id: null,
+            user_id: ownerId,
             provider: 'openai_analysis',
             tokens_used: res.tokens || 0,
             script_id: scriptId,
