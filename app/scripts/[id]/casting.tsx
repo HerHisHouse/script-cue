@@ -27,6 +27,7 @@ import { useRouter, useLocalSearchParams, Stack } from 'expo-router';
 import { BlurView } from 'expo-blur';
 import { GlassBackdrop } from '@/components/GlassBackdrop';
 import { withAlpha } from '@/utils/colorUtils';
+import { serverAuthHeaders } from '@/utils/serverAuth';
 import { RENDER_SERVER_URL } from '@/utils/serverUrl';
 import Constants from 'expo-constants';
 import { activateKeepAwakeAsync, deactivateKeepAwake } from 'expo-keep-awake';
@@ -1804,6 +1805,7 @@ export default function CastingModeScreen() {
         try {
           response = await fetch(`${castingServerUrl}/compress-video`, {
             method: 'POST',
+            headers: await serverAuthHeaders(),
             body: formData,
             signal: controller.signal,
           });
@@ -1959,6 +1961,7 @@ export default function CastingModeScreen() {
         try {
           response = await fetch(`${castingServerUrl}/process-casting`, {
             method: 'POST',
+            headers: await serverAuthHeaders(),
             body: formData,
             signal: controller.signal,
           });
@@ -2172,6 +2175,7 @@ export default function CastingModeScreen() {
       const castingServerUrl = process.env.EXPO_PUBLIC_CASTING_SERVER_URL || 'https://script-cue-merge-server-production.up.railway.app';
       const response = await fetch(`${castingServerUrl}/process-take-preview`, {
         method: 'POST',
+        headers: await serverAuthHeaders(),
         body: formData,
       });
       const result = await response.json();

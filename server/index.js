@@ -66,6 +66,8 @@ const supabase = createClient(
       realtime: { transport: ws },
     }
 );
+
+const requireUser = require('./auth').createRequireUser(supabase);
 // Costes aproximados por proveedor (en euros)
 const API_COSTS = {
   openai_tts:        0.000015, // por carácter (0.015€/1000 chars)
@@ -151,7 +153,7 @@ function generateSilenceWav(durationSeconds, outputPath) {
 }
 
 // Merge endpoint
-app.post('/merge', async (req, res) => {
+app.post('/merge', requireUser, async (req, res) => {
     const { segments, userId, scriptId } = req.body;
     // OJO: no usar `|| 1.5` aquí — un pauseDuration de 0 (silenciar la pausa
     // de respiración, usado por la Italiana rápida) es un valor válido y
@@ -357,7 +359,7 @@ const upload = multer({
 // - aiAudio_0, aiAudio_1, ...: AI audio files
 // - scriptId, userId: text fields
 // - lineTimings: JSON string
-app.post('/process-casting', upload.any(), async (req, res) => {
+app.post('/process-casting', requireUser, upload.any(), async (req, res) => {
     const jobId = `job_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
     console.log(`[Casting] Job iniciado: ${jobId}`);
 
@@ -1213,7 +1215,7 @@ async function processCastingInBackground(jobId, files, body) {
 // grabación final.
 // Reutiliza extractUserAudio / mixAudioTracks / muxVideoWithAudio, las mismas
 // funciones que usa processCastingInBackground.
-app.post('/process-take-preview', upload.any(), async (req, res) => {
+app.post('/process-take-preview', requireUser, upload.any(), async (req, res) => {
     const jobId = `preview_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
     console.log(`[Preview] Job iniciado: ${jobId}`);
 
@@ -1371,7 +1373,7 @@ app.get('/download-casting/:jobId', (req, res) => {
 // =============================================================================
 // COMPRESS VIDEO (TELEPROMPTER) ENDPOINT
 // =============================================================================
-app.post('/compress-video', upload.fields([
+app.post('/compress-video', requireUser, upload.fields([
   { name: 'video', maxCount: 1 }
 ]), async (req, res) => {
 
@@ -1595,7 +1597,7 @@ async function processTeleprompterInBackground(jobId, files, body) {
 }
 
 // --- COACH MODE ENDPOINT ---
-app.post('/analyze-recording', async (req, res) => {
+app.post('/analyze-recording', requireUser, async (req, res) => {
     console.log('[Coach] ========== NEW ANALYSIS REQUEST ==========');
     console.log('[Coach] Request received at:', new Date().toISOString());
     console.log('[Coach] Body keys:', Object.keys(req.body));
@@ -2285,7 +2287,7 @@ async function generateAzureTTS({ text, voice, ssmlConfig }) {
 const activeQuizGenerations = new Map();
 
 // Endpoint: generar quiz de memoria dinámico
-app.post('/generate-quiz', async (req, res) => {
+app.post('/generate-quiz', requireUser, async (req, res) => {
     const { script_id, script_text } = req.body;
 
     if (!script_id || !script_text) {
@@ -2484,8 +2486,9 @@ ${script_text}`;
 
 // Endpoint: generar Azure TTS y devolver MP3 binario directamente
 // (mismo patrón que OpenAI/ElevenLabs — el cliente lo guarda en fichero local)
-app.post('/tts-azure', async (req, res) => {
-    const { text, voice, userId, ssmlConfig } = req.body;
+app.post('/tts-azure', requireUser, async (req, res) => {
+    const { text, voice, userId: bodyUserId, ssmlConfig } = req.body;
+    const userId = req.user ? req.user.id : bodyUserId; // el token manda sobre lo que diga el cuerpo
 
     if (!text || !voice || !userId) {
         return res.status(400).json({ error: 'Missing required fields: text, voice, userId' });
@@ -2520,7 +2523,7 @@ app.post('/tts-azure', async (req, res) => {
 // Endpoint: pre-generar o generar audio con Hume AI (Octave 1)
 const { HumeClient } = require('hume');
 
-app.get('/hume-voices', async (req, res) => {
+app.get('/hume-voices', requireUser, async (req, res) => {
     try {
         const fetch = require('node-fetch');
         const page = req.query.page || '0';
@@ -2539,50 +2542,9 @@ app.get('/hume-voices', async (req, res) => {
     }
 });
 
-app.post('/test-hume-voice', async (req, res) => {
-    try {
-        const hume = new HumeClient({ apiKey: process.env.HUME_API_KEY || '' });
-        const requestBody = req.body;
-        console.log(`[Test Hume] Body:`, JSON.stringify(requestBody, null, 2));
-        const response = await hume.tts.synthesizeJson(requestBody);
-        const hasAudio = !!response.generations?.[0]?.audio;
-        // Don't send the audio back to save bandwidth, just the metadata
-        if (hasAudio) {
-            delete response.generations[0].audio;
-            response.generations[0].audio_length = 'EXISTS';
-        }
-        res.json({ success: true, response });
-    } catch (e) {
-        res.status(500).json({ error: e.message, stack: e.stack, ...e });
-    }
-});
-
-app.post('/test-raw', async (req, res) => {
-    try {
-        const fetch = require('node-fetch');
-        const response = await fetch(req.body.url, {
-            method: req.body.method || 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'X-Hume-Api-Key': process.env.HUME_API_KEY || ''
-            },
-            body: JSON.stringify(req.body.payload)
-        });
-        const contentType = response.headers.get('content-type');
-        if (contentType && contentType.includes('application/json')) {
-            const data = await response.json();
-            res.json({ status: response.status, data });
-        } else {
-            const buf = await response.buffer();
-            res.json({ status: response.status, audio_length: buf.length });
-        }
-    } catch (e) {
-        res.status(500).json({ error: e.message });
-    }
-});
-
-app.post('/tts-hume', async (req, res) => {
-    const { text, description, voiceId, userId } = req.body;
+app.post('/tts-hume', requireUser, async (req, res) => {
+    const { text, description, voiceId, userId: bodyUserId } = req.body;
+    const userId = req.user ? req.user.id : bodyUserId; // el token manda sobre lo que diga el cuerpo
     if (!text || !userId) {
         return res.status(400).json({ error: 'Missing required fields: text, userId' });
     }
@@ -2681,7 +2643,7 @@ let azureVoicesCache = null;
 let azureVoicesCacheTime = 0;
 
 // Endpoint: obtener voces de Azure
-app.get('/api/azure/voices', async (req, res) => {
+app.get('/api/azure/voices', requireUser, async (req, res) => {
     try {
         const azureKey = (process.env.AZURE_TTS_KEY || '').trim();
         const azureRegion = (process.env.AZURE_TTS_REGION || '').trim();
@@ -2733,7 +2695,7 @@ app.get('/api/azure/voices', async (req, res) => {
 });
 
 // Endpoint unificado para previsualizaciones (caché en DB/Storage)
-app.get('/api/tts/preview/:provider/:voiceId', async (req, res) => {
+app.get('/api/tts/preview/:provider/:voiceId', requireUser, async (req, res) => {
     const { provider, voiceId } = req.params;
     
     try {
@@ -2914,8 +2876,8 @@ app.get('/api/tts/preview/:provider/:voiceId', async (req, res) => {
 });
 
 // --- API USAGE SUMMARY ---
-app.get('/usage/summary', async (req, res) => {
-  const userId = req.query.userId;
+app.get('/usage/summary', requireUser, async (req, res) => {
+  const userId = req.user ? req.user.id : req.query.userId; // con token, siempre el propio usuario
   if (!userId) return res.status(400).json({ error: 'userId required' });
 
   try {
@@ -2965,7 +2927,7 @@ app.get('/usage/summary', async (req, res) => {
   }
 });
 
-require('./parsePdfLogic').setupParsePdf(app, supabase);
+require('./parsePdfLogic').setupParsePdf(app, supabase, requireUser);
 
 app.listen(PORT, () => {
     console.log(`🚀 Script Cue Server running on port ${PORT}`);

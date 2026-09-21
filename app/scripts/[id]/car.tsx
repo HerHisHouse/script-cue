@@ -22,6 +22,7 @@ import { useRouter, useLocalSearchParams } from 'expo-router';
 import { useTheme } from '@/contexts/ThemeContext';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/utils/supabase';
+import { serverAuthHeaders } from '@/utils/serverAuth';
 import { RENDER_SERVER_URL } from '@/utils/serverUrl';
 import { DialogueLine } from '@/utils/dialogueParser';
 import { loadDialogueLines } from '@/utils/loadDialogueLines';
@@ -1144,7 +1145,7 @@ export default function CarModeScreen() {
       const renderUrl = RENDER_SERVER_URL;
       const mergeResponse = await fetch(`${renderUrl}/merge`, { // Fixed endpoint
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { ...(await serverAuthHeaders()), 'Content-Type': 'application/json' },
         body: JSON.stringify({
           userId: currentUser.id, // Added missing userId
           scriptId: id, // Added missing scriptId

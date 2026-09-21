@@ -23,6 +23,7 @@ import { useRouter, useLocalSearchParams, Stack, useFocusEffect } from 'expo-rou
 import { useTheme } from '@/contexts/ThemeContext';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/utils/supabase';
+import { serverAuthHeaders } from '@/utils/serverAuth';
 import { RENDER_SERVER_URL } from '@/utils/serverUrl';
 import { DialogueLine } from '@/utils/dialogueParser';
 import { loadDialogueLines } from '@/utils/loadDialogueLines';
@@ -1436,7 +1437,7 @@ export default function StudioV2Screen() {
 
                 const response = await fetch(`${mergeServerUrl}/merge`, {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
+                    headers: { ...(await serverAuthHeaders()), 'Content-Type': 'application/json' },
                     body: JSON.stringify({
                         segments: serverSegments,
                         userId: user.id,

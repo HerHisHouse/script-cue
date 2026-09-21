@@ -1,4 +1,5 @@
 import { supabase } from './supabase';
+import { serverAuthHeaders } from './serverAuth';
 import { RENDER_SERVER_URL } from './serverUrl';
 import client from './openaiClient';
 import { generateElevenLabsAudio } from './elevenLabsClient';
@@ -245,7 +246,7 @@ export async function generateAndCacheAudio(
 
             let response = await fetch(`${renderUrl}/tts-azure`, {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers: { ...(await serverAuthHeaders()), 'Content-Type': 'application/json' },
                 body: JSON.stringify(azureBody),
             });
             // Fallback para voces Azure que no soportan estilos emocionales
@@ -254,7 +255,7 @@ export async function generateAndCacheAudio(
                 delete azureBody.ssmlConfig;
                 response = await fetch(`${renderUrl}/tts-azure`, {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
+                    headers: { ...(await serverAuthHeaders()), 'Content-Type': 'application/json' },
                     body: JSON.stringify(azureBody),
                 });
             }
@@ -285,7 +286,7 @@ export async function generateAndCacheAudio(
             try {
                 const response = await fetch(`${renderUrl}/tts-hume`, {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
+                    headers: { ...(await serverAuthHeaders()), 'Content-Type': 'application/json' },
                     body: JSON.stringify(humeBody),
                 });
                 

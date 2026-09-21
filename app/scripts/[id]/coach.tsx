@@ -47,6 +47,7 @@ import {
 } from 'lucide-react-native';
 import { Audio, Video, ResizeMode } from 'expo-av';
 import { supabase } from '@/utils/supabase';
+import { serverAuthHeaders } from '@/utils/serverAuth';
 import { RENDER_SERVER_URL } from '@/utils/serverUrl';
 import { useTheme } from '@/contexts/ThemeContext';
 import { useAuth } from '@/contexts/AuthContext';
@@ -370,6 +371,7 @@ export default function CoachModeScreen() {
       const response = await fetch(`${renderUrl}/analyze-recording`, {
         method: 'POST',
         headers: {
+          ...(await serverAuthHeaders()),
           'Content-Type': 'application/json'
         },
         body: JSON.stringify(requestBody),

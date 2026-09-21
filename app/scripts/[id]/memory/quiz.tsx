@@ -14,6 +14,7 @@ import { useRouter, useLocalSearchParams } from 'expo-router';
 import { useTheme } from '@/contexts/ThemeContext';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/utils/supabase';
+import { serverAuthHeaders } from '@/utils/serverAuth';
 import { RENDER_SERVER_URL } from '@/utils/serverUrl';
 import { ArrowLeft, Check, X, Heart, Trophy, Brain, AlertTriangle, Info } from 'lucide-react-native';
 import { saveScore } from '@/utils/gamification';
@@ -137,7 +138,7 @@ export default function QuizModeScreen() {
                 console.log('[Quiz Frontend] Llamando a:', `${SERVER_URL}/generate-quiz`);
                 const response = await fetch(`${SERVER_URL}/generate-quiz`, {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
+                    headers: { ...(await serverAuthHeaders()), 'Content-Type': 'application/json' },
                     body: JSON.stringify({ 
                         script_id: scriptId,
                         script_text: scriptTextForQuiz 

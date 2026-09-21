@@ -48,7 +48,8 @@ async function runParse(body: any) {
     const { setupParsePdf } = require('../server/parsePdfLogic');
     const { inserted, client } = fakeSupabase();
     let handler: any;
-    setupParsePdf({ post: (_: string, h: any) => { handler = h; } }, client);
+    // La ruta lleva middleware (requireUser) delante: el manejador es el último argumento
+    setupParsePdf({ post: (_: string, ...fns: any[]) => { handler = fns[fns.length - 1]; } }, client);
     let response: any;
     await handler({ headers: {}, body }, { json: (o: any) => { response = o; }, status: () => ({ json: (o: any) => { response = o; } }) });
     return { inserted, response };

@@ -229,8 +229,8 @@ function parseScreenplay(text) {
 }
 
 module.exports = {
-  setupParsePdf: (app, supabase) => {
-    app.post('/api/parse-pdf', async (req, res) => {
+  setupParsePdf: (app, supabase, requireUser = (req, res, next) => next()) => {
+    app.post('/api/parse-pdf', requireUser, async (req, res) => {
       try {
         const { scriptId, fileContent, filePath, fileName, text: rawText, preserveFormatting } = req.body;
         const authHeader = req.headers.authorization;

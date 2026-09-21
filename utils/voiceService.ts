@@ -1,6 +1,7 @@
 import { Audio } from 'expo-av';
 import * as FileSystem from 'expo-file-system/legacy';
 import client from './openaiClient';
+import { serverAuthHeaders } from './serverAuth';
 import { RENDER_SERVER_URL } from './serverUrl';
 import { generateElevenLabsAudio } from './elevenLabsClient';
 
@@ -172,7 +173,7 @@ export async function getAzureVoices(forceRefresh = false): Promise<VoiceOption[
 
   azureVoicesPromise = (async () => {
     try {
-      const response = await fetch(`${renderUrl}/api/azure/voices`);
+      const response = await fetch(`${renderUrl}/api/azure/voices`, { headers: await serverAuthHeaders() });
       if (!response.ok) throw new Error(`Azure Voices API error: ${response.status}`);
       
       const voices = await response.json();
@@ -349,7 +350,7 @@ export async function playVoicePreview(voice: VoiceOption): Promise<void> {
         throw new Error(`RENDER_SERVER_URL no configurado para preview de ${voice.provider}`);
       }
       try {
-        const response = await fetch(`${renderUrl}/api/tts/preview/${voice.provider}/${voice.id}`);
+        const response = await fetch(`${renderUrl}/api/tts/preview/${voice.provider}/${voice.id}`, { headers: await serverAuthHeaders() });
         if (!response.ok) {
           const bodyText = await response.text().catch(() => response.statusText);
           throw new Error(`Preview error ${response.status}: ${bodyText}`);
