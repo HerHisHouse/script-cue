@@ -1,5 +1,6 @@
 import { supabase } from '@/utils/supabase';
 import { DialogueLine } from './dialogueParser';
+import { sortLinesInScriptOrder } from './lineOrdering';
 
 /**
  * Loads dialogue lines from the database for a given script.
@@ -9,19 +10,22 @@ import { DialogueLine } from './dialogueParser';
 export async function loadDialogueLines(scriptId: string): Promise<DialogueLine[]> {
     try {
         // Load lines with scene information
-        const { data: lines, error: linesError } = await supabase
+        // Ojo: `.order(..., { foreignTable: 'scenes' })` solo ordena la tabla anidada, no las
+        // filas de `lines`, así que el orden entre escenas se resuelve en sortLinesInScriptOrder.
+        const { data: rawLines, error: linesError } = await supabase
             .from('lines')
             .select(`
                 *,
                 scenes!inner(
                     id,
                     script_id,
-                    order_index
+                    order_index,
+                    scene_number
                 )
             `)
             .eq('scenes.script_id', scriptId)
-            .order('order_index', { foreignTable: 'scenes', ascending: true })
             .order('order_index', { ascending: true });
+        const lines = rawLines ? sortLinesInScriptOrder(rawLines) : rawLines;
 
         if (linesError) {
             console.error('Error loading lines:', linesError);
