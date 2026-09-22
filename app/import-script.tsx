@@ -16,13 +16,15 @@ import { getSettings, setSettings, AppSettings } from '@/utils/appSettings';
 import * as Speech from 'expo-speech';
 import { rf, rp } from '@/utils/responsive';
 import { Audio } from 'expo-av';
-import { clearScriptCache, preGenerateScriptAudio } from '@/utils/ttsCache';
 import { OPENAI_VOICES, VOICE_PROVIDERS_CONFIG, PROVIDER_INFO_MESSAGE } from '@/utils/voiceService';
 import { VoiceSelector } from '@/components/VoiceSelector';
 import { VoiceOption, VoiceProvider, getDefaultVoiceForGender } from '@/utils/voiceService';
 import { BETA_LIMITS, isUserBetaLimited } from '@/constants/betaLimits';
 import { trackEvent } from '@/utils/analytics';
 import { CHARACTER_COLORS, GREEN_COLOR } from '@/utils/characterColors';
+import { hasVoiceChanges } from '@/utils/voiceChangeDetection';
+import { normalizeVoiceProvider } from '@/utils/voiceDefaults';
+import { mapCharacterRowsToConfig } from '@/utils/characterConfigMapping';
 
 // Tipo extendido para incluir propiedades dinámicas de configuración de personajes
 type ExtendedAppSettings = {
@@ -132,35 +134,25 @@ export default function ImportScriptScreen() {
           if (scriptData?.title) setTitle(scriptData.title);
           setIsScriptReviewed(!!scriptData?.reviewed);
 
+          // order('created_at') para que el orden en que se configuraron los personajes se
+          // mantenga al reabrir Configuración — sin él, Postgres no garantiza ningún orden.
           const { data: chars, error: charsError } = await supabase
             .from('characters')
             .select('*')
-            .eq('script_id', scriptId);
+            .eq('script_id', scriptId)
+            .order('created_at', { ascending: true });
           if (charsError) throw charsError;
 
           const settings = await getSettings();
           const perMap: Record<string, { provider?: string; systemVoiceId?: string }> = ((settings as any)?.characterVoicesByScript?.[String(scriptId)] || {});
 
           let mapped: CharacterConfig[] = [];
-          
+
           if (chars && chars.length > 0) {
-            mapped = chars
-              .filter((c: any) => (c.name || '').toUpperCase() !== 'ACCIÓN')
-              .map((c: any, idx: number) => {
-              const nameUpper = (c.name || '').toUpperCase();
-              const per = perMap[nameUpper] || {};
-              return {
-                id: String(c.id),
-                name: nameUpper,
-                isMyCharacter: !!c.is_user_character,
-                gender: (c.voice_gender === 'female' ? 'female' : c.voice_gender === 'neutral' ? 'neutral' : 'male'),
-                color: c.color || CHARACTER_COLORS[idx % CHARACTER_COLORS.length].value,
-                voiceId: c.voice_id || undefined,
-                voiceProvider: (c.voice_provider as 'openai' | 'elevenlabs' | 'azure' | 'hume' | 'system') || undefined,
-                provider: c.is_user_character ? undefined : ((per.provider as any) || 'system'),
-                systemVoiceId: c.is_user_character ? undefined : (per.systemVoiceId || defaultSystemVoiceId || ''),
-              };
-            });
+            // mapCharacterRowsToConfig: BD como fuente de verdad para "Tipo de voz" (antes se leía
+            // del ajuste local de AsyncStorage) y "Personaje 1" siempre es el del usuario, sin
+            // importar el orden en que Postgres devolvió las filas. Ver utils/characterConfigMapping.ts.
+            mapped = mapCharacterRowsToConfig(chars, perMap, defaultSystemVoiceId);
           } else {
             // 1. Obtener todas las escenas de este script
             const { data: scenesData, error: scenesError } = await supabase
@@ -366,6 +358,20 @@ export default function ImportScriptScreen() {
       try {
         setUploading(true);
 
+        // Estado ANTES de guardar (para saber si alguna voz cambió de verdad). Se lee antes de
+        // borrar/reinsertar personajes, porque ese reinsert les da id nuevo y ya no se podría
+        // comparar contra lo que había.
+        const { data: charsBeforeSave } = await supabase
+          .from('characters')
+          .select('name, voice_provider, voice_id')
+          .eq('script_id', scriptId);
+        const voiceBeforeByName = new Map(
+          (charsBeforeSave || []).map((c: any) => [
+            (c.name || '').toUpperCase(),
+            { provider: normalizeVoiceProvider(c.voice_provider), voiceId: c.voice_id || null },
+          ])
+        );
+
         // Primero, eliminar todos los personajes existentes
         await supabase
           .from('characters')
@@ -415,53 +421,25 @@ export default function ImportScriptScreen() {
         } catch { }
 
         if (isScriptReviewed) {
-          // Limpiar caché de audio antiguo y regenerar con nuevas voces
-          try {
-            logger.log('[Config] Clearing old audio cache...');
-            await clearScriptCache(String(scriptId));
+          // (Antes esto SIEMPRE vaciaba la caché del guion entero y regeneraba TODOS los personajes
+          // en segundo plano, aunque solo se hubiera cambiado uno — o incluso aunque no se hubiera
+          // cambiado ninguno — un gasto de pago innecesario cada vez que se guardaba Configuración.)
+          const voiceChanged = hasVoiceChanges(voiceBeforeByName, characters);
 
-            logger.log('[Config] Regenerating audio with new voice settings...');
-
-            // Preparar configuración de voces para regeneración
-            const characterVoices: Record<string, { provider: 'openai' | 'elevenlabs' | 'azure' | 'hume' | 'system'; voiceId?: string }> = {};
-
-            for (const c of characters) {
-              if (!c.isMyCharacter) {
-                const characterName = (c.name || '').toUpperCase();
-                const provider = (c.provider || 'system') as 'openai' | 'elevenlabs' | 'azure' | 'hume' | 'system';
-
-                const voiceConfig: { provider: 'openai' | 'elevenlabs' | 'azure' | 'hume' | 'system'; voiceId?: string } = {
-                  provider,
-                };
-
-                if (provider === 'system' && c.systemVoiceId) {
-                  voiceConfig.voiceId = c.systemVoiceId;
-                } else if (provider === 'azure' && c.voiceId) {
-                  voiceConfig.voiceId = c.voiceId;
-                }
-
-                characterVoices[characterName] = voiceConfig;
-              }
-            }
-
-            // Regenerar audio en segundo plano (no bloquear UI)
-            preGenerateScriptAudio(
-              String(scriptId),
-              user!.id,
-              characterVoices
-            ).catch(err => {
-              logger.error('[Config] Error regenerating audio:', err);
-              // No mostrar error al usuario, es proceso en segundo plano
-            });
-
-            logger.log('[Config] Audio regeneration started in background');
-          } catch (cacheError: any) {
-            logger.error('[Config] Error managing audio cache:', cacheError);
-            // No bloquear el guardado por errores de caché
+          if (voiceChanged) {
+            // Revisar guion es quien genera el audio (Confirmar guion y generar voces), y ese paso
+            // ya comprueba la caché línea a línea: solo se regenerará lo que de verdad cambió. Volver
+            // ahí también deja configurar la emoción de una voz Expresiva/Natural recién elegida
+            // antes de generarla.
+            Alert.alert(
+              'Guardado',
+              'Vuelve a Revisar guion para comprobar la emoción de las voces nuevas y generar el audio.'
+            );
+            router.replace({ pathname: '/scripts/[id]/review', params: { id: String(scriptId), force: '1' } });
+          } else {
+            Alert.alert('Guardado', 'Se actualizaron los personajes.');
+            router.replace(`/scripts/${scriptId}`);
           }
-
-          Alert.alert('Guardado', 'Se actualizaron los personajes y voces. El audio se está regenerando en segundo plano.');
-          router.replace(`/scripts/${scriptId}`);
         } else {
           // El guion es nuevo (OCR), ir a revisión antes de generar TTS
           Alert.alert('Guardado', 'Los personajes han sido configurados.');
