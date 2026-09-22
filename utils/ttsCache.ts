@@ -269,30 +269,30 @@ export async function generateAndCacheAudio(
             };
             
             console.log(`[Hume TTS] Enviando a Render /tts-hume...`, humeBody);
-            
+
             try {
                 const response = await fetch(`${renderUrl}/tts-hume`, {
                     method: 'POST',
                     headers: { ...(await serverAuthHeaders()), 'Content-Type': 'application/json' },
                     body: JSON.stringify(humeBody),
                 });
-                
+
                 if (!response.ok) {
                     const errText = await response.text();
                     console.error(`[Hume TTS] Falló la API de Hume (Status ${response.status}):`, errText);
-                    throw new Error('Hume fallback'); // Disparamos el fallback
+                    return null; // Igual que Azure: no seguir generando con otro proveedor de pago (ver nota abajo).
                 }
                 arrayBuffer = await response.arrayBuffer();
             } catch (error) {
-                console.error('[Hume TTS] Excepción al llamar a Hume. Cayendo a ElevenLabs fallback...', error);
-                
-                // Fallback explícito a ElevenLabs si falla
-                const elevenInput = buildProviderTTSInput('elevenlabs', lineWithDirection);
-                console.log(`[ElevenLabs Fallback] → Enviando a API: "${elevenInput as string}"`);
-                
-                // Usamos la voz por defecto de ElevenLabs para el fallback ya que voiceId pertenece a Hume
-                arrayBuffer = await generateElevenLabsAudio(elevenInput as string, "21m00Tcm4TlvDq8ikWAM");
-                provider = 'elevenlabs'; // Restauramos el provider original para el cacheado local y DB
+                // NO caer a ElevenLabs aquí: hacerlo generaba audio de pago con una voz distinta a la
+                // elegida (voz fija "21m00Tcm4TlvDq8ikWAM", ni siquiera la del personaje) sin avisar, y
+                // el hash/caché de esta línea se calculó para provider='hume' — al guardar la fila de
+                // caché con provider reasignado a 'elevenlabs' pero el voice_id de Hume, esa fila nunca
+                // podía volver a encontrarse (ni por 'hume'+voiceId de Hume, ni por 'elevenlabs'+ese
+                // voice_id), así que CADA reproducción de la línea repetía la generación de pago para
+                // siempre. Si Hume falla, se devuelve null: quien llama ya sabe usar voz del sistema.
+                console.error('[Hume TTS] Excepción al llamar a Hume. Sin fallback automático a otro proveedor de pago.', error);
+                return null;
             }
         } else if (provider === 'elevenlabs') {
             console.log(`[ElevenLabs] → Enviando a API: "${providerInput as string}"`);
@@ -303,24 +303,31 @@ export async function generateAndCacheAudio(
 
         // 6. Almacenamiento y Registro
         const storagePath = `${userId}/${scriptId}/${lineId}_${provider}_${emotion}.mp3`;
-        await uploadAudioToStorage(storagePath, arrayBuffer, userId);
+        const uploaded = await uploadAudioToStorage(storagePath, arrayBuffer, userId);
 
-        const { error: upsertError } = await supabase.from('tts_cache').upsert({
-            script_id: scriptId,
-            line_id: lineId,
-            character_name: characterName,
-            provider,
-            voice_id: voiceId,
-            storage_path: storagePath,
-            text_hash: textHash,
-            file_size_bytes: arrayBuffer.byteLength,
-        }, { onConflict: 'line_id,provider,voice_id' });
+        if (!uploaded) {
+            // No escribir NUNCA una fila de caché que apunte a un archivo que no llegó a subirse: si
+            // se escribiera, toda reproducción futura de esta línea encontraría la fila (mismo hash),
+            // fallaría al descargar el archivo inexistente, lo trataría como caché vacío y volvería a
+            // generar el audio de pago — para siempre, con cualquier proveedor (Hume/Azure/ElevenLabs),
+            // sin ningún aviso salvo mirando el panel de uso del proveedor. El audio ya generado en esta
+            // llamada sí se sirve (más abajo), solo se omite guardarlo para la próxima vez.
+            console.error(`[TTS] ❌ La subida a Storage falló para ${lineId} (${provider}); no se guarda en caché (se regenerará la próxima vez).`);
+        } else {
+            const { error: upsertError } = await supabase.from('tts_cache').upsert({
+                script_id: scriptId,
+                line_id: lineId,
+                character_name: characterName,
+                provider,
+                voice_id: voiceId,
+                storage_path: storagePath,
+                text_hash: textHash,
+                file_size_bytes: arrayBuffer.byteLength,
+            }, { onConflict: 'line_id,provider,voice_id' });
 
-        if (upsertError) {
-            // Si esto fallara (p.ej. por RLS bloqueando el UPDATE de la rama de
-            // conflicto), la fila se quedaría con el text_hash antiguo para
-            // siempre y esta línea regeneraría audio en cada reproducción.
-            console.error(`[TTS] ❌ No se pudo guardar la entrada de caché para ${lineId} (${provider}):`, upsertError);
+            if (upsertError) {
+                console.error(`[TTS] ❌ No se pudo guardar la entrada de caché para ${lineId} (${provider}):`, upsertError);
+            }
         }
 
         const localPath = `${FileSystem.cacheDirectory}tts_${lineId}_${provider}_${emotion}.mp3`;
