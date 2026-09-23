@@ -1,6 +1,7 @@
 import React, { useEffect, useRef } from 'react';
 import { View, Pressable, Text, StyleSheet, Animated, Easing } from 'react-native';
 import { BlurView } from 'expo-blur';
+import { ANDROID_BLUR_METHOD } from '@/utils/blur';
 import { Share, Repeat, Repeat1, ListMusic } from 'lucide-react-native';
 
 const ACCENT = '#a78bfa';
@@ -46,7 +47,7 @@ export function PlayerControlsCapsule({
 
   return (
     <View style={styles.wrapper}>
-      <BlurView intensity={isDark ? 55 : 50} tint={isDark ? 'dark' : 'light'} style={StyleSheet.absoluteFill} />
+      <BlurView experimentalBlurMethod={ANDROID_BLUR_METHOD} intensity={isDark ? 55 : 50} tint={isDark ? 'dark' : 'light'} style={StyleSheet.absoluteFill} />
       <View
         style={[
           StyleSheet.absoluteFill,

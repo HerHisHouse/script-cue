@@ -14,6 +14,7 @@ import {
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { BlurView } from 'expo-blur';
+import { ANDROID_BLUR_METHOD } from '@/utils/blur';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { useRouter, useLocalSearchParams, Stack } from 'expo-router';
 import {
@@ -955,7 +956,7 @@ export default function CoachModeScreen() {
          supportedOrientations={['portrait', 'landscape', 'landscape-left', 'landscape-right']}>
           <View style={styles.modalOverlay}>
             <View style={[styles.modalContent, { borderWidth: 1, borderColor: cardBorder, overflow: 'hidden' }]}>
-              <BlurView intensity={isDark ? 55 : 65} tint={isDark ? 'dark' : 'light'} style={StyleSheet.absoluteFill} />
+              <BlurView experimentalBlurMethod={ANDROID_BLUR_METHOD} intensity={isDark ? 55 : 65} tint={isDark ? 'dark' : 'light'} style={StyleSheet.absoluteFill} />
               <View style={[StyleSheet.absoluteFill, { backgroundColor: modalOverlayTint }]} />
               <View style={styles.modalHeader}>
                 <AlertCircle size={48} color={colors.primary} />
@@ -1063,7 +1064,7 @@ export default function CoachModeScreen() {
               {showCharacterSelector ? (
                 <View style={styles.modalOverlay}>
                   <View style={[styles.modalContent, { borderWidth: 1, borderColor: cardBorder, overflow: 'hidden' }]}>
-                    <BlurView intensity={isDark ? 55 : 65} tint={isDark ? 'dark' : 'light'} style={StyleSheet.absoluteFill} />
+                    <BlurView experimentalBlurMethod={ANDROID_BLUR_METHOD} intensity={isDark ? 55 : 65} tint={isDark ? 'dark' : 'light'} style={StyleSheet.absoluteFill} />
                     <View style={[StyleSheet.absoluteFill, { backgroundColor: modalOverlayTint }]} />
                     <Text style={[styles.modalTitle, { color: onBg }]}>
                       ¿Qué personaje interpretas?

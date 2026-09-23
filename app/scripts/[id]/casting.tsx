@@ -25,6 +25,7 @@ import {
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter, useLocalSearchParams, Stack } from 'expo-router';
 import { BlurView } from 'expo-blur';
+import { ANDROID_BLUR_METHOD } from '@/utils/blur';
 import { GlassBackdrop } from '@/components/GlassBackdrop';
 import { withAlpha } from '@/utils/colorUtils';
 import { serverAuthHeaders } from '@/utils/serverAuth';
@@ -2234,7 +2235,7 @@ export default function CastingModeScreen() {
               onPress={() => { setQualityApplied(false); setCastingMode('free_input'); }}
             >
               <View style={[styles.castingCardClip, { borderColor: glassBorder }]}>
-                <BlurView intensity={40} tint={isDark ? 'dark' : 'light'} style={[styles.castingCard, { backgroundColor: glassBg }]}>
+                <BlurView experimentalBlurMethod={ANDROID_BLUR_METHOD} intensity={40} tint={isDark ? 'dark' : 'light'} style={[styles.castingCard, { backgroundColor: glassBg }]}>
                   <MonitorPlay size={rp(48)} color="#10B981" style={{ marginBottom: 16 }} />
                   <Text style={[styles.castingCardTitle, { color: fg }]}>Presentación</Text>
                   <View style={styles.castingCardDescBlock}>
@@ -2255,7 +2256,7 @@ export default function CastingModeScreen() {
               onPress={() => { setQualityApplied(false); setCastingMode('script_config'); }}
             >
               <View style={[styles.castingCardClip, { borderColor: glassBorder }]}>
-                <BlurView intensity={40} tint={isDark ? 'dark' : 'light'} style={[styles.castingCard, { backgroundColor: glassBg }]}>
+                <BlurView experimentalBlurMethod={ANDROID_BLUR_METHOD} intensity={40} tint={isDark ? 'dark' : 'light'} style={[styles.castingCard, { backgroundColor: glassBg }]}>
                   <Clapperboard size={rp(48)} color={colors.primary} style={{ marginBottom: 16 }} />
                   <Text style={[styles.castingCardTitle, { color: fg }]}>Selftape</Text>
                   <View style={styles.castingCardDescBlock}>
@@ -2276,7 +2277,7 @@ export default function CastingModeScreen() {
               onPress={() => router.push(`/scripts/${id}/take-comparator`)}
             >
               <View style={[styles.castingCardClip, { borderColor: glassBorder }]}>
-                <BlurView intensity={40} tint={isDark ? 'dark' : 'light'} style={[styles.castingCard, { backgroundColor: glassBg }]}>
+                <BlurView experimentalBlurMethod={ANDROID_BLUR_METHOD} intensity={40} tint={isDark ? 'dark' : 'light'} style={[styles.castingCard, { backgroundColor: glassBg }]}>
                   <Layers size={rp(48)} color="#FBBF24" style={{ marginBottom: 16 }} />
                   <Text style={[styles.castingCardTitle, { color: fg }]}>Tomas</Text>
                   <View style={styles.castingCardDescBlock}>
@@ -3481,7 +3482,7 @@ export default function CastingModeScreen() {
           >
             <View style={[styles.qualityShadowWrapper, !isDark && styles.qualityShadow]}>
               <View style={[styles.qualityClip, { borderColor: glassBorder }]}>
-                <BlurView intensity={isDark ? 55 : 65} tint={isDark ? 'dark' : 'light'} style={[StyleSheet.absoluteFill, { borderRadius: rp(20) }]} />
+                <BlurView experimentalBlurMethod={ANDROID_BLUR_METHOD} intensity={isDark ? 55 : 65} tint={isDark ? 'dark' : 'light'} style={[StyleSheet.absoluteFill, { borderRadius: rp(20) }]} />
                 <View style={[StyleSheet.absoluteFill, { backgroundColor: glassBg, borderRadius: rp(20) }]} />
                 <View style={styles.qualitySection}>
               <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: rp(16), gap: rp(8) }}>

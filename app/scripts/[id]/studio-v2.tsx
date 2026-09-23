@@ -18,6 +18,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { BlurView } from 'expo-blur';
+import { ANDROID_BLUR_METHOD } from '@/utils/blur';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter, useLocalSearchParams, Stack, useFocusEffect } from 'expo-router';
 import { useTheme } from '@/contexts/ThemeContext';
@@ -2319,7 +2320,7 @@ export default function StudioV2Screen() {
                      supportedOrientations={['portrait', 'landscape', 'landscape-left', 'landscape-right']}>
                         <View style={styles.modalOverlay}>
                             <View style={styles.modalContent}>
-                                <BlurView intensity={isDark ? 55 : 75} tint={isDark ? 'dark' : 'light'} style={StyleSheet.absoluteFill} />
+                                <BlurView experimentalBlurMethod={ANDROID_BLUR_METHOD} intensity={isDark ? 55 : 75} tint={isDark ? 'dark' : 'light'} style={StyleSheet.absoluteFill} />
                                 <View style={[StyleSheet.absoluteFill, { backgroundColor: isDark ? 'rgba(124,106,247,0.40)' : 'rgba(235,230,245,0.40)' }]} />
                                 <View style={styles.modalHeader}>
                                     <Headphones size={32} color={colors.primary} />
@@ -2368,7 +2369,7 @@ export default function StudioV2Screen() {
                      supportedOrientations={['portrait', 'landscape', 'landscape-left', 'landscape-right']}>
                         <View style={styles.modalOverlay}>
                             <View style={styles.modalContent}>
-                                <BlurView intensity={isDark ? 55 : 75} tint={isDark ? 'dark' : 'light'} style={StyleSheet.absoluteFill} />
+                                <BlurView experimentalBlurMethod={ANDROID_BLUR_METHOD} intensity={isDark ? 55 : 75} tint={isDark ? 'dark' : 'light'} style={StyleSheet.absoluteFill} />
                                 <View style={[StyleSheet.absoluteFill, { backgroundColor: isDark ? 'rgba(124,106,247,0.40)' : 'rgba(235,230,245,0.40)' }]} />
                                 <View style={styles.modalHeader}>
                                     <MessageSquare size={32} color={colors.primary} />
@@ -2416,7 +2417,7 @@ export default function StudioV2Screen() {
                      supportedOrientations={['portrait', 'landscape', 'landscape-left', 'landscape-right']}>
                         <View style={styles.modalOverlay}>
                             <View style={styles.modalContent}>
-                                <BlurView intensity={isDark ? 55 : 75} tint={isDark ? 'dark' : 'light'} style={StyleSheet.absoluteFill} />
+                                <BlurView experimentalBlurMethod={ANDROID_BLUR_METHOD} intensity={isDark ? 55 : 75} tint={isDark ? 'dark' : 'light'} style={StyleSheet.absoluteFill} />
                                 <View style={[StyleSheet.absoluteFill, { backgroundColor: isDark ? 'rgba(124,106,247,0.40)' : 'rgba(235,230,245,0.40)' }]} />
                                 <View style={styles.modalHeader}>
                                     <Clapperboard size={32} color={colors.primary} />
@@ -2463,7 +2464,7 @@ export default function StudioV2Screen() {
                      supportedOrientations={['portrait', 'landscape', 'landscape-left', 'landscape-right']}>
                         <View style={styles.modalOverlay}>
                             <View style={styles.modalContent}>
-                                <BlurView intensity={isDark ? 55 : 75} tint={isDark ? 'dark' : 'light'} style={StyleSheet.absoluteFill} />
+                                <BlurView experimentalBlurMethod={ANDROID_BLUR_METHOD} intensity={isDark ? 55 : 75} tint={isDark ? 'dark' : 'light'} style={StyleSheet.absoluteFill} />
                                 <View style={[StyleSheet.absoluteFill, { backgroundColor: isDark ? 'rgba(124,106,247,0.40)' : 'rgba(235,230,245,0.40)' }]} />
                                 <View style={styles.modalHeader}>
                                     <Text style={[styles.modalTitle, { color: onBg }]}>Modificar orden</Text>
@@ -2529,7 +2530,7 @@ export default function StudioV2Screen() {
                                         }
                                     ]}
                                 >
-                                    <BlurView intensity={isDark ? 55 : 75} tint={isDark ? 'dark' : 'light'} style={StyleSheet.absoluteFill} />
+                                    <BlurView experimentalBlurMethod={ANDROID_BLUR_METHOD} intensity={isDark ? 55 : 75} tint={isDark ? 'dark' : 'light'} style={StyleSheet.absoluteFill} />
                                     <View style={[StyleSheet.absoluteFill, { backgroundColor: isDark ? 'rgba(124,106,247,0.40)' : 'rgba(235,230,245,0.40)' }]} />
                                     <View style={styles.modalHeader}>
                                         <Text style={[styles.modalTitle, { color: onBg }]}>Añadir Nueva Línea</Text>
@@ -2636,7 +2637,7 @@ export default function StudioV2Screen() {
                     {isProcessing && (
                         <View style={styles.loadingOverlay}>
                             <View style={styles.loadingCard}>
-                                <BlurView intensity={isDark ? 55 : 75} tint={isDark ? 'dark' : 'light'} style={StyleSheet.absoluteFill} />
+                                <BlurView experimentalBlurMethod={ANDROID_BLUR_METHOD} intensity={isDark ? 55 : 75} tint={isDark ? 'dark' : 'light'} style={StyleSheet.absoluteFill} />
                                 <View style={[StyleSheet.absoluteFill, { backgroundColor: isDark ? 'rgba(124,106,247,0.40)' : 'rgba(235,230,245,0.40)' }]} />
                                 <ActivityIndicator size="large" color={colors.primary} />
                                 <Text style={[styles.loadingText, { color: onBg }]}>
@@ -2875,7 +2876,7 @@ export default function StudioV2Screen() {
                         shadowRadius: 16,
                         elevation: 8,
                     }]}>
-                        <BlurView intensity={isDark ? 55 : 65} tint={isDark ? 'dark' : 'light'} style={StyleSheet.absoluteFill} />
+                        <BlurView experimentalBlurMethod={ANDROID_BLUR_METHOD} intensity={isDark ? 55 : 65} tint={isDark ? 'dark' : 'light'} style={StyleSheet.absoluteFill} />
                         <View style={[StyleSheet.absoluteFill, { backgroundColor: isDark ? 'rgba(124,106,247,0.14)' : 'rgba(235,230,245,0.5)' }]} />
                         <View style={styles.controls}>
                             <TouchableOpacity

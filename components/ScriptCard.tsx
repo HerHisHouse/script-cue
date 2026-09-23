@@ -8,6 +8,7 @@ import { makeHeaderMenuStyles } from '@/components/HeaderMenu';
 import { rf, rp } from '@/utils/responsive';
 import { BottomSheetMenu } from '@/components/BottomSheetMenu';
 import { BottomSheetOption } from '@/components/BottomSheetOption';
+import { getCardShadow } from '@/utils/cardShadow';
 
 interface ScriptCardProps {
   script: Script;
@@ -45,24 +46,13 @@ export function ScriptCard({ script, onPress, onLongPress, selected = false, sho
   }, [showMenu]);
   // Status removed - simplified view
 
+  const cardBackground = selected ? colors.input : (isDark ? 'rgba(124,106,247,0.08)' : 'rgba(255,255,255,0.55)');
+
   return (
     <TouchableOpacity
       style={[
-        styles.card,
-        {
-          backgroundColor: selected ? colors.input : (isDark ? 'rgba(124,106,247,0.08)' : 'rgba(255,255,255,0.55)'),
-          borderColor: selected ? colors.primary : (isDark ? 'rgba(167,139,250,0.25)' : 'rgba(124,106,247,0.15)'),
-          borderWidth: selected ? 2 : 1,
-          padding: isGrid ? 12 : 16,
-          ...(!isDark ? {
-            shadowColor: '#1a1625',
-            shadowOffset: { width: 0, height: 8 },
-            shadowOpacity: 0.28,
-            shadowRadius: 16,
-            elevation: 8,
-          } : null),
-        },
-        isGrid ? { flexDirection: 'column', alignItems: 'center', height: 145, justifyContent: 'center' } : null,
+        styles.cardShadow,
+        getCardShadow(isDark),
         showMenu ? { zIndex: 1002 } : null,
       ]}
       onPress={() => {
@@ -71,6 +61,22 @@ export function ScriptCard({ script, onPress, onLongPress, selected = false, sho
       }}
       onLongPress={onLongPress}
     >
+      {/* Capa separada solo para recortar a las esquinas redondeadas (overflow: hidden) y pintar el
+          fondo translúcido; la de arriba (styles.cardShadow + getCardShadow) solo proyecta la
+          sombra, ver utils/cardShadow.ts. Mismo patrón que selectionBarWrapper/selectionBarClip en
+          app/(tabs)/index.tsx. */}
+      <View
+        style={[
+          styles.card,
+          {
+            backgroundColor: cardBackground,
+            borderColor: selected ? colors.primary : (isDark ? 'rgba(167,139,250,0.25)' : 'rgba(124,106,247,0.15)'),
+            borderWidth: selected ? 2 : 1,
+            padding: isGrid ? 12 : 16,
+          },
+          isGrid ? { flexDirection: 'column', alignItems: 'center', height: 145, justifyContent: 'center' } : null,
+        ]}
+      >
 
       {isGrid ? (
         <>
@@ -177,6 +183,7 @@ export function ScriptCard({ script, onPress, onLongPress, selected = false, sho
           <MoreVertical size={20} color={colors.text} />
         </TouchableOpacity>
       )}
+      </View>
 
       {showMenuButton && (
         <BottomSheetMenu
@@ -240,13 +247,18 @@ export function ScriptCard({ script, onPress, onLongPress, selected = false, sho
 }
 
 const styles = StyleSheet.create({
+  // Vista exterior: solo proyecta la sombra (sin overflow:hidden ni fondo propio) y da el margen
+  // entre tarjetas de la lista. La forma/recorte redondeado y el fondo translúcido van en `card`.
+  cardShadow: {
+    borderRadius: 20,
+    marginBottom: rp(12),
+  },
   card: {
     flexDirection: 'row',
     borderRadius: 20,
     padding: rp(16),
-    marginBottom: rp(12),
     position: 'relative',
-    overflow: 'visible',
+    overflow: 'hidden',
   },
   checkbox: {
     position: 'absolute',

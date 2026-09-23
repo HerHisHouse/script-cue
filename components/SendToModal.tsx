@@ -10,6 +10,7 @@ import {
     Alert,
 } from 'react-native';
 import { BlurView } from 'expo-blur';
+import { ANDROID_BLUR_METHOD } from '@/utils/blur';
 import { supabase } from '@/utils/supabase';
 import { useTheme } from '@/contexts/ThemeContext';
 import { useAuth } from '@/contexts/AuthContext';
@@ -161,7 +162,7 @@ export function SendToModal({ visible, onClose, onMove, currentProjectId, allowR
                         { borderColor: cardBorder },
                     ]}
                 >
-                    <BlurView intensity={isDark ? 55 : 65} tint={isDark ? 'dark' : 'light'} style={StyleSheet.absoluteFill} />
+                    <BlurView experimentalBlurMethod={ANDROID_BLUR_METHOD} intensity={isDark ? 55 : 65} tint={isDark ? 'dark' : 'light'} style={StyleSheet.absoluteFill} />
                     <View
                         style={[
                             StyleSheet.absoluteFill,

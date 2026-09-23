@@ -11,6 +11,7 @@ import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 import { useRouter, useLocalSearchParams, useFocusEffect } from 'expo-router';
 import { useTheme } from '@/contexts/ThemeContext';
 import { BlurView } from 'expo-blur';
+import { ANDROID_BLUR_METHOD } from '@/utils/blur';
 import {
     Brain,
     Ghost,
@@ -142,7 +143,7 @@ export default function MemoryMenuScreen() {
                                 onPress={() => router.push(`/scripts/${id}/memory${game.route}`)}
                             >
                                 <View style={[styles.gameCardClip, { borderColor: glassBorder }]}>
-                                    <BlurView intensity={40} tint={isDark ? 'dark' : 'light'} style={[styles.gameCard, { backgroundColor: glassBg }]}>
+                                    <BlurView experimentalBlurMethod={ANDROID_BLUR_METHOD} intensity={40} tint={isDark ? 'dark' : 'light'} style={[styles.gameCard, { backgroundColor: glassBg }]}>
                                         <View style={[styles.gameIconCircle, { backgroundColor: glassBorder }]}>
                                             <game.icon size={28} color={fg} />
                                         </View>

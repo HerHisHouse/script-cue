@@ -8,6 +8,7 @@ import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { Stack } from 'expo-router';
 import { BlurView } from 'expo-blur';
+import { ANDROID_BLUR_METHOD } from '@/utils/blur';
 import { useTheme } from '@/contexts/ThemeContext';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/utils/supabase';
@@ -653,7 +654,7 @@ export default function ReviewScreen() {
 
         {/* ── Confirm button ── */}
         <View style={s.footer}>
-          <BlurView intensity={isDark ? 55 : 65} tint={isDark ? 'dark' : 'light'} style={StyleSheet.absoluteFill} />
+          <BlurView experimentalBlurMethod={ANDROID_BLUR_METHOD} intensity={isDark ? 55 : 65} tint={isDark ? 'dark' : 'light'} style={StyleSheet.absoluteFill} />
           <View style={[StyleSheet.absoluteFill, { backgroundColor: isDark ? 'rgba(124,106,247,0.14)' : 'rgba(235,230,245,0.5)' }]} />
           <View style={[s.footerContent, { borderTopColor: cardBorder, paddingBottom: Math.max(insets.bottom, rp(16)) }]}>
             {isConfirming ? (
@@ -692,7 +693,7 @@ export default function ReviewScreen() {
           >
             <Pressable style={s.modalOverlay} onPress={() => setEditModalVisible(false)}>
               <Pressable onPress={e => e.stopPropagation()} style={s.modalContent}>
-                <BlurView intensity={isDark ? 55 : 75} tint={isDark ? 'dark' : 'light'} style={StyleSheet.absoluteFill} />
+                <BlurView experimentalBlurMethod={ANDROID_BLUR_METHOD} intensity={isDark ? 55 : 75} tint={isDark ? 'dark' : 'light'} style={StyleSheet.absoluteFill} />
                 <View style={[StyleSheet.absoluteFill, { backgroundColor: isDark ? 'rgba(124,106,247,0.40)' : 'rgba(235,230,245,0.40)' }]} />
                 <View style={{ padding: rp(24), paddingBottom: Math.max(insets.bottom + rp(20), rp(40)) }}>
                 <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: rp(12) }}>
@@ -773,7 +774,7 @@ export default function ReviewScreen() {
          supportedOrientations={['portrait', 'landscape', 'landscape-left', 'landscape-right']}>
           <Pressable style={[s.modalOverlay, { backgroundColor: 'rgba(0,0,0,0.4)' }]} onPress={() => setEmotionModalVisible(false)}>
             <View style={[s.modalContent, { paddingBottom: Math.max(insets.bottom + rp(20), rp(20)) }]}>
-              <BlurView intensity={isDark ? 55 : 75} tint={isDark ? 'dark' : 'light'} style={StyleSheet.absoluteFill} />
+              <BlurView experimentalBlurMethod={ANDROID_BLUR_METHOD} intensity={isDark ? 55 : 75} tint={isDark ? 'dark' : 'light'} style={StyleSheet.absoluteFill} />
               <View style={[StyleSheet.absoluteFill, { backgroundColor: isDark ? 'rgba(124,106,247,0.40)' : 'rgba(235,230,245,0.40)' }]} />
               <View style={{ paddingHorizontal: rp(20), paddingTop: rp(20), paddingBottom: rp(12), borderBottomWidth: 1, borderBottomColor: cardBorder }}>
                 <Text style={[s.modalTitle, { color: onBg, marginBottom: 0 }]}>Dirección Interpretativa</Text>
@@ -803,7 +804,7 @@ export default function ReviewScreen() {
           <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
             <Pressable style={s.modalOverlay} onPress={() => setShowAddModal(false)}>
               <Pressable onPress={e => e.stopPropagation()} style={s.modalContent}>
-                <BlurView intensity={isDark ? 55 : 75} tint={isDark ? 'dark' : 'light'} style={StyleSheet.absoluteFill} />
+                <BlurView experimentalBlurMethod={ANDROID_BLUR_METHOD} intensity={isDark ? 55 : 75} tint={isDark ? 'dark' : 'light'} style={StyleSheet.absoluteFill} />
                 <View style={[StyleSheet.absoluteFill, { backgroundColor: isDark ? 'rgba(124,106,247,0.40)' : 'rgba(235,230,245,0.40)' }]} />
                 <View style={{ padding: rp(24), paddingBottom: Math.max(insets.bottom + rp(20), rp(40)) }}>
                 <Text style={[s.modalTitle, { color: onBg }]}>Añadir línea</Text>
@@ -883,7 +884,7 @@ export default function ReviewScreen() {
          supportedOrientations={['portrait', 'landscape', 'landscape-left', 'landscape-right']}>
           <View style={s.modalOverlay}>
             <View style={s.modalContent}>
-              <BlurView intensity={isDark ? 55 : 75} tint={isDark ? 'dark' : 'light'} style={StyleSheet.absoluteFill} />
+              <BlurView experimentalBlurMethod={ANDROID_BLUR_METHOD} intensity={isDark ? 55 : 75} tint={isDark ? 'dark' : 'light'} style={StyleSheet.absoluteFill} />
               <View style={[StyleSheet.absoluteFill, { backgroundColor: isDark ? 'rgba(124,106,247,0.40)' : 'rgba(235,230,245,0.40)' }]} />
               <View style={{ padding: rp(24), paddingBottom: Math.max(insets.bottom + rp(20), rp(40)) }}>
               <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: rp(16), gap: 12 }}>

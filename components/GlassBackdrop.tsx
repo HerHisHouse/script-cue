@@ -1,6 +1,7 @@
 import React from 'react';
 import { StyleSheet } from 'react-native';
 import { BlurView } from 'expo-blur';
+import { ANDROID_BLUR_METHOD } from '@/utils/blur';
 
 // Los bordes de un BlurView (UIVisualEffectView) se desvanecen en el límite
 // de su rectángulo. Si el blur mide lo mismo que el botón redondo, esos
@@ -18,6 +19,7 @@ interface GlassBackdropProps {
 export function GlassBackdrop({ tint, intensity = 50 }: GlassBackdropProps) {
   return (
     <BlurView
+      experimentalBlurMethod={ANDROID_BLUR_METHOD}
       intensity={intensity}
       tint="dark"
       pointerEvents="none"

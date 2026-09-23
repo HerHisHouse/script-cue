@@ -6,6 +6,7 @@ import {
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { BlurView } from 'expo-blur';
+import { ANDROID_BLUR_METHOD } from '@/utils/blur';
 import { Video, ResizeMode } from 'expo-av';
 import * as FileSystem from 'expo-file-system/legacy';
 import * as Sharing from 'expo-sharing';
@@ -838,7 +839,7 @@ export default function TakeComparatorScreen() {
         <Modal visible transparent animationType="fade">
           <View style={styles.renameModalOverlay}>
             <View style={[styles.renameModalClip, { borderColor: glassBorder }]}>
-              <BlurView intensity={isDark ? 55 : 65} tint={isDark ? 'dark' : 'light'} style={[StyleSheet.absoluteFill, { borderRadius: rp(16) }]} />
+              <BlurView experimentalBlurMethod={ANDROID_BLUR_METHOD} intensity={isDark ? 55 : 65} tint={isDark ? 'dark' : 'light'} style={[StyleSheet.absoluteFill, { borderRadius: rp(16) }]} />
               <View style={[StyleSheet.absoluteFill, { backgroundColor: glassBg, borderRadius: rp(16) }]} />
               <View style={styles.renameModalContent}>
                 <Text style={[styles.renameModalTitle, { color: fg }]}>Renombrar toma</Text>
@@ -868,7 +869,7 @@ export default function TakeComparatorScreen() {
         <Modal visible transparent animationType="fade">
           <View style={styles.renameModalOverlay}>
             <View style={[styles.renameModalClip, { borderColor: glassBorder }]}>
-              <BlurView intensity={isDark ? 55 : 65} tint={isDark ? 'dark' : 'light'} style={[StyleSheet.absoluteFill, { borderRadius: rp(16) }]} />
+              <BlurView experimentalBlurMethod={ANDROID_BLUR_METHOD} intensity={isDark ? 55 : 65} tint={isDark ? 'dark' : 'light'} style={[StyleSheet.absoluteFill, { borderRadius: rp(16) }]} />
               <View style={[StyleSheet.absoluteFill, { backgroundColor: glassBg, borderRadius: rp(16) }]} />
               <View style={styles.renameModalContent}>
                 <Text style={[styles.renameModalTitle, { color: fg }]}>Expiración de tomas locales</Text>

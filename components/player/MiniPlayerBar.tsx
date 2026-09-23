@@ -1,6 +1,7 @@
 import React from 'react';
 import { View, Text, Pressable, ActivityIndicator, StyleSheet } from 'react-native';
 import { BlurView } from 'expo-blur';
+import { ANDROID_BLUR_METHOD } from '@/utils/blur';
 import { SkipBack, SkipForward, Play, Pause } from 'lucide-react-native';
 import { rf, rp } from '@/utils/responsive';
 
@@ -28,7 +29,7 @@ export function MiniPlayerBar({ title, isDark, isPlaying, isLoading, onPress, on
 
   return (
     <View style={[styles.wrapper, { borderColor }]}>
-      <BlurView intensity={isDark ? 55 : 65} tint={isDark ? 'dark' : 'light'} style={StyleSheet.absoluteFill} />
+      <BlurView experimentalBlurMethod={ANDROID_BLUR_METHOD} intensity={isDark ? 55 : 65} tint={isDark ? 'dark' : 'light'} style={StyleSheet.absoluteFill} />
       <View style={[StyleSheet.absoluteFill, { backgroundColor: overlayTint }]} />
       <Pressable style={styles.titleArea} onPress={onPress} hitSlop={8}>
         <Text style={[styles.title, { color: fg }]} numberOfLines={1}>{title}</Text>

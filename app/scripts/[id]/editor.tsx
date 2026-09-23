@@ -5,6 +5,7 @@ import { useRouter, useLocalSearchParams, Stack } from 'expo-router';
 import { ArrowLeft, Save, Edit3, X, Check, PenTool, Undo, Redo, Type, Bold, Italic, Underline, Strikethrough, Palette, ChevronDown, ChevronUp, ChevronRight, ChevronLeft, AlignLeft, AlignCenter, AlignRight, Menu, Pilcrow, Pencil, Highlighter, Share2, Users } from 'lucide-react-native';
 import { WebView } from 'react-native-webview';
 import { BlurView } from 'expo-blur';
+import { ANDROID_BLUR_METHOD } from '@/utils/blur';
 import Svg, { Path, G, Image as SvgImage } from 'react-native-svg';
 import { captureRef } from 'react-native-view-shot';
 import * as Print from 'expo-print';
@@ -2625,7 +2626,7 @@ export default function ScriptEditorScreen() {
                 {showFormatMenu && (
                     <View style={styles.bottomPopupShadow}>
                         <View style={[styles.bottomPopupClip, { borderColor: cardBorder }]}>
-                            <BlurView intensity={isDark ? 85 : 90} tint={isDark ? 'dark' : 'light'} style={StyleSheet.absoluteFill} />
+                            <BlurView experimentalBlurMethod={ANDROID_BLUR_METHOD} intensity={isDark ? 85 : 90} tint={isDark ? 'dark' : 'light'} style={StyleSheet.absoluteFill} />
                             <View style={[StyleSheet.absoluteFill, { backgroundColor: popupOverlayTint }]} />
                             <TouchableOpacity
                                 onPress={() => { setIsBold(!isBold); formatText('bold'); setShowFormatMenu(false); }}
@@ -2662,7 +2663,7 @@ export default function ScriptEditorScreen() {
                 {showAlignMenu && (
                     <View style={styles.bottomPopupShadow}>
                         <View style={[styles.bottomPopupClip, { borderColor: cardBorder }]}>
-                            <BlurView intensity={isDark ? 85 : 90} tint={isDark ? 'dark' : 'light'} style={StyleSheet.absoluteFill} />
+                            <BlurView experimentalBlurMethod={ANDROID_BLUR_METHOD} intensity={isDark ? 85 : 90} tint={isDark ? 'dark' : 'light'} style={StyleSheet.absoluteFill} />
                             <View style={[StyleSheet.absoluteFill, { backgroundColor: popupOverlayTint }]} />
                             <TouchableOpacity
                                 onPress={() => { setTextAlign('left'); formatText('justifyLeft'); setShowAlignMenu(false); }}
@@ -2692,7 +2693,7 @@ export default function ScriptEditorScreen() {
                 {showSizeMenu && (
                     <View style={styles.bottomPopupShadow}>
                         <View style={[styles.bottomPopupClip, { borderColor: cardBorder }]}>
-                            <BlurView intensity={isDark ? 85 : 90} tint={isDark ? 'dark' : 'light'} style={StyleSheet.absoluteFill} />
+                            <BlurView experimentalBlurMethod={ANDROID_BLUR_METHOD} intensity={isDark ? 85 : 90} tint={isDark ? 'dark' : 'light'} style={StyleSheet.absoluteFill} />
                             <View style={[StyleSheet.absoluteFill, { backgroundColor: popupOverlayTint }]} />
                             <ScrollView style={{ maxHeight: 240 }} showsVerticalScrollIndicator nestedScrollEnabled>
                                 {LINE_STYLES.map((preset, index) => {
@@ -2735,7 +2736,7 @@ export default function ScriptEditorScreen() {
                 {showColorMenu && (
                     <View style={styles.bottomPopupShadow}>
                         <View style={[styles.bottomPopupClip, { borderColor: cardBorder }]}>
-                            <BlurView intensity={isDark ? 85 : 90} tint={isDark ? 'dark' : 'light'} style={StyleSheet.absoluteFill} />
+                            <BlurView experimentalBlurMethod={ANDROID_BLUR_METHOD} intensity={isDark ? 85 : 90} tint={isDark ? 'dark' : 'light'} style={StyleSheet.absoluteFill} />
                             <View style={[StyleSheet.absoluteFill, { backgroundColor: popupOverlayTint }]} />
                             <View style={styles.colorGrid}>
                                 {COLORS.map((color) => (
@@ -2757,7 +2758,7 @@ export default function ScriptEditorScreen() {
                 {showHighlightMenu && (
                     <View style={styles.bottomPopupShadow}>
                         <View style={[styles.bottomPopupClip, { borderColor: cardBorder }]}>
-                            <BlurView intensity={isDark ? 85 : 90} tint={isDark ? 'dark' : 'light'} style={StyleSheet.absoluteFill} />
+                            <BlurView experimentalBlurMethod={ANDROID_BLUR_METHOD} intensity={isDark ? 85 : 90} tint={isDark ? 'dark' : 'light'} style={StyleSheet.absoluteFill} />
                             <View style={[StyleSheet.absoluteFill, { backgroundColor: popupOverlayTint }]} />
 
                             {highlightPanel === 'colors' && (

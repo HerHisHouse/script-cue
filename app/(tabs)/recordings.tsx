@@ -23,6 +23,7 @@ import {
 import { Dimensions } from 'react-native';
 import * as ScreenOrientation from 'expo-screen-orientation';
 import { BlurView } from 'expo-blur';
+import { ANDROID_BLUR_METHOD } from '@/utils/blur';
 import { PinchGestureHandler, State } from 'react-native-gesture-handler';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Headphones, Trash2, Clock, FileAudio, MoreVertical, Edit2, Share2, Search, Grid3x3, List, Send, ChevronRight, ChevronDown, Circle, X, Maximize2, Minimize2, Video as VideoIcon, CheckSquare, Square, MinusSquare, Download, Filter, ArrowUpAZ, Check, Calendar, Cloud, Smartphone, FileText } from 'lucide-react-native';
@@ -3544,7 +3545,7 @@ export default function RecordingsScreen() {
                   { borderColor: isDark ? 'rgba(167,139,250,0.25)' : 'rgba(124,106,247,0.15)' },
                 ]}
               >
-                <BlurView intensity={isDark ? 55 : 65} tint={isDark ? 'dark' : 'light'} style={StyleSheet.absoluteFill} />
+                <BlurView experimentalBlurMethod={ANDROID_BLUR_METHOD} intensity={isDark ? 55 : 65} tint={isDark ? 'dark' : 'light'} style={StyleSheet.absoluteFill} />
                 <View
                   style={[
                     StyleSheet.absoluteFill,
@@ -3699,7 +3700,7 @@ export default function RecordingsScreen() {
                 { borderColor: isDark ? 'rgba(167,139,250,0.25)' : 'rgba(124,106,247,0.15)' },
               ]}
             >
-              <BlurView intensity={isDark ? 55 : 65} tint={isDark ? 'dark' : 'light'} style={StyleSheet.absoluteFill} />
+              <BlurView experimentalBlurMethod={ANDROID_BLUR_METHOD} intensity={isDark ? 55 : 65} tint={isDark ? 'dark' : 'light'} style={StyleSheet.absoluteFill} />
               <View
                 style={[
                   StyleSheet.absoluteFill,

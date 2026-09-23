@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, TextInput, Switch, Platform, KeyboardAvoidingView, TouchableWithoutFeedback, Keyboard } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { BlurView } from 'expo-blur';
+import { ANDROID_BLUR_METHOD } from '@/utils/blur';
 import { X, FileText, Image as ImageIcon, Check } from 'lucide-react-native';
 import { useTheme } from '@/contexts/ThemeContext';
 import { rf, rp } from '@/utils/responsive';
@@ -111,7 +112,7 @@ export default function ExportOptionsSheet({
                 pointerEvents="box-none"
             >
                 <View style={[styles.sheetClip, { borderColor: cardBorder }]}>
-                    <BlurView intensity={isDark ? 85 : 90} tint={isDark ? 'dark' : 'light'} style={StyleSheet.absoluteFill} />
+                    <BlurView experimentalBlurMethod={ANDROID_BLUR_METHOD} intensity={isDark ? 85 : 90} tint={isDark ? 'dark' : 'light'} style={StyleSheet.absoluteFill} />
                     <View style={[StyleSheet.absoluteFill, { backgroundColor: popupOverlayTint }]} />
                     <SafeAreaView edges={['bottom']}>
                         {/* Toca fuera de un campo de texto para cerrar el teclado sin cerrar

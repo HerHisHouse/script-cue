@@ -1,6 +1,7 @@
 import React, { useRef, useEffect, useState } from 'react';
 import { View, Text, Pressable, Modal, StyleSheet, ScrollView, Animated, PanResponder, Dimensions } from 'react-native';
 import { BlurView } from 'expo-blur';
+import { ANDROID_BLUR_METHOD } from '@/utils/blur';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme } from '@/contexts/ThemeContext';
 
@@ -152,7 +153,7 @@ export function BottomSheetMenu({ visible, onClose, title, children, backgroundC
         <View style={[styles.clip, { paddingBottom: Math.max(insets.bottom, 20) }]}>
           {useGlass ? (
             <>
-              <BlurView intensity={isDark ? 55 : 75} tint={isDark ? 'dark' : 'light'} style={StyleSheet.absoluteFill} />
+              <BlurView experimentalBlurMethod={ANDROID_BLUR_METHOD} intensity={isDark ? 55 : 75} tint={isDark ? 'dark' : 'light'} style={StyleSheet.absoluteFill} />
               <View style={[StyleSheet.absoluteFill, { backgroundColor: glassOverlayTint }]} />
             </>
           ) : (

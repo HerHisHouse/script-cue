@@ -1,6 +1,7 @@
 import React from 'react';
 import { View, TouchableOpacity, StyleSheet, Platform, Text } from 'react-native';
 import { BlurView } from 'expo-blur';
+import { ANDROID_BLUR_METHOD } from '@/utils/blur';
 import { useTheme } from '@/contexts/ThemeContext';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Folder, FileText, Mic, Settings, Users } from 'lucide-react-native';
@@ -92,12 +93,12 @@ export function FixedFooter({ activeKey, variant = 'default', dark = true }: Pro
             evita que lo que pasa por debajo de la pastilla (hasta el borde físico
             del terminal) se vea nítido y corte el efecto cristal. */}
         <View style={[styles.bottomBlurStrip, { height: bottomInset + 8 }]} pointerEvents="none">
-          <BlurView intensity={dark ? 35 : 45} tint={dark ? 'dark' : 'light'} style={StyleSheet.absoluteFill} />
+          <BlurView experimentalBlurMethod={ANDROID_BLUR_METHOD} intensity={dark ? 35 : 45} tint={dark ? 'dark' : 'light'} style={StyleSheet.absoluteFill} />
           <View style={[StyleSheet.absoluteFill, { backgroundColor: dark ? 'rgba(10,8,20,0.22)' : 'rgba(235,230,245,0.18)' }]} />
         </View>
 
         <View style={[styles.floatingWrapper, { bottom: 8, borderColor: dark ? 'rgba(255,255,255,0.4)' : 'rgba(104,58,121,0.25)' }]}>
-          <BlurView intensity={dark ? 55 : 65} tint={dark ? 'dark' : 'light'} style={StyleSheet.absoluteFill} />
+          <BlurView experimentalBlurMethod={ANDROID_BLUR_METHOD} intensity={dark ? 55 : 65} tint={dark ? 'dark' : 'light'} style={StyleSheet.absoluteFill} />
           <View style={[StyleSheet.absoluteFill, { backgroundColor: overlayTint }]} />
           <View style={styles.floatingBlur}>
             {items}

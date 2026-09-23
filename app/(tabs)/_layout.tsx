@@ -4,6 +4,7 @@ import { FileText, Mic, Settings, Folder, Users } from 'lucide-react-native';
 import { useTheme } from '@/contexts/ThemeContext';
 import { View, TouchableOpacity, Text, StyleSheet } from 'react-native';
 import { BlurView } from 'expo-blur';
+import { ANDROID_BLUR_METHOD } from '@/utils/blur';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { rf, rp } from '@/utils/responsive';
 import { WINDOW_BG_DARK, WINDOW_BG_LIGHT } from '@/constants/windowBackground';
@@ -38,12 +39,12 @@ function FloatingTabBar({ state, descriptors, navigation }: BottomTabBarProps) {
           la pastilla pero difuminado sin recorte, para que no se note el
           borde entre ambas capas. */}
       <View style={[styles.bottomBlurStrip, { height: insets.bottom + 8 }]} pointerEvents="none">
-        <BlurView intensity={isDark ? 35 : 45} tint={isDark ? 'dark' : 'light'} style={StyleSheet.absoluteFill} />
+        <BlurView experimentalBlurMethod={ANDROID_BLUR_METHOD} intensity={isDark ? 35 : 45} tint={isDark ? 'dark' : 'light'} style={StyleSheet.absoluteFill} />
         <View style={[StyleSheet.absoluteFill, { backgroundColor: isDark ? 'rgba(10,8,20,0.22)' : 'rgba(235,230,245,0.18)' }]} />
       </View>
 
       <View style={[styles.floatingWrapper, { borderColor }]}>
-        <BlurView intensity={isDark ? 55 : 65} tint={isDark ? 'dark' : 'light'} style={StyleSheet.absoluteFill} />
+        <BlurView experimentalBlurMethod={ANDROID_BLUR_METHOD} intensity={isDark ? 55 : 65} tint={isDark ? 'dark' : 'light'} style={StyleSheet.absoluteFill} />
         <View style={[StyleSheet.absoluteFill, { backgroundColor: overlayTint }]} />
         <View style={styles.floatingContent}>
           {state.routes.map((route, index) => {
@@ -135,6 +136,7 @@ const styles = StyleSheet.create({
     width: 50,
     height: 34,
     borderRadius: 17,
+    overflow: 'hidden', // refuerzo defensivo: que el fondo respete las esquinas redondeadas en Android
     justifyContent: 'center',
     alignItems: 'center',
   },

@@ -3,6 +3,7 @@ import { View, Text, StyleSheet, TouchableOpacity, Platform, ScrollView } from '
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { WebView } from 'react-native-webview';
 import { BlurView } from 'expo-blur';
+import { ANDROID_BLUR_METHOD } from '@/utils/blur';
 import { ChevronLeft, Save, Undo, Redo, Pencil, PenTool, Pen, Highlighter, Paintbrush, Ruler, Eraser, Hand, X } from 'lucide-react-native';
 import { useTheme } from '@/contexts/ThemeContext';
 import { rf, rp } from '@/utils/responsive';
@@ -207,7 +208,7 @@ export default function ViewAndMarkOverlay({
                     {showBrushCapsule && (
                         <View style={styles.brushCapsule}>
                             <View style={[styles.brushClip, { borderColor: cardBorder }]}>
-                                <BlurView intensity={isDark ? 85 : 90} tint={isDark ? 'dark' : 'light'} style={StyleSheet.absoluteFill} />
+                                <BlurView experimentalBlurMethod={ANDROID_BLUR_METHOD} intensity={isDark ? 85 : 90} tint={isDark ? 'dark' : 'light'} style={StyleSheet.absoluteFill} />
                                 <View style={[StyleSheet.absoluteFill, { backgroundColor: popupOverlayTint }]} />
                             </View>
                             <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.brushScrollContent}>
@@ -239,7 +240,7 @@ export default function ViewAndMarkOverlay({
 
                     <View style={styles.toolbarCapsule}>
                         <View style={[styles.toolbarClip, { borderColor: cardBorder }]}>
-                            <BlurView intensity={isDark ? 85 : 90} tint={isDark ? 'dark' : 'light'} style={StyleSheet.absoluteFill} />
+                            <BlurView experimentalBlurMethod={ANDROID_BLUR_METHOD} intensity={isDark ? 85 : 90} tint={isDark ? 'dark' : 'light'} style={StyleSheet.absoluteFill} />
                             <View style={[StyleSheet.absoluteFill, { backgroundColor: popupOverlayTint }]} />
                         </View>
                         <View style={styles.toolbarRow}>
@@ -278,7 +279,7 @@ export default function ViewAndMarkOverlay({
                     {showColorMenu && (
                         <View style={styles.popupShadow}>
                             <View style={[styles.popupClip, { borderColor: cardBorder }]}>
-                                <BlurView intensity={isDark ? 85 : 90} tint={isDark ? 'dark' : 'light'} style={StyleSheet.absoluteFill} />
+                                <BlurView experimentalBlurMethod={ANDROID_BLUR_METHOD} intensity={isDark ? 85 : 90} tint={isDark ? 'dark' : 'light'} style={StyleSheet.absoluteFill} />
                                 <View style={[StyleSheet.absoluteFill, { backgroundColor: popupOverlayTint }]} />
                                 <View style={styles.colorGrid}>
                                     {COLORS.map((color) => (

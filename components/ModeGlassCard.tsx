@@ -1,6 +1,7 @@
 import React from 'react';
 import { Pressable, View, Text, StyleSheet } from 'react-native';
 import { BlurView } from 'expo-blur';
+import { ANDROID_BLUR_METHOD } from '@/utils/blur';
 import { rf, rp } from '@/utils/responsive';
 
 interface ModeGlassCardProps {
@@ -19,7 +20,7 @@ export function ModeGlassCard({ icon, title, description, onPress, dark = true }
         onPress={onPress}
         style={({ pressed }) => [styles.wrapper, { borderColor: theme.border }, pressed && styles.pressed]}
       >
-        <BlurView intensity={40} tint={dark ? 'dark' : 'light'} style={[styles.blur, { backgroundColor: theme.blurBg }]}>
+        <BlurView experimentalBlurMethod={ANDROID_BLUR_METHOD} intensity={40} tint={dark ? 'dark' : 'light'} style={[styles.blur, { backgroundColor: theme.blurBg }]}>
           <View style={[styles.iconCircle, { backgroundColor: theme.iconBg }]}>{icon}</View>
           <Text style={[styles.title, { color: theme.title }]}>{title}</Text>
           <Text style={[styles.description, { color: theme.description }]} numberOfLines={2}>{description}</Text>

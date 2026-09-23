@@ -2,6 +2,7 @@ import React from 'react';
 import { View, Text, StyleSheet } from 'react-native';
 import Svg, { Circle } from 'react-native-svg';
 import { BlurView } from 'expo-blur';
+import { ANDROID_BLUR_METHOD } from '@/utils/blur';
 import { Headphones } from 'lucide-react-native';
 
 interface PlayerDiscProps {
@@ -50,6 +51,7 @@ export function PlayerDisc({ progress, filename, isDark, size = 300 }: PlayerDis
 
       <View style={[styles.innerClip, { width: innerSize, height: innerSize, borderRadius: innerSize / 2 }]}>
         <BlurView
+          experimentalBlurMethod={ANDROID_BLUR_METHOD}
           intensity={isDark ? 50 : 40}
           tint={isDark ? 'dark' : 'light'}
           style={StyleSheet.absoluteFill}

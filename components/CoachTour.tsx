@@ -2,6 +2,7 @@ import React from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, Modal, useWindowDimensions } from 'react-native';
 import Svg, { Path } from 'react-native-svg';
 import { BlurView } from 'expo-blur';
+import { ANDROID_BLUR_METHOD } from '@/utils/blur';
 import { useTheme } from '@/contexts/ThemeContext';
 import { rf, rp } from '@/utils/responsive';
 
@@ -107,7 +108,7 @@ export function CoachTour({ visible, step, stepIndex, totalSteps, targetRect, is
 
         <View style={[styles.tooltipWrapper, { top: tooltipTop }]}>
           <View style={[styles.tooltipClip, { borderColor: cardBorder }]}>
-            <BlurView intensity={isDark ? 55 : 70} tint={isDark ? 'dark' : 'light'} style={StyleSheet.absoluteFill} />
+            <BlurView experimentalBlurMethod={ANDROID_BLUR_METHOD} intensity={isDark ? 55 : 70} tint={isDark ? 'dark' : 'light'} style={StyleSheet.absoluteFill} />
             <View style={[StyleSheet.absoluteFill, { backgroundColor: cardBg }]} />
             <View style={styles.tooltipContent}>
               <Text style={[styles.stepCounter, { color: colors.primary }]}>

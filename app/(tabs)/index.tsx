@@ -2,6 +2,7 @@ import React, { useEffect, useState, useCallback } from 'react'; // Force rebuil
 import { StyleSheet, View, Text, Pressable, FlatList, TouchableOpacity, Animated, Easing, Modal, TextInput, Alert, Share, useWindowDimensions, Keyboard, RefreshControl, ImageBackground } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { BlurView } from 'expo-blur';
+import { ANDROID_BLUR_METHOD } from '@/utils/blur';
 import { supabase } from '@/utils/supabase';
 import { ScriptCard } from '@/components/ScriptCard';
 import { SendToModal } from '@/components/SendToModal';
@@ -895,7 +896,7 @@ export default function IndexScreen() {
               { borderColor: isDark ? 'rgba(167,139,250,0.25)' : 'rgba(124,106,247,0.15)' },
             ]}
           >
-            <BlurView intensity={isDark ? 55 : 65} tint={isDark ? 'dark' : 'light'} style={StyleSheet.absoluteFill} />
+            <BlurView experimentalBlurMethod={ANDROID_BLUR_METHOD} intensity={isDark ? 55 : 65} tint={isDark ? 'dark' : 'light'} style={StyleSheet.absoluteFill} />
             <View
               style={[
                 StyleSheet.absoluteFill,
@@ -953,7 +954,7 @@ export default function IndexScreen() {
                 { borderColor: isDark ? 'rgba(167,139,250,0.25)' : 'rgba(124,106,247,0.15)' },
               ]}
             >
-              <BlurView intensity={isDark ? 55 : 65} tint={isDark ? 'dark' : 'light'} style={StyleSheet.absoluteFill} />
+              <BlurView experimentalBlurMethod={ANDROID_BLUR_METHOD} intensity={isDark ? 55 : 65} tint={isDark ? 'dark' : 'light'} style={StyleSheet.absoluteFill} />
               <View
                 style={[
                   StyleSheet.absoluteFill,
