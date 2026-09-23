@@ -17,6 +17,7 @@ import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 import { Users, CheckCircle, Check, Search } from 'lucide-react-native';
 import { useAuth } from '@/contexts/AuthContext';
 import { useTheme } from '@/contexts/ThemeContext';
+import { GlassCard } from '@/components/GlassCard';
 import { supabase } from '@/utils/supabase';
 import { useRouter } from 'expo-router';
 import { rf, rp } from '@/utils/responsive';
@@ -276,22 +277,15 @@ export default function CommunityScreen() {
             <View style={styles.section}>
               <Text style={[styles.sectionTitle, { color: colors.textSecondary }]}>Tus intereses:</Text>
               {userIntereses.map((interes) => (
-                <View
+                <GlassCard
                   key={interes}
-                  style={[
-                    styles.interesRow,
-                    {
-                      backgroundColor: isDark ? 'rgba(124,106,247,0.08)' : 'rgba(255,255,255,0.55)',
-                      borderColor: isDark ? 'rgba(167,139,250,0.25)' : 'rgba(124,106,247,0.15)',
-                    },
-                    !isDark && {
-                      shadowColor: '#1a1625',
-                      shadowOffset: { width: 0, height: 4 },
-                      shadowOpacity: 0.18,
-                      shadowRadius: 8,
-                      elevation: 4,
-                    },
-                  ]}
+                  isDark={isDark}
+                  style={styles.interesRowOuter}
+                  contentStyle={styles.interesRow}
+                  backgroundColor={isDark ? 'rgba(124,106,247,0.08)' : 'rgba(255,255,255,0.55)'}
+                  borderColor={isDark ? 'rgba(167,139,250,0.25)' : 'rgba(124,106,247,0.15)'}
+                  borderRadius={16}
+                  shadowRecipe={{ offsetY: 4, blur: 8, opacity: 0.18 }}
                 >
                   <View style={[styles.checkDot, { backgroundColor: PURPLE }]}>
                     <Check size={10} color="#fff" />
@@ -299,7 +293,7 @@ export default function CommunityScreen() {
                   <Text style={[styles.interesText, { color: isDark ? '#ffffff' : '#2a2447' }]}>
                     {LABEL_MAP[interes] || interes}
                   </Text>
-                </View>
+                </GlassCard>
               ))}
             </View>
 
@@ -367,25 +361,18 @@ export default function CommunityScreen() {
               {OPCIONES.map((opcion) => {
                 const isSelected = selectedOptions.includes(opcion.id);
                 return (
-                  <TouchableOpacity
+                  <GlassCard
                     key={opcion.id}
                     activeOpacity={0.7}
-                    style={[
-                      styles.optionCard,
-                      {
-                        backgroundColor: isSelected
-                          ? (isDark ? `${PURPLE}30` : `${PURPLE}18`)
-                          : (isDark ? 'rgba(124,106,247,0.08)' : 'rgba(255,255,255,0.55)'),
-                        borderColor: isSelected ? PURPLE : (isDark ? 'rgba(167,139,250,0.25)' : 'rgba(124,106,247,0.15)'),
-                      },
-                      !isDark && !isSelected && {
-                        shadowColor: '#1a1625',
-                        shadowOffset: { width: 0, height: 8 },
-                        shadowOpacity: 0.28,
-                        shadowRadius: 16,
-                        elevation: 8,
-                      },
-                    ]}
+                    // Sin sombra si está seleccionado, en cualquier tema (así era el original) — el
+                    // shadow estándar de GlassCard solo depende de isDark, de ahí este atajo.
+                    isDark={isDark || isSelected}
+                    contentStyle={styles.optionCard}
+                    backgroundColor={isSelected
+                      ? (isDark ? `${PURPLE}30` : `${PURPLE}18`)
+                      : (isDark ? 'rgba(124,106,247,0.08)' : 'rgba(255,255,255,0.55)')}
+                    borderColor={isSelected ? PURPLE : (isDark ? 'rgba(167,139,250,0.25)' : 'rgba(124,106,247,0.15)')}
+                    borderWidth={1.5}
                     onPress={() => toggleOpcion(opcion.id)}
                   >
                     {/* Checkmark */}
@@ -409,7 +396,7 @@ export default function CommunityScreen() {
                         <Text style={[styles.optionSubtexto, { color: isDark ? '#a0a0c0' : '#5c5678' }]}>{opcion.subtexto}</Text>
                       </View>
                     </View>
-                  </TouchableOpacity>
+                  </GlassCard>
                 );
               })}
             </View>
@@ -455,21 +442,12 @@ export default function CommunityScreen() {
             >
               <SafeAreaView style={{ flex: 1, backgroundColor: 'transparent' }}>
                 <View style={{ paddingHorizontal: 16, paddingTop: 16, paddingBottom: 12, flexDirection: 'row', alignItems: 'center' }}>
-                  <View
-                    style={[
-                      styles.citySearchBox,
-                      {
-                        backgroundColor: isDark ? 'rgba(124,106,247,0.08)' : 'rgba(255,255,255,0.55)',
-                        borderColor: isDark ? 'rgba(167,139,250,0.25)' : 'rgba(124,106,247,0.15)',
-                      },
-                      !isDark && {
-                        shadowColor: '#1a1625',
-                        shadowOffset: { width: 0, height: 8 },
-                        shadowOpacity: 0.28,
-                        shadowRadius: 16,
-                        elevation: 8,
-                      },
-                    ]}
+                  <GlassCard
+                    isDark={isDark}
+                    style={styles.citySearchBoxOuter}
+                    contentStyle={styles.citySearchBox}
+                    backgroundColor={isDark ? 'rgba(124,106,247,0.08)' : 'rgba(255,255,255,0.55)'}
+                    borderColor={isDark ? 'rgba(167,139,250,0.25)' : 'rgba(124,106,247,0.15)'}
                   >
                     <Search size={18} color={isDark ? '#a0a0c0' : '#5c5678'} />
                     <TextInput
@@ -481,27 +459,18 @@ export default function CommunityScreen() {
                       onChangeText={setCitySearch}
                       returnKeyType="search"
                     />
-                  </View>
+                  </GlassCard>
                   <TouchableOpacity onPress={() => setCityModalVisible(false)} style={{ marginLeft: 12 }}>
                     <Text style={{ color: PURPLE, fontWeight: '700', fontSize: 16 }}>Hecho</Text>
                   </TouchableOpacity>
                 </View>
 
-                <View
-                  style={[
-                    styles.cityListCard,
-                    {
-                      backgroundColor: isDark ? 'rgba(124,106,247,0.08)' : 'rgba(255,255,255,0.55)',
-                      borderColor: isDark ? 'rgba(167,139,250,0.25)' : 'rgba(124,106,247,0.15)',
-                    },
-                    !isDark && {
-                      shadowColor: '#1a1625',
-                      shadowOffset: { width: 0, height: 8 },
-                      shadowOpacity: 0.28,
-                      shadowRadius: 16,
-                      elevation: 8,
-                    },
-                  ]}
+                <GlassCard
+                  isDark={isDark}
+                  style={styles.cityListCardOuter}
+                  contentStyle={styles.cityListCard}
+                  backgroundColor={isDark ? 'rgba(124,106,247,0.08)' : 'rgba(255,255,255,0.55)'}
+                  borderColor={isDark ? 'rgba(167,139,250,0.25)' : 'rgba(124,106,247,0.15)'}
                 >
                   <FlatList
                     data={PROVINCES.filter(p => p.toLowerCase().includes(citySearch.toLowerCase()))}
@@ -529,7 +498,7 @@ export default function CommunityScreen() {
                       );
                     }}
                   />
-                </View>
+                </GlassCard>
               </SafeAreaView>
             </ImageBackground>
           </Modal>
@@ -576,23 +545,24 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
   },
+  citySearchBoxOuter: {
+    flex: 1,
+  },
   citySearchBox: {
     flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
-    borderRadius: 20,
-    borderWidth: 1,
     paddingHorizontal: 16,
     paddingVertical: 12,
   },
-  cityListCard: {
+  cityListCardOuter: {
     flex: 1,
     marginHorizontal: 16,
     marginBottom: 16,
-    borderRadius: 20,
-    borderWidth: 1,
-    overflow: 'hidden',
+  },
+  cityListCard: {
+    flex: 1,
   },
   cityRow: {
     paddingHorizontal: 16,
@@ -680,8 +650,6 @@ const styles = StyleSheet.create({
     gap: rp(10),
   },
   optionCard: {
-    borderRadius: 20,
-    borderWidth: 1.5,
     padding: rp(14),
     flexDirection: 'row',
     alignItems: 'center',
@@ -781,14 +749,14 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   // Already registered styles
+  interesRowOuter: {
+    marginBottom: rp(8),
+  },
   interesRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: rp(10),
     padding: rp(12),
-    borderRadius: 16,
-    borderWidth: 1,
-    marginBottom: rp(8),
   },
   checkDot: {
     width: 20,

@@ -18,6 +18,7 @@ import { loadDialogueLines } from '@/utils/loadDialogueLines';
 import { persistLineOrder } from '@/utils/persistLineOrder';
 import { bracketsToParentheses } from '@/utils/stringUtils';
 import { generateAndCacheAudio, invalidateCacheForLine } from '@/utils/ttsCache';
+import { getCardShadow } from '@/utils/cardShadow';
 import { rf, rp } from '@/utils/responsive';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import DraggableFlatList, { ScaleDecorator } from 'react-native-draggable-flatlist';
@@ -29,6 +30,19 @@ import { CoachTour, CoachTourRect, CoachTourStepContent } from '@/components/Coa
 import { WebView } from 'react-native-webview';
 
 const REVIEW_TOUR_KEY = 'hideReviewTourV1';
+
+/**
+ * Sombra de cada tarjeta arrastrable: en reposo, la estándar de la app (getCardShadow); mientras se
+ * arrastra (isActive), un halo teñido con el color del personaje — charColor siempre es un hex
+ * "#RRGGBB" (colors.primary / CHARACTER_COLORS), por eso se le puede añadir el canal alfa a mano en
+ * la rama de Android (boxShadow no acepta shadowColor + shadowOpacity por separado como iOS).
+ */
+function draggableCardShadow(isDark: boolean, isActive: boolean, charColor: string) {
+  if (!isActive) return getCardShadow(isDark);
+  return Platform.OS === 'android'
+    ? { boxShadow: [{ offsetX: 0, offsetY: 4, blurRadius: 20, spreadDistance: 2, color: `${charColor}59` }] }
+    : { shadowColor: charColor, shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.35, shadowRadius: 20, elevation: 6 };
+}
 
 export default function ReviewScreen() {
   const router = useRouter();
@@ -42,13 +56,6 @@ export default function ReviewScreen() {
   const onBg2 = isDark ? '#a0a0c0' : '#5c5678';
   const cardBg = isDark ? 'rgba(124,106,247,0.08)' : 'rgba(255,255,255,0.55)';
   const cardBorder = isDark ? 'rgba(167,139,250,0.25)' : 'rgba(124,106,247,0.15)';
-  const cardShadow = !isDark ? {
-    shadowColor: '#1a1625',
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.28,
-    shadowRadius: 16,
-    elevation: 8,
-  } : null;
   const fieldBg = isDark ? 'rgba(255,255,255,0.06)' : 'rgba(255,255,255,0.7)';
   const fieldBorder = isDark ? 'rgba(255,255,255,0.14)' : 'rgba(124,106,247,0.18)';
   const neutralChipBg = isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.05)';
@@ -566,12 +573,7 @@ export default function ReviewScreen() {
 
             return (
               <ScaleDecorator activeScale={1.02}>
-                <View style={[s.cardShadowWrapper, {
-                  ...cardShadow,
-                  shadowColor: isActive ? charColor : (cardShadow?.shadowColor || 'transparent'),
-                  shadowOpacity: isActive ? 0.35 : (cardShadow?.shadowOpacity || 0),
-                  elevation: isActive ? 6 : (cardShadow?.elevation || 1),
-                }]}>
+                <View style={[s.cardShadowWrapper, draggableCardShadow(isDark, isActive, charColor)]}>
                 <View style={[s.card, {
                   backgroundColor: cardBg,
                   borderColor: charColor,
@@ -994,7 +996,7 @@ const s = StyleSheet.create({
   headerIconBtn: { width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center' },
   headerTitle: { fontSize: rf(16), fontWeight: '700' },
   headerSub: { fontSize: rf(12), marginTop: 2 },
-  cardShadowWrapper: { borderRadius: 16, marginBottom: 10, shadowOffset: { width: 0, height: 4 } },
+  cardShadowWrapper: { borderRadius: 16, marginBottom: 10 },
   card: { flexDirection: 'row', borderRadius: 16, overflow: 'hidden' },
   colorBar: { width: 5 },
   cardHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },

@@ -13,6 +13,7 @@ import {
 } from 'react-native';
 import { Volume2, VolumeX, Check, ChevronDown, X, Heart, Search, RefreshCw } from 'lucide-react-native';
 import { useTheme } from '@/contexts/ThemeContext';
+import { GlassCard } from '@/components/GlassCard';
 import { rf, rp } from '@/utils/responsive';
 import {
     VoiceOption,
@@ -64,13 +65,6 @@ export function VoiceSelector({
     const onBg2 = isDark ? '#a0a0c0' : '#5c5678';
     const cardBg = isDark ? 'rgba(124,106,247,0.08)' : 'rgba(255,255,255,0.55)';
     const cardBorder = isDark ? 'rgba(167,139,250,0.25)' : 'rgba(124,106,247,0.15)';
-    const cardShadow = !isDark ? {
-        shadowColor: '#1a1625',
-        shadowOffset: { width: 0, height: 8 },
-        shadowOpacity: 0.28,
-        shadowRadius: 16,
-        elevation: 8,
-    } : null;
     const fieldBg = isDark ? 'rgba(255,255,255,0.06)' : 'rgba(255,255,255,0.7)';
     const fieldBorder = isDark ? 'rgba(255,255,255,0.14)' : 'rgba(124,106,247,0.18)';
     const chipActiveBg = isDark ? 'rgba(124,106,247,0.28)' : 'rgba(124,106,247,0.16)';
@@ -432,13 +426,15 @@ export function VoiceSelector({
     };
 
     const renderVoiceItem = (voice: any, isSelected: boolean) => (
-        <TouchableOpacity
+        <GlassCard
             key={voice.id}
-            style={[
-                styles.voiceItem,
-                { ...cardShadow, backgroundColor: cardBg, borderColor: cardBorder },
-                isSelected && { borderColor: isDark ? '#a78bfa' : colors.primary, borderWidth: 2 },
-            ]}
+            isDark={isDark}
+            style={styles.voiceItemOuter}
+            contentStyle={styles.voiceItem}
+            backgroundColor={cardBg}
+            borderColor={isSelected ? (isDark ? '#a78bfa' : colors.primary) : cardBorder}
+            borderWidth={isSelected ? 2 : 1}
+            borderRadius={12}
             onPress={() => handleSelect(voice.id)}
         >
             <View style={styles.voiceInfo}>
@@ -487,7 +483,7 @@ export function VoiceSelector({
                     </View>
                 )}
             </View>
-        </TouchableOpacity>
+        </GlassCard>
     );
 
     const renderSection = (title: string, data: any[]) => {
@@ -643,7 +639,8 @@ const styles = StyleSheet.create({
     voiceSectionTitle: { fontSize: rf(12), fontWeight: '700', letterSpacing: 0.8, textTransform: 'uppercase', flexShrink: 0 },
     voiceSectionLine: { flex: 1, height: 1, opacity: 0.4 },
     
-    voiceItem: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', padding: rp(16), borderRadius: 12, borderWidth: 1, marginBottom: rp(8) },
+    voiceItem: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', padding: rp(16) },
+    voiceItemOuter: { marginBottom: rp(8) },
     voiceInfo: { flex: 1, marginRight: rp(12) },
     voiceNameRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 4 },
     voiceName: { fontSize: rf(16), fontWeight: '600', marginRight: rp(8) },

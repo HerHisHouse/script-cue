@@ -16,6 +16,7 @@ import {
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { useTheme } from '@/contexts/ThemeContext';
+import { GlassCard } from '@/components/GlassCard';
 import { useAuth } from '@/contexts/AuthContext';
 import { DialogueLine } from '@/utils/dialogueParser';
 import { loadDialogueLines } from '@/utils/loadDialogueLines';
@@ -575,28 +576,37 @@ export default function GhostModeScreen() {
             <View style={[styles.floatingControls, { bottom: insets.bottom + rp(16) }]} pointerEvents="box-none">
                 <View style={styles.controlsRow}>
                     {currentIndex > 0 ? (
-                        <TouchableOpacity
+                        <GlassCard
+                            isDark={isDark}
                             onPress={() => setCurrentIndex(p => p - 1)}
-                            style={[styles.navCircle, styles.pillShadow, { backgroundColor: glassBg, borderColor: glassBorder }]}
+                            contentStyle={styles.navCircle}
+                            backgroundColor={glassBg}
+                            borderColor={glassBorder}
+                            borderRadius={28}
+                            shadowRecipe={{ offsetY: 6, blur: 12, opacity: 0.2 }}
+                            shadowAlwaysOn
                         >
                             <ChevronLeft size={26} color={fg} />
-                        </TouchableOpacity>
+                        </GlassCard>
                     ) : <View style={{ width: 56 }} />}
 
-                    <TouchableOpacity
+                    <GlassCard
+                        isDark={isDark}
                         onPress={handleNextLine}
                         disabled={!isLineComplete()}
-                        style={[
-                            styles.nextBtn,
-                            styles.pillShadow,
-                            isLineComplete() ? primaryButtonBg : { backgroundColor: glassBg, borderColor: glassBorder, borderWidth: 1, opacity: 0.5 },
-                        ]}
+                        contentStyle={[styles.nextBtn, !isLineComplete() && { opacity: 0.5 }]}
+                        backgroundColor={isLineComplete() ? (isDark ? 'rgba(124,106,247,0.80)' : colors.primary) : glassBg}
+                        borderColor={isLineComplete() ? 'rgba(255,255,255,0.5)' : glassBorder}
+                        borderWidth={isLineComplete() ? (isDark ? 1.5 : 0) : 1}
+                        borderRadius={100}
+                        shadowRecipe={{ offsetY: 6, blur: 12, opacity: 0.2 }}
+                        shadowAlwaysOn
                     >
                         <Text style={[styles.nextBtnText, { color: isLineComplete() ? '#fff' : fgSecondary }]}>
                             {currentIndex === allLines.length - 1 ? (level < LEVELS.length - 1 ? "Completar Nivel" : "Finalizar") : "Siguiente"}
                         </Text>
                         <ChevronRight size={20} color={isLineComplete() ? '#fff' : fgSecondary} />
-                    </TouchableOpacity>
+                    </GlassCard>
                 </View>
             </View>
 
@@ -681,15 +691,8 @@ const styles = StyleSheet.create({
     // pantallas del modo Memoria.
     floatingControls: { position: 'absolute', left: 16, right: 16 },
     controlsRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-    pillShadow: {
-        shadowColor: '#1a1625',
-        shadowOffset: { width: 0, height: 6 },
-        shadowOpacity: 0.2,
-        shadowRadius: 12,
-        elevation: 6,
-    },
-    navCircle: { width: 56, height: 56, borderRadius: 28, borderWidth: 1, alignItems: 'center', justifyContent: 'center' },
-    nextBtn: { flexDirection: 'row', alignItems: 'center', paddingVertical: rp(14), paddingHorizontal: rp(22), borderRadius: 100, gap: 8 },
+    navCircle: { width: 56, height: 56, alignItems: 'center', justifyContent: 'center' },
+    nextBtn: { flexDirection: 'row', alignItems: 'center', paddingVertical: rp(14), paddingHorizontal: rp(22), gap: 8 },
     nextBtnText: { fontWeight: '600' },
 
     bonusOverlay: {

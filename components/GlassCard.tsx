@@ -1,8 +1,8 @@
 import React from 'react';
-import { View, TouchableOpacity, StyleProp, ViewStyle } from 'react-native';
-import { getCardShadow } from '@/utils/cardShadow';
+import { View, TouchableOpacity, StyleProp, ViewStyle, TouchableOpacityProps } from 'react-native';
+import { getCardShadow, getShadowStyle, ShadowRecipe } from '@/utils/cardShadow';
 
-interface GlassCardProps {
+interface GlassCardProps extends Pick<TouchableOpacityProps, 'accessibilityRole' | 'accessibilityLabel' | 'accessibilityHint' | 'accessibilityState' | 'testID' | 'hitSlop'> {
   children: React.ReactNode;
   isDark: boolean;
   /** Iba en la vista con la sombra (antes, la única vista: posición, márgenes, ancho...). */
@@ -13,6 +13,13 @@ interface GlassCardProps {
   borderColor: string;
   borderWidth?: number;
   borderRadius?: number;
+  /** Por defecto, la sombra estándar de las tarjetas (getCardShadow). Para una sombra "a medida"
+   *  (otro blur/opacidad) pasar una receta de getShadowStyle — se sigue apagando en oscuro salvo
+   *  que shadowAlwaysOn sea true. */
+  shadowRecipe?: ShadowRecipe;
+  /** Con shadowRecipe: que la sombra no se apague en modo oscuro (algún caso, como los círculos de
+   *  navegación del modo Memoria, ya la llevaba activa en ambos temas antes de esta conversión). */
+  shadowAlwaysOn?: boolean;
   onPress?: () => void;
   onLongPress?: () => void;
   disabled?: boolean;
@@ -42,15 +49,20 @@ export function GlassCard({
   borderColor,
   borderWidth = 1,
   borderRadius = 20,
+  shadowRecipe,
+  shadowAlwaysOn = false,
   onPress,
   onLongPress,
   disabled,
   activeOpacity,
+  ...accessibilityProps
 }: GlassCardProps) {
-  const shadow = getCardShadow(isDark);
+  const shadow = shadowRecipe
+    ? ((shadowAlwaysOn || !isDark) ? getShadowStyle(shadowRecipe) : null)
+    : getCardShadow(isDark);
 
   const Outer = onPress ? TouchableOpacity : View;
-  const outerProps = onPress ? { onPress, onLongPress, disabled, activeOpacity } : {};
+  const outerProps = onPress ? { onPress, onLongPress, disabled, activeOpacity, ...accessibilityProps } : {};
 
   return (
     <Outer style={[{ borderRadius }, shadow, style]} {...outerProps}>

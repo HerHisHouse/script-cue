@@ -13,6 +13,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { ArrowLeft, FileText, Sparkles, Save, BookOpen, PenLine } from 'lucide-react-native';
 import { useTheme } from '@/contexts/ThemeContext';
+import { getShadowStyle } from '@/utils/cardShadow';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/utils/supabase';
 import { ScriptAnalysis, Script } from '@/types/database';
@@ -315,7 +316,7 @@ export default function AnalysisScreen() {
                     </View>
 
                     <TouchableOpacity
-                        style={[styles.modeButton, primaryButtonBg]}
+                        style={[styles.modeButton, primaryButtonBg, getShadowStyle({ offsetY: 4, blur: 8, opacity: 0.3 })]}
                         onPress={() => setMode('manual')}
                     >
                         <FileText size={24} color="#FFFFFF" />
@@ -324,7 +325,7 @@ export default function AnalysisScreen() {
 
                     {/* Botón de análisis personalizado */}
                     <TouchableOpacity
-                        style={[styles.modeButton, primaryButtonBg]}
+                        style={[styles.modeButton, primaryButtonBg, getShadowStyle({ offsetY: 4, blur: 8, opacity: 0.3 })]}
                         onPress={() => router.push(`/scripts/${id}/analysis/custom`)}
                     >
                         <PenLine size={24} color="#FFFFFF" />
@@ -334,7 +335,7 @@ export default function AnalysisScreen() {
                     {/* Mostrar botón de resultado de IA solo si existe */}
                     {Object.keys(aiAnalysis).length > 0 && (
                         <TouchableOpacity
-                            style={[styles.modeButton, { backgroundColor: '#10B981' }]}
+                            style={[styles.modeButton, { backgroundColor: '#10B981' }, getShadowStyle({ offsetY: 4, blur: 8, opacity: 0.3 })]}
                             onPress={() => setMode('ai-result')}
                         >
                             <Sparkles size={24} color="#FFFFFF" />
@@ -345,7 +346,7 @@ export default function AnalysisScreen() {
                     {/* Mostrar botón de generar IA solo si NO existe análisis de IA */}
                     {Object.keys(aiAnalysis).length === 0 && (
                         <TouchableOpacity
-                            style={[styles.modeButton, primaryButtonBg]}
+                            style={[styles.modeButton, primaryButtonBg, getShadowStyle({ offsetY: 4, blur: 8, opacity: 0.3 })]}
                             onPress={() => setMode('ai')}
                         >
                             <Sparkles size={24} color="#FFFFFF" />
@@ -432,7 +433,7 @@ export default function AnalysisScreen() {
                     ))}
 
                     <TouchableOpacity
-                        style={[styles.saveButtonLarge, primaryButtonBg]}
+                        style={[styles.saveButtonLarge, primaryButtonBg, getShadowStyle({ offsetY: 4, blur: 8, opacity: 0.3 })]}
                         onPress={handleSaveAnalysis}
                         disabled={saving}
                     >
@@ -561,7 +562,7 @@ export default function AnalysisScreen() {
                     ))}
 
                     <TouchableOpacity
-                        style={[styles.saveButtonLarge, primaryButtonBg]}
+                        style={[styles.saveButtonLarge, primaryButtonBg, getShadowStyle({ offsetY: 4, blur: 8, opacity: 0.3 })]}
                         onPress={handleSaveAIAnalysis}
                         disabled={saving}
                     >
@@ -720,11 +721,6 @@ const styles = StyleSheet.create({
         paddingHorizontal: rp(20),
         borderRadius: 12,
         marginBottom: 16,
-        shadowColor: '#1a1625',
-        shadowOffset: { width: 0, height: 4 },
-        shadowOpacity: 0.3,
-        shadowRadius: 8,
-        elevation: 4,
     },
     modeButtonText: {
         fontSize: rf(16),
@@ -773,11 +769,6 @@ const styles = StyleSheet.create({
         paddingHorizontal: rp(20),
         borderRadius: 12,
         marginTop: 24,
-        shadowColor: '#1a1625',
-        shadowOffset: { width: 0, height: 4 },
-        shadowOpacity: 0.3,
-        shadowRadius: 8,
-        elevation: 4,
     },
     saveButtonText: {
         fontSize: rf(16),

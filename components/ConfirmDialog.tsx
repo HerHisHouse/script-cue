@@ -9,6 +9,7 @@ import {
 } from 'react-native';
 import { BlurView } from 'expo-blur';
 import { ANDROID_BLUR_METHOD } from '@/utils/blur';
+import { getCardShadow } from '@/utils/cardShadow';
 import { useTheme } from '@/contexts/ThemeContext';
 import { rf, rp } from '@/utils/responsive';
 
@@ -65,16 +66,7 @@ export function ConfirmDialog({
      supportedOrientations={['portrait', 'landscape', 'landscape-left', 'landscape-right']}>
       <Pressable style={styles.overlay} onPress={onCancel}>
         <Pressable
-          style={[
-            styles.shadowWrapper,
-            !isDark && {
-              shadowColor: '#1a1625',
-              shadowOffset: { width: 0, height: 8 },
-              shadowOpacity: 0.28,
-              shadowRadius: 16,
-              elevation: 8,
-            },
-          ]}
+          style={[styles.shadowWrapper, getCardShadow(isDark)]}
           onPress={(e) => e.stopPropagation()}
         >
           <View

@@ -51,6 +51,7 @@ import { supabase } from '@/utils/supabase';
 import { serverAuthHeaders } from '@/utils/serverAuth';
 import { RENDER_SERVER_URL } from '@/utils/serverUrl';
 import { useTheme } from '@/contexts/ThemeContext';
+import { GlassCard } from '@/components/GlassCard';
 import { useAuth } from '@/contexts/AuthContext';
 import type { Recording } from '@/types/database';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -663,7 +664,7 @@ export default function CoachModeScreen() {
       case 'feedback':
         return (
           <View style={styles.tabContent}>
-            <View style={[styles.scoreCard, { backgroundColor: cardBg, borderColor: cardBorder, borderWidth: 1 }]}>
+            <GlassCard isDark={isDark} contentStyle={styles.scoreCard} backgroundColor={cardBg} borderColor={cardBorder} shadowRecipe={{ offsetY: 2, blur: 10, opacity: 0.05 }} shadowAlwaysOn>
               {Object.entries(analysis.feedback || {}).map(([key, value]: [string, any], index: number) => (
                 <View key={key} style={styles.verticalFeedbackItem}>
                   {index > 0 && <View style={[styles.horizontalDivider, { backgroundColor: cardBorder }]} />}
@@ -678,7 +679,7 @@ export default function CoachModeScreen() {
                   </Text>
                 </View>
               ))}
-            </View>
+            </GlassCard>
           </View>
         );
       case 'propuestas':
@@ -686,7 +687,7 @@ export default function CoachModeScreen() {
           <View style={styles.tabContent}>
             <Text style={[styles.sectionTitle, { color: colors.primary, marginBottom: 16 }]}>Propuestas de Exploración</Text>
             {(analysis.propuestas || []).map((prop: any, i: number) => (
-              <View key={i} style={[styles.propuestaCard, { backgroundColor: cardBg, borderColor: cardBorder, borderWidth: 1, borderLeftColor: '#a78bfa' }]}>
+              <GlassCard key={i} isDark={isDark} style={styles.propuestaCardOuter} contentStyle={[styles.propuestaCard, { borderLeftColor: '#a78bfa' }]} backgroundColor={cardBg} borderColor={cardBorder} borderRadius={12} shadowRecipe={{ offsetY: 2, blur: 10, opacity: 0.05 }} shadowAlwaysOn>
                 <View style={styles.propuestaNumberBox}>
                   <Text style={styles.propuestaNumber}>{i + 1}</Text>
                 </View>
@@ -694,7 +695,7 @@ export default function CoachModeScreen() {
                   <Text style={[styles.propuestaTitle, { color: onBg }]}>{prop.titulo}</Text>
                   <Text style={[styles.propuestaDesc, { color: onBg2 }]}>{prop.descripcion}</Text>
                 </View>
-              </View>
+              </GlassCard>
             ))}
             <TouchableOpacity
                 style={[styles.secondaryButton, { borderColor: colors.primary, marginTop: 24 }]}
@@ -745,7 +746,7 @@ export default function CoachModeScreen() {
 
         return (
           <View style={styles.tabContent}>
-            <View style={[styles.scoreCard, { backgroundColor: cardBg, borderColor: cardBorder, borderWidth: 1 }]}>
+            <GlassCard isDark={isDark} contentStyle={styles.scoreCard} backgroundColor={cardBg} borderColor={cardBorder} shadowRecipe={{ offsetY: 2, blur: 10, opacity: 0.05 }} shadowAlwaysOn>
               <Text style={[styles.sectionTitle, { color: colors.primary, marginBottom: 16 }]}>
                 {hasHistory ? "Descubrimientos de la toma" : "Comparar Interpretación"}
               </Text>
@@ -845,7 +846,7 @@ export default function CoachModeScreen() {
                   )}
                 </View>
               )}
-            </View>
+            </GlassCard>
           </View>
         );
     }
@@ -1406,12 +1407,6 @@ const styles = StyleSheet.create({
 
   scoreCard: {
     padding: rp(20),
-    borderRadius: 16,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
-    shadowRadius: 10,
-    elevation: 2,
   },
   sectionTitle: { fontSize: rf(16), fontWeight: '700', marginBottom: 16 },
   feedbackRow: {
@@ -1478,17 +1473,13 @@ const styles = StyleSheet.create({
   comparisonItemRow: {
     paddingVertical: 8,
   },
+  propuestaCardOuter: {
+    marginBottom: 12,
+  },
   propuestaCard: {
     flexDirection: 'row',
     padding: rp(16),
-    borderRadius: 12,
-    marginBottom: 12,
     borderLeftWidth: 4,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
-    shadowRadius: 10,
-    elevation: 2,
   },
   propuestaNumberBox: {
     width: 28,

@@ -4,6 +4,7 @@ import { BlurView } from 'expo-blur';
 import { ANDROID_BLUR_METHOD } from '@/utils/blur';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme } from '@/contexts/ThemeContext';
+import { getShadowStyle } from '@/utils/cardShadow';
 
 export interface BottomSheetMenuProps {
   visible: boolean;
@@ -146,7 +147,7 @@ export function BottomSheetMenu({ visible, onClose, title, children, backgroundC
       {/* Panel deslizable desde abajo */}
       <Animated.View
         {...panResponder.panHandlers}
-        style={[styles.bottomSheet, { transform: [{ translateY }] }]}
+        style={[styles.bottomSheet, getShadowStyle({ offsetY: -3, blur: 10, opacity: 0.3, rgb: '0,0,0' }), { transform: [{ translateY }] }]}
       >
         {/* Recorta el fondo (blur o sólido) a las esquinas redondeadas, sin tocar
             la sombra del contenedor exterior (overflow:hidden + shadow no combinan en iOS) */}
@@ -199,11 +200,6 @@ const styles = StyleSheet.create({
     bottom: 0,
     left: 0,
     right: 0,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: -3 },
-    shadowOpacity: 0.3,
-    shadowRadius: 10,
-    elevation: 10,
     maxHeight: '80%', // To prevent it from taking the whole screen if there are many items
   },
   clip: {

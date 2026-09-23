@@ -17,6 +17,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { useAuth } from '@/contexts/AuthContext';
 import { useTheme } from '@/contexts/ThemeContext';
+import { GlassCard } from '@/components/GlassCard';
 import * as WebBrowser from 'expo-web-browser';
 import { supabase } from '@/utils/supabase';
 import { rf, rp } from '@/utils/responsive';
@@ -34,13 +35,6 @@ export default function AuthScreen() {
   const onBg2 = isDark ? '#a0a0c0' : '#5c5678';
   const cardBg = isDark ? 'rgba(124,106,247,0.08)' : 'rgba(255,255,255,0.55)';
   const cardBorder = isDark ? 'rgba(167,139,250,0.25)' : 'rgba(124,106,247,0.15)';
-  const cardShadow = !isDark ? {
-    shadowColor: '#1a1625',
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.28,
-    shadowRadius: 16,
-    elevation: 8,
-  } : null;
   const fieldBg = isDark ? 'rgba(255,255,255,0.06)' : 'rgba(255,255,255,0.7)';
   const fieldBorder = isDark ? 'rgba(255,255,255,0.14)' : 'rgba(124,106,247,0.18)';
   const [isSignUp, setIsSignUp] = useState(false);
@@ -256,7 +250,7 @@ export default function AuthScreen() {
             <Text style={[styles.subtitle, { color: onBg2 }]}>Ensaya, memoriza e interpreta.{"\n"}Todo en un solo lugar.</Text>
           </View>
 
-          <View style={[styles.form, { ...cardShadow, backgroundColor: cardBg, borderWidth: 1, borderColor: cardBorder }]}>
+          <GlassCard isDark={isDark} contentStyle={styles.form} backgroundColor={cardBg} borderColor={cardBorder}>
             {isSignUp && (
               <View style={styles.inputContainer} accessible accessibilityLabel="Nombre de usuario" accessibilityHint="Solo letras, números y guiones bajos. 3 a 20 caracteres">
                 <Text style={[styles.label, { color: onBg2 }]}>Nombre de usuario</Text>
@@ -478,8 +472,13 @@ export default function AuthScreen() {
             </View>
 
             {/* Google Sign In Button */}
-            <TouchableOpacity
-              style={[styles.googleButton, { ...cardShadow, backgroundColor: cardBg, borderColor: cardBorder }]}
+            <GlassCard
+              isDark={isDark}
+              contentStyle={styles.googleButton}
+              backgroundColor={cardBg}
+              borderColor={cardBorder}
+              borderWidth={1.5}
+              borderRadius={12}
               onPress={signInWithGoogle}
               disabled={loading}
               accessibilityRole="button"
@@ -504,7 +503,7 @@ export default function AuthScreen() {
               <Text style={[styles.googleButtonText, { color: onBg }]}>
                 Continuar con Google
               </Text>
-            </TouchableOpacity>
+            </GlassCard>
 
             {isSignUp && (
               <TouchableOpacity
@@ -518,7 +517,7 @@ export default function AuthScreen() {
                 </Text>
               </TouchableOpacity>
             )}
-          </View>
+          </GlassCard>
         </ScrollView>
       </KeyboardAvoidingView>
 
@@ -661,11 +660,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#FFFFFF',
-    borderRadius: 12,
     paddingVertical: rp(14),
-    borderWidth: 1.5,
-    borderColor: '#E5E7EB',
     gap: 12,
   },
   googleIconContainer: {

@@ -11,6 +11,7 @@ import {
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { useTheme } from '@/contexts/ThemeContext';
+import { GlassCard } from '@/components/GlassCard';
 import { useAuth } from '@/contexts/AuthContext';
 import { DialogueLine } from '@/utils/dialogueParser';
 import { loadDialogueLines } from '@/utils/loadDialogueLines';
@@ -681,7 +682,8 @@ export default function ReinforcementScreen() {
                     plana dentro del contenido. */}
                 {currentItem && (
                     <View style={[styles.floatingControls, { bottom: insets.bottom + rp(16) }]} pointerEvents="box-none">
-                        <TouchableOpacity
+                        <GlassCard
+                            isDark={isDark}
                             onPress={() => {
                                 if (currentIndex > 0) {
                                     setCurrentIndex(p => p - 1);
@@ -689,16 +691,18 @@ export default function ReinforcementScreen() {
                                 }
                             }}
                             disabled={currentIndex === 0}
-                            style={[
-                                styles.navCircle,
-                                styles.pillShadow,
-                                { backgroundColor: glassBg, borderColor: glassBorder, opacity: currentIndex === 0 ? 0.4 : 1 },
-                            ]}
+                            contentStyle={[styles.navCircle, { opacity: currentIndex === 0 ? 0.4 : 1 }]}
+                            backgroundColor={glassBg}
+                            borderColor={glassBorder}
+                            borderRadius={28}
+                            shadowRecipe={{ offsetY: 6, blur: 12, opacity: 0.2 }}
+                            shadowAlwaysOn
                         >
                             <ChevronLeft size={26} color={fg} />
-                        </TouchableOpacity>
+                        </GlassCard>
 
-                        <TouchableOpacity
+                        <GlassCard
+                            isDark={isDark}
                             onPress={() => {
                                 if (currentIndex < failedItems.length - 1) {
                                     setCurrentIndex(p => p + 1);
@@ -706,14 +710,15 @@ export default function ReinforcementScreen() {
                                 }
                             }}
                             disabled={currentIndex === failedItems.length - 1}
-                            style={[
-                                styles.navCircle,
-                                styles.pillShadow,
-                                { backgroundColor: glassBg, borderColor: glassBorder, opacity: currentIndex === failedItems.length - 1 ? 0.4 : 1 },
-                            ]}
+                            contentStyle={[styles.navCircle, { opacity: currentIndex === failedItems.length - 1 ? 0.4 : 1 }]}
+                            backgroundColor={glassBg}
+                            borderColor={glassBorder}
+                            borderRadius={28}
+                            shadowRecipe={{ offsetY: 6, blur: 12, opacity: 0.2 }}
+                            shadowAlwaysOn
                         >
                             <ChevronRight size={26} color={fg} />
-                        </TouchableOpacity>
+                        </GlassCard>
                     </View>
                 )}
 
@@ -813,12 +818,5 @@ const styles = StyleSheet.create({
     // dentro del contenido — mismo lenguaje que el resto de pantallas del
     // modo Memoria.
     floatingControls: { position: 'absolute', left: 16, right: 16, flexDirection: 'row', justifyContent: 'space-between' },
-    pillShadow: {
-        shadowColor: '#1a1625',
-        shadowOffset: { width: 0, height: 6 },
-        shadowOpacity: 0.2,
-        shadowRadius: 12,
-        elevation: 6,
-    },
-    navCircle: { width: 56, height: 56, borderRadius: 28, borderWidth: 1, alignItems: 'center', justifyContent: 'center' },
+    navCircle: { width: 56, height: 56, alignItems: 'center', justifyContent: 'center' },
 });

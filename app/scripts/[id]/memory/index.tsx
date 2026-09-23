@@ -10,6 +10,7 @@ import {
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter, useLocalSearchParams, useFocusEffect } from 'expo-router';
 import { useTheme } from '@/contexts/ThemeContext';
+import { getShadowStyle } from '@/utils/cardShadow';
 import { BlurView } from 'expo-blur';
 import { ANDROID_BLUR_METHOD } from '@/utils/blur';
 import {
@@ -139,7 +140,10 @@ export default function MemoryMenuScreen() {
                             <TouchableOpacity
                                 key={game.id}
                                 activeOpacity={0.8}
-                                style={[styles.gameCardShadow, isDark && styles.noShadow]}
+                                style={[
+                                    styles.gameCardShadow,
+                                    !isDark && getShadowStyle({ offsetY: 6, blur: 12, opacity: 0.22 }),
+                                ]}
                                 onPress={() => router.push(`/scripts/${id}/memory${game.route}`)}
                             >
                                 <View style={[styles.gameCardClip, { borderColor: glassBorder }]}>
@@ -240,15 +244,6 @@ const styles = StyleSheet.create({
     // tratamiento visual (blur + borde + sombra) en un único item por fila.
     gameCardShadow: {
         borderRadius: 18,
-        shadowColor: '#1a1625',
-        shadowOffset: { width: 0, height: 6 },
-        shadowOpacity: 0.22,
-        shadowRadius: 12,
-        elevation: 6,
-    },
-    noShadow: {
-        shadowOpacity: 0,
-        elevation: 0,
     },
     gameCardClip: {
         borderRadius: 18,

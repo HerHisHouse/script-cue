@@ -11,6 +11,8 @@ import {
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { useTheme } from '@/contexts/ThemeContext';
+import { GlassCard } from '@/components/GlassCard';
+import { getShadowStyle } from '@/utils/cardShadow';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/utils/supabase';
 import { normalizeVoiceProvider } from '@/utils/voiceDefaults';
@@ -419,6 +421,9 @@ export default function MemoryModeScreen() {
 
             {/* Zone A: Partner's Line (or Context) */}
             {!isUserTurn ? (
+              // Envoltorio solo para la sombra (getShadowStyle, boxShadow en Android): el
+              // LinearGradient es el que rellena/recorta (overflow:hidden) — ver utils/cardShadow.ts.
+              <View style={[{ borderRadius: 16 }, getShadowStyle({ offsetY: 2, blur: 8, opacity: 0.1 })]}>
               <LinearGradient
                 colors={dialogueCardGradient(currentLine.color || colors.primary)}
                 start={{ x: 0, y: 0 }}
@@ -432,18 +437,26 @@ export default function MemoryModeScreen() {
                   <Text style={[styles.dialogueText, { color: fg }]}>
                     {stripStageDirections(currentLine.text)}
                   </Text>
-                  <TouchableOpacity
-                    style={[styles.ttsButton, styles.pillShadow, { backgroundColor: glassBg, borderColor: glassBorder }]}
+                  <GlassCard
+                    isDark={isDark}
                     onPress={playPartnerLine}
                     disabled={isPlaying}
+                    style={styles.ttsButtonOuter}
+                    contentStyle={styles.ttsButton}
+                    backgroundColor={glassBg}
+                    borderColor={glassBorder}
+                    borderRadius={24}
+                    shadowRecipe={{ offsetY: 6, blur: 12, opacity: 0.2 }}
+                    shadowAlwaysOn
                   >
                     <Volume2 size={20} color={isPlaying ? activeAccent : fg} />
                     <Text style={[styles.ttsButtonText, { color: fg }]}>
                       {isPlaying ? 'Reproduciendo...' : 'Escuchar réplica'}
                     </Text>
-                  </TouchableOpacity>
+                  </GlassCard>
                 </View>
               </LinearGradient>
+              </View>
             ) : (
               // If it's user turn, show previous line as context if available
               currentIndex > 0 && (
@@ -537,39 +550,64 @@ export default function MemoryModeScreen() {
         {currentIndex === dialogueLines.length - 1 ? (
           // Last Line Controls
           <View style={styles.lastRow}>
-            <TouchableOpacity
-              style={[styles.pillButton, styles.pillShadow, { backgroundColor: glassBg, borderColor: glassBorder, borderWidth: 1 }]}
+            <GlassCard
+              isDark={isDark}
               onPress={handleRestart}
+              contentStyle={styles.pillButton}
+              backgroundColor={glassBg}
+              borderColor={glassBorder}
+              borderRadius={100}
+              shadowRecipe={{ offsetY: 6, blur: 12, opacity: 0.2 }}
+              shadowAlwaysOn
             >
               <Repeat size={20} color={fg} />
               <Text style={[styles.navButtonText, { color: fg }]}>Reiniciar</Text>
-            </TouchableOpacity>
+            </GlassCard>
 
-            <TouchableOpacity
-              style={[styles.pillButton, styles.pillShadow, primaryButtonBg]}
+            <GlassCard
+              isDark={isDark}
               onPress={handleFinish}
+              contentStyle={styles.pillButton}
+              backgroundColor={isDark ? 'rgba(124,106,247,0.80)' : colors.primary}
+              borderColor="rgba(255,255,255,0.5)"
+              borderWidth={isDark ? 1.5 : 0}
+              borderRadius={100}
+              shadowRecipe={{ offsetY: 6, blur: 12, opacity: 0.2 }}
+              shadowAlwaysOn
             >
               <Check size={20} color="#FFFFFF" />
               <Text style={[styles.navButtonText, { color: "#FFFFFF" }]}>Finalizar</Text>
-            </TouchableOpacity>
+            </GlassCard>
           </View>
         ) : (
           // Normal Navigation Controls — círculos flotantes a cada lado
           <View style={styles.navCircleRow}>
-            <TouchableOpacity
-              style={[styles.navCircle, styles.pillShadow, { backgroundColor: glassBg, borderColor: glassBorder, opacity: currentIndex === 0 ? 0.5 : 1 }]}
+            <GlassCard
+              isDark={isDark}
               onPress={goToPrev}
               disabled={currentIndex === 0}
+              contentStyle={[styles.navCircle, { opacity: currentIndex === 0 ? 0.5 : 1 }]}
+              backgroundColor={glassBg}
+              borderColor={glassBorder}
+              borderRadius={28}
+              shadowRecipe={{ offsetY: 6, blur: 12, opacity: 0.2 }}
+              shadowAlwaysOn
             >
               <ChevronLeft size={26} color={fg} />
-            </TouchableOpacity>
+            </GlassCard>
 
-            <TouchableOpacity
-              style={[styles.navCircle, styles.pillShadow, { backgroundColor: glassBg, borderColor: glassBorder }]}
+            <GlassCard
+              isDark={isDark}
               onPress={goToNext}
+              contentStyle={styles.navCircle}
+              backgroundColor={glassBg}
+              borderColor={glassBorder}
+              borderRadius={28}
+              shadowRecipe={{ offsetY: 6, blur: 12, opacity: 0.2 }}
+              shadowAlwaysOn
             >
               <ChevronRight size={26} color={fg} />
-            </TouchableOpacity>
+            </GlassCard>
           </View>
         )}
       </View>
@@ -664,11 +702,6 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     padding: rp(24),
     borderWidth: 1,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 8,
-    elevation: 3,
     alignItems: 'center', // Center content
   },
   // La tarjeta pasa a ser un LinearGradient (padding:0 para que el degradado
@@ -745,15 +778,15 @@ const styles = StyleSheet.create({
   dotActive: {
     backgroundColor: '#4ADE80', // green-400
   },
+  ttsButtonOuter: {
+    marginTop: 20,
+  },
   ttsButton: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     paddingVertical: rp(12),
     paddingHorizontal: rp(20),
-    borderRadius: 24,
-    borderWidth: 1,
-    marginTop: 20,
     gap: 8,
   },
   ttsButtonText: {
@@ -794,13 +827,6 @@ const styles = StyleSheet.create({
     fontSize: rf(12),
     fontWeight: '500',
   },
-  pillShadow: {
-    shadowColor: '#1a1625',
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.2,
-    shadowRadius: 12,
-    elevation: 6,
-  },
   navCircleRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -809,8 +835,6 @@ const styles = StyleSheet.create({
   navCircle: {
     width: 56,
     height: 56,
-    borderRadius: 28,
-    borderWidth: 1,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -823,7 +847,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingVertical: rp(14),
     paddingHorizontal: rp(22),
-    borderRadius: 100,
     gap: 8,
   },
   navButtonText: {

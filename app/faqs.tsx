@@ -4,6 +4,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { ArrowLeft, ChevronDown, Mail } from 'lucide-react-native';
 import { useTheme } from '@/contexts/ThemeContext';
+import { GlassCard } from '@/components/GlassCard';
 import { rf, rp } from '@/utils/responsive';
 
 interface FAQ {
@@ -84,13 +85,6 @@ export default function FAQScreen() {
     const onBg2 = isDark ? '#a0a0c0' : '#5c5678';
     const cardBg = isDark ? 'rgba(124,106,247,0.08)' : 'rgba(255,255,255,0.55)';
     const cardBorder = isDark ? 'rgba(167,139,250,0.25)' : 'rgba(124,106,247,0.15)';
-    const cardShadow = !isDark ? {
-        shadowColor: '#1a1625',
-        shadowOffset: { width: 0, height: 8 },
-        shadowOpacity: 0.28,
-        shadowRadius: 16,
-        elevation: 8,
-    } : null;
 
     const categories = Array.from(new Set(faqs.map(faq => faq.category)));
 
@@ -137,12 +131,12 @@ export default function FAQScreen() {
                                 const isExpanded = expandedIndex === globalIndex;
 
                                 return (
-                                    <View
+                                    <GlassCard
                                         key={globalIndex}
-                                        style={[
-                                            styles.faqCard,
-                                            { ...cardShadow, backgroundColor: cardBg, borderColor: cardBorder }
-                                        ]}
+                                        isDark={isDark}
+                                        style={styles.faqCard}
+                                        backgroundColor={cardBg}
+                                        borderColor={cardBorder}
                                     >
                                         <TouchableOpacity
                                             style={styles.faqHeader}
@@ -167,13 +161,13 @@ export default function FAQScreen() {
                                                 </Text>
                                             </View>
                                         )}
-                                    </View>
+                                    </GlassCard>
                                 );
                             })}
                     </View>
                 ))}
 
-                <View style={[styles.contactCard, { ...cardShadow, backgroundColor: cardBg, borderColor: cardBorder }]}>
+                <GlassCard isDark={isDark} style={styles.contactCardOuter} contentStyle={styles.contactCard} backgroundColor={cardBg} borderColor={cardBorder}>
                     <Text style={[styles.contactTitle, { color: onBg }]}>
                         ¿No encuentras lo que buscas?
                     </Text>
@@ -201,7 +195,7 @@ export default function FAQScreen() {
                             www.scriptcue.es
                         </Text>
                     </TouchableOpacity>
-                </View>
+                </GlassCard>
             </ScrollView>
         </SafeAreaView>
         </ImageBackground>
@@ -249,10 +243,7 @@ const styles = StyleSheet.create({
         marginBottom: rp(12),
     },
     faqCard: {
-        borderRadius: 20,
-        borderWidth: 1,
         marginBottom: rp(12),
-        overflow: 'hidden',
     },
     faqHeader: {
         flexDirection: 'row',
@@ -280,11 +271,11 @@ const styles = StyleSheet.create({
         fontSize: rf(14),
         lineHeight: rf(20),
     },
-    contactCard: {
-        borderRadius: 20,
-        borderWidth: 1,
-        padding: rp(20),
+    contactCardOuter: {
         marginTop: rp(20),
+    },
+    contactCard: {
+        padding: rp(20),
     },
     contactTitle: {
         fontSize: rf(16),

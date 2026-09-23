@@ -12,6 +12,7 @@ import {
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { useTheme } from '@/contexts/ThemeContext';
+import { GlassCard } from '@/components/GlassCard';
 import { useAuth } from '@/contexts/AuthContext';
 import { DialogueLine } from '@/utils/dialogueParser';
 import { normalizeVoiceProvider } from '@/utils/voiceDefaults';
@@ -634,29 +635,33 @@ export default function EchoModeScreen() {
                         </Text>
                     </View>
                     <View style={styles.controlsRow}>
-                        <TouchableOpacity
+                        <GlassCard
+                            isDark={isDark}
                             onPress={handlePrev}
                             disabled={currentIndex === 0 || (phase !== 'read' && phase !== 'ai-speaking')}
-                            style={[
-                                styles.navCircle,
-                                styles.pillShadow,
-                                { backgroundColor: glassBg, borderColor: glassBorder, opacity: currentIndex === 0 || (phase !== 'read' && phase !== 'ai-speaking') ? 0.4 : 1 },
-                            ]}
+                            contentStyle={[styles.navCircle, { opacity: currentIndex === 0 || (phase !== 'read' && phase !== 'ai-speaking') ? 0.4 : 1 }]}
+                            backgroundColor={glassBg}
+                            borderColor={glassBorder}
+                            borderRadius={28}
+                            shadowRecipe={{ offsetY: 6, blur: 12, opacity: 0.2 }}
+                            shadowAlwaysOn
                         >
                             <ChevronLeft size={26} color={fg} />
-                        </TouchableOpacity>
+                        </GlassCard>
 
-                        <TouchableOpacity
+                        <GlassCard
+                            isDark={isDark}
                             onPress={handleNext}
                             disabled={currentIndex === dialogueLines.length - 1 || (phase !== 'read' && phase !== 'ai-speaking')}
-                            style={[
-                                styles.navCircle,
-                                styles.pillShadow,
-                                { backgroundColor: glassBg, borderColor: glassBorder, opacity: currentIndex === dialogueLines.length - 1 || (phase !== 'read' && phase !== 'ai-speaking') ? 0.4 : 1 },
-                            ]}
+                            contentStyle={[styles.navCircle, { opacity: currentIndex === dialogueLines.length - 1 || (phase !== 'read' && phase !== 'ai-speaking') ? 0.4 : 1 }]}
+                            backgroundColor={glassBg}
+                            borderColor={glassBorder}
+                            borderRadius={28}
+                            shadowRecipe={{ offsetY: 6, blur: 12, opacity: 0.2 }}
+                            shadowAlwaysOn
                         >
                             <ChevronRight size={26} color={fg} />
-                        </TouchableOpacity>
+                        </GlassCard>
                     </View>
                 </View>
             )}
@@ -734,12 +739,5 @@ const styles = StyleSheet.create({
     progressPill: { paddingHorizontal: rp(14), paddingVertical: rp(6), borderRadius: 100, borderWidth: 1, marginBottom: 12 },
     progress: { fontSize: rf(12), fontWeight: '500' },
     controlsRow: { flexDirection: 'row', justifyContent: 'space-between', width: '100%' },
-    pillShadow: {
-        shadowColor: '#1a1625',
-        shadowOffset: { width: 0, height: 6 },
-        shadowOpacity: 0.2,
-        shadowRadius: 12,
-        elevation: 6,
-    },
-    navCircle: { width: 56, height: 56, borderRadius: 28, borderWidth: 1, alignItems: 'center', justifyContent: 'center' },
+    navCircle: { width: 56, height: 56, alignItems: 'center', justifyContent: 'center' },
 });

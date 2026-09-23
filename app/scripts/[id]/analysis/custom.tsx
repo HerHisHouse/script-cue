@@ -14,6 +14,7 @@ import { ArrowLeft, Plus, Save, Trash2, GripVertical } from 'lucide-react-native
 import DraggableFlatList, { ScaleDecorator, RenderItemParams } from 'react-native-draggable-flatlist';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { useTheme } from '@/contexts/ThemeContext';
+import { getShadowStyle } from '@/utils/cardShadow';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/utils/supabase';
 import { rf, rp } from '@/utils/responsive';
@@ -322,7 +323,7 @@ export default function CustomAnalysisScreen() {
                     ListFooterComponent={
                         questions.length > 0 ? (
                             <TouchableOpacity
-                                style={[styles.saveButtonLarge, primaryButtonBg]}
+                                style={[styles.saveButtonLarge, primaryButtonBg, getShadowStyle({ offsetY: 4, blur: 8, opacity: 0.3 })]}
                                 onPress={handleSave}
                                 disabled={saving}
                             >
@@ -449,11 +450,6 @@ const styles = StyleSheet.create({
         paddingHorizontal: rp(20),
         borderRadius: 12,
         marginTop: 12,
-        shadowColor: '#1a1625',
-        shadowOffset: { width: 0, height: 4 },
-        shadowOpacity: 0.3,
-        shadowRadius: 8,
-        elevation: 4,
     },
     saveButtonText: {
         fontSize: rf(16),

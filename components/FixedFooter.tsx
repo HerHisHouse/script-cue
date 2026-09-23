@@ -2,6 +2,7 @@ import React from 'react';
 import { View, TouchableOpacity, StyleSheet, Platform, Text } from 'react-native';
 import { BlurView } from 'expo-blur';
 import { ANDROID_BLUR_METHOD } from '@/utils/blur';
+import { getShadowStyle } from '@/utils/cardShadow';
 import { useTheme } from '@/contexts/ThemeContext';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Folder, FileText, Mic, Settings, Users } from 'lucide-react-native';
@@ -97,11 +98,16 @@ export function FixedFooter({ activeKey, variant = 'default', dark = true }: Pro
           <View style={[StyleSheet.absoluteFill, { backgroundColor: dark ? 'rgba(10,8,20,0.22)' : 'rgba(235,230,245,0.18)' }]} />
         </View>
 
-        <View style={[styles.floatingWrapper, { bottom: 8, borderColor: dark ? 'rgba(255,255,255,0.4)' : 'rgba(104,58,121,0.25)' }]}>
-          <BlurView experimentalBlurMethod={ANDROID_BLUR_METHOD} intensity={dark ? 55 : 65} tint={dark ? 'dark' : 'light'} style={StyleSheet.absoluteFill} />
-          <View style={[StyleSheet.absoluteFill, { backgroundColor: overlayTint }]} />
-          <View style={styles.floatingBlur}>
-            {items}
+        {/* Envoltorio solo para la sombra (getShadowStyle, boxShadow en Android): la
+            vista interior es la que recorta (overflow:hidden) y desenfoca — ver
+            utils/cardShadow.ts. */}
+        <View style={[styles.floatingWrapperOuter, { bottom: 8 }, getShadowStyle({ offsetY: 8, blur: 16, opacity: 0.3, rgb: '0,0,0' })]}>
+          <View style={[styles.floatingWrapper, { borderColor: dark ? 'rgba(255,255,255,0.4)' : 'rgba(104,58,121,0.25)' }]}>
+            <BlurView experimentalBlurMethod={ANDROID_BLUR_METHOD} intensity={dark ? 55 : 65} tint={dark ? 'dark' : 'light'} style={StyleSheet.absoluteFill} />
+            <View style={[StyleSheet.absoluteFill, { backgroundColor: overlayTint }]} />
+            <View style={styles.floatingBlur}>
+              {items}
+            </View>
           </View>
         </View>
       </>
@@ -144,18 +150,16 @@ const styles = StyleSheet.create({
     bottom: 0,
     overflow: 'hidden',
   },
-  floatingWrapper: {
+  floatingWrapperOuter: {
     position: 'absolute',
     left: 16,
     right: 16,
     borderRadius: 28,
+  },
+  floatingWrapper: {
+    borderRadius: 28,
     overflow: 'hidden',
     borderWidth: 1,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.3,
-    shadowRadius: 16,
-    elevation: 8,
   },
   floatingBlur: {
     flexDirection: 'row',

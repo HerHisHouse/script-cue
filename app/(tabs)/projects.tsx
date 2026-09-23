@@ -6,6 +6,8 @@ import { ANDROID_BLUR_METHOD } from '@/utils/blur';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAuth } from '@/contexts/AuthContext';
 import { useTheme } from '@/contexts/ThemeContext';
+import { GlassCard } from '@/components/GlassCard';
+import { getCardShadow } from '@/utils/cardShadow';
 import { supabase } from '@/utils/supabase';
 import { useRouter, useFocusEffect } from 'expo-router';
 import { Folder, FileText, Mic, Plus, MoreVertical, Search, CheckSquare, List, Grid, ArrowLeft, X, Trash2, Send, Edit3, ChevronRight, Check } from 'lucide-react-native';
@@ -479,28 +481,21 @@ export default function ProjectsScreen() {
     const isSelected = selectedItems.has(item.data.id);
 
     return (
-      <TouchableOpacity
-        style={[
-          styles.itemCard,
-          {
-            backgroundColor: isSelected ? colors.input : (isDark ? 'rgba(124,106,247,0.08)' : 'rgba(255,255,255,0.55)'),
-            borderColor: isSelected ? colors.primary : (isDark ? 'rgba(167,139,250,0.25)' : 'rgba(124,106,247,0.15)'),
-            borderWidth: isSelected ? 2 : 1,
-            width: viewMode === 'grid' ? '48%' : '100%',
-            flexDirection: viewMode === 'grid' ? 'column' : 'row',
-            alignItems: viewMode === 'grid' ? 'center' : 'center',
-            padding: rp(16),
-            marginBottom: 8,
-            marginRight: viewMode === 'grid' ? '2%' : 0,
-          },
-          !isDark && {
-            shadowColor: '#1a1625',
-            shadowOffset: { width: 0, height: 8 },
-            shadowOpacity: 0.28,
-            shadowRadius: 16,
-            elevation: 8,
-          },
-        ]}
+      <GlassCard
+        isDark={isDark}
+        style={{
+          width: viewMode === 'grid' ? '48%' : '100%',
+          marginBottom: 8,
+          marginRight: viewMode === 'grid' ? '2%' : 0,
+        }}
+        contentStyle={{
+          flexDirection: viewMode === 'grid' ? 'column' : 'row',
+          alignItems: 'center',
+          padding: rp(16),
+        }}
+        backgroundColor={isSelected ? colors.input : (isDark ? 'rgba(124,106,247,0.08)' : 'rgba(255,255,255,0.55)')}
+        borderColor={isSelected ? colors.primary : (isDark ? 'rgba(167,139,250,0.25)' : 'rgba(124,106,247,0.15)')}
+        borderWidth={isSelected ? 2 : 1}
         onPress={() => openItem(item)}
         onLongPress={() => {
           if (!selectionMode) {
@@ -531,7 +526,7 @@ export default function ProjectsScreen() {
             </View>
           </View>
         )}
-      </TouchableOpacity>
+      </GlassCard>
     );
   };
 
@@ -629,21 +624,12 @@ export default function ProjectsScreen() {
 
       {/* Search Bar */}
       {showSearch && (
-        <View
-          style={[
-            styles.searchBar,
-            {
-              backgroundColor: isDark ? 'rgba(124,106,247,0.08)' : 'rgba(255,255,255,0.55)',
-              borderColor: isDark ? 'rgba(167,139,250,0.25)' : 'rgba(124,106,247,0.15)',
-            },
-            !isDark && {
-              shadowColor: '#1a1625',
-              shadowOffset: { width: 0, height: 8 },
-              shadowOpacity: 0.28,
-              shadowRadius: 16,
-              elevation: 8,
-            },
-          ]}
+        <GlassCard
+          isDark={isDark}
+          style={styles.searchBarOuter}
+          contentStyle={styles.searchBar}
+          backgroundColor={isDark ? 'rgba(124,106,247,0.08)' : 'rgba(255,255,255,0.55)'}
+          borderColor={isDark ? 'rgba(167,139,250,0.25)' : 'rgba(124,106,247,0.15)'}
         >
           <Search size={20} color={isDark ? '#a0a0c0' : '#5c5678'} />
           <TextInput
@@ -660,7 +646,7 @@ export default function ProjectsScreen() {
           <TouchableOpacity onPress={() => { setSearchText(''); setShowSearch(false); }}>
             <X size={20} color={isDark ? '#a0a0c0' : '#5c5678'} />
           </TouchableOpacity>
-        </View>
+        </GlassCard>
       )}
 
       {/* Breadcrumbs */}
@@ -706,21 +692,13 @@ export default function ProjectsScreen() {
               </View>
             ) : (
               <View style={styles.emptyState}>
-                <View
-                  style={[
-                    styles.emptyCard,
-                    {
-                      backgroundColor: isDark ? 'rgba(124,106,247,0.08)' : 'rgba(255,255,255,0.55)',
-                      borderColor: isDark ? 'rgba(167,139,250,0.25)' : 'rgba(124,106,247,0.15)',
-                    },
-                    !isDark && {
-                      shadowColor: '#1a1625',
-                      shadowOffset: { width: 0, height: 8 },
-                      shadowOpacity: 0.28,
-                      shadowRadius: 16,
-                      elevation: 8,
-                    },
-                  ]}
+                <GlassCard
+                  isDark={isDark}
+                  style={styles.emptyCardOuter}
+                  contentStyle={styles.emptyCard}
+                  backgroundColor={isDark ? 'rgba(124,106,247,0.08)' : 'rgba(255,255,255,0.55)'}
+                  borderColor={isDark ? 'rgba(167,139,250,0.25)' : 'rgba(124,106,247,0.15)'}
+                  borderRadius={24}
                 >
                   <View style={[styles.emptyIconCircle, { backgroundColor: isDark ? 'rgba(167,139,250,0.15)' : 'rgba(124,106,247,0.12)' }]}>
                     <Folder size={30} color={isDark ? '#FFFFFF' : colors.primary} />
@@ -747,7 +725,7 @@ export default function ProjectsScreen() {
                     <Plus size={18} color="#FFFFFF" />
                     <Text style={styles.emptyCtaText}>Nueva carpeta</Text>
                   </TouchableOpacity>
-                </View>
+                </GlassCard>
               </View>
             )
           }
@@ -780,16 +758,7 @@ export default function ProjectsScreen() {
        supportedOrientations={['portrait', 'landscape', 'landscape-left', 'landscape-right']}>
         <View style={styles.modalOverlay}>
           <View
-            style={[
-              styles.modalShadowWrapper,
-              !isDark && {
-                shadowColor: '#1a1625',
-                shadowOffset: { width: 0, height: 8 },
-                shadowOpacity: 0.28,
-                shadowRadius: 16,
-                elevation: 8,
-              },
-            ]}
+            style={[styles.modalShadowWrapper, getCardShadow(isDark)]}
           >
             <View
               style={[
@@ -907,16 +876,7 @@ export default function ProjectsScreen() {
 
       {selectionMode && selectedItems.size > 0 && (
         <View
-          style={[
-            styles.selectionBarWrapper,
-            !isDark && {
-              shadowColor: '#1a1625',
-              shadowOffset: { width: 0, height: 8 },
-              shadowOpacity: 0.28,
-              shadowRadius: 16,
-              elevation: 8,
-            },
-          ]}
+          style={[styles.selectionBarWrapper, getCardShadow(isDark)]}
         >
           <View
             style={[
@@ -1012,16 +972,7 @@ export default function ProjectsScreen() {
        supportedOrientations={['portrait', 'landscape', 'landscape-left', 'landscape-right']}>
         <View style={styles.modalOverlay}>
           <View
-            style={[
-              styles.modalShadowWrapper,
-              !isDark && {
-                shadowColor: '#1a1625',
-                shadowOffset: { width: 0, height: 8 },
-                shadowOpacity: 0.28,
-                shadowRadius: 16,
-                elevation: 8,
-              },
-            ]}
+            style={[styles.modalShadowWrapper, getCardShadow(isDark)]}
           >
             <View
               style={[
@@ -1158,10 +1109,6 @@ const styles = StyleSheet.create({
   listContent: {
     padding: rp(16),
   },
-  itemCard: {
-    borderRadius: 20,
-    borderWidth: 1,
-  },
   itemIcon: {
     width: 48,
     height: 48,
@@ -1222,14 +1169,14 @@ const styles = StyleSheet.create({
   menuText: {
     fontSize: rf(16),
   },
+  searchBarOuter: {
+    margin: 16,
+    marginBottom: 0,
+  },
   searchBar: {
     flexDirection: 'row',
     alignItems: 'center',
     padding: 12,
-    margin: 16,
-    marginBottom: 0,
-    borderRadius: 20,
-    borderWidth: 1,
     gap: 8,
   },
   searchInput: {
@@ -1288,10 +1235,10 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingHorizontal: rp(40),
   },
-  emptyCard: {
+  emptyCardOuter: {
     width: '100%',
-    borderRadius: 24,
-    borderWidth: 1,
+  },
+  emptyCard: {
     paddingVertical: rp(32),
     paddingHorizontal: rp(24),
     alignItems: 'center',

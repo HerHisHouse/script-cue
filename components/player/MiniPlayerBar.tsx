@@ -4,6 +4,7 @@ import { BlurView } from 'expo-blur';
 import { ANDROID_BLUR_METHOD } from '@/utils/blur';
 import { SkipBack, SkipForward, Play, Pause } from 'lucide-react-native';
 import { rf, rp } from '@/utils/responsive';
+import { getShadowStyle } from '@/utils/cardShadow';
 
 const ACCENT2 = '#7c6af7';
 
@@ -28,57 +29,60 @@ export function MiniPlayerBar({ title, isDark, isPlaying, isLoading, onPress, on
   const overlayTint = isDark ? 'rgba(124,106,247,0.14)' : 'rgba(235,230,245,0.22)';
 
   return (
-    <View style={[styles.wrapper, { borderColor }]}>
-      <BlurView experimentalBlurMethod={ANDROID_BLUR_METHOD} intensity={isDark ? 55 : 65} tint={isDark ? 'dark' : 'light'} style={StyleSheet.absoluteFill} />
-      <View style={[StyleSheet.absoluteFill, { backgroundColor: overlayTint }]} />
-      <Pressable style={styles.titleArea} onPress={onPress} hitSlop={8}>
-        <Text style={[styles.title, { color: fg }]} numberOfLines={1}>{title}</Text>
-        <Text style={[styles.subtitle, { color: fgSecondary }]}>Reproduciendo ahora</Text>
-      </Pressable>
-      <View style={styles.controls}>
-        <Pressable onPress={onPrevious} hitSlop={12} accessibilityLabel="Anterior">
-          <SkipBack size={20} color={fg} fill={fg} />
+    // Envoltorio solo para la sombra (getShadowStyle, boxShadow en Android): styles.wrapper
+    // es el que recorta (overflow:hidden) y desenfoca — ver utils/cardShadow.ts.
+    <View style={[styles.wrapperOuter, getShadowStyle({ offsetY: 8, blur: 16, opacity: 0.3, rgb: '0,0,0' })]}>
+      <View style={[styles.wrapper, { borderColor }]}>
+        <BlurView experimentalBlurMethod={ANDROID_BLUR_METHOD} intensity={isDark ? 55 : 65} tint={isDark ? 'dark' : 'light'} style={StyleSheet.absoluteFill} />
+        <View style={[StyleSheet.absoluteFill, { backgroundColor: overlayTint }]} />
+        <Pressable style={styles.titleArea} onPress={onPress} hitSlop={8}>
+          <Text style={[styles.title, { color: fg }]} numberOfLines={1}>{title}</Text>
+          <Text style={[styles.subtitle, { color: fgSecondary }]}>Reproduciendo ahora</Text>
         </Pressable>
-        <Pressable
-          onPress={onPlayPause}
-          style={[styles.playButton, { backgroundColor: ACCENT2 }]}
-          hitSlop={12}
-          accessibilityLabel={isPlaying ? 'Pausar' : 'Reproducir'}
-        >
-          {isLoading ? (
-            <ActivityIndicator size="small" color="#ffffff" />
-          ) : isPlaying ? (
-            <Pause size={17} color="#ffffff" fill="#ffffff" />
-          ) : (
-            <Play size={17} color="#ffffff" fill="#ffffff" style={{ marginLeft: 2 }} />
-          )}
-        </Pressable>
-        <Pressable onPress={onNext} hitSlop={12} accessibilityLabel="Siguiente">
-          <SkipForward size={20} color={fg} fill={fg} />
-        </Pressable>
+        <View style={styles.controls}>
+          <Pressable onPress={onPrevious} hitSlop={12} accessibilityLabel="Anterior">
+            <SkipBack size={20} color={fg} fill={fg} />
+          </Pressable>
+          <Pressable
+            onPress={onPlayPause}
+            style={[styles.playButton, { backgroundColor: ACCENT2 }]}
+            hitSlop={12}
+            accessibilityLabel={isPlaying ? 'Pausar' : 'Reproducir'}
+          >
+            {isLoading ? (
+              <ActivityIndicator size="small" color="#ffffff" />
+            ) : isPlaying ? (
+              <Pause size={17} color="#ffffff" fill="#ffffff" />
+            ) : (
+              <Play size={17} color="#ffffff" fill="#ffffff" style={{ marginLeft: 2 }} />
+            )}
+          </Pressable>
+          <Pressable onPress={onNext} hitSlop={12} accessibilityLabel="Siguiente">
+            <SkipForward size={20} color={fg} fill={fg} />
+          </Pressable>
+        </View>
       </View>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  wrapper: {
+  wrapperOuter: {
     position: 'absolute',
     left: 16,
     right: 16,
     bottom: rp(100),
     height: rp(74),
     borderRadius: 28,
+  },
+  wrapper: {
+    flex: 1,
+    borderRadius: 28,
     overflow: 'hidden',
     borderWidth: 1,
     flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: 16,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.3,
-    shadowRadius: 16,
-    elevation: 8,
   },
   titleArea: { flex: 1, marginRight: 12 },
   title: { fontSize: rf(14), fontWeight: '700' },

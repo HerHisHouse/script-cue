@@ -14,6 +14,7 @@ import * as FileSystem from 'expo-file-system/legacy';
 import Slider from '@react-native-community/slider';
 import { useTheme } from '@/contexts/ThemeContext';
 import { supabase } from '@/utils/supabase';
+import { getShadowStyle } from '@/utils/cardShadow';
 import { rf, rp } from '@/utils/responsive';
 import ViewAndMarkOverlay from './components/ViewAndMarkOverlay';
 import ExportOptionsSheet from './components/ExportOptionsSheet';
@@ -2984,11 +2985,9 @@ const styles = StyleSheet.create({
         // de la pantalla sin margen alrededor se verían como un recorte raro, no
         // como una tarjeta flotante.
         marginBottom: rp(12),
-        shadowColor: '#1a1625',
-        shadowOffset: { width: 0, height: 6 },
-        shadowOpacity: 0.18,
-        shadowRadius: 14,
-        elevation: 6,
+        // getShadowStyle (ver utils/cardShadow.ts): esta sombra tiene su propia receta (más sutil,
+        // y activa en claro Y oscuro) distinta a la estándar de las tarjetas (getCardShadow).
+        ...getShadowStyle({ offsetY: 6, blur: 14, opacity: 0.18 }),
     },
     pageCard: {
         flex: 1,

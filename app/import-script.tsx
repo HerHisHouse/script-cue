@@ -22,6 +22,8 @@ import { VoiceOption, VoiceProvider, getDefaultVoiceForGender } from '@/utils/vo
 import { BETA_LIMITS, isUserBetaLimited } from '@/constants/betaLimits';
 import { trackEvent } from '@/utils/analytics';
 import { CHARACTER_COLORS, GREEN_COLOR } from '@/utils/characterColors';
+import { GlassCard } from '@/components/GlassCard';
+import { getCardShadow } from '@/utils/cardShadow';
 import { hasVoiceChanges } from '@/utils/voiceChangeDetection';
 import { normalizeVoiceProvider } from '@/utils/voiceDefaults';
 import { mapCharacterRowsToConfig } from '@/utils/characterConfigMapping';
@@ -63,13 +65,6 @@ export default function ImportScriptScreen() {
   const onBg2 = isDark ? '#a0a0c0' : '#5c5678';
   const cardBg = isDark ? 'rgba(124,106,247,0.08)' : 'rgba(255,255,255,0.55)';
   const cardBorder = isDark ? 'rgba(167,139,250,0.25)' : 'rgba(124,106,247,0.15)';
-  const cardShadow = !isDark ? {
-    shadowColor: '#1a1625',
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.28,
-    shadowRadius: 16,
-    elevation: 8,
-  } : null;
   const fieldBg = isDark ? 'rgba(255,255,255,0.06)' : 'rgba(255,255,255,0.7)';
   // Norma general de modo oscuro: el texto/icono de los botones secundarios (glass,
   // fondo oscuro translúcido) va en blanco para que se lea mejor; en claro mantiene el acento morado.
@@ -863,12 +858,13 @@ export default function ImportScriptScreen() {
           {!showConfigOnly && (
             <>
               <Text style={[styles.label, { color: onBg }]}>Archivo PDF o DOCX</Text>
-              <TouchableOpacity
-                style={[
-                  styles.scanButton,
-                  { ...cardShadow, backgroundColor: cardBg, borderColor: cardBorder },
-                  ...(file ? [styles.uploadButtonSuccess] : [])
-                ]}
+              <GlassCard
+                isDark={isDark}
+                style={styles.scanButtonOuter}
+                contentStyle={[styles.scanButton, ...(file ? [styles.uploadButtonSuccess] : [])]}
+                backgroundColor={cardBg}
+                borderColor={cardBorder}
+                borderWidth={2}
                 onPress={pickDocument}
               >
                 <Upload size={24} color={file ? colors.success : accentOnGlass} />
@@ -878,7 +874,7 @@ export default function ImportScriptScreen() {
                 ]}>
                   {file ? file.name : 'Seleccionar Archivo'}
                 </Text>
-              </TouchableOpacity>
+              </GlassCard>
 
               <View style={styles.divider}>
                 <View style={[styles.dividerLine, { backgroundColor: cardBorder }]} />
@@ -886,15 +882,20 @@ export default function ImportScriptScreen() {
                 <View style={[styles.dividerLine, { backgroundColor: cardBorder }]} />
               </View>
 
-              <TouchableOpacity
-                style={[styles.scanButton, { ...cardShadow, backgroundColor: cardBg, borderColor: cardBorder }]}
+              <GlassCard
+                isDark={isDark}
+                style={styles.scanButtonOuter}
+                contentStyle={styles.scanButton}
+                backgroundColor={cardBg}
+                borderColor={cardBorder}
+                borderWidth={2}
                 onPress={() => router.push('/scan-script')}
               >
                 <Camera size={24} color={accentOnGlass} />
                 <Text style={[styles.scanButtonText, { color: accentOnGlass }]}>
                   Escanear Guion
                 </Text>
-              </TouchableOpacity>
+              </GlassCard>
             </>
           )}
 
@@ -911,7 +912,7 @@ export default function ImportScriptScreen() {
               </View>
 
               {characters.map((char, index) => (
-                <View key={char.id} style={[styles.characterCardShadowWrapper, cardShadow]}>
+                <View key={char.id} style={[styles.characterCardShadowWrapper, getCardShadow(isDark)]}>
                   <LinearGradient
                     colors={[`${char.color}80`, `${char.color}1F`]}
                     start={{ x: 0, y: 0 }}
@@ -1000,7 +1001,7 @@ export default function ImportScriptScreen() {
                         <ChevronDown size={20} color={onBg2} />
                       </TouchableOpacity>
                       {openOperatorIndex === index && (
-                        <View style={[styles.pickerOptions, { ...cardShadow, backgroundColor: cardBg, borderColor: cardBorder }]}>
+                        <GlassCard isDark={isDark} style={styles.pickerOptionsOuter} backgroundColor={cardBg} borderColor={cardBorder}>
                           {VOICE_PROVIDERS_CONFIG.map((provConfig) => {
                             const prov = provConfig.value;
                             const isSelected = (char.provider || 'system') === prov;
@@ -1031,7 +1032,7 @@ export default function ImportScriptScreen() {
                               </TouchableOpacity>
                             );
                           })}
-                        </View>
+                        </GlassCard>
                       )}
 
                       {/* Selector de voz - DESPUÉS del operador */}
@@ -1085,8 +1086,9 @@ export default function ImportScriptScreen() {
                       </TouchableOpacity>
 
                       {openColorIndex === index && (
+                        <GlassCard isDark={isDark} style={styles.pickerOptionsOuter} backgroundColor={cardBg} borderColor={cardBorder}>
                         <ScrollView
-                          style={[styles.pickerOptions, { ...cardShadow, backgroundColor: cardBg, borderColor: cardBorder, maxHeight: 180 }]}
+                          style={{ maxHeight: 180 }}
                           nestedScrollEnabled={true}
                         >
                           {CHARACTER_COLORS.filter(colorOption => {
@@ -1119,6 +1121,7 @@ export default function ImportScriptScreen() {
                             );
                           })}
                         </ScrollView>
+                        </GlassCard>
                       )}
                     </>
                   )}
@@ -1134,8 +1137,13 @@ export default function ImportScriptScreen() {
                 </View>
               ))}
 
-              <TouchableOpacity
-                style={[styles.uploadButton, { ...cardShadow, backgroundColor: cardBg, borderColor: cardBorder, marginTop: 16, marginBottom: 24 }]}
+              <GlassCard
+                isDark={isDark}
+                style={styles.uploadButtonOuter}
+                contentStyle={styles.uploadButton}
+                backgroundColor={cardBg}
+                borderColor={cardBorder}
+                borderWidth={2}
                 onPress={() => {
                   setCharacters([
                     ...characters,
@@ -1154,7 +1162,7 @@ export default function ImportScriptScreen() {
                 <Text style={[styles.uploadText, { color: accentOnGlass }]}>
                   + Añadir Personaje Manualmente
                 </Text>
-              </TouchableOpacity>
+              </GlassCard>
             </>
           )}
 
@@ -1256,14 +1264,15 @@ const styles = StyleSheet.create({
     fontSize: rf(16),
     borderWidth: 1,
   },
+  uploadButtonOuter: {
+    marginTop: 16,
+    marginBottom: 24,
+  },
   uploadButton: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    borderRadius: 20,
     paddingVertical: rp(16),
-    marginBottom: 8,
-    borderWidth: 2,
     borderStyle: 'dashed',
     gap: 12,
   },
@@ -1289,14 +1298,14 @@ const styles = StyleSheet.create({
     fontSize: rf(14),
     fontWeight: '500',
   },
+  scanButtonOuter: {
+    marginBottom: 8,
+  },
   scanButton: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    borderRadius: 20,
     paddingVertical: rp(16),
-    marginBottom: 8,
-    borderWidth: 2,
     gap: 12,
   },
   scanButtonText: {
@@ -1325,14 +1334,9 @@ const styles = StyleSheet.create({
     fontSize: rf(16),
     color: '#111827',
   },
-  pickerOptions: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 20,
+  pickerOptionsOuter: {
     marginTop: 8,
     marginBottom: 12,
-    borderWidth: 1,
-    borderColor: '#E5E7EB',
-    overflow: 'hidden',
   },
   pickerOption: {
     paddingVertical: rp(12),

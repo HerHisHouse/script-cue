@@ -20,6 +20,7 @@ import * as FileSystem from 'expo-file-system/legacy';
 import * as ImagePicker from 'expo-image-picker';
 import { useAuth } from '@/contexts/AuthContext';
 import { useTheme } from '@/contexts/ThemeContext';
+import { GlassCard } from '@/components/GlassCard';
 import { supabase } from '@/utils/supabase';
 import { rf, rp } from '@/utils/responsive';
 import { BETA_LIMITS, isUserBetaLimited } from '@/constants/betaLimits';
@@ -42,13 +43,6 @@ export default function ScanScriptScreen() {
   const onBg2 = isDark ? '#a0a0c0' : '#5c5678';
   const cardBg = isDark ? 'rgba(124,106,247,0.08)' : 'rgba(255,255,255,0.55)';
   const cardBorder = isDark ? 'rgba(167,139,250,0.25)' : 'rgba(124,106,247,0.15)';
-  const cardShadow = !isDark ? {
-    shadowColor: '#1a1625',
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.28,
-    shadowRadius: 16,
-    elevation: 8,
-  } : null;
   const fieldBg = isDark ? 'rgba(255,255,255,0.06)' : 'rgba(255,255,255,0.7)';
   const fieldBorder = isDark ? 'rgba(255,255,255,0.14)' : 'rgba(124,106,247,0.18)';
   const glassButtonStyle = isDark
@@ -427,7 +421,7 @@ export default function ScanScriptScreen() {
             </Text>
 
             {capturedImages.length === 0 ? (
-              <View style={[styles.emptyCard, { ...cardShadow, backgroundColor: cardBg, borderColor: cardBorder }]}>
+              <GlassCard isDark={isDark} style={styles.emptyCardOuter} contentStyle={styles.emptyCard} backgroundColor={cardBg} borderColor={cardBorder} borderRadius={24}>
                 <View style={[styles.emptyIconCircle, { backgroundColor: isDark ? 'rgba(167,139,250,0.15)' : 'rgba(124,106,247,0.12)' }]}>
                   <Camera size={30} color={accentOnGlass} />
                 </View>
@@ -435,7 +429,7 @@ export default function ScanScriptScreen() {
                 <Text style={[styles.emptyText, { color: onBg2 }]}>
                   Toca &quot;Capturar Primera Página&quot; o sube una imagen para empezar.
                 </Text>
-              </View>
+              </GlassCard>
             ) : (
               <View style={styles.imageGrid}>
                 {capturedImages.map((image, index) => (
@@ -458,25 +452,35 @@ export default function ScanScriptScreen() {
               </View>
             )}
 
-            <TouchableOpacity
-              style={[styles.scanButton, { ...cardShadow, backgroundColor: cardBg, borderColor: cardBorder }]}
+            <GlassCard
+              isDark={isDark}
+              style={styles.scanButtonOuter}
+              contentStyle={styles.scanButton}
+              backgroundColor={cardBg}
+              borderColor={cardBorder}
+              borderWidth={2}
               onPress={() => setShowCamera(true)}
             >
               <Plus size={24} color={accentOnGlass} />
               <Text style={[styles.scanButtonText, { color: accentOnGlass }]}>
                 {capturedImages.length === 0 ? 'Capturar Primera Página' : 'Agregar Otra Página'}
               </Text>
-            </TouchableOpacity>
+            </GlassCard>
 
-            <TouchableOpacity
-              style={[styles.scanButton, { ...cardShadow, backgroundColor: cardBg, borderColor: cardBorder }]}
+            <GlassCard
+              isDark={isDark}
+              style={styles.scanButtonOuter}
+              contentStyle={styles.scanButton}
+              backgroundColor={cardBg}
+              borderColor={cardBorder}
+              borderWidth={2}
               onPress={pickImage}
             >
               <ImageIcon size={24} color={accentOnGlass} />
               <Text style={[styles.scanButtonText, { color: accentOnGlass }]}>
                 Subir Imagen
               </Text>
-            </TouchableOpacity>
+            </GlassCard>
 
             {capturedImages.length > 0 && (
               <TouchableOpacity
@@ -561,10 +565,10 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     marginTop: 8,
   },
-  emptyCard: {
+  emptyCardOuter: {
     width: '100%',
-    borderRadius: 24,
-    borderWidth: 1,
+  },
+  emptyCard: {
     paddingVertical: rp(32),
     paddingHorizontal: rp(24),
     alignItems: 'center',
@@ -625,16 +629,16 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     padding: rp(4),
   },
+  scanButtonOuter: {
+    marginTop: 8,
+  },
   scanButton: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     gap: 12,
-    borderWidth: 2,
     borderStyle: 'dashed',
-    borderRadius: 20,
     paddingVertical: rp(16),
-    marginTop: 8,
   },
   scanButtonText: {
     fontSize: rf(16),

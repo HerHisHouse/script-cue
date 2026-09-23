@@ -8,6 +8,7 @@ import { ChevronLeft, Save, Undo, Redo, Pencil, PenTool, Pen, Highlighter, Paint
 import { useTheme } from '@/contexts/ThemeContext';
 import { rf, rp } from '@/utils/responsive';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
+import { getShadowStyle } from '@/utils/cardShadow';
 import { COLORS, type PathData } from './drawingShared';
 
 type Tool = 'pen' | 'erase' | 'pan';
@@ -277,7 +278,7 @@ export default function ViewAndMarkOverlay({
                     </View>
 
                     {showColorMenu && (
-                        <View style={styles.popupShadow}>
+                        <View style={[styles.popupShadow, getShadowStyle({ offsetY: -4, blur: 8, opacity: 0.15, rgb: '0,0,0' })]}>
                             <View style={[styles.popupClip, { borderColor: cardBorder }]}>
                                 <BlurView experimentalBlurMethod={ANDROID_BLUR_METHOD} intensity={isDark ? 85 : 90} tint={isDark ? 'dark' : 'light'} style={StyleSheet.absoluteFill} />
                                 <View style={[StyleSheet.absoluteFill, { backgroundColor: popupOverlayTint }]} />
@@ -439,11 +440,6 @@ const styles = StyleSheet.create({
         // 56 + hueco 8), ya que el botón de color vive en la de pinceles.
         bottom: 132,
         borderRadius: 16,
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: -4 },
-        shadowOpacity: 0.15,
-        shadowRadius: 8,
-        elevation: 8,
     },
     popupClip: {
         borderRadius: 16,

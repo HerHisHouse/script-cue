@@ -2,6 +2,7 @@ import React from 'react';
 import { Pressable, View, Text, StyleSheet } from 'react-native';
 import { BlurView } from 'expo-blur';
 import { ANDROID_BLUR_METHOD } from '@/utils/blur';
+import { getCardShadow } from '@/utils/cardShadow';
 import { rf, rp } from '@/utils/responsive';
 
 interface ModeGlassCardProps {
@@ -15,7 +16,7 @@ interface ModeGlassCardProps {
 export function ModeGlassCard({ icon, title, description, onPress, dark = true }: ModeGlassCardProps) {
   const theme = dark ? darkPalette : lightPalette;
   return (
-    <View style={[styles.shadowWrapper, dark && styles.noShadow]}>
+    <View style={[styles.shadowWrapper, getCardShadow(dark)]}>
       <Pressable
         onPress={onPress}
         style={({ pressed }) => [styles.wrapper, { borderColor: theme.border }, pressed && styles.pressed]}
@@ -47,7 +48,7 @@ const lightPalette = {
 };
 
 const styles = StyleSheet.create({
-  // Wrapper exterior: lleva la sombra (solo modo claro). No puede tener
+  // Wrapper exterior: lleva la sombra (getCardShadow, solo modo claro). No puede tener
   // overflow:hidden, porque RN no renderiza shadow*/elevation en un View
   // que recorta su contenido.
   shadowWrapper: {
@@ -55,15 +56,6 @@ const styles = StyleSheet.create({
     minWidth: '47%',
     minHeight: rp(154),
     borderRadius: 20,
-    shadowColor: '#1a1625',
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.28,
-    shadowRadius: 16,
-    elevation: 8,
-  },
-  noShadow: {
-    shadowOpacity: 0,
-    elevation: 0,
   },
   wrapper: {
     flex: 1,

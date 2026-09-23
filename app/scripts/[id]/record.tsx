@@ -35,6 +35,7 @@ import { MENU_ITEM_PADDING_H, MENU_ITEM_PADDING_V, HEADER_HORIZONTAL_PADDING } f
 import { getSettings } from '@/utils/appSettings';
 import { makeHeaderMenuStyles } from '@/components/HeaderMenu';
 import { rf, rp } from '@/utils/responsive';
+import { GlassCard } from '@/components/GlassCard';
 
 interface DialogueLine {
   id: string;
@@ -415,12 +416,16 @@ export default function RecordModeScreen() {
           </View>
         )}
 
-        <TouchableOpacity
-          style={[
-            styles.currentLineContainer,
-            { backgroundColor: colors.surface, borderColor: colors.border },
-            currentLine?.isUserCharacter && { borderColor: '#10B981', borderWidth: 2 },
-          ]}
+        <GlassCard
+          isDark={isDark}
+          style={styles.currentLineContainer}
+          contentStyle={styles.currentLineContent}
+          backgroundColor={colors.surface}
+          borderColor={currentLine?.isUserCharacter ? '#10B981' : colors.border}
+          borderWidth={currentLine?.isUserCharacter ? 2 : 1}
+          borderRadius={16}
+          shadowRecipe={{ offsetY: 4, blur: 12, opacity: 0.1, rgb: '0,0,0' }}
+          shadowAlwaysOn
           onPress={currentLine?.isUserCharacter ? handleUserLineTap : undefined}
           activeOpacity={currentLine?.isUserCharacter ? 0.7 : 1}
           disabled={!currentLine?.isUserCharacter || isRecording}
@@ -478,7 +483,7 @@ export default function RecordModeScreen() {
               </View>
             )}
           </View>
-        </TouchableOpacity>
+        </GlassCard>
 
         {nextLine && (
           <View style={[styles.contextLine, { backgroundColor: isDark ? '#1E293B' : '#F3F4F6' }]}>
@@ -692,18 +697,12 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
   currentLineContainer: {
-    flexDirection: 'row',
-    borderRadius: 16,
-    overflow: 'hidden',
     marginVertical: 8,
-    borderWidth: 1,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.1,
-    shadowRadius: 12,
-    elevation: 4,
     width: '100%',
     maxWidth: 600,
+  },
+  currentLineContent: {
+    flexDirection: 'row',
   },
   colorBar: {
     width: 6,

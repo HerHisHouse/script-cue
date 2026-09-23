@@ -13,6 +13,7 @@ import * as Sharing from 'expo-sharing';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { ArrowLeft, Play, Star, Edit3, Share2, Download, Trash2, Settings, Info, Layers } from 'lucide-react-native';
 import { useTheme } from '@/contexts/ThemeContext';
+import { GlassCard } from '@/components/GlassCard';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/utils/supabase';
 import { getSettings } from '@/utils/appSettings';
@@ -657,21 +658,13 @@ export default function TakeComparatorScreen() {
         <ActivityIndicator size="large" color={activeAccent} style={{ marginTop: 40 }} />
       ) : allTakes.length === 0 ? (
         <View style={styles.emptyState}>
-          <View
-            style={[
-              styles.emptyCard,
-              {
-                backgroundColor: isDark ? 'rgba(124,106,247,0.08)' : 'rgba(255,255,255,0.55)',
-                borderColor: isDark ? 'rgba(167,139,250,0.25)' : 'rgba(124,106,247,0.15)',
-              },
-              !isDark && {
-                shadowColor: '#1a1625',
-                shadowOffset: { width: 0, height: 8 },
-                shadowOpacity: 0.28,
-                shadowRadius: 16,
-                elevation: 8,
-              },
-            ]}
+          <GlassCard
+            isDark={isDark}
+            style={styles.emptyCardOuter}
+            contentStyle={styles.emptyCard}
+            backgroundColor={isDark ? 'rgba(124,106,247,0.08)' : 'rgba(255,255,255,0.55)'}
+            borderColor={isDark ? 'rgba(167,139,250,0.25)' : 'rgba(124,106,247,0.15)'}
+            borderRadius={24}
           >
             <View style={[styles.emptyIconCircle, { backgroundColor: isDark ? 'rgba(167,139,250,0.15)' : 'rgba(124,106,247,0.12)' }]}>
               <Layers size={30} color={activeAccent} />
@@ -680,7 +673,7 @@ export default function TakeComparatorScreen() {
             <Text style={[styles.emptyStateText, { color: fgSecondary }]}>
               Graba en Selftape y elige &quot;Sí, grabar otra&quot; para empezar a comparar tus tomas aquí.
             </Text>
-          </View>
+          </GlassCard>
         </View>
       ) : (
         <FlatList
@@ -939,10 +932,10 @@ const styles = StyleSheet.create({
   backBtn: { padding: rp(8) },
   headerTitle: { fontSize: rf(18), fontWeight: '700' },
   emptyState: { flex: 1, justifyContent: 'center', alignItems: 'center', paddingHorizontal: rp(40) },
-  emptyCard: {
+  emptyCardOuter: {
     width: '100%',
-    borderRadius: 24,
-    borderWidth: 1,
+  },
+  emptyCard: {
     paddingVertical: rp(32),
     paddingHorizontal: rp(24),
     alignItems: 'center',

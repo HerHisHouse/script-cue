@@ -30,6 +30,7 @@ import { GlassBackdrop } from '@/components/GlassBackdrop';
 import { withAlpha } from '@/utils/colorUtils';
 import { serverAuthHeaders } from '@/utils/serverAuth';
 import { RENDER_SERVER_URL } from '@/utils/serverUrl';
+import { getCardShadow } from '@/utils/cardShadow';
 import { normalizeVoiceProvider } from '@/utils/voiceDefaults';
 import Constants from 'expo-constants';
 import { activateKeepAwakeAsync, deactivateKeepAwake } from 'expo-keep-awake';
@@ -2231,7 +2232,7 @@ export default function CastingModeScreen() {
           >
             <TouchableOpacity
               activeOpacity={0.85}
-              style={[styles.castingCardShadow, isDark && styles.noShadow]}
+              style={[styles.castingCardShadow, getCardShadow(isDark)]}
               onPress={() => { setQualityApplied(false); setCastingMode('free_input'); }}
             >
               <View style={[styles.castingCardClip, { borderColor: glassBorder }]}>
@@ -2252,7 +2253,7 @@ export default function CastingModeScreen() {
 
             <TouchableOpacity
               activeOpacity={0.85}
-              style={[styles.castingCardShadow, isDark && styles.noShadow]}
+              style={[styles.castingCardShadow, getCardShadow(isDark)]}
               onPress={() => { setQualityApplied(false); setCastingMode('script_config'); }}
             >
               <View style={[styles.castingCardClip, { borderColor: glassBorder }]}>
@@ -2273,7 +2274,7 @@ export default function CastingModeScreen() {
 
             <TouchableOpacity
               activeOpacity={0.85}
-              style={[styles.castingCardShadow, isDark && styles.noShadow]}
+              style={[styles.castingCardShadow, getCardShadow(isDark)]}
               onPress={() => router.push(`/scripts/${id}/take-comparator`)}
             >
               <View style={[styles.castingCardClip, { borderColor: glassBorder }]}>
@@ -3480,7 +3481,7 @@ export default function CastingModeScreen() {
             style={{ width: '100%', maxWidth: 500, maxHeight: '100%' }}
             contentContainerStyle={{ flexGrow: 1, justifyContent: 'center' }}
           >
-            <View style={[styles.qualityShadowWrapper, !isDark && styles.qualityShadow]}>
+            <View style={[styles.qualityShadowWrapper, getCardShadow(isDark)]}>
               <View style={[styles.qualityClip, { borderColor: glassBorder }]}>
                 <BlurView experimentalBlurMethod={ANDROID_BLUR_METHOD} intensity={isDark ? 55 : 65} tint={isDark ? 'dark' : 'light'} style={[StyleSheet.absoluteFill, { borderRadius: rp(20) }]} />
                 <View style={[StyleSheet.absoluteFill, { backgroundColor: glassBg, borderRadius: rp(20) }]} />
@@ -4291,15 +4292,6 @@ const styles = StyleSheet.create({
   castingCardShadow: {
     width: '100%',
     borderRadius: rp(20),
-    shadowColor: '#1a1625',
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.28,
-    shadowRadius: 16,
-    elevation: 8,
-  },
-  noShadow: {
-    shadowOpacity: 0,
-    elevation: 0,
   },
   castingCardClip: {
     borderRadius: rp(20),
@@ -4670,13 +4662,6 @@ const styles = StyleSheet.create({
   qualityShadowWrapper: {
     width: '100%',
     borderRadius: rp(20),
-  },
-  qualityShadow: {
-    shadowColor: '#1a1625',
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.28,
-    shadowRadius: 16,
-    elevation: 8,
   },
   qualityClip: {
     borderRadius: rp(20),

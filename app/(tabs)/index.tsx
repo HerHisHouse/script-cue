@@ -8,6 +8,8 @@ import { ScriptCard } from '@/components/ScriptCard';
 import { SendToModal } from '@/components/SendToModal';
 import { useAuth } from '@/contexts/AuthContext';
 import { useTheme } from '@/contexts/ThemeContext';
+import { GlassCard } from '@/components/GlassCard';
+import { getCardShadow } from '@/utils/cardShadow';
 import { Script } from '@/types/database';
 import { Plus, EyeOff, RefreshCw, Upload, Camera, ChevronRight, Search, Grid3x3, List, Circle, MoreVertical, Trash2, CheckSquare, Square, MinusSquare, Info, AlertCircle, ArrowUpAZ, Clock, Calendar, Check, X, FileText, Send } from 'lucide-react-native';
 import { ScreenHeader } from '@/components/ScreenHeader';
@@ -677,21 +679,12 @@ export default function IndexScreen() {
 
       {showSearch && (
         <View style={styles.searchContainer}>
-          <View
-            style={[
-              styles.searchRow,
-              {
-                backgroundColor: isDark ? 'rgba(124,106,247,0.08)' : 'rgba(255,255,255,0.55)',
-                borderColor: isDark ? 'rgba(167,139,250,0.25)' : 'rgba(124,106,247,0.15)',
-              },
-              !isDark && {
-                shadowColor: '#1a1625',
-                shadowOffset: { width: 0, height: 8 },
-                shadowOpacity: 0.28,
-                shadowRadius: 16,
-                elevation: 8,
-              },
-            ]}
+          <GlassCard
+            isDark={isDark}
+            style={styles.searchRowOuter}
+            contentStyle={styles.searchRow}
+            backgroundColor={isDark ? 'rgba(124,106,247,0.08)' : 'rgba(255,255,255,0.55)'}
+            borderColor={isDark ? 'rgba(167,139,250,0.25)' : 'rgba(124,106,247,0.15)'}
           >
             <Search size={18} color={isDark ? '#a0a0c0' : '#5c5678'} />
             <TextInput
@@ -705,7 +698,7 @@ export default function IndexScreen() {
               returnKeyType="search"
               onSubmitEditing={() => Keyboard.dismiss()}
             />
-          </View>
+          </GlassCard>
           <TouchableOpacity
             onPress={() => {
               setShowSearch(false);
@@ -773,21 +766,13 @@ export default function IndexScreen() {
         </View>
       ) : scripts.length === 0 ? (
         <View style={styles.emptyState}>
-          <View
-            style={[
-              styles.emptyCard,
-              {
-                backgroundColor: isDark ? 'rgba(124,106,247,0.08)' : 'rgba(255,255,255,0.55)',
-                borderColor: isDark ? 'rgba(167,139,250,0.25)' : 'rgba(124,106,247,0.15)',
-              },
-              !isDark && {
-                shadowColor: '#1a1625',
-                shadowOffset: { width: 0, height: 8 },
-                shadowOpacity: 0.28,
-                shadowRadius: 16,
-                elevation: 8,
-              },
-            ]}
+          <GlassCard
+            isDark={isDark}
+            style={styles.emptyCardOuter}
+            contentStyle={styles.emptyCard}
+            backgroundColor={isDark ? 'rgba(124,106,247,0.08)' : 'rgba(255,255,255,0.55)'}
+            borderColor={isDark ? 'rgba(167,139,250,0.25)' : 'rgba(124,106,247,0.15)'}
+            borderRadius={24}
           >
             <View style={[styles.emptyIconCircle, { backgroundColor: isDark ? 'rgba(167,139,250,0.15)' : 'rgba(124,106,247,0.12)' }]}>
               <FileText size={30} color={isDark ? '#FFFFFF' : colors.primary} />
@@ -812,7 +797,7 @@ export default function IndexScreen() {
               <Plus size={18} color="#FFFFFF" />
               <Text style={styles.emptyCtaText}>Añadir guion</Text>
             </TouchableOpacity>
-          </View>
+          </GlassCard>
         </View>
       ) : (() => {
         const filteredScripts = getSortedScripts(
@@ -879,16 +864,7 @@ export default function IndexScreen() {
 
       {scriptSelectionMode && selectedScriptIds.size > 0 && (
         <View
-          style={[
-            styles.selectionBarWrapper,
-            !isDark && {
-              shadowColor: '#1a1625',
-              shadowOffset: { width: 0, height: 8 },
-              shadowOpacity: 0.28,
-              shadowRadius: 16,
-              elevation: 8,
-            },
-          ]}
+          style={[styles.selectionBarWrapper, getCardShadow(isDark)]}
         >
           <View
             style={[
@@ -937,16 +913,7 @@ export default function IndexScreen() {
       <Modal visible={renameModalVisible} transparent animationType="fade" onRequestClose={() => setRenameModalVisible(false)} supportedOrientations={['portrait', 'landscape', 'landscape-left', 'landscape-right']}>
         <View style={styles.modalOverlay}>
           <View
-            style={[
-              styles.modalShadowWrapper,
-              !isDark && {
-                shadowColor: '#1a1625',
-                shadowOffset: { width: 0, height: 8 },
-                shadowOpacity: 0.28,
-                shadowRadius: 16,
-                elevation: 8,
-              },
-            ]}
+            style={[styles.modalShadowWrapper, getCardShadow(isDark)]}
           >
             <View
               style={[
@@ -1066,13 +1033,14 @@ const styles = StyleSheet.create({
     padding: rp(12),
     gap: rp(12),
   },
+  searchRowOuter: {
+    flex: 1,
+  },
   searchRow: {
     flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
-    borderRadius: 20,
-    borderWidth: 1,
     paddingHorizontal: rp(16),
     paddingVertical: rp(12),
   },
@@ -1138,10 +1106,10 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingHorizontal: rp(40),
   },
-  emptyCard: {
+  emptyCardOuter: {
     width: '100%',
-    borderRadius: 24,
-    borderWidth: 1,
+  },
+  emptyCard: {
     paddingVertical: rp(32),
     paddingHorizontal: rp(24),
     alignItems: 'center',

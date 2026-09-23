@@ -19,6 +19,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { BlurView } from 'expo-blur';
 import { ANDROID_BLUR_METHOD } from '@/utils/blur';
+import { getShadowStyle } from '@/utils/cardShadow';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter, useLocalSearchParams, Stack, useFocusEffect } from 'expo-router';
 import { useTheme } from '@/contexts/ThemeContext';
@@ -2758,6 +2759,11 @@ export default function StudioV2Screen() {
                             {currentLine && (
                                 <View style={styles.cardContainer}>
                                     {/* Current Card - special style for action cards */}
+                                    {/* Envoltorio solo para la sombra (getShadowStyle, boxShadow en Android): el
+                                        LinearGradient es el que rellena/recorta (overflow:hidden), igual que en
+                                        el resto de tarjetas de la app pero con un degradado en vez de un
+                                        backgroundColor plano — ver utils/cardShadow.ts. */}
+                                    <View style={[{ borderRadius: rp(20), width: '100%' }, getShadowStyle({ offsetY: rp(4), blur: rp(12), opacity: 0.1 })]}>
                                     <LinearGradient
                                         colors={dialogueCardGradient(currentLine.isAction ? colors.primary : (currentLine.isUserCharacter ? '#10B981' : currentLine.color || colors.primary))}
                                         start={{ x: 0, y: 0 }}
@@ -2821,21 +2827,29 @@ export default function StudioV2Screen() {
                                         {/* Contador de línea, sutil, esquina inferior derecha */}
                                         <Text style={[styles.cardCounter, { color: onBg2 }]}>{progressText}</Text>
                                     </LinearGradient>
+                                    </View>
 
                                     {/* Next Cards */}
                                     {activeLines.slice(currentIndex + 1).map((line, index) => (
-                                        <LinearGradient
+                                        <View
                                             key={`${line.id}-${index}`}
+                                            style={[
+                                                { borderRadius: rp(20), width: '100%' },
+                                                getShadowStyle({ offsetY: rp(4), blur: rp(12), opacity: 0.1 }),
+                                                styles.nextCard,
+                                                { marginTop: index === 0 ? 16 : 12 },
+                                            ]}
+                                        >
+                                        <LinearGradient
                                             colors={dialogueCardGradient(line.isAction ? colors.primary : (line.isUserCharacter ? '#10B981' : line.color || colors.primary))}
                                             start={{ x: 0, y: 0 }}
                                             end={{ x: 0, y: 1 }}
                                             style={[
-                                                styles.card, styles.nextCard,
+                                                styles.card,
                                                 {
                                                     borderColor: line.isAction ? colors.primary : (line.isUserCharacter ? '#10B981' : line.color || colors.primary),
                                                     borderWidth: 2,
                                                     opacity: 0.5, padding: 0, overflow: 'hidden',
-                                                    marginTop: index === 0 ? 16 : 12,
                                                     borderStyle: line.isAction ? 'dashed' : 'solid',
                                                 }
                                             ]}>
@@ -2860,6 +2874,7 @@ export default function StudioV2Screen() {
                                                 )}
                                             </View>
                                         </LinearGradient>
+                                        </View>
                                     ))}
                                 </View>
                             )}
@@ -2867,15 +2882,8 @@ export default function StudioV2Screen() {
                     )}
 
                     {/* Footer Controls */}
-                    <View style={[styles.footer, {
-                        borderColor: cardBorder,
-                        overflow: 'hidden',
-                        shadowColor: '#000',
-                        shadowOffset: { width: 0, height: 8 },
-                        shadowOpacity: 0.3,
-                        shadowRadius: 16,
-                        elevation: 8,
-                    }]}>
+                    <View style={[styles.footerOuter, getShadowStyle({ offsetY: 8, blur: 16, opacity: 0.3 })]}>
+                    <View style={[styles.footer, { borderColor: cardBorder }]}>
                         <BlurView experimentalBlurMethod={ANDROID_BLUR_METHOD} intensity={isDark ? 55 : 65} tint={isDark ? 'dark' : 'light'} style={StyleSheet.absoluteFill} />
                         <View style={[StyleSheet.absoluteFill, { backgroundColor: isDark ? 'rgba(124,106,247,0.14)' : 'rgba(235,230,245,0.5)' }]} />
                         <View style={styles.controls}>
@@ -2937,10 +2945,11 @@ export default function StudioV2Screen() {
                             </TouchableOpacity>
                         </View>
 
-                        {/* Timer removed as it was for session recording. 
-                    We could add a "REC" indicator or similar if desired. 
-                    For now, the red button indicates recording mode. 
+                        {/* Timer removed as it was for session recording.
+                    We could add a "REC" indicator or similar if desired.
+                    For now, the red button indicates recording mode.
                 */}
+                    </View>
                     </View>
                 </View>
             </SafeAreaView >
@@ -3054,11 +3063,6 @@ const styles = StyleSheet.create({
     card: {
         borderRadius: rp(20),
         padding: rp(32), // Increased padding for better spacing
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: rp(4) },
-        shadowOpacity: 0.1,
-        shadowRadius: rp(12),
-        elevation: rp(5),
         minHeight: rp(250), // Increased height
         width: '100%',
         alignItems: 'center', // Center content horizontally
@@ -3153,14 +3157,18 @@ const styles = StyleSheet.create({
         fontWeight: '500',
         color: '#FFFFFF',
     },
-    footer: {
+    footerOuter: {
+        borderRadius: rp(28),
         marginHorizontal: rp(16),
         marginBottom: Platform.OS === 'ios' ? rp(8) : rp(14),
+    },
+    footer: {
         paddingHorizontal: rp(20),
         paddingTop: rp(14),
         paddingBottom: rp(14),
         borderRadius: rp(28),
         borderWidth: 1,
+        overflow: 'hidden',
     },
     controls: {
         flexDirection: 'row',

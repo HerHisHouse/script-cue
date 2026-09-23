@@ -47,6 +47,8 @@ import { BottomSheetOption } from '@/components/BottomSheetOption';
 import * as Sharing from 'expo-sharing';
 import { useAuth } from '@/contexts/AuthContext';
 import { useTheme } from '@/contexts/ThemeContext';
+import { GlassCard } from '@/components/GlassCard';
+import { getCardShadow } from '@/utils/cardShadow';
 import { supabase } from '@/utils/supabase';
 import logger from '@/utils/logger';
 import { Recording } from '@/types/database';
@@ -125,18 +127,12 @@ const SearchBar = React.memo(function SearchBar({
   const cardBorder = isDark ? 'rgba(167,139,250,0.25)' : 'rgba(124,106,247,0.15)';
   return (
     <View style={styles.searchContainer}>
-      <View
-        style={[
-          styles.searchRow,
-          { backgroundColor: cardBg, borderColor: cardBorder },
-          !isDark && {
-            shadowColor: '#1a1625',
-            shadowOffset: { width: 0, height: 8 },
-            shadowOpacity: 0.28,
-            shadowRadius: 16,
-            elevation: 8,
-          },
-        ]}
+      <GlassCard
+        isDark={isDark}
+        style={styles.searchRowOuter}
+        contentStyle={styles.searchRow}
+        backgroundColor={cardBg}
+        borderColor={cardBorder}
       >
         <Search size={20} color={onBg2} />
         <TextInput
@@ -155,7 +151,7 @@ const SearchBar = React.memo(function SearchBar({
         {searching && (
           <ActivityIndicator size="small" color={colors.primary} />
         )}
-      </View>
+      </GlassCard>
       <TouchableOpacity
         onPress={onClose}
         style={styles.closeSearchButton}
@@ -2474,21 +2470,10 @@ export default function RecordingsScreen() {
     return (
       <TouchableOpacity
         style={[
-          viewMode === 'list' ? styles.recordingCard : styles.gridCard,
-          {
-            backgroundColor: isSelected ? colors.input : (isDark ? 'rgba(124,106,247,0.08)' : 'rgba(255,255,255,0.55)'),
-            borderColor: isSelected ? colors.primary : (isDark ? 'rgba(167,139,250,0.25)' : 'rgba(124,106,247,0.15)'),
-            borderWidth: isSelected ? 2 : 1,
-          },
-          !isDark && {
-            shadowColor: '#1a1625',
-            shadowOffset: { width: 0, height: 8 },
-            shadowOpacity: 0.28,
-            shadowRadius: 16,
-            elevation: 8,
-          },
-          viewMode === 'grid' ? { width: gridItemWidth } : null,
-          showRecordingMenu === item.id ? { zIndex: 1002 } : null
+          { borderRadius: 20 },
+          getCardShadow(isDark),
+          viewMode === 'grid' ? { width: gridItemWidth, margin: 4 } : { marginBottom: 12 },
+          showRecordingMenu === item.id ? { zIndex: 1002 } : null,
         ]}
         onPress={() => {
           // Bloquear la propagación cuando el menú del item está abierto
@@ -2505,6 +2490,20 @@ export default function RecordingsScreen() {
             toggleSelection(item.id);
           }
         }}
+      >
+      {/* Capa separada solo para recortar a las esquinas redondeadas y pintar el fondo translúcido —
+          la de arriba (TouchableOpacity) solo proyecta la sombra. Mismo patrón que ScriptCard.tsx. */}
+      <View
+        style={[
+          viewMode === 'list' ? styles.recordingCard : styles.gridCard,
+          {
+            backgroundColor: isSelected ? colors.input : (isDark ? 'rgba(124,106,247,0.08)' : 'rgba(255,255,255,0.55)'),
+            borderColor: isSelected ? colors.primary : (isDark ? 'rgba(167,139,250,0.25)' : 'rgba(124,106,247,0.15)'),
+            borderWidth: isSelected ? 2 : 1,
+            borderRadius: 20,
+            overflow: 'hidden',
+          },
+        ]}
       >
         {viewMode === 'list' ? (
           <>
@@ -2643,6 +2642,7 @@ export default function RecordingsScreen() {
             )}
           </View>
         )}
+      </View>
 
         {showRecordingMenu === item.id && (
           <BottomSheetMenu
@@ -3096,21 +3096,13 @@ export default function RecordingsScreen() {
               </View>
             ) : (
               <View style={styles.emptyState}>
-                <View
-                  style={[
-                    styles.emptyCard,
-                    {
-                      backgroundColor: isDark ? 'rgba(124,106,247,0.08)' : 'rgba(255,255,255,0.55)',
-                      borderColor: isDark ? 'rgba(167,139,250,0.25)' : 'rgba(124,106,247,0.15)',
-                    },
-                    !isDark && {
-                      shadowColor: '#1a1625',
-                      shadowOffset: { width: 0, height: 8 },
-                      shadowOpacity: 0.28,
-                      shadowRadius: 16,
-                      elevation: 8,
-                    },
-                  ]}
+                <GlassCard
+                  isDark={isDark}
+                  style={styles.emptyCardOuter}
+                  contentStyle={styles.emptyCard}
+                  backgroundColor={isDark ? 'rgba(124,106,247,0.08)' : 'rgba(255,255,255,0.55)'}
+                  borderColor={isDark ? 'rgba(167,139,250,0.25)' : 'rgba(124,106,247,0.15)'}
+                  borderRadius={24}
                 >
                   <View style={[styles.emptyIconCircle, { backgroundColor: isDark ? 'rgba(167,139,250,0.15)' : 'rgba(124,106,247,0.12)' }]}>
                     <FileAudio size={30} color={isDark ? '#FFFFFF' : colors.primary} />
@@ -3135,7 +3127,7 @@ export default function RecordingsScreen() {
                     <FileText size={18} color="#FFFFFF" />
                     <Text style={styles.emptyCtaText}>Ir a Guiones</Text>
                   </TouchableOpacity>
-                </View>
+                </GlassCard>
               </View>
             )}
           </View>
@@ -3528,16 +3520,7 @@ export default function RecordingsScreen() {
          supportedOrientations={['portrait', 'landscape', 'landscape-left', 'landscape-right']}>
           <View style={styles.modalOverlay}>
             <View
-              style={[
-                styles.renameModalShadowWrapper,
-                !isDark && {
-                  shadowColor: '#1a1625',
-                  shadowOffset: { width: 0, height: 8 },
-                  shadowOpacity: 0.28,
-                  shadowRadius: 16,
-                  elevation: 8,
-                },
-              ]}
+              style={[styles.renameModalShadowWrapper, getCardShadow(isDark)]}
             >
               <View
                 style={[
@@ -3683,16 +3666,7 @@ export default function RecordingsScreen() {
 
         {selectionMode && selectedIds.size > 0 && (
           <View
-            style={[
-              styles.selectionBarWrapper,
-              !isDark && {
-                shadowColor: '#1a1625',
-                shadowOffset: { width: 0, height: 8 },
-                shadowOpacity: 0.28,
-                shadowRadius: 16,
-                elevation: 8,
-              },
-            ]}
+            style={[styles.selectionBarWrapper, getCardShadow(isDark)]}
           >
             <View
               style={[
@@ -3885,13 +3859,14 @@ const styles = StyleSheet.create({
     zIndex: 1000,
   },
   // Advanced search UI additions
+  searchRowOuter: {
+    flex: 1,
+  },
   searchRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 12,
     flex: 1,
-    borderRadius: 20,
-    borderWidth: 1,
     paddingHorizontal: rp(16),
     paddingVertical: rp(12),
   },
@@ -3972,10 +3947,10 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingHorizontal: rp(40),
   },
-  emptyCard: {
+  emptyCardOuter: {
     width: '100%',
-    borderRadius: 24,
-    borderWidth: 1,
+  },
+  emptyCard: {
     paddingVertical: rp(32),
     paddingHorizontal: rp(24),
     alignItems: 'center',
@@ -4024,20 +3999,14 @@ const styles = StyleSheet.create({
   recordingCard: {
     flexDirection: 'row',
     alignItems: 'center',
-    borderRadius: 20,
     padding: rp(16),
-    marginBottom: 12,
     gap: 12,
     position: 'relative',
-    overflow: 'visible',
   },
   gridCard: {
     flex: 1,
-    margin: 4,
-    borderRadius: 20,
     padding: rp(12),
     position: 'relative',
-    overflow: 'visible',
     // Dynamic sizing in JSX for responsive columns
   },
   gridContent: {
