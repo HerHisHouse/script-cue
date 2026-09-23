@@ -1,6 +1,7 @@
 import { StyleSheet } from 'react-native';
 import { HEADER_HORIZONTAL_PADDING } from '@/utils/ui';
 import { useTheme } from '@/contexts/ThemeContext';
+import { getShadowStyle } from '@/utils/cardShadow';
 
 export function makeHeaderMenuStyles(colors: ReturnType<typeof useTheme>['colors']) {
   return StyleSheet.create({
@@ -13,13 +14,9 @@ export function makeHeaderMenuStyles(colors: ReturnType<typeof useTheme>['colors
       borderWidth: 1,
       backgroundColor: colors.surface,
       borderColor: colors.border,
-      shadowColor: '#000',
-      shadowOffset: { width: 0, height: 4 },
-      shadowOpacity: 0.08,
-      shadowRadius: 10,
-      elevation: 6,
       zIndex: 1001,
       marginTop: 4,
+      ...getShadowStyle({ offsetY: 4, blur: 10, opacity: 0.08, rgb: '0,0,0' }),
     },
     item: {
       flexDirection: 'row',

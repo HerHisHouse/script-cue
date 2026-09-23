@@ -31,11 +31,12 @@ import {
   Square,
 } from 'lucide-react-native';
 import { Audio } from 'expo-av';
-import { MENU_ITEM_PADDING_H, MENU_ITEM_PADDING_V, HEADER_HORIZONTAL_PADDING } from '@/utils/ui';
+import { HEADER_HORIZONTAL_PADDING } from '@/utils/ui';
 import { getSettings } from '@/utils/appSettings';
 import { makeHeaderMenuStyles } from '@/components/HeaderMenu';
 import { rf, rp } from '@/utils/responsive';
 import { GlassCard } from '@/components/GlassCard';
+import { getShadowStyle } from '@/utils/cardShadow';
 
 interface DialogueLine {
   id: string;
@@ -552,6 +553,7 @@ export default function RecordModeScreen() {
             style={[
               styles.loopButton,
               { backgroundColor: loopEnabled ? '#3B82F6' : isDark ? '#1E293B' : '#F3F4F6' },
+              getShadowStyle({ offsetY: 2, blur: 4, opacity: 0.1, rgb: '0,0,0' }),
             ]}
             onPress={toggleLoop}
             activeOpacity={0.7}
@@ -638,30 +640,6 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: '#FFFFFF',
     fontVariant: ['tabular-nums'],
-  },
-  menuContainer: {
-    position: 'absolute',
-    top: 70,
-    right: HEADER_HORIZONTAL_PADDING,
-    borderRadius: 12,
-    borderWidth: 1,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.2,
-    shadowRadius: 12,
-    elevation: 10,
-    zIndex: 1001,
-  },
-  menuItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: MENU_ITEM_PADDING_H,
-    paddingVertical: MENU_ITEM_PADDING_V,
-    gap: 12,
-    borderBottomWidth: 1,
-  },
-  menuItemText: {
-    fontSize: rf(15),
   },
   content: {
     flex: 1,
@@ -835,11 +813,6 @@ const styles = StyleSheet.create({
     borderRadius: 22,
     alignItems: 'center',
     justifyContent: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
     marginLeft: 8,
   },
   recordButton: {

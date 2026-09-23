@@ -1,6 +1,7 @@
 import React from 'react';
 import { View, Pressable, ActivityIndicator, StyleSheet } from 'react-native';
 import { SkipBack, SkipForward, Play, Pause } from 'lucide-react-native';
+import { getShadowStyle } from '@/utils/cardShadow';
 
 const ACCENT2 = '#7c6af7';
 
@@ -20,7 +21,7 @@ export function PlayerTransportRow({ isPlaying, isLoading, onPlayPause, onPrevio
       <Pressable onPress={onPrevious} hitSlop={16} accessibilityLabel="Anterior">
         <SkipBack size={30} color={iconColor} fill={iconColor} />
       </Pressable>
-      <Pressable onPress={onPlayPause} style={styles.playButton} hitSlop={16} accessibilityLabel={isPlaying ? 'Pausar' : 'Reproducir'}>
+      <Pressable onPress={onPlayPause} style={[styles.playButton, getShadowStyle({ offsetY: 8, blur: 20, opacity: 0.5, rgb: '124,106,247' })]} hitSlop={16} accessibilityLabel={isPlaying ? 'Pausar' : 'Reproducir'}>
         {isLoading ? (
           <ActivityIndicator size="small" color="#ffffff" />
         ) : isPlaying ? (
@@ -45,10 +46,5 @@ const styles = StyleSheet.create({
     backgroundColor: ACCENT2,
     alignItems: 'center',
     justifyContent: 'center',
-    shadowColor: ACCENT2,
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.5,
-    shadowRadius: 20,
-    elevation: 10,
   },
 });

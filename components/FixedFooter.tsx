@@ -1,9 +1,8 @@
 import React from 'react';
-import { View, TouchableOpacity, StyleSheet, Platform, Text } from 'react-native';
+import { View, TouchableOpacity, StyleSheet, Text } from 'react-native';
 import { BlurView } from 'expo-blur';
 import { ANDROID_BLUR_METHOD } from '@/utils/blur';
 import { getShadowStyle } from '@/utils/cardShadow';
-import { useTheme } from '@/contexts/ThemeContext';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Folder, FileText, Mic, Settings, Users } from 'lucide-react-native';
 import { useRouter } from 'expo-router';
@@ -11,19 +10,18 @@ import { rf, rp } from '@/utils/responsive';
 
 type Props = {
   activeKey?: 'projects' | 'index' | 'recordings' | 'settings' | 'community';
-  variant?: 'default' | 'floating';
   dark?: boolean;
 };
 
-export function FixedFooter({ activeKey, variant = 'default', dark = true }: Props) {
-  const { colors } = useTheme();
+// Solo existe la variante "floating" (pastilla flotante glass): es la única que
+// usa la app (app/scripts/[id]/index.tsx); la variante fija/opaca que existía
+// antes nunca se llegaba a renderizar y se quitó.
+export function FixedFooter({ activeKey, dark = true }: Props) {
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const bottomInset = insets.bottom || 0;
-  const baseHeight = Platform.OS === 'ios' ? 49 : 56;
-  const floating = variant === 'floating';
-  const active = floating ? (dark ? '#FFFFFF' : '#2A1B47') : colors.primary;
-  const inactive = floating ? (dark ? 'rgba(255,255,255,0.55)' : 'rgba(42,27,71,0.55)') : colors.textSecondary;
+  const active = dark ? '#FFFFFF' : '#2A1B47';
+  const inactive = dark ? 'rgba(255,255,255,0.55)' : 'rgba(42,27,71,0.55)';
 
   // Component for tab icon with background highlight when focused
   const TabIcon = ({ Icon, isActive, badge }: { Icon: any; isActive: boolean; badge?: boolean }) => (
@@ -32,14 +30,9 @@ export function FixedFooter({ activeKey, variant = 'default', dark = true }: Pro
         width: 50,
         height: 34,
         borderRadius: 17,
-        backgroundColor: isActive ? (floating ? (dark ? 'rgba(255,255,255,0.18)' : 'rgba(104,58,121,0.15)') : `${colors.primary}15`) : 'transparent',
+        backgroundColor: isActive ? (dark ? 'rgba(255,255,255,0.18)' : 'rgba(104,58,121,0.15)') : 'transparent',
         justifyContent: 'center',
         alignItems: 'center',
-        shadowColor: isActive && !floating ? colors.primary : 'transparent',
-        shadowOffset: { width: 0, height: 2 },
-        shadowOpacity: isActive && !floating ? 0.2 : 0,
-        shadowRadius: 4,
-        elevation: isActive && !floating ? 3 : 0,
       }}
     >
       <Icon size={24} color={isActive ? active : inactive} />
@@ -84,65 +77,40 @@ export function FixedFooter({ activeKey, variant = 'default', dark = true }: Pro
     </>
   );
 
-  if (floating) {
-    // Blur real (deja transparentar el fondo desenfocado) + un velo de color muy
-    // sutil encima, en vez de un backgroundColor opaco que tapa el efecto glass.
-    const overlayTint = dark ? 'rgba(124,106,247,0.14)' : 'rgba(235,230,245,0.22)';
-    return (
-      <>
-        {/* Franja borrosa bajo la pastilla flotante, igual que en app/(tabs)/_layout.tsx —
-            evita que lo que pasa por debajo de la pastilla (hasta el borde físico
-            del terminal) se vea nítido y corte el efecto cristal. */}
-        <View style={[styles.bottomBlurStrip, { height: bottomInset + 8 }]} pointerEvents="none">
-          <BlurView experimentalBlurMethod={ANDROID_BLUR_METHOD} intensity={dark ? 35 : 45} tint={dark ? 'dark' : 'light'} style={StyleSheet.absoluteFill} />
-          <View style={[StyleSheet.absoluteFill, { backgroundColor: dark ? 'rgba(10,8,20,0.22)' : 'rgba(235,230,245,0.18)' }]} />
-        </View>
+  // Blur real (deja transparentar el fondo desenfocado) + un velo de color muy
+  // sutil encima, en vez de un backgroundColor opaco que tapa el efecto glass.
+  const overlayTint = dark ? 'rgba(124,106,247,0.14)' : 'rgba(235,230,245,0.22)';
+  return (
+    <>
+      {/* Franja borrosa bajo la pastilla flotante, igual que en app/(tabs)/_layout.tsx —
+          evita que lo que pasa por debajo de la pastilla (hasta el borde físico
+          del terminal) se vea nítido y corte el efecto cristal. */}
+      <View style={[styles.bottomBlurStrip, { height: bottomInset + 8 }]} pointerEvents="none">
+        <BlurView experimentalBlurMethod={ANDROID_BLUR_METHOD} intensity={dark ? 35 : 45} tint={dark ? 'dark' : 'light'} style={StyleSheet.absoluteFill} />
+        <View style={[StyleSheet.absoluteFill, { backgroundColor: dark ? 'rgba(10,8,20,0.22)' : 'rgba(235,230,245,0.18)' }]} />
+      </View>
 
-        {/* Envoltorio solo para la sombra (getShadowStyle, boxShadow en Android): la
-            vista interior es la que recorta (overflow:hidden) y desenfoca — ver
-            utils/cardShadow.ts. */}
-        <View style={[styles.floatingWrapperOuter, { bottom: 8 }, getShadowStyle({ offsetY: 8, blur: 16, opacity: 0.3, rgb: '0,0,0' })]}>
-          <View style={[styles.floatingWrapper, { borderColor: dark ? 'rgba(255,255,255,0.4)' : 'rgba(104,58,121,0.25)' }]}>
-            <BlurView experimentalBlurMethod={ANDROID_BLUR_METHOD} intensity={dark ? 55 : 65} tint={dark ? 'dark' : 'light'} style={StyleSheet.absoluteFill} />
-            <View style={[StyleSheet.absoluteFill, { backgroundColor: overlayTint }]} />
-            <View style={styles.floatingBlur}>
-              {items}
-            </View>
+      {/* Envoltorio solo para la sombra (getShadowStyle, boxShadow en Android): la
+          vista interior es la que recorta (overflow:hidden) y desenfoca — ver
+          utils/cardShadow.ts. */}
+      <View style={[styles.floatingWrapperOuter, { bottom: 8 }, getShadowStyle({ offsetY: 8, blur: 16, opacity: 0.3, rgb: '0,0,0' })]}>
+        <View style={[styles.floatingWrapper, { borderColor: dark ? 'rgba(255,255,255,0.4)' : 'rgba(104,58,121,0.25)' }]}>
+          <BlurView experimentalBlurMethod={ANDROID_BLUR_METHOD} intensity={dark ? 55 : 65} tint={dark ? 'dark' : 'light'} style={StyleSheet.absoluteFill} />
+          <View style={[StyleSheet.absoluteFill, { backgroundColor: overlayTint }]} />
+          <View style={styles.floatingBlur}>
+            {items}
           </View>
         </View>
-      </>
-    );
-  }
-
-  return (
-    <View style={[styles.container, { backgroundColor: colors.surface, borderTopColor: colors.border, height: Platform.OS === 'android' ? baseHeight + 10 : baseHeight + bottomInset + 10, paddingBottom: Platform.OS === 'android' ? 4 : bottomInset + 4, paddingTop: rp(8) }]}>
-      {items}
-    </View>
+      </View>
+    </>
   );
 }
 
-export function FixedFooterSpacer({ variant = 'default' }: { variant?: 'default' | 'floating' }) {
-  const insets = useSafeAreaInsets();
-  const baseHeight = Platform.OS === 'ios' ? 49 : 56;
-  const bottomInset = insets.bottom || 0;
-  if (variant === 'floating') {
-    return <View style={{ height: rp(78) + 8 + 16 }} />;
-  }
-  const height = Platform.OS === 'android' ? baseHeight + 10 : baseHeight + bottomInset + 10;
-  return <View style={{ height }} />;
+export function FixedFooterSpacer() {
+  return <View style={{ height: rp(78) + 8 + 16 }} />;
 }
 
 const styles = StyleSheet.create({
-  container: {
-    position: 'absolute',
-    left: 0,
-    right: 0,
-    bottom: 0,
-    borderTopWidth: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-around',
-  },
   bottomBlurStrip: {
     position: 'absolute',
     left: 0,

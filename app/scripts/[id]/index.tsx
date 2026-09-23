@@ -456,9 +456,9 @@ export default function ScriptDetailScreen() {
             <Text style={[styles.hintLink, { color: fg }]} onPress={() => router.push({ pathname: '/scripts/[id]/review', params: { id: id as string, force: '1' } })}> Revisar Guion</Text>.
           </Text>
         </View>
-        <FixedFooterSpacer variant="floating" />
+        <FixedFooterSpacer />
       </ScrollView>
-      <FixedFooter variant="floating" dark={isDark} />
+      <FixedFooter dark={isDark} />
     </ImageBackground>
   );
 }
@@ -509,66 +509,6 @@ const styles = StyleSheet.create({
   },
   contentContainer: {
     paddingBottom: rp(40),
-  },
-  infoCard: {
-    borderRadius: 12,
-    padding: rp(12),
-    marginBottom: 12,
-    alignItems: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
-    shadowRadius: 8,
-    elevation: 2,
-  },
-  infoLabel: {
-    fontSize: rf(12),
-    fontWeight: '500',
-    marginBottom: 8,
-  },
-  infoValue: {
-    fontSize: rf(16),
-    fontWeight: '700',
-  },
-  bannerRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-    width: '100%',
-  },
-  characterCard: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    borderRadius: 12,
-    padding: rp(16),
-    marginBottom: 24,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
-    shadowRadius: 8,
-    elevation: 2,
-  },
-  characterBadge: {
-    width: 56,
-    height: 56,
-    borderRadius: 28,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginRight: 16,
-  },
-  characterInfo: {
-    flex: 1,
-  },
-  characterLabel: {
-    fontSize: rf(12),
-    fontWeight: '500',
-    textTransform: 'uppercase',
-    letterSpacing: 0.5,
-    marginBottom: 4,
-  },
-  characterName: {
-    fontSize: rf(20),
-    fontWeight: '700',
   },
   // Tarjeta unificada de resumen
   summaryCard: {

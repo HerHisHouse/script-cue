@@ -9,6 +9,7 @@ import {
   Platform,
 } from 'react-native';
 import { X } from 'lucide-react-native';
+import { getShadowStyle } from '@/utils/cardShadow';
 
 const SLIDER_HEIGHT_PORTRAIT = 240;
 const SLIDER_HEIGHT_LANDSCAPE = 140;
@@ -134,7 +135,7 @@ export function VerticalZoomSlider({
         <View style={[styles.trackFilled, { height: filledHeight }]} />
 
         {/* Thumb */}
-        <View style={[styles.thumb, { top: thumbTop }]} />
+        <View style={[styles.thumb, { top: thumbTop }, getShadowStyle({ offsetY: 2, blur: 6, opacity: 0.5, rgb: '124,58,237' })]} />
       </View>
     </View>
   );
@@ -206,10 +207,5 @@ const styles = StyleSheet.create({
     backgroundColor: '#ffffff',
     borderWidth: 2.5,
     borderColor: '#a78bfa',
-    shadowColor: '#7c3aed',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.5,
-    shadowRadius: 6,
-    elevation: 6,
   },
 });
