@@ -8,6 +8,7 @@ import { FontAwesome5 } from '@expo/vector-icons';
 import { useAuth } from '@/contexts/AuthContext';
 import { useTheme } from '@/contexts/ThemeContext';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
+import { GlassCard } from '@/components/GlassCard';
 import appConfig from '../../app.json';
 import { getSettings, setSettings } from '@/utils/appSettings';
 import * as Speech from 'expo-speech';
@@ -346,14 +347,6 @@ export default function SettingsScreen() {
   const onBg2 = isDark ? '#a0a0c0' : '#5c5678';
   const cardBg = isDark ? 'rgba(124,106,247,0.08)' : 'rgba(255,255,255,0.55)';
   const cardBorder = isDark ? 'rgba(167,139,250,0.25)' : 'rgba(124,106,247,0.15)';
-  const cardShadow = !isDark ? {
-    shadowColor: '#1a1625',
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.28,
-    shadowRadius: 16,
-    elevation: 8,
-  } : null;
-
   return (
     <ImageBackground
       source={isDark ? require('@/assets/images/ui-dark-bg.png') : require('@/assets/images/ui-light-bg.png')}
@@ -379,7 +372,7 @@ export default function SettingsScreen() {
           <View style={styles.section}>
             <Text style={[styles.sectionTitle, { color: onBg2, textAlign: 'center' }]}>Perfil</Text>
 
-            <View style={[styles.profileCard, { ...cardShadow, backgroundColor: cardBg, borderWidth: 1, borderColor: cardBorder }]}>
+            <GlassCard isDark={isDark} contentStyle={styles.profileCard} backgroundColor={cardBg} borderColor={cardBorder}>
               {/* Avatar con botón de edición */}
               <TouchableOpacity
                 style={styles.avatarWrapper}
@@ -468,16 +461,11 @@ export default function SettingsScreen() {
                 )}
                 <Text style={[styles.profileEmail, { color: onBg2 }]}>{user?.email}</Text>
               </View>
-            </View>
+            </GlassCard>
           </View>
 
           {/* GENERAL */}
-          <View
-            style={[
-              styles.accordionCard,
-              { ...cardShadow, backgroundColor: cardBg, borderColor: cardBorder },
-            ]}
-          >
+          <GlassCard isDark={isDark} style={styles.accordionCardOuter} contentStyle={styles.accordionCard} backgroundColor={cardBg} borderColor={cardBorder}>
             <TouchableOpacity
               style={styles.accordionHeader}
               activeOpacity={0.7}
@@ -553,15 +541,10 @@ export default function SettingsScreen() {
                 </View>
               </View>
             )}
-          </View>
+          </GlassCard>
 
           {/* CONTACTO */}
-          <View
-            style={[
-              styles.accordionCard,
-              { ...cardShadow, backgroundColor: cardBg, borderColor: cardBorder },
-            ]}
-          >
+          <GlassCard isDark={isDark} style={styles.accordionCardOuter} contentStyle={styles.accordionCard} backgroundColor={cardBg} borderColor={cardBorder}>
             <TouchableOpacity
               style={styles.accordionHeader}
               activeOpacity={0.7}
@@ -649,7 +632,7 @@ export default function SettingsScreen() {
                 </TouchableOpacity>
               </View>
             )}
-          </View>
+          </GlassCard>
 
           <ConfirmDialog
             visible={showDeleteConfirm}
@@ -663,12 +646,7 @@ export default function SettingsScreen() {
           />
 
           {/* AYUDA */}
-          <View
-            style={[
-              styles.accordionCard,
-              { ...cardShadow, backgroundColor: cardBg, borderColor: cardBorder },
-            ]}
-          >
+          <GlassCard isDark={isDark} style={styles.accordionCardOuter} contentStyle={styles.accordionCard} backgroundColor={cardBg} borderColor={cardBorder}>
             <TouchableOpacity
               style={styles.accordionHeader}
               activeOpacity={0.7}
@@ -693,15 +671,10 @@ export default function SettingsScreen() {
                 </TouchableOpacity>
               </View>
             )}
-          </View>
+          </GlassCard>
 
           {/* AVISO LEGAL */}
-          <View
-            style={[
-              styles.accordionCard,
-              { ...cardShadow, backgroundColor: cardBg, borderColor: cardBorder },
-            ]}
-          >
+          <GlassCard isDark={isDark} style={styles.accordionCardOuter} contentStyle={styles.accordionCard} backgroundColor={cardBg} borderColor={cardBorder}>
             <TouchableOpacity
               style={styles.accordionHeader}
               activeOpacity={0.7}
@@ -736,12 +709,12 @@ export default function SettingsScreen() {
                 </TouchableOpacity>
               </View>
             )}
-          </View>
+          </GlassCard>
 
           {/* SÍGUENOS */}
           <View style={styles.section}>
             <Text style={[styles.sectionTitle, { color: onBg2 }]}>Síguenos</Text>
-            <View style={[styles.infoCard, { ...cardShadow, backgroundColor: cardBg, borderWidth: 1, borderColor: cardBorder, justifyContent: 'center', gap: rp(28) }]}>
+            <GlassCard isDark={isDark} contentStyle={[styles.infoCard, { justifyContent: 'center', gap: rp(28) }]} backgroundColor={cardBg} borderColor={cardBorder}>
               {SOCIAL_LINKS.map(social => (
                 <TouchableOpacity
                   key={social.name}
@@ -753,24 +726,24 @@ export default function SettingsScreen() {
                   <FontAwesome5 name={social.icon} size={20} color={isDark ? '#FFFFFF' : colors.primary} />
                 </TouchableOpacity>
               ))}
-            </View>
+            </GlassCard>
           </View>
 
           <View style={styles.section}>
             <Text style={[styles.sectionTitle, { color: onBg2 }]}>Acerca de</Text>
-            <View style={[styles.infoCard, { ...cardShadow, backgroundColor: cardBg, borderWidth: 1, borderColor: cardBorder }]}>
+            <GlassCard isDark={isDark} contentStyle={styles.infoCard} backgroundColor={cardBg} borderColor={cardBorder}>
               <Image source={require('../../assets/images/icon.png')} style={{ width: 24, height: 24, borderRadius: 6 }} />
               <View style={styles.infoText}>
                 <Text style={[styles.appName, { color: onBg }]}>{appName}</Text>
                 <Text style={[styles.appVersion, { color: onBg2 }]}>{appVersion}</Text>
               </View>
-            </View>
+            </GlassCard>
           </View>
 
-          <TouchableOpacity style={[styles.signOutButton, { ...cardShadow, backgroundColor: cardBg, borderColor: isDark ? '#7F1D1D' : '#FEE2E2' }]} onPress={() => setShowSignOutConfirm(true)}>
+          <GlassCard isDark={isDark} style={{ marginTop: 'auto' }} contentStyle={styles.signOutButton} backgroundColor={cardBg} borderColor={isDark ? '#7F1D1D' : '#FEE2E2'} onPress={() => setShowSignOutConfirm(true)}>
             <LogOut size={20} color={colors.error} />
             <Text style={[styles.signOutText, { color: colors.error }]}>Cerrar Sesión</Text>
-          </TouchableOpacity>
+          </GlassCard>
         </ScrollView>
       </View>
     </SafeAreaView>
@@ -791,10 +764,14 @@ const styles = StyleSheet.create({
     fontSize: rf(28),
     fontWeight: '700',
   },
+  // marginBottom va en la vista EXTERIOR (la que proyecta la sombra en GlassCard), no aquí: aquí
+  // ya no es la única vista de la tarjeta, es solo el contentStyle interior.
+  accordionCardOuter: {
+    marginBottom: rp(16),
+  },
   accordionCard: {
     borderRadius: 20,
     borderWidth: 1,
-    marginBottom: rp(16),
   },
   accordionHeader: {
     flexDirection: 'row',
@@ -1123,7 +1100,6 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     borderRadius: 20,
     padding: rp(16),
-    marginTop: 'auto',
     borderWidth: 1,
     gap: rp(8),
   },
