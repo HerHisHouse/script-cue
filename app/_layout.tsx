@@ -149,8 +149,14 @@ function AppRoot() {
     setupPlayer();
   }, []);
 
+  // Android: con navegación por gestos (solo la barrita, inset ~16-24dp) la app llega hasta abajo
+  // del todo, como en iOS — cada pantalla ya respeta insets.bottom por su cuenta. Con la barra de
+  // 3 botones (inset ~48dp) se reserva ese hueco para que los botones no queden sobre el contenido.
+  // No hay API JS para saber el modo de navegación, así que se deduce del tamaño del inset.
+  const hasAndroidButtonNavBar = Platform.OS === 'android' && insets.bottom > 32;
+
   return (
-    <View style={{ flex: 1, backgroundColor: isDark ? WINDOW_BG_DARK : WINDOW_BG_LIGHT, paddingBottom: Platform.OS === 'android' ? insets.bottom : 0 }}>
+    <View style={{ flex: 1, backgroundColor: isDark ? WINDOW_BG_DARK : WINDOW_BG_LIGHT, paddingBottom: hasAndroidButtonNavBar ? insets.bottom : 0 }}>
       <Stack
         screenOptions={{
           headerShown: false,
