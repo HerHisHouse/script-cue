@@ -124,12 +124,23 @@ export async function getCachedAudio(
             .limit(1);
 
         if (error || !results || results.length === 0) return null;
-        const data = results[0];
+        const localPath = await downloadCachedAudio(results[0].storage_path, lineId, provider);
+        if (localPath) console.log('✅ Using cached audio for line:', lineId);
+        return localPath;
+    } catch (error) {
+        console.error('Error getting cached audio:', error);
+        return null;
+    }
+}
 
-        // Download from Supabase Storage to local cache
+/**
+ * Descarga un audio de la caché (bucket tts-cache, carpeta del propio usuario) a un fichero local.
+ */
+async function downloadCachedAudio(storagePath: string, lineId: string, provider: string): Promise<string | null> {
+    try {
         const { data: fileData, error: downloadError } = await supabase.storage
             .from('tts-cache')
-            .download(data.storage_path);
+            .download(storagePath);
 
         if (downloadError || !fileData) {
             console.error('Error downloading cached audio:', downloadError);
@@ -153,11 +164,38 @@ export async function getCachedAudio(
         await FileSystem.writeAsStringAsync(localPath, base64, {
             encoding: FileSystem.EncodingType.Base64,
         });
-
-        console.log('✅ Using cached audio for line:', lineId);
         return localPath;
     } catch (error) {
-        console.error('Error getting cached audio:', error);
+        console.error('Error downloading cached audio:', error);
+        return null;
+    }
+}
+
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/**
+ * Caché compartida entre usuarios: si otro usuario ya generó exactamente este audio (mismo texto
+ * procesado, emoción, proveedor y voz), la edge function `tts-cache-lookup` lo copia a la carpeta
+ * de este usuario y le crea su propia fila de caché, sin volver a pagar la generación. Las RLS
+ * siguen impidiendo leer la caché de otros directamente (ver la función para el porqué es seguro).
+ */
+async function adoptSharedCachedAudio(params: {
+    textHash: string;
+    provider: string;
+    voiceId: string | null;
+    emotion: string;
+    scriptId: string;
+    lineId: string;
+    characterName: string;
+}): Promise<string | null> {
+    if (!UUID_RE.test(params.scriptId) || !UUID_RE.test(params.lineId)) return null;
+    try {
+        const { data, error } = await supabase.functions.invoke('tts-cache-lookup', { body: params });
+        if (error || !data?.hit || !data.storagePath) return null;
+        console.log(`[TTS] ♻️ Audio reutilizado de la caché compartida → ${params.lineId}`);
+        return await downloadCachedAudio(data.storagePath, params.lineId, params.provider);
+    } catch (error) {
+        console.warn('[TTS] Caché compartida no disponible, se genera el audio:', error);
         return null;
     }
 }
@@ -214,6 +252,8 @@ export async function generateAndCacheAudio(
             console.log(`[TTS] ✅ Cache HIT → ${lineId} (${emotion}) devolviendo caché`);
             return cached;
         }
+        const shared = await adoptSharedCachedAudio({ textHash, provider, voiceId, emotion, scriptId, lineId, characterName });
+        if (shared) return shared;
         console.log(`[TTS] ⚡ Cache MISS → generando audio NUEVO para ${characterName} (${provider}, ${emotion})`);
 
         console.log(`🎙️ Generating NEW audio for ${characterName} (${provider})...`);
