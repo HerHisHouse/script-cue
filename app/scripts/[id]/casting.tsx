@@ -2236,7 +2236,11 @@ export default function CastingModeScreen() {
               onPress={() => { setQualityApplied(false); setCastingMode('free_input'); }}
             >
               <View style={[styles.castingCardClip, { borderColor: glassBorder }]}>
-                <BlurView experimentalBlurMethod={ANDROID_BLUR_METHOD} intensity={40} tint={isDark ? 'dark' : 'light'} style={[styles.castingCard, { backgroundColor: glassBg }]}>
+                {/* El contenido va FUERA del BlurView, como hermano superpuesto: en Android
+                    el blur real (dimezisBlurView) desenfoca también lo que se renderiza
+                    dentro del propio BlurView, no solo lo que hay detrás. */}
+                <BlurView experimentalBlurMethod={ANDROID_BLUR_METHOD} intensity={40} tint={isDark ? 'dark' : 'light'} style={[StyleSheet.absoluteFill, { backgroundColor: glassBg }]} />
+                <View style={styles.castingCard}>
                   <MonitorPlay size={rp(48)} color="#10B981" style={{ marginBottom: 16 }} />
                   <Text style={[styles.castingCardTitle, { color: fg }]}>Presentación</Text>
                   <View style={styles.castingCardDescBlock}>
@@ -2247,7 +2251,7 @@ export default function CastingModeScreen() {
                     <Text style={[styles.castingCardDesc, { color: fgSecondary }]}>• Plano General automático</Text>
                     <Text style={[styles.castingCardDesc, { color: fgSecondary }]}>• Configuración del texto</Text>
                   </View>
-                </BlurView>
+                </View>
               </View>
             </TouchableOpacity>
 
@@ -2257,7 +2261,8 @@ export default function CastingModeScreen() {
               onPress={() => { setQualityApplied(false); setCastingMode('script_config'); }}
             >
               <View style={[styles.castingCardClip, { borderColor: glassBorder }]}>
-                <BlurView experimentalBlurMethod={ANDROID_BLUR_METHOD} intensity={40} tint={isDark ? 'dark' : 'light'} style={[styles.castingCard, { backgroundColor: glassBg }]}>
+                <BlurView experimentalBlurMethod={ANDROID_BLUR_METHOD} intensity={40} tint={isDark ? 'dark' : 'light'} style={[StyleSheet.absoluteFill, { backgroundColor: glassBg }]} />
+                <View style={styles.castingCard}>
                   <Clapperboard size={rp(48)} color={colors.primary} style={{ marginBottom: 16 }} />
                   <Text style={[styles.castingCardTitle, { color: fg }]}>Selftape</Text>
                   <View style={styles.castingCardDescBlock}>
@@ -2268,7 +2273,7 @@ export default function CastingModeScreen() {
                     <Text style={[styles.castingCardDesc, { color: fgSecondary }]}>• Guion cargado en teleprompter</Text>
                     <Text style={[styles.castingCardDesc, { color: fgSecondary }]}>• Configuración de la escena</Text>
                   </View>
-                </BlurView>
+                </View>
               </View>
             </TouchableOpacity>
 
@@ -2278,7 +2283,8 @@ export default function CastingModeScreen() {
               onPress={() => router.push(`/scripts/${id}/take-comparator`)}
             >
               <View style={[styles.castingCardClip, { borderColor: glassBorder }]}>
-                <BlurView experimentalBlurMethod={ANDROID_BLUR_METHOD} intensity={40} tint={isDark ? 'dark' : 'light'} style={[styles.castingCard, { backgroundColor: glassBg }]}>
+                <BlurView experimentalBlurMethod={ANDROID_BLUR_METHOD} intensity={40} tint={isDark ? 'dark' : 'light'} style={[StyleSheet.absoluteFill, { backgroundColor: glassBg }]} />
+                <View style={styles.castingCard}>
                   <Layers size={rp(48)} color="#FBBF24" style={{ marginBottom: 16 }} />
                   <Text style={[styles.castingCardTitle, { color: fg }]}>Tomas</Text>
                   <View style={styles.castingCardDescBlock}>
@@ -2289,7 +2295,7 @@ export default function CastingModeScreen() {
                     <Text style={[styles.castingCardDesc, { color: fgSecondary }]}>• Selecciona tu favorita</Text>
                     <Text style={[styles.castingCardDesc, { color: fgSecondary }]}>• Fija el tiempo de expiración</Text>
                   </View>
-                </BlurView>
+                </View>
               </View>
             </TouchableOpacity>
           </ScrollView>

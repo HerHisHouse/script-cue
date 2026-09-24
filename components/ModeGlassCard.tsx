@@ -21,11 +21,15 @@ export function ModeGlassCard({ icon, title, description, onPress, dark = true }
         onPress={onPress}
         style={({ pressed }) => [styles.wrapper, { borderColor: theme.border }, pressed && styles.pressed]}
       >
-        <BlurView experimentalBlurMethod={ANDROID_BLUR_METHOD} intensity={40} tint={dark ? 'dark' : 'light'} style={[styles.blur, { backgroundColor: theme.blurBg }]}>
+        {/* El texto va FUERA del BlurView, como hermano superpuesto: en Android el
+            método de blur real (dimezisBlurView) desenfoca también lo que se
+            renderiza dentro del propio BlurView, no solo lo que hay detrás. */}
+        <BlurView experimentalBlurMethod={ANDROID_BLUR_METHOD} intensity={40} tint={dark ? 'dark' : 'light'} style={[StyleSheet.absoluteFill, { backgroundColor: theme.blurBg }]} />
+        <View style={styles.content}>
           <View style={[styles.iconCircle, { backgroundColor: theme.iconBg }]}>{icon}</View>
           <Text style={[styles.title, { color: theme.title }]}>{title}</Text>
           <Text style={[styles.description, { color: theme.description }]} numberOfLines={2}>{description}</Text>
-        </BlurView>
+        </View>
       </Pressable>
     </View>
   );
@@ -67,7 +71,7 @@ const styles = StyleSheet.create({
     opacity: 0.75,
     transform: [{ scale: 0.98 }],
   },
-  blur: {
+  content: {
     flex: 1,
     paddingVertical: rp(20),
     paddingHorizontal: rp(14),
