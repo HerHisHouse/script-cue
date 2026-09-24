@@ -11,8 +11,7 @@ import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 import { useRouter, useLocalSearchParams, useFocusEffect } from 'expo-router';
 import { useTheme } from '@/contexts/ThemeContext';
 import { getShadowStyle } from '@/utils/cardShadow';
-import { BlurView } from 'expo-blur';
-import { ANDROID_BLUR_METHOD } from '@/utils/blur';
+import { GlassCardSurface } from '@/components/GlassCardSurface';
 import {
     Brain,
     Ghost,
@@ -147,17 +146,13 @@ export default function MemoryMenuScreen() {
                                 onPress={() => router.push(`/scripts/${id}/memory${game.route}`)}
                             >
                                 <View style={[styles.gameCardClip, { borderColor: glassBorder }]}>
-                                    {/* El contenido va FUERA del BlurView, como hermano superpuesto: en
-                                        Android el blur real (dimezisBlurView) desenfoca también lo que se
-                                        renderiza dentro del propio BlurView, no solo lo que hay detrás. */}
-                                    <BlurView experimentalBlurMethod={ANDROID_BLUR_METHOD} intensity={40} tint={isDark ? 'dark' : 'light'} style={[StyleSheet.absoluteFill, { backgroundColor: glassBg }]} />
-                                    <View style={styles.gameCard}>
+                                    <GlassCardSurface tint={isDark ? 'dark' : 'light'} style={[styles.gameCard, { backgroundColor: glassBg }]}>
                                         <View style={[styles.gameIconCircle, { backgroundColor: glassBorder }]}>
                                             <game.icon size={28} color={fg} />
                                         </View>
                                         <Text style={[styles.gameTitle, { color: fg }]}>{game.title}</Text>
                                         <Text style={[styles.gameDesc, { color: fgSecondary }]}>{game.description}</Text>
-                                    </View>
+                                    </GlassCardSurface>
                                 </View>
                             </TouchableOpacity>
                         ))}

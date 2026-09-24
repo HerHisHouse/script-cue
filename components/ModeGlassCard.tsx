@@ -1,7 +1,6 @@
 import React from 'react';
 import { Pressable, View, Text, StyleSheet } from 'react-native';
-import { BlurView } from 'expo-blur';
-import { ANDROID_BLUR_METHOD } from '@/utils/blur';
+import { GlassCardSurface } from '@/components/GlassCardSurface';
 import { getCardShadow } from '@/utils/cardShadow';
 import { rf, rp } from '@/utils/responsive';
 
@@ -21,15 +20,11 @@ export function ModeGlassCard({ icon, title, description, onPress, dark = true }
         onPress={onPress}
         style={({ pressed }) => [styles.wrapper, { borderColor: theme.border }, pressed && styles.pressed]}
       >
-        {/* El texto va FUERA del BlurView, como hermano superpuesto: en Android el
-            método de blur real (dimezisBlurView) desenfoca también lo que se
-            renderiza dentro del propio BlurView, no solo lo que hay detrás. */}
-        <BlurView experimentalBlurMethod={ANDROID_BLUR_METHOD} intensity={40} tint={dark ? 'dark' : 'light'} style={[StyleSheet.absoluteFill, { backgroundColor: theme.blurBg }]} />
-        <View style={styles.content}>
+        <GlassCardSurface tint={dark ? 'dark' : 'light'} style={[styles.content, { backgroundColor: theme.blurBg }]}>
           <View style={[styles.iconCircle, { backgroundColor: theme.iconBg }]}>{icon}</View>
           <Text style={[styles.title, { color: theme.title }]}>{title}</Text>
           <Text style={[styles.description, { color: theme.description }]} numberOfLines={2}>{description}</Text>
-        </View>
+        </GlassCardSurface>
       </Pressable>
     </View>
   );
