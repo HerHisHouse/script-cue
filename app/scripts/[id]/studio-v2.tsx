@@ -16,6 +16,7 @@ import {
     useColorScheme,
     ImageBackground,
 } from 'react-native';
+import { useDialogMaxHeight, dialogScrollStyle } from '@/hooks/useDialogMaxHeight';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { BlurView } from 'expo-blur';
 import { ANDROID_BLUR_METHOD } from '@/utils/blur';
@@ -85,6 +86,7 @@ export default function StudioV2Screen() {
     const router = useRouter();
     const { id } = useLocalSearchParams();
     const { colors, isDark } = useTheme();
+    const dialogMaxHeight = useDialogMaxHeight();
     // Paleta "sobre imagen de fondo" del diseño glass, igual que en Importar Guion / Revisar guion
     const onBg = isDark ? '#ffffff' : '#2a2447';
     const onBg2 = isDark ? '#a0a0c0' : '#5c5678';
@@ -2320,9 +2322,10 @@ export default function StudioV2Screen() {
                         onRequestClose={() => setShowHeadphoneAlert(false)}
                      supportedOrientations={['portrait', 'landscape', 'landscape-left', 'landscape-right']}>
                         <View style={styles.modalOverlay}>
-                            <View style={styles.modalContent}>
+                            <View style={[styles.modalContent, { maxHeight: dialogMaxHeight }]}>
                                 <BlurView experimentalBlurMethod={ANDROID_BLUR_METHOD} intensity={isDark ? 55 : 75} tint={isDark ? 'dark' : 'light'} style={StyleSheet.absoluteFill} />
                                 <View style={[StyleSheet.absoluteFill, { backgroundColor: isDark ? 'rgba(124,106,247,0.40)' : 'rgba(235,230,245,0.40)' }]} />
+                                <ScrollView style={dialogScrollStyle} contentContainerStyle={{ alignItems: 'center' }} bounces={false}>
                                 <View style={styles.modalHeader}>
                                     <Headphones size={32} color={colors.primary} />
                                     <Text style={[styles.modalTitle, { color: onBg }]}>Recomendación</Text>
@@ -2357,6 +2360,7 @@ export default function StudioV2Screen() {
                                         <Text style={[styles.modalButtonText, { color: '#FFFFFF' }]}>Entendido</Text>
                                     </TouchableOpacity>
                                 </View>
+                                </ScrollView>
                             </View>
                         </View>
                     </Modal>
@@ -2369,9 +2373,10 @@ export default function StudioV2Screen() {
                         onRequestClose={() => setShowStageDirectionsInfo(false)}
                      supportedOrientations={['portrait', 'landscape', 'landscape-left', 'landscape-right']}>
                         <View style={styles.modalOverlay}>
-                            <View style={styles.modalContent}>
+                            <View style={[styles.modalContent, { maxHeight: dialogMaxHeight }]}>
                                 <BlurView experimentalBlurMethod={ANDROID_BLUR_METHOD} intensity={isDark ? 55 : 75} tint={isDark ? 'dark' : 'light'} style={StyleSheet.absoluteFill} />
                                 <View style={[StyleSheet.absoluteFill, { backgroundColor: isDark ? 'rgba(124,106,247,0.40)' : 'rgba(235,230,245,0.40)' }]} />
+                                <ScrollView style={dialogScrollStyle} contentContainerStyle={{ alignItems: 'center' }} bounces={false}>
                                 <View style={styles.modalHeader}>
                                     <MessageSquare size={32} color={colors.primary} />
                                     <Text style={[styles.modalTitle, { color: onBg }]}>Acotaciones</Text>
@@ -2404,6 +2409,7 @@ export default function StudioV2Screen() {
                                         <Text style={[styles.modalButtonText, { color: '#FFFFFF' }]}>Entendido</Text>
                                     </TouchableOpacity>
                                 </View>
+                                </ScrollView>
                             </View>
                         </View>
                     </Modal>
@@ -2417,9 +2423,10 @@ export default function StudioV2Screen() {
                         onRequestClose={() => setShowActionsInfo(false)}
                      supportedOrientations={['portrait', 'landscape', 'landscape-left', 'landscape-right']}>
                         <View style={styles.modalOverlay}>
-                            <View style={styles.modalContent}>
+                            <View style={[styles.modalContent, { maxHeight: dialogMaxHeight }]}>
                                 <BlurView experimentalBlurMethod={ANDROID_BLUR_METHOD} intensity={isDark ? 55 : 75} tint={isDark ? 'dark' : 'light'} style={StyleSheet.absoluteFill} />
                                 <View style={[StyleSheet.absoluteFill, { backgroundColor: isDark ? 'rgba(124,106,247,0.40)' : 'rgba(235,230,245,0.40)' }]} />
+                                <ScrollView style={dialogScrollStyle} contentContainerStyle={{ alignItems: 'center' }} bounces={false}>
                                 <View style={styles.modalHeader}>
                                     <Clapperboard size={32} color={colors.primary} />
                                     <Text style={[styles.modalTitle, { color: onBg }]}>Acciones</Text>
@@ -2452,6 +2459,7 @@ export default function StudioV2Screen() {
                                         <Text style={[styles.modalButtonText, { color: '#FFFFFF' }]}>Entendido</Text>
                                     </TouchableOpacity>
                                 </View>
+                                </ScrollView>
                             </View>
                         </View>
                     </Modal>
@@ -2464,9 +2472,10 @@ export default function StudioV2Screen() {
                         onRequestClose={() => setShowReorderInfoModal(false)}
                      supportedOrientations={['portrait', 'landscape', 'landscape-left', 'landscape-right']}>
                         <View style={styles.modalOverlay}>
-                            <View style={styles.modalContent}>
+                            <View style={[styles.modalContent, { maxHeight: dialogMaxHeight }]}>
                                 <BlurView experimentalBlurMethod={ANDROID_BLUR_METHOD} intensity={isDark ? 55 : 75} tint={isDark ? 'dark' : 'light'} style={StyleSheet.absoluteFill} />
                                 <View style={[StyleSheet.absoluteFill, { backgroundColor: isDark ? 'rgba(124,106,247,0.40)' : 'rgba(235,230,245,0.40)' }]} />
+                                <ScrollView style={dialogScrollStyle} contentContainerStyle={{ alignItems: 'center' }} bounces={false}>
                                 <View style={styles.modalHeader}>
                                     <Text style={[styles.modalTitle, { color: onBg }]}>Modificar orden</Text>
                                     <TouchableOpacity onPress={() => setShowReorderInfoModal(false)} style={styles.closeButton}>
@@ -2504,6 +2513,7 @@ export default function StudioV2Screen() {
                                         <Text style={[styles.modalButtonText, { color: '#FFFFFF' }]}>Entendido</Text>
                                     </TouchableOpacity>
                                 </View>
+                                </ScrollView>
                             </View>
                         </View>
                     </Modal>

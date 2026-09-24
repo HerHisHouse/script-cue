@@ -6,12 +6,14 @@ import {
   TouchableOpacity,
   Modal,
   Pressable,
+  ScrollView,
 } from 'react-native';
 import { BlurView } from 'expo-blur';
 import { ANDROID_BLUR_METHOD } from '@/utils/blur';
 import { getCardShadow } from '@/utils/cardShadow';
 import { useTheme } from '@/contexts/ThemeContext';
 import { rf, rp } from '@/utils/responsive';
+import { useDialogMaxHeight } from '@/hooks/useDialogMaxHeight';
 
 interface ConfirmDialogProps {
   visible: boolean;
@@ -47,6 +49,7 @@ export function ConfirmDialog({
   onExtra,
 }: ConfirmDialogProps) {
   const { colors, isDark } = useTheme();
+  const maxHeight = useDialogMaxHeight();
   const onBg = isDark ? '#ffffff' : '#2a2447';
   const onBg2 = isDark ? '#a0a0c0' : '#5c5678';
   // En modo oscuro, colors.primary (morado apagado) apenas se lee sobre el
@@ -64,11 +67,12 @@ export function ConfirmDialog({
       animationType="fade"
       onRequestClose={onCancel}
      supportedOrientations={['portrait', 'landscape', 'landscape-left', 'landscape-right']}>
-      <Pressable style={styles.overlay} onPress={onCancel}>
-        <Pressable
-          style={[styles.shadowWrapper, getCardShadow(isDark)]}
-          onPress={(e) => e.stopPropagation()}
-        >
+      {/* El fondo que cierra al tocar fuera es una capa hermana, no un padre del diálogo: si el
+          diálogo va dentro de un Pressable, éste se queda el gesto y el ScrollView del mensaje no
+          llega a desplazarse. */}
+      <View style={styles.overlay}>
+        <Pressable style={StyleSheet.absoluteFill} onPress={onCancel} accessibilityLabel="Cerrar" />
+        <View style={[styles.shadowWrapper, getCardShadow(isDark), { maxHeight }]}>
           <View
             style={[
               styles.clip,
@@ -83,8 +87,12 @@ export function ConfirmDialog({
               ]}
             />
             <View style={styles.dialog}>
-              <Text style={[styles.title, { color: onBg }]}>{title}</Text>
-              <Text style={[styles.message, { color: onBg2 }]}>{message}</Text>
+              {/* Título y mensaje con scroll si no caben (p.ej. en horizontal); los botones
+                  quedan siempre visibles debajo. */}
+              <ScrollView style={styles.scroll} bounces={false}>
+                <Text style={[styles.title, { color: onBg }]}>{title}</Text>
+                <Text style={[styles.message, { color: onBg2 }]}>{message}</Text>
+              </ScrollView>
 
               {extraButtonText && onExtra ? (
                 <View style={styles.buttonsColumn}>
@@ -121,8 +129,8 @@ export function ConfirmDialog({
               )}
             </View>
           </View>
-        </Pressable>
-      </Pressable>
+        </View>
+      </View>
     </Modal>
   );
 }
@@ -141,12 +149,18 @@ const styles = StyleSheet.create({
     borderRadius: 24,
   },
   clip: {
+    flexShrink: 1,
     borderRadius: 24,
     overflow: 'hidden',
     borderWidth: 1,
   },
   dialog: {
+    flexShrink: 1,
     padding: rp(24),
+  },
+  scroll: {
+    flexGrow: 0,
+    flexShrink: 1,
   },
   title: {
     fontSize: rf(18),

@@ -8,7 +8,9 @@ import {
     Animated,
     Modal,
     ImageBackground,
+    ScrollView,
 } from 'react-native';
+import { useDialogMaxHeight, dialogScrollStyle } from '@/hooks/useDialogMaxHeight';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { useTheme } from '@/contexts/ThemeContext';
@@ -34,6 +36,7 @@ export default function QuizModeScreen() {
     const { id } = useLocalSearchParams();
     const scriptId = id as string;
     const { colors, isDark } = useTheme();
+    const dialogMaxHeight = useDialogMaxHeight();
     const { user } = useAuth();
     const bg = () => (isDark ? require('@/assets/images/ui-dark-bg.png') : require('@/assets/images/ui-light-bg.png'));
     // Misma paleta "sobre imagen de fondo" que el resto de pantallas rediseñadas.
@@ -452,7 +455,8 @@ export default function QuizModeScreen() {
                     animationType="fade"
                  supportedOrientations={['portrait', 'landscape', 'landscape-left', 'landscape-right']}>
                     <View style={[styles.modalOverlay, styles.center]}>
-                        <View style={[styles.resultCard, { backgroundColor: isDark ? '#1a1625' : '#FFFFFF', borderWidth: 1, borderColor: glassBorder }]}>
+                        <View style={[styles.resultCard, { backgroundColor: isDark ? '#1a1625' : '#FFFFFF', borderWidth: 1, borderColor: glassBorder, maxHeight: dialogMaxHeight }]}>
+                            <ScrollView style={dialogScrollStyle} contentContainerStyle={{ alignItems: 'center', gap: rp(16) }} bounces={false}>
                             <Trophy size={64} color={lives > 0 ? activeAccent : fgSecondary} />
                             <Text style={[styles.resultTitle, { color: fg }]}>
                                 {lives > 0 ? '¡Quiz Completado!' : 'Game Over'}
@@ -471,6 +475,7 @@ export default function QuizModeScreen() {
                             >
                                 <Text style={styles.resultButtonText}>Volver</Text>
                             </TouchableOpacity>
+                            </ScrollView>
                         </View>
                     </View>
                 </Modal>

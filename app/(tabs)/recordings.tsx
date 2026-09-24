@@ -20,6 +20,7 @@ import {
   ScrollView,
   useWindowDimensions,
 } from 'react-native';
+import { useDialogMaxHeight, dialogScrollStyle } from '@/hooks/useDialogMaxHeight';
 import { Dimensions } from 'react-native';
 import * as ScreenOrientation from 'expo-screen-orientation';
 import { BlurView } from 'expo-blur';
@@ -166,6 +167,7 @@ export default function RecordingsScreen() {
   const router = useRouter();
   const { user } = useAuth();
   const { colors, isDark } = useTheme();
+  const dialogMaxHeight = useDialogMaxHeight();
   const params = useLocalSearchParams<{ pendingJobId?: string }>();
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [showBulkDeleteConfirm, setShowBulkDeleteConfirm] = useState(false);
@@ -3613,7 +3615,8 @@ export default function RecordingsScreen() {
           onRequestClose={() => setShareModalVisible(false)}
          supportedOrientations={['portrait', 'landscape', 'landscape-left', 'landscape-right']}>
           <View style={styles.modalOverlay}>
-            <View style={[styles.modalContent, { backgroundColor: colors.surface }]}>
+            <View style={[styles.modalContent, { backgroundColor: colors.surface, maxHeight: dialogMaxHeight }]}>
+              <ScrollView style={dialogScrollStyle} bounces={false} keyboardShouldPersistTaps="handled">
               <Text style={[styles.modalTitle, { color: colors.text }]}>Compartir selección</Text>
               <Text style={{ color: colors.textSecondary }}>Configura la caducidad de los enlaces:</Text>
               <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
@@ -3660,6 +3663,7 @@ export default function RecordingsScreen() {
                   <Text style={[styles.modalButtonText, { color: '#FFFFFF' }]}>Compartir</Text>
                 </TouchableOpacity>
               </View>
+              </ScrollView>
             </View>
           </View>
         </Modal>

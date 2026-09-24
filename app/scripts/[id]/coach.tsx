@@ -12,6 +12,7 @@ import {
   Modal,
   ImageBackground,
 } from 'react-native';
+import { useDialogMaxHeight, dialogScrollStyle } from '@/hooks/useDialogMaxHeight';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { BlurView } from 'expo-blur';
 import { ANDROID_BLUR_METHOD } from '@/utils/blur';
@@ -90,6 +91,7 @@ export default function CoachModeScreen() {
   const router = useRouter();
   const { id } = useLocalSearchParams();
   const { colors, isDark } = useTheme();
+  const dialogMaxHeight = useDialogMaxHeight();
   const { user } = useAuth();
   const insets = useSafeAreaInsets();
 
@@ -956,9 +958,10 @@ export default function CoachModeScreen() {
           onRequestClose={() => { }}
          supportedOrientations={['portrait', 'landscape', 'landscape-left', 'landscape-right']}>
           <View style={styles.modalOverlay}>
-            <View style={[styles.modalContent, { borderWidth: 1, borderColor: cardBorder, overflow: 'hidden' }]}>
+            <View style={[styles.modalContent, { borderWidth: 1, borderColor: cardBorder, overflow: 'hidden', maxHeight: dialogMaxHeight }]}>
               <BlurView experimentalBlurMethod={ANDROID_BLUR_METHOD} intensity={isDark ? 55 : 65} tint={isDark ? 'dark' : 'light'} style={StyleSheet.absoluteFill} />
               <View style={[StyleSheet.absoluteFill, { backgroundColor: modalOverlayTint }]} />
+              <ScrollView style={dialogScrollStyle} contentContainerStyle={{ alignItems: 'center' }} bounces={false}>
               <View style={styles.modalHeader}>
                 <AlertCircle size={48} color={colors.primary} />
                 <Text style={[styles.modalTitle, { color: onBg }]}>Aviso Importante</Text>
@@ -989,6 +992,7 @@ export default function CoachModeScreen() {
               >
                 <Text style={styles.modalButtonText}>Entendido</Text>
               </TouchableOpacity>
+              </ScrollView>
             </View>
           </View>
         </Modal>

@@ -1,8 +1,9 @@
 import React, { useState, useEffect, useRef } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, FlatList,
-  ActivityIndicator, TextInput, Modal, ImageBackground,
+  ActivityIndicator, TextInput, Modal, ImageBackground, ScrollView,
 } from 'react-native';
+import { useDialogMaxHeight, dialogScrollStyle } from '@/hooks/useDialogMaxHeight';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { BlurView } from 'expo-blur';
@@ -219,6 +220,7 @@ export default function TakeComparatorScreen() {
   const router = useRouter();
   const { id } = useLocalSearchParams();
   const { colors, isDark } = useTheme();
+  const dialogMaxHeight = useDialogMaxHeight(rp(24));
   const insets = useSafeAreaInsets();
   const { user } = useAuth();
 
@@ -799,7 +801,7 @@ export default function TakeComparatorScreen() {
 
       {/* Modal de reproducción */}
       {playingTakeId && videoUri && (
-        <Modal visible animationType="slide">
+        <Modal visible animationType="slide" supportedOrientations={['portrait', 'landscape', 'landscape-left', 'landscape-right']}>
           <SafeAreaView style={{ flex: 1, backgroundColor: 'black' }}>
             <TouchableOpacity
               onPress={() => {
@@ -829,7 +831,7 @@ export default function TakeComparatorScreen() {
 
       {/* Modal de renombrado */}
       {renamingTake && (
-        <Modal visible transparent animationType="fade">
+        <Modal visible transparent animationType="fade" supportedOrientations={['portrait', 'landscape', 'landscape-left', 'landscape-right']}>
           <View style={styles.renameModalOverlay}>
             <View style={[styles.renameModalClip, { borderColor: glassBorder }]}>
               <BlurView experimentalBlurMethod={ANDROID_BLUR_METHOD} intensity={isDark ? 55 : 65} tint={isDark ? 'dark' : 'light'} style={[StyleSheet.absoluteFill, { borderRadius: rp(16) }]} />
@@ -859,11 +861,12 @@ export default function TakeComparatorScreen() {
 
       {/* Modal de ajustes de expiración */}
       {showSettingsModal && (
-        <Modal visible transparent animationType="fade">
+        <Modal visible transparent animationType="fade" supportedOrientations={['portrait', 'landscape', 'landscape-left', 'landscape-right']}>
           <View style={styles.renameModalOverlay}>
-            <View style={[styles.renameModalClip, { borderColor: glassBorder }]}>
+            <View style={[styles.renameModalClip, { borderColor: glassBorder, maxHeight: dialogMaxHeight }]}>
               <BlurView experimentalBlurMethod={ANDROID_BLUR_METHOD} intensity={isDark ? 55 : 65} tint={isDark ? 'dark' : 'light'} style={[StyleSheet.absoluteFill, { borderRadius: rp(16) }]} />
               <View style={[StyleSheet.absoluteFill, { backgroundColor: glassBg, borderRadius: rp(16) }]} />
+              <ScrollView style={dialogScrollStyle} bounces={false}>
               <View style={styles.renameModalContent}>
                 <Text style={[styles.renameModalTitle, { color: fg }]}>Expiración de tomas locales</Text>
                 <Text style={{ color: fgSecondary, fontSize: rf(13), marginBottom: rp(16), lineHeight: rf(18) }}>
@@ -889,6 +892,7 @@ export default function TakeComparatorScreen() {
                   <Text style={{ color: fgSecondary }}>Cerrar</Text>
                 </TouchableOpacity>
               </View>
+              </ScrollView>
             </View>
           </View>
         </Modal>

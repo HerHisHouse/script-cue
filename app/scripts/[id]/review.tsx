@@ -4,6 +4,7 @@ import {
   TextInput, Modal, ScrollView, ActivityIndicator,
   KeyboardAvoidingView, Platform, Pressable, ImageBackground,
 } from 'react-native';
+import { useDialogMaxHeight, dialogScrollStyle } from '@/hooks/useDialogMaxHeight';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { Stack } from 'expo-router';
@@ -153,6 +154,7 @@ export default function ReviewScreen() {
   };
   // ── Tour interactivo (coach marks) ──────────────────────────────────────────
   const [tourVisible, setTourVisible] = useState(false);
+  const dialogMaxHeight = useDialogMaxHeight();
   const [tourStepIndex, setTourStepIndex] = useState(0);
   const [tourTargetRect, setTourTargetRect] = useState<CoachTourRect | null>(null);
   const tourStepsRef = useRef<{ content: CoachTourStepContent; prepare: () => Promise<CoachTourRect | null> }[]>([]);
@@ -894,9 +896,10 @@ export default function ReviewScreen() {
           onRequestClose={() => setShowAddLineInfo(false)}
          supportedOrientations={['portrait', 'landscape', 'landscape-left', 'landscape-right']}>
           <View style={s.modalOverlay}>
-            <View style={s.modalContent}>
+            <View style={[s.modalContent, { maxHeight: dialogMaxHeight }]}>
               <BlurView experimentalBlurMethod={ANDROID_BLUR_METHOD} intensity={isDark ? 55 : 75} tint={isDark ? 'dark' : 'light'} style={StyleSheet.absoluteFill} />
               <View style={[StyleSheet.absoluteFill, { backgroundColor: isDark ? 'rgba(124,106,247,0.40)' : 'rgba(235,230,245,0.40)' }]} />
+              <ScrollView style={dialogScrollStyle} bounces={false}>
               <View style={{ padding: rp(24), paddingBottom: Math.max(insets.bottom + rp(20), rp(40)) }}>
               <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: rp(16), gap: 12 }}>
                 <Plus size={24} color={colors.primary} />
@@ -936,6 +939,7 @@ export default function ReviewScreen() {
                 <Text style={{ color: '#fff', fontSize: rf(14), fontWeight: '600' }}>Entendido</Text>
               </TouchableOpacity>
               </View>
+              </ScrollView>
             </View>
           </View>
         </Modal>
