@@ -51,6 +51,16 @@
           "microphonePermission": "Necesitamos acceso al micrófono para grabar tus sesiones de estudio y detectar la lectura de tus líneas."
         }
       ],
+      [
+        "expo-splash-screen",
+        {
+          "android": {
+            "image": "./assets/images/logo-android-blanco.png",
+            "resizeMode": "contain",
+            "backgroundColor": "#000000"
+          }
+        }
+      ],
       "./plugins/withAndroidNetworkConfig.js",
       "./plugins/withAudioEchoCancellation.js"
     ],
