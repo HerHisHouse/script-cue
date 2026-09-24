@@ -490,8 +490,9 @@ export default function MemoryModeScreen() {
 
                 {(revealState[currentIndex] ?? 0) === 0 && (
                   <View style={styles.hiddenContent}>
-                    <EyeOff size={32} color={fgSecondary} />
-                    <Text style={[styles.hiddenText, { color: fgSecondary }]}>
+                    {/* Claro en ambos temas: la tarjeta oculta es siempre oscura (ver backgroundColor arriba) */}
+                    <EyeOff size={32} color="rgba(255,255,255,0.6)" />
+                    <Text style={[styles.hiddenText, { color: 'rgba(255,255,255,0.6)' }]}>
                       Toca para ver una pista
                     </Text>
                   </View>
