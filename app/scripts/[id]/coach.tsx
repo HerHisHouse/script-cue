@@ -49,6 +49,7 @@ import {
 } from 'lucide-react-native';
 import { Audio, Video, ResizeMode } from 'expo-av';
 import { supabase } from '@/utils/supabase';
+import { RecordingAvailability, getAvailabilityMap, getDeviceFileUri, isDevicePath, OTHER_DEVICE_MESSAGE } from '@/utils/recordingLocation';
 import { serverAuthHeaders } from '@/utils/serverAuth';
 import { RENDER_SERVER_URL } from '@/utils/serverUrl';
 import { useTheme } from '@/contexts/ThemeContext';
@@ -132,6 +133,13 @@ export default function CoachModeScreen() {
   };
 
   const [recordings, setRecordings] = useState<Recording[]>([]);
+  // Local / Nube / En otro dispositivo, comprobado en este dispositivo (ver utils/recordingLocation.ts)
+  const [availability, setAvailability] = useState<Record<string, RecordingAvailability>>({});
+  useEffect(() => {
+    let cancelled = false;
+    getAvailabilityMap(recordings).then(map => { if (!cancelled) setAvailability(map); });
+    return () => { cancelled = true; };
+  }, [recordings]);
   const [loading, setLoading] = useState(true);
   const [isLocalOnly, setIsLocalOnly] = useState(false);
 
@@ -231,11 +239,7 @@ export default function CoachModeScreen() {
 
   useEffect(() => {
     if (selectedRecording?.type === 'video' && selectedRecording.audio_url) {
-      if (selectedRecording.audio_url.startsWith('http')) {
-        setVideoSignedUrl(selectedRecording.audio_url);
-      } else {
-        getSignedUrl(selectedRecording.audio_url).then(url => setVideoSignedUrl(url));
-      }
+      resolvePlayableUrl(selectedRecording.audio_url).then(url => setVideoSignedUrl(url));
     } else {
       setVideoSignedUrl(null);
     }
@@ -472,20 +476,29 @@ export default function CoachModeScreen() {
     }
   }
 
+  // Archivo en este dispositivo (grabado aquí o descargado "Offline") → nube (URL firmada).
+  // Una grabación "solo local" de otro dispositivo no se puede reproducir aquí.
+  async function resolvePlayableUrl(path: string): Promise<string | null> {
+    const deviceUri = await getDeviceFileUri(path);
+    if (deviceUri) return deviceUri;
+    if (isDevicePath(path)) {
+      showInfo('No disponible', OTHER_DEVICE_MESSAGE);
+      return null;
+    }
+    if (path.startsWith('http')) return path;
+    return getSignedUrl(path);
+  }
+
   async function playAudio(path: string) {
     try {
       if (sound) {
         await sound.unloadAsync();
       }
 
-      let playableUrl = path;
-      if (!path.startsWith('file://')) {
-        const signedUrl = await getSignedUrl(path);
-        if (!signedUrl) {
-          showInfo('Error', 'No se pudo obtener la URL del audio');
-          return;
-        }
-        playableUrl = signedUrl;
+      const playableUrl = await resolvePlayableUrl(path);
+      if (!playableUrl) {
+        if (!isDevicePath(path)) showInfo('Error', 'No se pudo obtener la URL del audio');
+        return;
       }
 
       const { sound: newSound } = await Audio.Sound.createAsync(
@@ -544,15 +557,11 @@ export default function CoachModeScreen() {
         }
         setPreviewingId(recording.id);
 
-        let playableUrl = recording.audio_url;
-        if (!playableUrl.startsWith('file://')) {
-          const signedUrl = await getSignedUrl(playableUrl);
-          if (!signedUrl) {
-            showInfo('Error', 'No se pudo obtener el audio');
-            setPreviewingId(null);
-            return;
-          }
-          playableUrl = signedUrl;
+        const playableUrl = await resolvePlayableUrl(recording.audio_url);
+        if (!playableUrl) {
+          if (!isDevicePath(recording.audio_url)) showInfo('Error', 'No se pudo obtener el audio');
+          setPreviewingId(null);
+          return;
         }
 
         const { sound: newSound } = await Audio.Sound.createAsync(
@@ -594,23 +603,17 @@ export default function CoachModeScreen() {
         <Text style={[styles.recordingSubtitle, { color: onBg2 }]}>
             {item.duration_seconds ? `${Math.round(item.duration_seconds)}s` : 'Analizar duración'}
         </Text>
-        {/* Indicador de ubicación del archivo */}
+        {/* Indicador de ubicación del archivo, visto desde este dispositivo */}
         <View style={styles.storageIndicator}>
           {(() => {
-            const url = item.audio_url || '';
-            const isLocalFile = url.startsWith('file://') || url.startsWith('/');
-            return isLocalFile ? (
+            const where = availability[item.id] ?? (isDevicePath(item.audio_url) ? 'device' : 'cloud');
+            const Icon = where === 'cloud' ? Cloud : Smartphone;
+            const label = where === 'device' ? 'Local' : where === 'cloud' ? 'Nube' : 'En otro dispositivo';
+            return (
               <View style={styles.storageTag}>
-                <Smartphone size={11} color={onBg2} />
+                <Icon size={11} color={onBg2} />
                 <Text style={[styles.storageTagText, { color: onBg2 }]}>
-                  Local
-                </Text>
-              </View>
-            ) : (
-              <View style={styles.storageTag}>
-                <Cloud size={11} color={onBg2} />
-                <Text style={[styles.storageTagText, { color: onBg2 }]}>
-                  Nube
+                  {label}
                 </Text>
               </View>
             );

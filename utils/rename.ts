@@ -69,6 +69,17 @@ export async function performRename(
     throw new RenameError('NO_CHANGE', 'El nombre es igual al actual.');
   }
 
+  // Grabación "solo local" (file:// del dispositivo donde se grabó): solo cambia el título. El
+  // archivo puede no estar en este dispositivo, y al compartir ya se usa el título como nombre.
+  if (oldPath.startsWith('file://') || oldPath.startsWith('/')) {
+    const { error: dbErr } = await supabase
+      .from('recordings')
+      .update({ title: baseName })
+      .eq('id', recording.id);
+    if (dbErr) throw dbErr;
+    return { newPath: oldPath, newTitle: baseName };
+  }
+
   const { newPath, dir } = buildNewPath(oldPath, normalizedFilename);
 
   // Manejo de renombrado local (modo "Solo local"), sin usar Storage
@@ -139,4 +150,20 @@ export async function performRename(
   }
 
   return { newPath, newTitle: baseName };
+}
+/**
+ * Nombre de archivo para compartir a partir del título visible de la grabación (p.ej.
+ * "Mi selftape.mp4" en vez del nombre interno "1727..._teleprompter.mp4"). Conserva acentos y
+ * espacios; quita solo lo que no admiten los sistemas de archivos o apps de destino.
+ */
+export function toShareFilename(title: string | null | undefined, ext: string, fallback = 'Grabación', maxLen = 80): string {
+  const base = (title || '')
+    .replace(/\.[A-Za-z0-9]{2,4}$/, '') // si el título ya trae extensión, no duplicarla
+    .replace(/[\/\\:*?"<>|\u0000-\u001F]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .replace(/^\.+/, '')
+    .slice(0, maxLen)
+    .trim();
+  return `${base || fallback}.${ext}`;
 }

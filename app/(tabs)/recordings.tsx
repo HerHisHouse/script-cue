@@ -58,7 +58,16 @@ import { getSettings } from '@/utils/appSettings';
 import { Audio, Video, ResizeMode, InterruptionModeIOS, InterruptionModeAndroid } from 'expo-av';
 import { LayoutAnimation, Easing } from 'react-native';
 import { computeSafeTopPadding } from '../../utils/layout';
-import { validateAndNormalizeFilename, buildNewPath, RenameError, performRename } from '@/utils/rename';
+import { validateAndNormalizeFilename, buildNewPath, RenameError, performRename, toShareFilename } from '@/utils/rename';
+import {
+  RecordingAvailability,
+  getAvailabilityMap,
+  getDeviceFileUri,
+  getOfflineCopyUri,
+  isDevicePath,
+  deleteOfflineCopy,
+  OTHER_DEVICE_MESSAGE,
+} from '@/utils/recordingLocation';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { setAudioModeForPlayback, setAudioModeForBackgroundPlayback } from '@/utils/audioMode';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -876,6 +885,17 @@ export default function RecordingsScreen() {
 
   const [downloadingId, setDownloadingId] = useState<string | null>(null);
 
+  // Local / Nube / En otro dispositivo, comprobado en ESTE dispositivo (no se puede deducir solo de
+  // audio_url, que se comparte entre todos los dispositivos de la cuenta).
+  const [availability, setAvailability] = useState<Record<string, RecordingAvailability>>({});
+  useEffect(() => {
+    let cancelled = false;
+    getAvailabilityMap(recordings).then(map => {
+      if (!cancelled) setAvailability(map);
+    });
+    return () => { cancelled = true; };
+  }, [recordings]);
+
   async function handleDownloadOffline(recording: Recording) {
     try {
       setShowRecordingMenu(null);
@@ -887,18 +907,19 @@ export default function RecordingsScreen() {
         return;
       }
 
-      const filename = storagePath.split('/').pop() ?? '';
-      const localUri = (FileSystem.documentDirectory ?? '') + filename;
-
-      // Check if already exists
-      const info = await FileSystem.getInfoAsync(localUri);
-      if (info.exists) {
-        // Already downloaded — update indicator if still showing cloud path
-        if (!recording.audio_url?.startsWith('file://')) {
-          setRecordings(prev =>
-            prev.map(r => r.id === recording.id ? { ...r, audio_url: localUri } : r)
-          );
+      // Grabación "solo local": o ya está en este dispositivo o se hizo en otro y no hay copia en la nube.
+      if (isDevicePath(storagePath)) {
+        if (await getDeviceFileUri(storagePath)) {
+          Alert.alert('Info', 'Este archivo ya está disponible offline.');
+        } else {
+          Alert.alert('No disponible', OTHER_DEVICE_MESSAGE);
         }
+        return;
+      }
+
+      const localUri = getOfflineCopyUri(storagePath);
+      if (await getDeviceFileUri(storagePath)) {
+        setAvailability(prev => ({ ...prev, [recording.id]: 'device' }));
         Alert.alert('Info', 'Este archivo ya está disponible offline.');
         return;
       }
@@ -907,7 +928,6 @@ export default function RecordingsScreen() {
       if (storagePath.startsWith('http://') || storagePath.startsWith('https://')) {
         downloadUrl = storagePath;
       } else {
-        // Get signed URL
         const { data, error } = await supabase.storage
           .from('recordings')
           .createSignedUrl(storagePath, 3600);
@@ -918,24 +938,18 @@ export default function RecordingsScreen() {
         downloadUrl = data.signedUrl;
       }
 
-      // Download
       console.log('[Offline] Downloading...', downloadUrl, 'to', localUri);
       const downloadRes = await FileSystem.downloadAsync(downloadUrl, localUri);
 
       if (downloadRes.status !== 200) {
+        await FileSystem.deleteAsync(localUri, { idempotent: true }).catch(() => {});
         throw new Error(`Error en descarga: ${downloadRes.status}`);
       }
 
-      // Update audio_url in DB to local path so it persists as local
-      await supabase
-        .from('recordings')
-        .update({ audio_url: localUri })
-        .eq('id', recording.id);
-
-      // Update local state so indicator changes immediately to 📱 Local
-      setRecordings(prev =>
-        prev.map(r => r.id === recording.id ? { ...r, audio_url: localUri } : r)
-      );
+      // La copia Offline es solo de ESTE dispositivo: la BD conserva la ruta de la nube (ver
+      // utils/recordingLocation.ts). Antes se guardaba aquí la ruta file:// y los demás
+      // dispositivos de la cuenta perdían el acceso al archivo.
+      setAvailability(prev => ({ ...prev, [recording.id]: 'device' }));
 
       Alert.alert('Descargado', `"${recording.title || 'Grabación'}" está ahora disponible en tu dispositivo (📱 Local).`);
     } catch (error: any) {
@@ -944,8 +958,8 @@ export default function RecordingsScreen() {
     } finally {
       setDownloadingId(null);
     }
-
   }
+
   async function updateLastOpened(recordingId: string) {
     if (!user) return;
     try {
@@ -993,6 +1007,11 @@ export default function RecordingsScreen() {
     const currentQueue = specificQueue || queue;
     const recording = currentQueue[index];
     if (!recording) return;
+
+    if (isDevicePath(recording.audio_url) && !(await getDeviceFileUri(recording.audio_url))) {
+      Alert.alert('No disponible', OTHER_DEVICE_MESSAGE);
+      return;
+    }
 
     updateLastOpened(recording.id);
     setIsMediaLoading(true);
@@ -2110,6 +2129,9 @@ export default function RecordingsScreen() {
         return;
       }
 
+      // Copia "Offline" de este dispositivo (si la había)
+      await deleteOfflineCopy(recording.audio_url);
+
       // Borra el archivo del bucket (si falla, registra y continúa con DB)
       let storagePath = recording.audio_url;
       if (storagePath) {
@@ -2207,7 +2229,17 @@ export default function RecordingsScreen() {
         oldPath: renamingRecording.audio_url,
         input,
       });
+      const oldPath = renamingRecording.audio_url;
       const { newPath, newTitle } = await performRename(supabase, renamingRecording, input);
+
+      // Si este dispositivo tenía la copia "Offline", renombrarla junto con el archivo de la nube
+      if (newPath !== oldPath && oldPath && !isDevicePath(oldPath) && !oldPath.startsWith('local/')) {
+        const oldCopy = getOfflineCopyUri(oldPath);
+        if ((await FileSystem.getInfoAsync(oldCopy)).exists) {
+          await FileSystem.moveAsync({ from: oldCopy, to: getOfflineCopyUri(newPath) }).catch((e) =>
+            console.warn('[rename] No se pudo renombrar la copia Offline:', e));
+        }
+      }
 
       setRecordings((prev) =>
         prev.map((r) => (r.id === renamingRecording.id ? { ...r, audio_url: newPath, title: newTitle } : r))
@@ -2238,57 +2270,64 @@ export default function RecordingsScreen() {
 
       const canShare = await Sharing.isAvailableAsync();
       const rawPath = (recording.audio_url || (recording as any).storage_path || '').trim();
-      const isAbsoluteLocal = rawPath.startsWith('file://');
       const isLocalPrefix = rawPath.startsWith('local/');
       const isVideo = recording.type === 'video';
       const settings = await getSettings();
 
       let shareUri: string;
 
-      if (isAbsoluteLocal) {
-        // URI local absoluta (file://): compartir directamente sin Supabase
-        const info = await FileSystem.getInfoAsync(rawPath);
-        if (!info.exists) {
-          Alert.alert('Archivo no disponible', 'El archivo local ya no existe en este dispositivo.');
+      // 1) El archivo ya está en este dispositivo (grabado aquí o descargado con "Offline").
+      const deviceUri = await getDeviceFileUri(rawPath);
+      if (deviceUri) {
+        shareUri = deviceUri;
+      } else if (isDevicePath(rawPath)) {
+        // 2) Grabación "solo local" hecha en otro dispositivo: no hay copia en la nube.
+        Alert.alert('No disponible', OTHER_DEVICE_MESSAGE);
+        return;
+      } else {
+        // 3) Está en la nube: se descarga a la caché temporal (no a la carpeta de "Offline", para
+        // que compartir no la marque como descargada en este dispositivo).
+        if (isLocalPrefix || settings.useLocalOnly) {
+          throw new Error('Archivo local no encontrado');
+        }
+        const { data, error } = await supabase.storage
+          .from('recordings')
+          .createSignedUrl(rawPath, 60 * 60);
+        if (error || !data?.signedUrl) {
+          Alert.alert(
+            isVideo ? 'Descarga requerida' : 'Error al compartir',
+            isVideo
+              ? 'Los vídeos almacenados en la nube deben descargarse al dispositivo antes de compartirlos.\n\nUsa el botón "Offline (Descarga en el terminal)" del menú y, una vez descargado, podrás compartirlo.'
+              : 'No se pudo acceder al archivo. Inténtalo de nuevo o descárgalo primero con el botón "Offline".'
+          );
           return;
         }
-        shareUri = rawPath;
-      } else {
-        // Path de Supabase Storage o prefijo 'local/'
-        const baseDir = FileSystem.documentDirectory ?? '';
-        const filename = rawPath.split('/').pop() ?? (isVideo ? 'recording.mp4' : 'recording.m4a');
-        const localUri = baseDir + filename;
-
-        let info = await FileSystem.getInfoAsync(localUri);
-        if (!info.exists || (info.size ?? 0) === 0) {
-          if (isLocalPrefix || settings.useLocalOnly) {
-            throw new Error('Archivo local no encontrado');
-          }
-          // Descargar desde Storage con URL firmada
-          const { data, error } = await supabase.storage
-            .from('recordings')
-            .createSignedUrl(rawPath, 60 * 60);
-          if (error || !data?.signedUrl) {
-            // El archivo en la nube no es accesible directamente para compartir.
-            // Informar al usuario que debe descargarlo primero con el botón Offline.
-            Alert.alert(
-              isVideo ? 'Descarga requerida' : 'Error al compartir',
-              isVideo
-                ? 'Los vídeos almacenados en la nube deben descargarse al dispositivo antes de compartirlos.\n\nUsa el botón "Offline (Descarga en el terminal)" del menú y, una vez descargado, podrás compartirlo.'
-                : 'No se pudo acceder al archivo. Inténtalo de nuevo o descárgalo primero con el botón "Offline".'
-            );
-            return;
-          }
-          const dl = await FileSystem.downloadAsync(data.signedUrl, localUri);
-          info = await FileSystem.getInfoAsync(dl.uri);
-          if (!info.exists || (info.size ?? 0) === 0) {
-            throw new Error('El archivo descargado no es válido');
-          }
+        const filename = rawPath.split('?')[0].split('/').pop() || (isVideo ? 'recording.mp4' : 'recording.m4a');
+        const tempUri = `${FileSystem.cacheDirectory}${filename}`;
+        const dl = await FileSystem.downloadAsync(data.signedUrl, tempUri);
+        const info = await FileSystem.getInfoAsync(dl.uri);
+        if (dl.status !== 200 || !info.exists || (info.size ?? 0) === 0) {
+          throw new Error('El archivo descargado no es válido');
         }
-        shareUri = localUri;
+        shareUri = dl.uri;
       }
 
       const shareTitle = recording.title ?? 'Grabación';
+
+      // El archivo se comparte con el título de la grabación como nombre, no con el nombre
+      // interno del fichero (p.ej. "1727..._teleprompter.mp4"): se copia a la caché con ese
+      // nombre y se comparte la copia. Si la copia falla, se comparte el original.
+      try {
+        const ext = (shareUri.split('?')[0].match(/\.([A-Za-z0-9]{2,4})$/)?.[1] ?? (isVideo ? 'mp4' : 'm4a')).toLowerCase();
+        const shareDir = `${FileSystem.cacheDirectory}share/`;
+        await FileSystem.deleteAsync(shareDir, { idempotent: true });
+        await FileSystem.makeDirectoryAsync(shareDir, { intermediates: true });
+        const namedUri = shareDir + toShareFilename(recording.title, ext);
+        await FileSystem.copyAsync({ from: shareUri, to: namedUri });
+        shareUri = namedUri;
+      } catch (copyError) {
+        console.warn('[share] No se pudo preparar la copia con el título, se comparte el original:', copyError);
+      }
       // Usar mimeType y UTI correctos según el tipo de grabación
       const shareOptions: any = isVideo
         ? {
@@ -2355,6 +2394,8 @@ export default function RecordingsScreen() {
           console.error('Error deleting recording from DB:', dbError);
           continue;
         }
+
+        await deleteOfflineCopy(recording.audio_url);
 
         // Delete from storage if it's a remote file
         if (recording.audio_url) {
@@ -2533,29 +2574,19 @@ export default function RecordingsScreen() {
                   year: 'numeric',
                 })}
               </Text>
-              {/* Indicador de ubicación del archivo */}
+              {/* Indicador de ubicación del archivo, visto desde este dispositivo */}
               {(() => {
-                // Un archivo es local si su URL empieza por file:// o es una ruta absoluta del dispositivo
-                // Un archivo es de nube si es un path relativo de Supabase (ej: userId/filename.mp4)
-                const url = item.audio_url || '';
-                const isLocalFile = url.startsWith('file://') || url.startsWith('/');
+                const where = availability[item.id] ?? (isDevicePath(item.audio_url) ? 'device' : 'cloud');
+                const Icon = where === 'cloud' ? Cloud : Smartphone;
+                const label = where === 'device' ? 'Local' : where === 'cloud' ? 'Nube' : 'En otro dispositivo';
                 return (
                   <View style={styles.storageIndicator}>
-                    {isLocalFile ? (
-                      <View style={styles.storageTag}>
-                        <Smartphone size={11} color={cardSecondaryColor} />
-                        <Text style={[styles.storageTagText, { color: cardSecondaryColor }]}>
-                          Local
-                        </Text>
-                      </View>
-                    ) : (
-                      <View style={styles.storageTag}>
-                        <Cloud size={11} color={cardSecondaryColor} />
-                        <Text style={[styles.storageTagText, { color: cardSecondaryColor }]}>
-                          Nube
-                        </Text>
-                      </View>
-                    )}
+                    <View style={styles.storageTag}>
+                      <Icon size={11} color={cardSecondaryColor} />
+                      <Text style={[styles.storageTagText, { color: cardSecondaryColor }]}>
+                        {label}
+                      </Text>
+                    </View>
                   </View>
                 );
               })()}
