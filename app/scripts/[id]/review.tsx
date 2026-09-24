@@ -167,14 +167,14 @@ export default function ReviewScreen() {
 
   const [characters, setCharacters] = useState<any[]>([]);
 
-  // Índice de la primera línea que muestra el selector de emoción (voz
-  // Expresiva/ElevenLabs o Natural/Hume) — usado tanto por el tour como por
+  // Índice de la primera línea que muestra el selector de emoción (solo voz
+  // Expresiva/ElevenLabs) — usado tanto por el tour como por
   // la propia lista para saber a qué tarjeta engancharle el ref de medición.
   const emotionTourIndex = React.useMemo(() => {
     return lines.findIndex(l => {
       if (l.isAction || l.isUserCharacter) return false;
       const charData = characters.find(c => c.name.toLowerCase().trim() === l.characterName.toLowerCase().trim());
-      return charData?.voice_provider === 'elevenlabs' || charData?.voice_provider === 'hume';
+      return charData?.voice_provider === 'elevenlabs';
     });
   }, [lines, characters]);
   const [selectedChar, setSelectedChar] = useState<any>(null);
@@ -219,15 +219,25 @@ export default function ReviewScreen() {
 
   // ── Tour interactivo (coach marks) ──────────────────────────────────────────
   // Mide el elemento de un ref ya montado y devuelve su posición real en pantalla.
+  // Android: measureInWindow resta la altura de la barra de estado (RN la descuenta como
+  // "visible display frame"), pero el Modal del tour es edge-to-edge y empieza en y=0, así que
+  // el foco salía desplazado hacia arriba. `measure` (pageX/pageY) parte del borde real de la
+  // pantalla. iOS sigue con measureInWindow, que ya coincidía.
   const measureRef = (ref: React.RefObject<any>): Promise<CoachTourRect | null> => {
     return new Promise(resolve => {
-      if (!ref.current || typeof ref.current.measureInWindow !== 'function') {
+      const node = ref.current;
+      const done = (x: number, y: number, width: number, height: number) =>
+        resolve(width > 0 && height > 0 ? { x, y, width, height } : null);
+      if (Platform.OS === 'android' && node && typeof node.measure === 'function') {
+        node.measure((_x: number, _y: number, width: number, height: number, pageX: number, pageY: number) =>
+          done(pageX, pageY, width, height));
+        return;
+      }
+      if (!node || typeof node.measureInWindow !== 'function') {
         resolve(null);
         return;
       }
-      ref.current.measureInWindow((x: number, y: number, width: number, height: number) => {
-        resolve(width > 0 && height > 0 ? { x, y, width, height } : null);
-      });
+      node.measureInWindow(done);
     });
   };
 
@@ -261,13 +271,13 @@ export default function ReviewScreen() {
     ];
 
     // Solo tiene sentido este paso si hay al menos una línea con voz Expresiva
-    // (ElevenLabs) o Natural (Hume) — es la única condición bajo la que se
+    // (ElevenLabs) — es la única condición bajo la que se
     // muestra el selector de emoción en la tarjeta.
     if (emotionTourIndex !== -1) {
       steps.push({
         content: {
           title: 'Configura la emoción',
-          description: 'Si el personaje usa una voz Expresiva o Natural, puedes elegir cómo interpreta cada frase.',
+          description: 'Si el personaje usa una voz "Expresiva", puedes elegir cómo interpreta cada frase.',
         },
         prepare: async () => {
           flatListRef.current?.scrollToIndex?.({ index: emotionTourIndex, animated: true, viewPosition: 0.4 });
@@ -569,7 +579,6 @@ export default function ReviewScreen() {
             const charColor = item.isAction ? colors.primary : (item.isUserCharacter ? '#10B981' : (item.color || colors.primary));
             const charData = characters.find(c => c.name.toLowerCase().trim() === item.characterName.toLowerCase().trim());
             const isElevenLabs = charData?.voice_provider === 'elevenlabs';
-            const isHume = charData?.voice_provider === 'hume';
 
             return (
               <ScaleDecorator activeScale={1.02}>
@@ -596,7 +605,7 @@ export default function ReviewScreen() {
                     <Text style={[s.dialogueText, { color: onBg }]}>{item.text}</Text>
 
                     <View style={s.cardFooterRow}>
-                      {!item.isAction && !item.isUserCharacter && (isElevenLabs || isHume) ? (
+                      {!item.isAction && !item.isUserCharacter && isElevenLabs ? (
                         <View style={{ alignItems: 'flex-start' }}>
                           <Text style={[s.emotionLabel, { color: onBg2 }]}>Configurar emoción</Text>
                           <TouchableOpacity
