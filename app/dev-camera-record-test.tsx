@@ -4,10 +4,10 @@
 // No está enlazada desde ninguna navegación real.
 // Acceder manualmente via deep link: myapp://dev-camera-record-test
 
-import { useEffect, useRef, useState } from 'react';
-import { SafeAreaView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { Platform, SafeAreaView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { ResizeMode, Video } from 'expo-av';
-import { useMemo } from 'react';
+import * as FileSystem from 'expo-file-system/legacy';
 import {
   Camera,
   useCameraDevices,
@@ -15,7 +15,7 @@ import {
   useMicrophonePermission,
   useVideoOutput,
 } from 'react-native-vision-camera';
-import type { Recorder } from 'react-native-vision-camera';
+import type { CameraDevice, Recorder } from 'react-native-vision-camera';
 
 // IMPORTANTE: el filtro `physicalDevices` de useCameraDevice()/getCameraDevice()
 // puntúa dispositivos según el campo `physicalDevices` (array de sub-lentes) DE
@@ -25,13 +25,28 @@ import type { Recorder } from 'react-native-vision-camera';
 // en pruebas reales: las 3 lentes daban el mismo dispositivo). La forma correcta
 // de aislar una lente física concreta es filtrar manualmente por su propio campo
 // `type`, sobre la lista completa de useCameraDevices().
-type LensOption = 'ultra-wide' | 'wide' | 'telephoto';
+//
+// ANDROID (Fase B1, Galaxy A53 5G real): NO hay cámara virtual que agrupe las
+// lentes — cada una es un CameraDevice independiente, con physicalDevices: []
+// también en las traseras. Ahí el `type` tampoco es fiable del todo (id 3,
+// frontal, viene mal etiquetado como 'telephoto'), así que en vez de filtrar
+// por type/position se elige por el `id` exacto que dio el diagnóstico:
+//   id 0 = trasera principal (wide-angle, focal 5.23mm, f/1.8)
+//   id 2 = trasera ultra gran angular (focal 1.74mm, f/2.2)
+// id 1 y 3 son frontales (3 mal clasificada como telephoto) y no se usan aquí.
+type LensOptionIOS = 'ultra-wide' | 'wide' | 'telephoto';
+type LensOptionAndroid = 'wide-0' | 'ultrawide-2';
 
-const LENS_TYPES: Record<LensOption, 'ultra-wide-angle' | 'wide-angle' | 'telephoto'> = {
+const LENS_TYPES_IOS: Record<LensOptionIOS, 'ultra-wide-angle' | 'wide-angle' | 'telephoto'> = {
   'ultra-wide': 'ultra-wide-angle',
   wide: 'wide-angle',
   telephoto: 'telephoto',
 };
+
+const ANDROID_LENSES: { key: LensOptionAndroid; label: string; deviceId: string }[] = [
+  { key: 'wide-0', label: 'Principal (id 0)', deviceId: '0' },
+  { key: 'ultrawide-2', label: 'Ultra angular (id 2)', deviceId: '2' },
+];
 
 export default function DevCameraRecordTest() {
   const { hasPermission: hasCameraPermission, requestPermission: requestCameraPermission } =
@@ -39,19 +54,29 @@ export default function DevCameraRecordTest() {
   const { hasPermission: hasMicPermission, requestPermission: requestMicPermission } =
     useMicrophonePermission();
 
-  const [selectedLens, setSelectedLens] = useState<LensOption>('wide');
+  const [selectedLensIOS, setSelectedLensIOS] = useState<LensOptionIOS>('wide');
+  const [selectedLensAndroid, setSelectedLensAndroid] = useState<LensOptionAndroid>('wide-0');
   const [isRecording, setIsRecording] = useState(false);
   const [recordedVideoPath, setRecordedVideoPath] = useState<string | null>(null);
   const [statusText, setStatusText] = useState('');
   const recorderRef = useRef<Recorder | null>(null);
 
   const allDevices = useCameraDevices();
-  const device = useMemo(() => {
-    const targetType = LENS_TYPES[selectedLens];
+  const device: CameraDevice | undefined = useMemo(() => {
+    if (Platform.OS === 'android') {
+      const targetId = ANDROID_LENSES.find((l) => l.key === selectedLensAndroid)?.deviceId;
+      return allDevices.find((d) => d.id === targetId);
+    }
+    const targetType = LENS_TYPES_IOS[selectedLensIOS];
     return allDevices.find(
       (d) => d.position === 'back' && !d.isVirtualDevice && d.type === targetType,
     );
-  }, [allDevices, selectedLens]);
+  }, [allDevices, selectedLensAndroid, selectedLensIOS]);
+
+  const selectedLensLabel =
+    Platform.OS === 'android'
+      ? (ANDROID_LENSES.find((l) => l.key === selectedLensAndroid)?.label ?? selectedLensAndroid)
+      : selectedLensIOS;
 
   // No audio en videoOutput hasta tener permiso de micrófono confirmado,
   // para no arrancar una sesión que luego falle a mitad de grabación.
@@ -75,16 +100,31 @@ export default function DevCameraRecordTest() {
       setRecordedVideoPath(null);
 
       await recorder.startRecording(
-        (filePath, reason) => {
-          console.log('[LensTest] Vídeo grabado:', filePath, 'motivo:', reason);
+        async (filePath, reason) => {
+          // Comprobación de "archivo válido" pedida en B2: existe y pesa algo,
+          // no solo que el callback se haya disparado sin error.
+          let sizeInfo = '';
+          try {
+            const info = await FileSystem.getInfoAsync(`file://${filePath}`);
+            sizeInfo = info.exists && 'size' in info ? ` · ${(info.size / 1024).toFixed(0)} KB` : ' · NO EXISTE';
+          } catch (e) {
+            sizeInfo = ` · error al comprobar: ${String(e)}`;
+          }
+          console.log(
+            `[LensTest] Grabado con device.id=${device?.id} (${selectedLensLabel}):`,
+            filePath,
+            'motivo:',
+            reason,
+            sizeInfo,
+          );
           setRecordedVideoPath(filePath);
           setIsRecording(false);
-          setStatusText(`Grabación finalizada (${reason})`);
+          setStatusText(`OK (${selectedLensLabel}, id ${device?.id}) · ${reason}${sizeInfo}`);
         },
         (error) => {
-          console.error('[LensTest] Error grabando:', error);
+          console.error(`[LensTest] Error grabando con device.id=${device?.id}:`, error);
           setIsRecording(false);
-          setStatusText(`ERROR: ${String(error)}`);
+          setStatusText(`ERROR (id ${device?.id}): ${String(error)}`);
         },
       );
     } catch (err) {
@@ -125,7 +165,7 @@ export default function DevCameraRecordTest() {
           <Text style={styles.statusBanner}>{statusText}</Text>
         </SafeAreaView>
         <TouchableOpacity style={styles.button} onPress={() => setRecordedVideoPath(null)}>
-          <Text style={styles.buttonText}>Grabar otro ({selectedLens})</Text>
+          <Text style={styles.buttonText}>Grabar otro ({selectedLensLabel})</Text>
         </TouchableOpacity>
       </View>
     );
@@ -134,7 +174,7 @@ export default function DevCameraRecordTest() {
   if (device == null) {
     return (
       <SafeAreaView style={styles.center}>
-        <Text style={styles.text}>Lente "{selectedLens}" no disponible en este dispositivo</Text>
+        <Text style={styles.text}>Lente &quot;{selectedLensLabel}&quot; no disponible en este dispositivo</Text>
       </SafeAreaView>
     );
   }
@@ -150,19 +190,33 @@ export default function DevCameraRecordTest() {
 
       <SafeAreaView style={styles.overlay} pointerEvents="box-none">
         <View style={styles.lensSelector}>
-          {(['ultra-wide', 'wide', 'telephoto'] as LensOption[]).map((lens) => (
-            <TouchableOpacity
-              key={lens}
-              onPress={() => setSelectedLens(lens)}
-              disabled={isRecording}
-              style={[styles.lensButton, selectedLens === lens && styles.lensButtonActive]}
-            >
-              <Text style={styles.lensButtonText}>{lens}</Text>
-            </TouchableOpacity>
-          ))}
+          {Platform.OS === 'android'
+            ? ANDROID_LENSES.map((lens) => (
+                <TouchableOpacity
+                  key={lens.key}
+                  onPress={() => setSelectedLensAndroid(lens.key)}
+                  disabled={isRecording}
+                  style={[
+                    styles.lensButton,
+                    selectedLensAndroid === lens.key && styles.lensButtonActive,
+                  ]}
+                >
+                  <Text style={styles.lensButtonText}>{lens.label}</Text>
+                </TouchableOpacity>
+              ))
+            : (['ultra-wide', 'wide', 'telephoto'] as LensOptionIOS[]).map((lens) => (
+                <TouchableOpacity
+                  key={lens}
+                  onPress={() => setSelectedLensIOS(lens)}
+                  disabled={isRecording}
+                  style={[styles.lensButton, selectedLensIOS === lens && styles.lensButtonActive]}
+                >
+                  <Text style={styles.lensButtonText}>{lens}</Text>
+                </TouchableOpacity>
+              ))}
         </View>
         <Text style={styles.statusBanner}>
-          device: {device?.type ?? 'ninguno'} ({device?.id ?? '-'})
+          device: {device?.type ?? 'ninguno'} (id {device?.id ?? '-'})
         </Text>
         {statusText !== '' && <Text style={styles.statusBanner}>{statusText}</Text>}
       </SafeAreaView>
