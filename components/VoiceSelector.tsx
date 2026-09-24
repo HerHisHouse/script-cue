@@ -8,9 +8,9 @@ import {
     ActivityIndicator,
     Modal,
     TextInput,
-    SafeAreaView,
     ImageBackground
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { Volume2, VolumeX, Check, ChevronDown, X, Heart, Search, RefreshCw } from 'lucide-react-native';
 import { useTheme } from '@/contexts/ThemeContext';
 import { GlassCard } from '@/components/GlassCard';
