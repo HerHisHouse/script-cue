@@ -1406,15 +1406,19 @@ export default function StudioV2Screen() {
                 console.warn('[Merge] No segments uploaded - saving locally');
                 const userSegs = segmentsRef.current.filter(s => s.type === 'user');
                 if (userSegs.length > 0 && userSegs[0].uri) {
+                    // Se copia a documentDirectory (como en el modo Local): la URI del grabador es
+                    // temporal y el sistema puede borrarla, dejando la grabación rota.
+                    const localPath = `${FileSystem.documentDirectory}studio_${Date.now()}.m4a`;
+                    await FileSystem.copyAsync({ from: userSegs[0].uri, to: localPath });
                     await supabase.from('recordings').insert({
                         user_id: user.id,
                         script_id: id as string,
-                        audio_url: userSegs[0].uri,
+                        audio_url: localPath,   // local file:// URI → shows 📱 Local
                         duration_seconds: recordingTime,
                         title: `Sesión ${new Date().toLocaleString('es-ES')}`,
                         notes: `Local (${segmentsRef.current.length} segmentos)`
                     });
-                    Alert.alert('Sesión guardada', 'Se guardó tu grabación localmente.');
+                    Alert.alert('Sesión guardada', 'No se pudo subir a la nube, así que tu grabación se ha guardado en este dispositivo (📱 Local).');
                     setIsProcessing(false);
                     setRecordingTime(0);
                     segmentsRef.current = [];
