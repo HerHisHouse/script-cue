@@ -11,7 +11,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, useLocalSearchParams } from 'expo-router';
-import { ArrowLeft, FileText, Sparkles, Save, BookOpen, PenLine } from 'lucide-react-native';
+import { ArrowLeft, FileText, Sparkles, Save, BookOpen, PenLine, Highlighter } from 'lucide-react-native';
 import { useTheme } from '@/contexts/ThemeContext';
 import { getShadowStyle } from '@/utils/cardShadow';
 import { useAuth } from '@/contexts/AuthContext';
@@ -311,7 +311,7 @@ export default function AnalysisScreen() {
                             ¿Cómo quieres trabajar el análisis de esta escena?
                         </Text>
                         <Text style={[styles.infoDescription, { color: onBg2 }]}>
-                            Puedes completar el análisis rellenando el formulario predeterminado, crear tu propio análisis personalizado o pedirle a ScriptCue que lo analice por ti.
+                            Puedes completar el análisis rellenando el formulario predeterminado, crear tu propio análisis personalizado o pedirle a ScriptCue que lo analice por ti. También puedes trabajar directamente sobre el guion con tus notas y resaltados.
                         </Text>
                     </View>
 
@@ -353,6 +353,17 @@ export default function AnalysisScreen() {
                             <Text style={styles.modeButtonText}>Análisis por ScriptCue</Text>
                         </TouchableOpacity>
                     )}
+
+                    {/* Abre el mismo editor que "Editar guion" de Estudio: guarda en el guion compartido
+                        (escenas/líneas), así que notas y resaltados se ven en todos los modos; al volver
+                        (router.back) regresa aquí, no a Estudio. */}
+                    <TouchableOpacity
+                        style={[styles.modeButton, primaryButtonBg, getShadowStyle({ offsetY: 4, blur: 8, opacity: 0.3 })]}
+                        onPress={() => router.push(`/scripts/${id}/editor`)}
+                    >
+                        <Highlighter size={24} color="#FFFFFF" />
+                        <Text style={styles.modeButtonText}>Marcar el texto</Text>
+                    </TouchableOpacity>
                 </ScrollView>
 
                 <ConfirmDialog

@@ -422,7 +422,7 @@ export default function ScriptDetailScreen() {
             dark={isDark}
             icon={<Car size={22} color={fg} />}
             title="Coche"
-            description="Escucha la escena en bucle mientras conduces"
+            description="Escucha en bucle mientras conduces"
             onPress={() => router.push(`/scripts/${id}/car`)}
           />
 
@@ -431,7 +431,7 @@ export default function ScriptDetailScreen() {
             dark={isDark}
             icon={<Brain size={22} color={fg} />}
             title="Memoria"
-            description="Juegos de memorización interactivos"
+            description="Juegos de memorización"
             onPress={() => router.push(`/scripts/${id}/memory`)}
           />
 
