@@ -94,3 +94,42 @@ export function formatAndroidZoomLabel(displayZoom: number): string {
   const rounded = Math.round(displayZoom * 10) / 10;
   return `${Number.isInteger(rounded) ? rounded.toFixed(0) : rounded.toFixed(1)}x`;
 }
+
+/**
+ * Los dos únicos errores de setZoom() de CameraX que son esperados y sin efecto
+ * visible: el que llega mientras la cámara se reabre tras un cruce de lente
+ * (el zoom se reaplica en onStarted) y el de un valor descartado porque ya
+ * llegó otro más nuevo (continuo al arrastrar el slider). Cualquier otro error
+ * de cámara es real y no debe silenciarse.
+ */
+const BENIGN_ZOOM_ERRORS = [
+  'Camera is not active',
+  'Cancelled due to another zoom value being set',
+];
+
+export function isBenignZoomError(error: unknown): boolean {
+  const message = String(error);
+  return BENIGN_ZOOM_ERRORS.some((known) => message.includes(known));
+}
+
+type DeviceLike = { id: string; position: string; type: string; isVirtualDevice: boolean };
+
+/**
+ * Cámara física a usar en Android. Traseras: por id del A53 (el `type` no es
+ * fiable del todo en este hardware, ver B1), con respaldo por tipo. Frontal:
+ * la id 1, la frontal principal por convención de Camera2 (la id 3 es una
+ * frontal duplicada que el A53 etiqueta como 'telephoto').
+ */
+export function pickAndroidDevice<T extends DeviceLike>(
+  devices: T[],
+  facing: 'front' | 'back',
+  lens: AndroidLens,
+): T | undefined {
+  if (facing === 'front') {
+    return devices.find((d) => d.id === '1') ?? devices.find((d) => d.position === 'front');
+  }
+  const byId = devices.find((d) => d.id === A53_LENS_IDS[lens]);
+  if (byId) return byId;
+  const type = lens === 'ultra-wide' ? 'ultra-wide-angle' : 'wide-angle';
+  return devices.find((d) => d.position === 'back' && !d.isVirtualDevice && d.type === type);
+}

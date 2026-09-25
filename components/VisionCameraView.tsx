@@ -1,21 +1,34 @@
-import React, { forwardRef, useImperativeHandle, useRef } from 'react';
-import { StyleSheet, View, Text, TouchableOpacity } from 'react-native';
+import React, { forwardRef, useImperativeHandle, useRef, useState } from 'react';
+import { Platform, StyleSheet, View, Text, TouchableOpacity } from 'react-native';
 import {
   Camera,
   useCameraDevice,
+  useCameraDevices,
   useCameraPermission,
   useMicrophonePermission,
   useVideoOutput,
   CommonResolutions,
 } from 'react-native-vision-camera';
-import type { Recorder } from 'react-native-vision-camera';
+import type { CameraRef, Recorder } from 'react-native-vision-camera';
 import { rf } from '../utils/responsive';
+import {
+  displayToDeviceZoom,
+  isBenignZoomError,
+  pickAndroidDevice,
+  type AndroidLens,
+} from '../utils/cameraZoomAndroid';
 
 interface VisionCameraProps {
   facing: 'front' | 'back';
   zoom: number;
   videoQuality?: 'high' | 'medium' | 'low';
   isActive?: boolean;
+  /**
+   * Solo Android (Fase B5): lente trasera activa, decidida por casting.tsx con
+   * utils/cameraZoomAndroid.ts. En Android `zoom` llega en el eje visible
+   * (0.5x…3x) y aquí se traduce al zoom propio de esa lente física.
+   */
+  androidLens?: AndroidLens;
 }
 
 function getVisionResolution(quality: string | undefined) {
@@ -31,7 +44,8 @@ function getVisionResolution(quality: string | undefined) {
 }
 
 const VisionCameraView = forwardRef((props: VisionCameraProps, ref) => {
-  const { facing, zoom, videoQuality, isActive = true } = props;
+  const { facing, zoom, videoQuality, isActive = true, androidLens = 'wide' } = props;
+  const isAndroid = Platform.OS === 'android';
 
   const { hasPermission: hasCameraPermission, requestPermission: requestCameraPermission } =
     useCameraPermission();
@@ -41,9 +55,13 @@ const VisionCameraView = forwardRef((props: VisionCameraProps, ref) => {
   // Dispositivo combinado (ultra-wide + wide + telephoto) — mismo comportamiento
   // que el default de expo-camera, que ya permitía zoom out por debajo de 1x.
   // NO se expone selector de lente al usuario en esta fase.
-  const device = useCameraDevice(facing, {
+  const combinedDevice = useCameraDevice(facing, {
     physicalDevices: ['ultra-wide-angle', 'wide-angle', 'telephoto'],
   });
+  // Android (Fase B4/B5): no hay cámara virtual multi-lente; cada lente es un
+  // CameraDevice propio y se elige explícitamente.
+  const allDevices = useCameraDevices();
+  const device = isAndroid ? pickAndroidDevice(allDevices, facing, androidLens) : combinedDevice;
 
   const videoOutput = useVideoOutput({
     targetResolution: getVisionResolution(videoQuality),
@@ -56,7 +74,33 @@ const VisionCameraView = forwardRef((props: VisionCameraProps, ref) => {
   // Fase A2: `zoom` ya llega como multiplicador real (mismo eje que
   // device.minZoom/maxZoom) calculado en casting.tsx a partir de las
   // paradas dinámicas — aquí solo se clampa por seguridad.
-  const clampedZoom = device ? Math.min(Math.max(zoom, device.minZoom), device.maxZoom) : zoom;
+  const deviceZoom = isAndroid && facing === 'back' ? displayToDeviceZoom(zoom, androidLens) : zoom;
+  const clampedZoom = device ? Math.min(Math.max(deviceZoom, device.minZoom), device.maxZoom) : deviceZoom;
+
+  // Android: cambiar de lente cierra y reabre la cámara (~0,7 s medidos en el
+  // A53). Los setZoom() que llegan en ese hueco los rechaza CameraX y además
+  // alargan la reapertura, así que la prop `zoom` se congela hasta onStarted y
+  // entonces se aplica el último valor.
+  const cameraRef = useRef<CameraRef>(null);
+  const latestZoomRef = useRef(clampedZoom);
+  latestZoomRef.current = clampedZoom;
+  const [zoomDuringSwitch, setZoomDuringSwitch] = useState<number | null>(null);
+  const lastDeviceIdRef = useRef<string | undefined>(device?.id);
+  if (isAndroid && device && device.id !== lastDeviceIdRef.current) {
+    const switchingLens = lastDeviceIdRef.current != null;
+    lastDeviceIdRef.current = device.id;
+    if (switchingLens && zoomDuringSwitch !== clampedZoom) setZoomDuringSwitch(clampedZoom);
+  }
+
+  function handleAndroidCameraStarted() {
+    setZoomDuringSwitch(null);
+    cameraRef.current?.controller?.setZoom(latestZoomRef.current).catch(handleAndroidCameraError);
+  }
+
+  function handleAndroidCameraError(error: Error) {
+    if (isBenignZoomError(error)) return;
+    console.error('[VisionCamera] Error de cámara:', error);
+  }
 
   useImperativeHandle(ref, () => ({
     startRecording: async () => {
@@ -65,7 +109,10 @@ const VisionCameraView = forwardRef((props: VisionCameraProps, ref) => {
         recorderRef.current = recorder;
         await recorder.startRecording(
           (filePath) => {
-            finishedResolverRef.current?.({ path: filePath });
+            // Android devuelve una ruta absoluta sin esquema, que expo-file-system
+            // rechaza (FileNotFoundException al copiar la toma) y FormData no sube.
+            const path = isAndroid && !filePath.startsWith('file://') ? `file://${filePath}` : filePath;
+            finishedResolverRef.current?.({ path });
             finishedResolverRef.current = null;
           },
           (error) => {
@@ -140,7 +187,10 @@ const VisionCameraView = forwardRef((props: VisionCameraProps, ref) => {
       device={device}
       isActive={isActive}
       outputs={[videoOutput]}
-      zoom={clampedZoom}
+      zoom={isAndroid ? (zoomDuringSwitch ?? clampedZoom) : clampedZoom}
+      ref={isAndroid ? cameraRef : undefined}
+      onStarted={isAndroid ? handleAndroidCameraStarted : undefined}
+      onError={isAndroid ? handleAndroidCameraError : undefined}
     />
   );
 });

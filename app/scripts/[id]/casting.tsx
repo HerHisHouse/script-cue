@@ -38,6 +38,16 @@ import * as Haptics from 'expo-haptics';
 import SilhouetteGuide, { ShotType } from '@/components/SilhouetteGuide';
 import { useCameraDevice, useCameraDevices } from 'react-native-vision-camera';
 import { calculateZoomStops, formatZoomLabel, getNeutralZoomValue, getWidestZoomValue, getPracticalMaxZoom, type ZoomStop } from '@/utils/cameraZoom';
+import {
+  CROSSOVER_DISPLAY_ZOOM,
+  MIN_DISPLAY_ZOOM,
+  PRACTICAL_MAX_DISPLAY_ZOOM,
+  clampDisplayZoom,
+  displayRangeForLens,
+  pickAndroidDevice,
+  resolveLens,
+  type AndroidLens,
+} from '@/utils/cameraZoomAndroid';
 import { FontAwesome5 } from '@expo/vector-icons';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/utils/supabase';
@@ -176,8 +186,35 @@ export default function CastingModeScreen() {
     ));
   }, [allDevices]);
 
+  // Fase B5 (Android): sin cámara virtual, el zoom de casting va en el eje
+  // visible de utils/cameraZoomAndroid.ts (0.5x…3x en la trasera) y
+  // VisionCameraView lo traduce a la lente física activa. `androidLens` solo
+  // cambia fuera de grabación: grabando, el zoom se queda en su rango.
+  const isAndroid = Platform.OS === 'android';
+  const [androidLens, setAndroidLens] = useState<AndroidLens>('wide');
+  const androidLensRef = useRef<AndroidLens>('wide');
+  const lensLockedRef = useRef(false); // true desde que se pide grabar hasta que el archivo se cierra
+  const facingRef = useRef(facing);
+  facingRef.current = facing;
+  const hasAndroidUltraWide = isAndroid && pickAndroidDevice(allDevices, 'back', 'ultra-wide') != null;
+  const hasAndroidUltraWideRef = useRef(hasAndroidUltraWide);
+  hasAndroidUltraWideRef.current = hasAndroidUltraWide;
+
   useEffect(() => {
-    if (!device) return;
+    if (!isAndroid) return;
+    const stops: ZoomStop[] =
+      facing === 'back' && hasAndroidUltraWide
+        ? [
+            { label: '0.5x', zoomValue: MIN_DISPLAY_ZOOM, isNeutral: false },
+            { label: '1x', zoomValue: CROSSOVER_DISPLAY_ZOOM, isNeutral: true },
+          ]
+        : [{ label: '1x', zoomValue: 1, isNeutral: true }];
+    setZoomStops(stops);
+    console.log('[Zoom] Paradas Android:', JSON.stringify(stops));
+  }, [isAndroid, facing, hasAndroidUltraWide]);
+
+  useEffect(() => {
+    if (!device || isAndroid) return;
     const stops = calculateZoomStops(device);
     setZoomStops(stops);
     console.log('[Zoom] Paradas calculadas:', JSON.stringify(stops));
@@ -194,8 +231,43 @@ export default function CastingModeScreen() {
       })),
     }, null, 2));
   }, [device]);
-  const MIN_ZOOM = device?.minZoom ?? 1;
-  const MAX_ZOOM = device ? getPracticalMaxZoom(device, zoomStops) : 1;
+  const MIN_ZOOM = isAndroid
+    ? (facing === 'back' && hasAndroidUltraWide ? MIN_DISPLAY_ZOOM : 1)
+    : (device?.minZoom ?? 1);
+  const MAX_ZOOM = isAndroid
+    ? PRACTICAL_MAX_DISPLAY_ZOOM
+    : (device ? getPracticalMaxZoom(device, zoomStops) : 1);
+
+  // Único punto de entrada para cambiar el zoom (menú de paradas, slider,
+  // Plano General). En iOS es exactamente setZoom. En Android decide la lente
+  // y recorta al rango permitido. Solo lee refs: VerticalZoomSlider se queda
+  // con la primera versión del callback que recibe.
+  const applyZoom = useCallback((value: number) => {
+    if (Platform.OS !== 'android') {
+      setZoom(value);
+      return;
+    }
+    if (facingRef.current === 'front') {
+      setZoom(Math.min(Math.max(value, 1), PRACTICAL_MAX_DISPLAY_ZOOM));
+      return;
+    }
+    const locked = lensLockedRef.current;
+    const current = androidLensRef.current;
+    const nextLens = hasAndroidUltraWideRef.current ? resolveLens(value, current, locked) : 'wide';
+    const clamped = hasAndroidUltraWideRef.current
+      ? clampDisplayZoom(value, nextLens, locked)
+      : Math.min(Math.max(value, 1), PRACTICAL_MAX_DISPLAY_ZOOM);
+    if (nextLens !== current) {
+      console.log(`[Zoom] Android: cambio de lente ${current} -> ${nextLens} en ${clamped.toFixed(2)}x`);
+      androidLensRef.current = nextLens;
+      setAndroidLens(nextLens);
+    }
+    setZoom(clamped);
+  }, []);
+
+  function releaseLensLock() {
+    lensLockedRef.current = false;
+  }
 
   const [isRecording, setIsRecording] = useState(false);
   // Flag to cancel the countdown loop without relying on cameraRef properties
@@ -326,11 +398,11 @@ export default function CastingModeScreen() {
       const neutralZoomValue = getNeutralZoomValue(zoomStops);
       const widestZoomValue = getWidestZoomValue(zoomStops);
       if (!value) {
-        setZoom(neutralZoomValue);
+        applyZoom(neutralZoomValue);
         zoomAnimValue.setValue(neutralZoomValue);
       } else {
         // Al activar, arrancar SIEMPRE mostrando el plano general primero
-        setZoom(widestZoomValue);
+        applyZoom(widestZoomValue);
         zoomAnimValue.setValue(widestZoomValue);
       }
     }
@@ -468,7 +540,7 @@ export default function CastingModeScreen() {
   // Sincronizar zoomAnimValue → estado zoom durante la animación de transición
   useEffect(() => {
     const listenerId = zoomAnimValue.addListener(({ value }) => {
-      setZoom(value);
+      applyZoom(value);
     });
     return () => zoomAnimValue.removeListener(listenerId);
   }, []);
@@ -1501,7 +1573,11 @@ export default function CastingModeScreen() {
     // to avoid a jump when the Animated.Value is out of sync
     zoomAnimValue.setValue(zoom);
     Animated.timing(zoomAnimValue, {
-      toValue: getWidestZoomValue(zoomStops), // Plano general = zoom mínimo (campo más ancho disponible)
+      // Plano general = zoom mínimo (campo más ancho disponible). En Android,
+      // grabando no se cruza de lente: el mínimo es el de la lente activa.
+      toValue: isAndroid && lensLockedRef.current && facing === 'back' && hasAndroidUltraWide
+        ? displayRangeForLens(androidLensRef.current)[0]
+        : getWidestZoomValue(zoomStops),
       duration: 800,
       easing: Easing.out(Easing.quad),
       useNativeDriver: false, // El zoom de cámara no admite native driver
@@ -1542,7 +1618,9 @@ export default function CastingModeScreen() {
       countdownCancelledRef.current = false;
       if (cameraRef.current) (cameraRef.current as any)._cancelRecording = false;
 
+      lensLockedRef.current = true;
       const started = await cameraRef.current.startRecording();
+      if (!started) releaseLensLock();
       if (started) {
         setIsRecording(true);
         setRecordingTime(0);
@@ -1587,6 +1665,7 @@ export default function CastingModeScreen() {
 
     } catch (e) {
       console.error('Recording failed:', e);
+      releaseLensLock();
       Alert.alert('Error', 'No se pudo iniciar la grabación');
       setIsRecording(false);
       setIsPlaying(false);
@@ -1597,7 +1676,7 @@ export default function CastingModeScreen() {
     countdownCancelledRef.current = true;
     if (cameraRef.current) {
       (cameraRef.current as any)._cancelRecording = true;
-      cameraRef.current.stopRecording();
+      Promise.resolve(cameraRef.current.stopRecording()).finally(releaseLensLock);
     }
     setCountdown(null);
     setIsRecording(false);
@@ -1623,6 +1702,7 @@ export default function CastingModeScreen() {
 
     try {
       const video = await cameraRef.current.stopRecording();
+      releaseLensLock();
       // Restaurar volumen de la IA
       setTtsVolume(1.0);
       if (video && recordingTimeRef.current >= 2) {
@@ -1634,6 +1714,7 @@ export default function CastingModeScreen() {
       }
     } catch (e) {
       console.error("Error stopping recording:", e);
+      releaseLensLock();
       // Restaurar volumen incluso si hay error
       setTtsVolume(1.0);
     }
@@ -1744,7 +1825,7 @@ export default function CastingModeScreen() {
     if (cameraRef.current && isRecording) {
       countdownCancelledRef.current = true;
       (cameraRef.current as any)._cancelRecording = true;
-      cameraRef.current.stopRecording();
+      Promise.resolve(cameraRef.current.stopRecording()).finally(releaseLensLock);
 
       // Detener detección de palmada (no bloqueante)
       stopClapDetection();
@@ -2099,6 +2180,14 @@ export default function CastingModeScreen() {
 
   function toggleCamera() {
     setFacing(current => (current === 'back' ? 'front' : 'back'));
+    if (isAndroid) {
+      // La frontal no tiene ultra angular: se arranca en 1x (lente principal)
+      // en ambas direcciones para no heredar un 0.5x imposible.
+      androidLensRef.current = 'wide';
+      setAndroidLens('wide');
+      setZoom(CROSSOVER_DISPLAY_ZOOM);
+      zoomAnimValue.setValue(CROSSOVER_DISPLAY_ZOOM);
+    }
   }
 
 
@@ -2525,6 +2614,7 @@ export default function CastingModeScreen() {
               isActive={castingMode === 'recording' && !isProcessing}
               facing={facing}
               zoom={zoom}
+              androidLens={androidLens}
               videoQuality={videoQuality}
             />
           )}
@@ -2579,7 +2669,7 @@ export default function CastingModeScreen() {
                       {zoomStops.map((stop) => (
                         <TouchableOpacity
                           key={stop.label}
-                          onPress={() => { setZoom(stop.zoomValue); setIsZoomMenuOpen(false) }}
+                          onPress={() => { applyZoom(stop.zoomValue); setIsZoomMenuOpen(false) }}
                           style={[styles.zoomBtnHeader, zoom === stop.zoomValue && styles.activeZoomBtnHeader]}
                         >
                           <Text style={styles.zoomTextHeader}>{stop.label}</Text>
@@ -2603,11 +2693,14 @@ export default function CastingModeScreen() {
             {/* Vertical Zoom Slider Overlay */}
             {showZoomSlider && (
               <VerticalZoomSlider
+                // Android: el rango cambia entre trasera (0.5x) y frontal (1x) y el
+                // PanResponder del slider se queda con el primero, así que se remonta.
+                key={isAndroid ? facing : undefined}
                 zoom={zoom}
                 minZoom={MIN_ZOOM}
                 maxZoom={MAX_ZOOM}
                 displayScale={getNeutralZoomValue(zoomStops)}
-                onZoomChange={setZoom}
+                onZoomChange={applyZoom}
                 onClose={() => setShowZoomSlider(false)}
               />
             )}

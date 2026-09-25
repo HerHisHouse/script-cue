@@ -1,5 +1,7 @@
 import {
   clampDisplayZoom,
+  isBenignZoomError,
+  pickAndroidDevice,
   displayToDeviceZoom,
   formatAndroidZoomLabel,
   resolveLens,
@@ -33,5 +35,28 @@ describe('cameraZoomAndroid (Galaxy A53)', () => {
     expect(formatAndroidZoomLabel(0.5)).toBe('0.5x');
     expect(formatAndroidZoomLabel(1)).toBe('1x');
     expect(formatAndroidZoomLabel(2.46)).toBe('2.5x');
+  });
+});
+
+describe('isBenignZoomError', () => {
+  it('solo reconoce los dos errores conocidos de CameraX', () => {
+    expect(isBenignZoomError(new Error('androidx.camera.core.CameraControl$OperationCanceledException: Camera is not active.'))).toBe(true);
+    expect(isBenignZoomError(new Error('OperationCanceledException: Cancelled due to another zoom value being set'))).toBe(true);
+    expect(isBenignZoomError(new Error('Camera is disconnected'))).toBe(false);
+    expect(isBenignZoomError(new Error('CameraAccessException: CAMERA_ERROR'))).toBe(false);
+  });
+});
+
+describe('pickAndroidDevice (A53)', () => {
+  const devices = [
+    { id: '0', position: 'back', type: 'wide-angle', isVirtualDevice: false },
+    { id: '1', position: 'front', type: 'wide-angle', isVirtualDevice: false },
+    { id: '2', position: 'back', type: 'ultra-wide-angle', isVirtualDevice: false },
+    { id: '3', position: 'front', type: 'telephoto', isVirtualDevice: false },
+  ];
+  it('elige por id y la frontal principal', () => {
+    expect(pickAndroidDevice(devices, 'back', 'wide')?.id).toBe('0');
+    expect(pickAndroidDevice(devices, 'back', 'ultra-wide')?.id).toBe('2');
+    expect(pickAndroidDevice(devices, 'front', 'wide')?.id).toBe('1');
   });
 });
