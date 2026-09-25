@@ -31,6 +31,7 @@ const GAMES = [
         title: 'Memorización Activa',
         description: '3 niveles: oculto, iniciales y texto completo.',
         icon: Brain,
+        color: '#3B82F6', // Blue
         route: '/active'
     },
     {
@@ -38,6 +39,7 @@ const GAMES = [
         title: 'Texto Fantasma',
         description: 'Las palabras desaparecen progresivamente.',
         icon: Ghost,
+        color: '#8B5CF6', // Purple
         route: '/ghost'
     },
     {
@@ -45,6 +47,7 @@ const GAMES = [
         title: 'Eco de Memoria',
         description: 'Lee, memoriza y repite tras el silencio.',
         icon: Mic,
+        color: '#10B981', // Green
         route: '/echo'
     },
     {
@@ -52,6 +55,7 @@ const GAMES = [
         title: 'Quiz Memory',
         description: 'Pon a prueba tu conocimiento del texto.',
         icon: HelpCircle,
+        color: '#EC4899', // Pink
         route: '/quiz'
     },
     {
@@ -59,6 +63,7 @@ const GAMES = [
         title: 'Refuerzo',
         description: 'Repasa solo las líneas que más fallas.',
         icon: Zap,
+        color: '#EF4444', // Red
         route: '/reinforcement'
     }
 ];
@@ -147,8 +152,9 @@ export default function MemoryMenuScreen() {
                             >
                                 <View style={[styles.gameCardClip, { borderColor: glassBorder }]}>
                                     <GlassCardSurface tint={isDark ? 'dark' : 'light'} style={[styles.gameCard, { backgroundColor: glassBg }]}>
-                                        <View style={[styles.gameIconCircle, { backgroundColor: glassBorder }]}>
-                                            <game.icon size={28} color={fg} />
+                                        {/* Cada juego con su color, como antes del rediseño glass */}
+                                        <View style={[styles.gameIconCircle, { backgroundColor: game.color + '20' }]}>
+                                            <game.icon size={28} color={game.color} />
                                         </View>
                                         <Text style={[styles.gameTitle, { color: fg }]}>{game.title}</Text>
                                         <Text style={[styles.gameDesc, { color: fgSecondary }]}>{game.description}</Text>
