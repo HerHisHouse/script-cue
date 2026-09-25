@@ -24,7 +24,10 @@ export default function DevAudioTest() {
   function appendLog(text: string) {
     console.log('[AudioTest]', text);
     logCounter.current += 1;
-    setLog((prev) => [...prev, { id: `log-${logCounter.current}`, text }]);
+    // Capturar el id ahora: el updater de setLog se ejecuta más tarde y, con
+    // varias actualizaciones agrupadas, leería el mismo valor del ref.
+    const id = `log-${logCounter.current}`;
+    setLog((prev) => [...prev, { id, text }]);
   }
 
   async function handleStartRecord() {
