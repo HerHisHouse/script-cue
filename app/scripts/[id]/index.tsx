@@ -563,8 +563,8 @@ const styles = StyleSheet.create({
   modesGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    alignItems: 'flex-start',
-    gap: 12,
+    justifyContent: 'space-between',
+    rowGap: 12,
     // el margen se aplica en el componente para empujar el menú al final
   },
   voiceSection: {

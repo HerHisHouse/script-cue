@@ -23,7 +23,7 @@ export function ModeGlassCard({ icon, title, description, onPress, dark = true }
         <GlassCardSurface tint={dark ? 'dark' : 'light'} style={[styles.content, { backgroundColor: theme.blurBg }]}>
           <View style={[styles.iconCircle, { backgroundColor: theme.iconBg }]}>{icon}</View>
           <Text style={[styles.title, { color: theme.title }]}>{title}</Text>
-          <Text style={[styles.description, { color: theme.description }]} numberOfLines={2}>{description}</Text>
+          <Text style={[styles.description, { color: theme.description }]} numberOfLines={3}>{description}</Text>
         </GlassCardSurface>
       </Pressable>
     </View>
@@ -50,14 +50,17 @@ const styles = StyleSheet.create({
   // Wrapper exterior: lleva la sombra (getCardShadow, solo modo claro). No puede tener
   // overflow:hidden, porque RN no renderiza shadow*/elevation en un View
   // que recorta su contenido.
+  // Ancho fijo (2 columnas; el hueco lo reparte space-between en el grid) en vez de flex:1 +
+  // minWidth: con flexBasis 0 dentro de un flexWrap, Android medía el texto casi sin ancho y,
+  // con el tamaño de letra del sistema por encima del 100%, las tarjetas de la primera fila se
+  // estiraban cientos de px hacia abajo.
   shadowWrapper: {
-    flex: 1,
-    minWidth: '47%',
+    width: '48%',
     minHeight: rp(154),
     borderRadius: 20,
   },
   wrapper: {
-    flex: 1,
+    flexGrow: 1,
     borderRadius: 20,
     overflow: 'hidden',
     borderWidth: 1,
@@ -67,7 +70,7 @@ const styles = StyleSheet.create({
     transform: [{ scale: 0.98 }],
   },
   content: {
-    flex: 1,
+    flexGrow: 1,
     paddingVertical: rp(20),
     paddingHorizontal: rp(14),
     alignItems: 'flex-start',
