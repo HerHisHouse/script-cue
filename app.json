@@ -62,6 +62,7 @@
         }
       ],
       "./plugins/withAndroidNetworkConfig.js",
+      "./plugins/withMaxFontScale.js",
       "./plugins/withAudioEchoCancellation.js"
     ],
     "experiments": {
