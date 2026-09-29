@@ -440,7 +440,7 @@ export default function CommunityScreen() {
               resizeMode="cover"
               style={{ flex: 1 }}
             >
-              <SafeAreaView style={{ flex: 1, backgroundColor: 'transparent' }}>
+              <SafeAreaView style={{ flex: 1, backgroundColor: 'transparent' }} edges={['top', 'left', 'right']}>
                 <View style={{ paddingHorizontal: 16, paddingTop: 16, paddingBottom: 12, flexDirection: 'row', alignItems: 'center' }}>
                   <GlassCard
                     isDark={isDark}

@@ -1295,7 +1295,7 @@ export default function CarModeScreen() {
   // Configuration Screen
   if (showConfig) {
     return (
-      <SafeAreaView style={{ flex: 1, backgroundColor: '#0a0a0a' }}>
+      <SafeAreaView style={{ flex: 1, backgroundColor: '#0a0a0a' }} edges={['top', 'left', 'right']}>
         <Stack.Screen options={{ headerShown: false }} />
 
         {/* Header minimalista estilo iOS */}
@@ -1545,7 +1545,7 @@ export default function CarModeScreen() {
   return (
     <View style={{ flex: 1, backgroundColor: '#0a0a0a' }}>
       <Stack.Screen options={{ headerShown: false }} />
-      <SafeAreaView style={{ flex: 1 }}>
+      <SafeAreaView style={{ flex: 1 }} edges={['top', 'left', 'right']}>
 
         {/* Header — igual que en configuración */}
         <View style={{

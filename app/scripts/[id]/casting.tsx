@@ -2602,7 +2602,7 @@ export default function CastingModeScreen() {
           </ScrollView>
 
           {/* Start Recording Button */}
-          <View style={[styles.configFooter, { paddingBottom: rp(24) + insets.bottom }]}>
+          <View style={[styles.configFooter, { paddingBottom: Math.max(insets.bottom, rp(16)) }]}>
             <TouchableOpacity
               onPress={startScriptCasting}
               style={[styles.startRecordingBtn, primaryButtonBg]}
@@ -2641,7 +2641,7 @@ export default function CastingModeScreen() {
           )}
 
           {/* UI Overlay - Absolute positioned */}
-          <SafeAreaView style={StyleSheet.absoluteFill}>
+          <SafeAreaView style={StyleSheet.absoluteFill} edges={['top', 'left', 'right']}>
             {/* Header Controls */}
             <View style={[styles.header, { zIndex: 50 }]}>
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
@@ -2998,7 +2998,7 @@ export default function CastingModeScreen() {
               </View>
             )}
 
-            <View style={styles.controlsContainer} onLayout={(e) => setControlsHeight(e.nativeEvent.layout.height)}>
+            <View style={[styles.controlsContainer, { paddingBottom: insets.bottom + rp(12) }]} onLayout={(e) => setControlsHeight(e.nativeEvent.layout.height)}>
               <View style={styles.controls}>
                 {/* Previous */}
                 {castingType !== 'free' && (
@@ -3992,7 +3992,6 @@ const styles = StyleSheet.create({
     bottom: 0,
     left: 0,
     right: 0,
-    paddingBottom: Platform.OS === 'android' ? rp(60) : rp(20),
   },
   recordingTipBanner: {
     backgroundColor: 'rgba(16, 185, 129, 0.15)',

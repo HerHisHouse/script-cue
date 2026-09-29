@@ -802,7 +802,7 @@ export default function TakeComparatorScreen() {
       {/* Modal de reproducción */}
       {playingTakeId && videoUri && (
         <Modal visible animationType="slide" supportedOrientations={['portrait', 'landscape', 'landscape-left', 'landscape-right']}>
-          <SafeAreaView style={{ flex: 1, backgroundColor: 'black' }}>
+          <SafeAreaView style={{ flex: 1, backgroundColor: 'black' }} edges={['top', 'left', 'right']}>
             <TouchableOpacity
               onPress={() => {
                 setPlayingTakeId(null);

@@ -348,7 +348,7 @@ export default function RecordModeScreen() {
   const progress = ((currentIndex + 1) / dialogueLines.length) * 100;
 
   return (
-    <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
+    <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]} edges={['top', 'left', 'right']}>
       {showMenu && (
         <Pressable
           style={styles.backdrop}

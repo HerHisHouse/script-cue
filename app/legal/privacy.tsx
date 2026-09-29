@@ -22,7 +22,7 @@ export default function PrivacyScreen() {
                 resizeMode="cover"
                 style={styles.container}
             >
-            <SafeAreaView style={[styles.container, { backgroundColor: 'transparent' }]}>
+            <SafeAreaView style={[styles.container, { backgroundColor: 'transparent' }]} edges={['top', 'left', 'right']}>
                 <View style={[styles.header, { backgroundColor: 'transparent', borderBottomWidth: 0 }]}>
                     <Text style={[styles.title, { color: onBg }]}>Política de Privacidad</Text>
                     <TouchableOpacity

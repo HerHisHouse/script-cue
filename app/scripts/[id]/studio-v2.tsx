@@ -2126,7 +2126,7 @@ export default function StudioV2Screen() {
     return (
         <ImageBackground source={studioBg()} resizeMode="cover" style={styles.container}>
         <GestureHandlerRootView style={{ flex: 1 }}>
-            <SafeAreaView style={[styles.container, { backgroundColor: 'transparent' }]}>
+            <SafeAreaView style={[styles.container, { backgroundColor: 'transparent' }]} edges={['top', 'left', 'right']}>
                 <View style={{ flex: 1, backgroundColor: 'transparent' }}>
                     {/* Hide System Header */}
                     <Stack.Screen options={{ headerShown: false }} />

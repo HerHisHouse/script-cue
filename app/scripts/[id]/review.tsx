@@ -532,7 +532,7 @@ export default function ReviewScreen() {
     <ImageBackground source={bg()} resizeMode="cover" style={{ flex: 1 }}>
     <GestureHandlerRootView style={{ flex: 1 }}>
       <Stack.Screen options={{ headerShown: false }} />
-      <SafeAreaView style={[s.container, { backgroundColor: 'transparent' }]}>
+      <SafeAreaView style={[s.container, { backgroundColor: 'transparent' }]} edges={['top', 'left', 'right']}>
 
         {/* ── Header ── */}
         <View style={[s.header, { backgroundColor: 'transparent', borderBottomWidth: 0 }]}>
@@ -962,7 +962,7 @@ export default function ReviewScreen() {
           onRequestClose={() => setShowPdfViewer(false)}
           supportedOrientations={['portrait', 'landscape', 'landscape-left', 'landscape-right']}
         >
-          <SafeAreaView style={{ flex: 1, backgroundColor: '#1a1625' }}>
+          <SafeAreaView style={{ flex: 1, backgroundColor: '#1a1625' }} edges={['top', 'left', 'right']}>
             <View style={[s.header, { backgroundColor: 'transparent', borderBottomWidth: 0 }]}>
               <TouchableOpacity
                 onPress={() => { setShowPdfViewer(false); setPdfSignedUrl(null); }}

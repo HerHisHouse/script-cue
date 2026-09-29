@@ -20,7 +20,7 @@ export default function TermsScreen() {
                 resizeMode="cover"
                 style={styles.container}
             >
-            <SafeAreaView style={[styles.container, { backgroundColor: 'transparent' }]}>
+            <SafeAreaView style={[styles.container, { backgroundColor: 'transparent' }]} edges={['top', 'left', 'right']}>
                 <View style={[styles.header, { backgroundColor: 'transparent', borderBottomWidth: 0 }]}>
                     <Text style={[styles.title, { color: onBg }]}>Términos y Condiciones</Text>
                     <TouchableOpacity

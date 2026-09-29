@@ -814,7 +814,7 @@ export default function ImportScriptScreen() {
       resizeMode="cover"
       style={styles.container}
     >
-    <SafeAreaView style={[styles.container, { backgroundColor: 'transparent' }]}>
+    <SafeAreaView style={[styles.container, { backgroundColor: 'transparent' }]} edges={['top', 'left', 'right']}>
       {uploading && (
         <View style={[styles.backdrop, { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.95)', alignItems: 'center', justifyContent: 'center', zIndex: 2000 }]}>
           <ActivityIndicator size="large" color={colors.primary} style={{ marginBottom: 20 }} />

@@ -2259,7 +2259,7 @@ export default function ScriptEditorScreen() {
 
     return (
         <ImageBackground source={editorBg()} resizeMode="cover" style={styles.container}>
-        <SafeAreaView style={[styles.container, { backgroundColor: 'transparent' }]}>
+        <SafeAreaView style={[styles.container, { backgroundColor: 'transparent' }]} edges={['top', 'left', 'right']}>
             {/* Off-screen Capture View for Full Document PNG */}
             <View
                 ref={captureViewRef}

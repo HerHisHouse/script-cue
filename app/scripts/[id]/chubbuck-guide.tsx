@@ -170,7 +170,7 @@ export default function ChubbuckGuideScreen() {
 
     return (
         <ImageBackground source={guideBg()} resizeMode="cover" style={styles.container}>
-        <SafeAreaView style={[styles.container, { backgroundColor: 'transparent' }]}>
+        <SafeAreaView style={[styles.container, { backgroundColor: 'transparent' }]} edges={['top', 'left', 'right']}>
             <View style={[styles.header, { borderBottomColor: cardBorder }]}>
                 <TouchableOpacity onPress={() => router.back()} style={[styles.backButton, glassHeaderBtn]}>
                     <ArrowLeft size={20} color="#FFFFFF" />

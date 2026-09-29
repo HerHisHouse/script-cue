@@ -76,7 +76,7 @@ export default function ScanScriptScreen() {
         resizeMode="cover"
         style={styles.container}
       >
-        <SafeAreaView style={[styles.container, { backgroundColor: 'transparent' }]}>
+        <SafeAreaView style={[styles.container, { backgroundColor: 'transparent' }]} edges={['top', 'left', 'right']}>
           <View style={styles.loadingContainer}>
             <ActivityIndicator size="large" color={accentOnGlass} />
           </View>
@@ -92,7 +92,7 @@ export default function ScanScriptScreen() {
         resizeMode="cover"
         style={styles.container}
       >
-        <SafeAreaView style={[styles.container, { backgroundColor: 'transparent' }]}>
+        <SafeAreaView style={[styles.container, { backgroundColor: 'transparent' }]} edges={['top', 'left', 'right']}>
           <View style={[styles.header, { backgroundColor: 'transparent', borderBottomWidth: 0 }]}>
             <TouchableOpacity onPress={() => router.back()} style={[styles.backButton, backButtonStyle]}>
               <ArrowLeft size={20} color={isDark ? onBg : '#FFFFFF'} />
@@ -338,7 +338,7 @@ export default function ScanScriptScreen() {
 
   if (showCamera) {
     return (
-      <SafeAreaView style={[styles.container, { backgroundColor: '#000000' }]}>
+      <SafeAreaView style={[styles.container, { backgroundColor: '#000000' }]} edges={['top', 'left', 'right']}>
         <CameraView
           ref={cameraRef}
           style={styles.camera}
@@ -396,7 +396,7 @@ export default function ScanScriptScreen() {
       resizeMode="cover"
       style={styles.container}
     >
-      <SafeAreaView style={[styles.container, { backgroundColor: 'transparent' }]}>
+      <SafeAreaView style={[styles.container, { backgroundColor: 'transparent' }]} edges={['top', 'left', 'right']}>
         <View style={[styles.header, { backgroundColor: 'transparent', borderBottomWidth: 0 }]}>
           <TouchableOpacity onPress={() => router.back()} style={[styles.backButton, backButtonStyle]}>
             <ArrowLeft size={20} color={isDark ? onBg : '#FFFFFF'} />
