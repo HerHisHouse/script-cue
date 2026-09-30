@@ -13,11 +13,18 @@ export interface BottomSheetMenuProps {
   children: React.ReactNode;
   backgroundColor?: string;
   titleColor?: string;
+  /** Intensidad del BlurView (0-100). Por defecto isDark ? 55 : 75. Súbela en
+   * pantallas donde detrás hay contenido variable (p.ej. la cámara en vivo de
+   * Casting), donde ese blur por defecto no basta para que el menú se lea bien. */
+  intensity?: number;
+  /** Velo negro adicional (0-1) sobre el blur, para más contraste sobre fondos
+   * muy claros o con mucho detalle (como la cámara). 0 = desactivado. */
+  dimOpacity?: number;
 }
 
 const { height: SCREEN_HEIGHT } = Dimensions.get('window');
 
-export function BottomSheetMenu({ visible, onClose, title, children, backgroundColor, titleColor }: BottomSheetMenuProps) {
+export function BottomSheetMenu({ visible, onClose, title, children, backgroundColor, titleColor, intensity, dimOpacity }: BottomSheetMenuProps) {
   const { colors, isDark } = useTheme();
   const insets = useSafeAreaInsets();
   
@@ -154,8 +161,11 @@ export function BottomSheetMenu({ visible, onClose, title, children, backgroundC
         <View style={[styles.clip, { paddingBottom: Math.max(insets.bottom, 20) }]}>
           {useGlass ? (
             <>
-              <BlurView experimentalBlurMethod={ANDROID_BLUR_METHOD} intensity={isDark ? 55 : 75} tint={isDark ? 'dark' : 'light'} style={StyleSheet.absoluteFill} />
+              <BlurView experimentalBlurMethod={ANDROID_BLUR_METHOD} intensity={intensity ?? (isDark ? 55 : 75)} tint={isDark ? 'dark' : 'light'} style={StyleSheet.absoluteFill} />
               <View style={[StyleSheet.absoluteFill, { backgroundColor: glassOverlayTint }]} />
+              {!!dimOpacity && (
+                <View style={[StyleSheet.absoluteFill, { backgroundColor: `rgba(0,0,0,${dimOpacity})` }]} />
+              )}
             </>
           ) : (
             <View style={[StyleSheet.absoluteFill, { backgroundColor: transparentBg }]} />

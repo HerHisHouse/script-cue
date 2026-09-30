@@ -337,7 +337,7 @@ export default function CastingModeScreen() {
   }
   // Estilo de la capa de color de un personaje (null si el resaltado está apagado).
   const characterShadeStyle = (color: string) => teleprompterShading
-    ? { backgroundColor: withAlpha(color, 0.2), borderRadius: rp(16), paddingHorizontal: rp(16), paddingVertical: rp(10) }
+    ? { backgroundColor: withAlpha(color, 0.35), borderRadius: rp(16), paddingHorizontal: rp(16), paddingVertical: rp(10) }
     : null;
 
   const TELEPROMPTER_FONT_SCALE: Record<typeof teleprompterFontSize, number> = {
@@ -3060,6 +3060,11 @@ export default function CastingModeScreen() {
                 visible={showMenu}
                 onClose={() => setShowMenu(false)}
                 title="Configuración"
+                // Detrás hay cámara en vivo (no un fondo plano como en el resto de
+                // bottom sheets), así que el blur por defecto no siempre basta para
+                // que se lea bien: más intensidad + un velo negro extra.
+                intensity={90}
+                dimOpacity={0.25}
               >
                 <ScrollView style={{ maxHeight: rp(400) }} showsVerticalScrollIndicator={false}>
                   {castingType === 'script' ? (
