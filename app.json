@@ -63,7 +63,8 @@
       ],
       "./plugins/withAndroidNetworkConfig.js",
       "./plugins/withMaxFontScale.js",
-      "./plugins/withAudioEchoCancellation.js"
+      "./plugins/withAudioEchoCancellation.js",
+      "./plugins/withIosPodsDeploymentTarget.js"
     ],
     "experiments": {
       "typedRoutes": true

@@ -149,6 +149,11 @@ componentes que se renderizan dentro del Modal de otro archivo (p.ej. `PlayerDis
   `withAudioEchoCancellation.js` (backs the `modules/audio-echo-cancellation` native module used to mute the
   user's mic while AI dialogue plays, e.g. in Casting mode), plus `withTrackPlayer.js` / `withFfmpegKit.js` used
   during native builds.
+- `ios/` y `android/` están en `.gitignore`: se generan con `expo prebuild` (y en cada build de EAS). Cualquier
+  ajuste nativo tiene que vivir en `app.json` o en un plugin de `plugins/`; un cambio hecho a mano en `ios/` o
+  `android/` se pierde al regenerar. Ejemplo: `withIosPodsDeploymentTarget.js` sube a iOS 15.1 los pods que traen
+  un deployment target antiguo (los Xcode recientes solo admiten 15.0+ y fallaban con RNCAsyncStorage, RNSVG o
+  ReachabilitySwift).
 - `newArchEnabled: true` (New Architecture) and `typedRoutes: true` are both on.
 - `expo-file-system/legacy` is used everywhere on purpose (not the new FS API) — see the static-checks rule
   above.
