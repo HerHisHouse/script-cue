@@ -13,6 +13,7 @@ import { Audio } from 'expo-av';
 import { Camera } from 'expo-camera';
 import * as ImagePicker from 'expo-image-picker';
 import { View } from 'react-native';
+import { AndroidNavBarGuard } from '@/components/AndroidNavBarGuard';
 
 // Dynamic TrackPlayer import for Expo Go compatibility
 let TrackPlayer: any = null;
@@ -147,7 +148,10 @@ function AppRoot() {
     setupPlayer();
   }, []);
 
+  // AndroidNavBarGuard decide si el contenido queda por encima de la barra de botones
+  // de Android o llega hasta abajo (gestos / iOS). No quitarlo: ver CLAUDE.md.
   return (
+    <AndroidNavBarGuard isDark={isDark}>
     <View style={{ flex: 1, backgroundColor: isDark ? WINDOW_BG_DARK : WINDOW_BG_LIGHT }}>
       <Stack
         screenOptions={{
@@ -175,6 +179,7 @@ function AppRoot() {
         <Stack.Screen name="scripts/[id]/editor" options={{ headerShown: false }} />
       </Stack>
     </View>
+    </AndroidNavBarGuard>
   );
 }
 

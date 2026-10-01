@@ -25,6 +25,7 @@ import { supabase } from '@/utils/supabase';
 import { rf, rp } from '@/utils/responsive';
 import { BETA_LIMITS, isUserBetaLimited } from '@/constants/betaLimits';
 import { trackEvent } from '@/utils/analytics';
+import { useAndroidNavStripColor } from '@/components/AndroidNavBarGuard';
 
 interface CapturedImage {
   uri: string;
@@ -64,6 +65,7 @@ export default function ScanScriptScreen() {
   const [permission, requestPermission] = useCameraPermissions();
   const [capturedImages, setCapturedImages] = useState<CapturedImage[]>([]);
   const [showCamera, setShowCamera] = useState(false);
+  useAndroidNavStripColor(showCamera ? '#000000' : null);
   const [processing, setProcessing] = useState(false);
   const [processingStep, setProcessingStep] = useState('');
   const [title, setTitle] = useState('');

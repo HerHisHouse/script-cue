@@ -75,6 +75,7 @@ import {
   generateActionId
 } from '@/utils/sceneConfig';
 import { trackEvent } from '@/utils/analytics';
+import { useAndroidNavStripColor } from '@/components/AndroidNavBarGuard';
 
 type SceneItem = ParsedScript['scenes'][0];
 
@@ -364,6 +365,8 @@ export default function CastingModeScreen() {
   // --- New Casting Mode Flow State ---
   type CastingMode = 'selection' | 'script_config' | 'free_input' | 'recording';
   const [castingMode, setCastingMode] = useState<CastingMode>('selection');
+  // Grabando, detrás de los botones solo hay cámara (negro); el resto sigue el tema.
+  useAndroidNavStripColor(castingMode === 'recording' ? '#000000' : null);
   const [castingType, setCastingType] = useState<'script' | 'free' | null>(null);
   type VideoQuality = 'high' | 'medium' | 'low';
   const [videoQuality, setVideoQuality] = useState<VideoQuality>('medium');

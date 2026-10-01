@@ -109,6 +109,31 @@ changes as a new migration file, never edit an old one). Core tables: `profiles`
 `scenes`, `dialogues`/lines, `practice_sessions`, `recordings`, `tts_cache`, `projects`/folders, `casting_jobs`,
 `api_usage`. Storage buckets: `scripts` (PDFs), `recordings`, `avatars`.
 
+### Barra de navegación de Android (no romper)
+
+Requisito de producto: en Android con **barra de botones** (2 o 3 botones) todo el contenido queda **por encima**
+de los botones; con **navegación por gestos** (y en iOS) la app llega hasta el borde inferior. Ya se rompió una vez
+al "arreglar un margen" quitando la reserva de la raíz, y la app quedó por detrás de los botones. Cómo funciona:
+
+- `components/AndroidNavBarGuard.tsx` envuelve la app en `app/_layout.tsx`. Si `shouldReserveAndroidNavBar()`
+  (`utils/androidNavBar.ts`, inset inferior ≥ 40dp en Android) reserva `paddingBottom = insets.bottom` y pinta esa
+  franja del color final del degradado de fondo (negro / `#FEFEFE`). Con gestos no reserva nada.
+- Al reservar, da a los descendientes `insets.bottom = 0`, así que las pantallas usan `useSafeAreaInsets()` y
+  `SafeAreaView` con normalidad y **nunca** suman el hueco dos veces. No añadas otro padding global ni restes
+  insets a mano para "compensar".
+- Contenido dentro de un `<Modal>`: el `Modal` es otra ventana y el valor de `useSafeAreaInsets()` (el de la
+  ventana principal) **no** le sirve; además, según el dispositivo, su contenido llega o no por detrás de la
+  barra. Por eso ahí el inset inferior se mide en nativo con `<SafeAreaView edges={{ bottom: 'maximum' }}>`
+  (o `'additive'`) y un `paddingBottom` mínimo en el `style`, en vez de sumar `insets.bottom` a mano. Ejemplos:
+  `BottomSheetMenu`, `PlaylistSheet`, los modales de `review.tsx` y el reproductor de `recordings.tsx`.
+- Pantallas siempre oscuras (Modo Coche, cámara de Casting/escaneo) llaman `useAndroidNavStripColor('#000000')`.
+  El color de los iconos de la barra se ajusta solo según la franja (`expo-navigation-bar`).
+- `android:enforceNavigationBarContrast` está a `false` vía `app.json` → `androidNavigationBar.enforceContrast`
+  (fuente de verdad: `android/` está en `.gitignore` y se regenera con `expo prebuild`/EAS). Si vuelve a `true`,
+  Android pinta un velo gris tras los botones.
+- Lo protegen `__tests__/androidNavBar.test.ts` y una regla de `tools/static-checks.js`.
+- Pantallas nuevas: `SafeAreaView edges={['top','left','right']}` + `insets.bottom` en lo que vaya pegado abajo.
+
 ### Native config quirks worth knowing
 
 - `plugins/` has several custom Expo config plugins applied in `app.json`: `withAndroidNetworkConfig.js`,

@@ -708,7 +708,7 @@ export default function ReviewScreen() {
               <Pressable onPress={e => e.stopPropagation()} style={s.modalContent}>
                 <BlurView experimentalBlurMethod={ANDROID_BLUR_METHOD} intensity={isDark ? 55 : 75} tint={isDark ? 'dark' : 'light'} style={StyleSheet.absoluteFill} />
                 <View style={[StyleSheet.absoluteFill, { backgroundColor: isDark ? 'rgba(124,106,247,0.40)' : 'rgba(235,230,245,0.40)' }]} />
-                <View style={{ padding: rp(24), paddingBottom: Math.max(insets.bottom + rp(20), rp(40)) }}>
+                <SafeAreaView edges={{ bottom: 'additive' }} style={{ padding: rp(24) }}>
                 <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: rp(12) }}>
                   <Text style={[s.modalTitle, { color: onBg, marginBottom: 0 }]}>Editar línea</Text>
                   <TouchableOpacity onPress={() => setEditModalVisible(false)} style={{ padding: 4 }}>
@@ -772,7 +772,7 @@ export default function ReviewScreen() {
                     }
                   </TouchableOpacity>
                 </View>
-                </View>
+                </SafeAreaView>
               </Pressable>
             </Pressable>
           </KeyboardAvoidingView>
@@ -786,7 +786,7 @@ export default function ReviewScreen() {
           onRequestClose={() => setEmotionModalVisible(false)}
          supportedOrientations={['portrait', 'landscape', 'landscape-left', 'landscape-right']}>
           <Pressable style={[s.modalOverlay, { backgroundColor: 'rgba(0,0,0,0.4)' }]} onPress={() => setEmotionModalVisible(false)}>
-            <View style={[s.modalContent, { paddingBottom: Math.max(insets.bottom + rp(20), rp(20)) }]}>
+            <SafeAreaView edges={{ bottom: 'additive' }} style={[s.modalContent, { paddingBottom: rp(20) }]}>
               <BlurView experimentalBlurMethod={ANDROID_BLUR_METHOD} intensity={isDark ? 55 : 75} tint={isDark ? 'dark' : 'light'} style={StyleSheet.absoluteFill} />
               <View style={[StyleSheet.absoluteFill, { backgroundColor: isDark ? 'rgba(124,106,247,0.40)' : 'rgba(235,230,245,0.40)' }]} />
               <View style={{ paddingHorizontal: rp(20), paddingTop: rp(20), paddingBottom: rp(12), borderBottomWidth: 1, borderBottomColor: cardBorder }}>
@@ -808,7 +808,7 @@ export default function ReviewScreen() {
                   </TouchableOpacity>
                 ))}
               </ScrollView>
-            </View>
+            </SafeAreaView>
           </Pressable>
         </Modal>
 
@@ -819,7 +819,7 @@ export default function ReviewScreen() {
               <Pressable onPress={e => e.stopPropagation()} style={s.modalContent}>
                 <BlurView experimentalBlurMethod={ANDROID_BLUR_METHOD} intensity={isDark ? 55 : 75} tint={isDark ? 'dark' : 'light'} style={StyleSheet.absoluteFill} />
                 <View style={[StyleSheet.absoluteFill, { backgroundColor: isDark ? 'rgba(124,106,247,0.40)' : 'rgba(235,230,245,0.40)' }]} />
-                <View style={{ padding: rp(24), paddingBottom: Math.max(insets.bottom + rp(20), rp(40)) }}>
+                <SafeAreaView edges={{ bottom: 'additive' }} style={{ padding: rp(24) }}>
                 <Text style={[s.modalTitle, { color: onBg }]}>Añadir línea</Text>
 
                 <View style={{ flexDirection: 'row', marginBottom: rp(16), gap: 12 }}>
@@ -870,7 +870,7 @@ export default function ReviewScreen() {
                     }
                   </TouchableOpacity>
                 </View>
-                </View>
+                </SafeAreaView>
               </Pressable>
             </Pressable>
           </KeyboardAvoidingView>
@@ -900,7 +900,7 @@ export default function ReviewScreen() {
               <BlurView experimentalBlurMethod={ANDROID_BLUR_METHOD} intensity={isDark ? 55 : 75} tint={isDark ? 'dark' : 'light'} style={StyleSheet.absoluteFill} />
               <View style={[StyleSheet.absoluteFill, { backgroundColor: isDark ? 'rgba(124,106,247,0.40)' : 'rgba(235,230,245,0.40)' }]} />
               <ScrollView style={dialogScrollStyle} bounces={false}>
-              <View style={{ padding: rp(24), paddingBottom: Math.max(insets.bottom + rp(20), rp(40)) }}>
+              <SafeAreaView edges={{ bottom: 'additive' }} style={{ padding: rp(24) }}>
               <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: rp(16), gap: 12 }}>
                 <Plus size={24} color={colors.primary} />
                 <Text style={[s.modalTitle, { color: onBg, marginBottom: 0 }]}>Añadir línea o acción</Text>
@@ -938,7 +938,7 @@ export default function ReviewScreen() {
               >
                 <Text style={{ color: '#fff', fontSize: rf(14), fontWeight: '600' }}>Entendido</Text>
               </TouchableOpacity>
-              </View>
+              </SafeAreaView>
               </ScrollView>
             </View>
           </View>

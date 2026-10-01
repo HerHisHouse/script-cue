@@ -55,6 +55,7 @@ import { BottomSheetToggle } from '@/components/BottomSheetToggle';
 import { BottomSheetOption } from '@/components/BottomSheetOption';
 import { VoiceSelector } from '@/components/VoiceSelector';
 import { trackEvent } from '@/utils/analytics';
+import { useAndroidNavStripColor } from '@/components/AndroidNavBarGuard';
 
 // TrackPlayer for lock screen controls - Optional (only works in native builds)
 let TrackPlayer: any = null;
@@ -146,6 +147,8 @@ interface CharacterVoiceConfig {
 
 export default function CarModeScreen() {
   const router = useRouter();
+  // Modo Coche es siempre oscuro, también con el tema claro.
+  useAndroidNavStripColor('#000000');
   const { id } = useLocalSearchParams();
   const { user } = useAuth();
   // Force dark mode colors for Car Mode

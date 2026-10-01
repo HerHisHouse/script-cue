@@ -2,7 +2,7 @@ import React, { useRef, useEffect, useState } from 'react';
 import { View, Text, Pressable, Modal, StyleSheet, ScrollView, Animated, PanResponder, Dimensions } from 'react-native';
 import { BlurView } from 'expo-blur';
 import { ANDROID_BLUR_METHOD } from '@/utils/blur';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { useTheme } from '@/contexts/ThemeContext';
 import { getShadowStyle } from '@/utils/cardShadow';
 
@@ -26,7 +26,6 @@ const { height: SCREEN_HEIGHT } = Dimensions.get('window');
 
 export function BottomSheetMenu({ visible, onClose, title, children, backgroundColor, titleColor, intensity, dimOpacity }: BottomSheetMenuProps) {
   const { colors, isDark } = useTheme();
-  const insets = useSafeAreaInsets();
   
   const [modalVisible, setModalVisible] = useState(visible);
   const [isClosing, setIsClosing] = useState(false);
@@ -158,7 +157,9 @@ export function BottomSheetMenu({ visible, onClose, title, children, backgroundC
       >
         {/* Recorta el fondo (blur o sólido) a las esquinas redondeadas, sin tocar
             la sombra del contenedor exterior (overflow:hidden + shadow no combinan en iOS) */}
-        <View style={[styles.clip, { paddingBottom: Math.max(insets.bottom, 20) }]}>
+        {/* SafeAreaView nativo: mide el solape real con la barra del sistema dentro de
+            la ventana del Modal (mínimo 20 de respiro). Ver CLAUDE.md. */}
+        <SafeAreaView edges={{ bottom: 'maximum' }} style={[styles.clip, { paddingBottom: 20 }]}>
           {useGlass ? (
             <>
               <BlurView experimentalBlurMethod={ANDROID_BLUR_METHOD} intensity={intensity ?? (isDark ? 55 : 75)} tint={isDark ? 'dark' : 'light'} style={StyleSheet.absoluteFill} />
@@ -194,7 +195,7 @@ export function BottomSheetMenu({ visible, onClose, title, children, backgroundC
           >
             {children}
           </ScrollView>
-        </View>
+        </SafeAreaView>
       </Animated.View>
     </Modal>
   );

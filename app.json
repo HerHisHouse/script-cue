@@ -68,6 +68,9 @@
     "experiments": {
       "typedRoutes": true
     },
+    "androidNavigationBar": {
+      "enforceContrast": false
+    },
     "android": {
       "package": "es.scriptcue.app",
       "adaptiveIcon": {

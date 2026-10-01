@@ -71,6 +71,19 @@ for (const t of targets) {
   if (fs.existsSync(t)) walk(t);
 }
 
+// 6) Barra de navegación de Android: la raíz debe pasar por AndroidNavBarGuard
+// (contenido por encima de la barra de botones; hasta abajo con gestos). Ya se
+// quitó una vez por error y la app quedó por detrás de los botones. Ver CLAUDE.md.
+{
+  const layout = fs.readFileSync(path.join(projectRoot, 'app/_layout.tsx'), 'utf8');
+  if (!layout.includes('<AndroidNavBarGuard')) {
+    errors.push('[android-navbar] app/_layout.tsx debe envolver la app en <AndroidNavBarGuard> (ver CLAUDE.md)');
+  }
+  if (/paddingBottom:[^,}]*insets\.bottom/.test(layout)) {
+    errors.push('[android-navbar] app/_layout.tsx no debe reservar insets.bottom a mano: lo hace AndroidNavBarGuard');
+  }
+}
+
 if (warnings.length) {
   console.warn('WARNINGS:\n' + warnings.map(w => '- ' + w).join('\n'));
 }

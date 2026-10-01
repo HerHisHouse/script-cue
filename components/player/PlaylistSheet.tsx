@@ -3,7 +3,7 @@ import { View, Text, Pressable, StyleSheet, Modal } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { BlurView } from 'expo-blur';
 import { ANDROID_BLUR_METHOD } from '@/utils/blur';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import DraggableFlatList, { RenderItemParams } from 'react-native-draggable-flatlist';
 import { GripVertical, Headphones, Video as VideoIcon } from 'lucide-react-native';
 
@@ -27,7 +27,6 @@ interface PlaylistSheetProps {
 }
 
 export function PlaylistSheet({ visible, onClose, tracks, onReorder, onSelectTrack, isDark }: PlaylistSheetProps) {
-  const insets = useSafeAreaInsets();
   const textPrimary = isDark ? '#ffffff' : '#241d3d';
   const textSecondary = isDark ? '#a0a0c0' : '#5c5678';
   const rowBorder = isDark ? 'rgba(255,255,255,0.12)' : 'rgba(120,100,160,0.16)';
@@ -73,7 +72,8 @@ export function PlaylistSheet({ visible, onClose, tracks, onReorder, onSelectTra
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
       <GestureHandlerRootView style={{ flex: 1 }}>
         <Pressable style={styles.backdrop} onPress={onClose} />
-        <View style={styles.sheet}>
+        {/* SafeAreaView nativo: mide el solape real con la barra del sistema dentro del Modal. */}
+        <SafeAreaView edges={{ bottom: 'maximum' }} style={[styles.sheet, { paddingBottom: 20 }]}>
           <BlurView experimentalBlurMethod={ANDROID_BLUR_METHOD} intensity={isDark ? 55 : 75} tint={isDark ? 'dark' : 'light'} style={StyleSheet.absoluteFill} />
           <View style={[StyleSheet.absoluteFill, { backgroundColor: isDark ? 'rgba(124,106,247,0.40)' : 'rgba(235,230,245,0.40)' }]} />
           <View style={styles.handle} />
@@ -84,9 +84,9 @@ export function PlaylistSheet({ visible, onClose, tracks, onReorder, onSelectTra
             onDragEnd={({ data }) => onReorder(data)}
             keyExtractor={(item) => item.id}
             renderItem={renderItem}
-            contentContainerStyle={{ paddingHorizontal: 20, paddingBottom: Math.max(insets.bottom, 20) }}
+            contentContainerStyle={{ paddingHorizontal: 20 }}
           />
-        </View>
+        </SafeAreaView>
       </GestureHandlerRootView>
     </Modal>
   );
