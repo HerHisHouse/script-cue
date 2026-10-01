@@ -6,7 +6,6 @@ import {
   Text,
   TouchableOpacity,
   useWindowDimensions,
-  Platform,
 } from 'react-native';
 import { X } from 'lucide-react-native';
 import { getShadowStyle } from '@/utils/cardShadow';
@@ -20,12 +19,12 @@ type Props = {
   minZoom: number;
   maxZoom: number;
   /**
-   * Fase M1 (RS, solo iOS): factor de conversión de `zoom` (eje "raw" de
+   * Fase M1 (RS): factor de conversión de `zoom` (eje "raw" de
    * vision-camera) a multiplicador real visible ("x"). En dispositivos
    * multi-lente, el eje raw no siempre coincide 1:1 con el multiplicador
    * óptico real — dividir por este valor (el raw de la lente gran angular
-   * neutra) da el número correcto. Ignorado en Android (sigue con la
-   * fórmula original basada en la posición del slider).
+   * neutra) da el número correcto. En Android (Fase M6) `zoom` ya llega en el
+   * eje visible y casting.tsx pasa 1.
    */
   displayScale?: number;
   onZoomChange: (value: number) => void;
@@ -98,12 +97,9 @@ export function VerticalZoomSlider({
   // Height of the filled (active) portion of the track
   const filledHeight = Math.max(0, SLIDER_HEIGHT - 8 - (SLIDER_HEIGHT * (1 - currentRatio)));
 
-  // iOS (vision-camera): `zoom` ya es multiplicador real, se convierte con
-  // displayScale. Android (expo-camera): fórmula original sin cambios,
-  // basada en la posición del slider dentro del rango fijo 0.5x-2x.
-  const zoomLabel = Platform.OS === 'ios'
-    ? `${(zoom / displayScale).toFixed(1)}x`
-    : `${(0.5 + currentRatio * 1.5).toFixed(1)}x`;
+  // `zoom` ya es multiplicador real (iOS) o eje visible (Android); displayScale
+  // lo pasa a "x".
+  const zoomLabel = `${(zoom / displayScale).toFixed(1)}x`;
 
   return (
     <View style={[styles.container, isLandscape && styles.containerLandscape]} pointerEvents="box-none">
