@@ -44,6 +44,7 @@ import { makeHeaderMenuStyles } from '@/components/HeaderMenu';
 import { rf, rp } from '@/utils/responsive';
 import * as FileSystem from 'expo-file-system/legacy';
 import { BottomSheetMenu } from '@/components/BottomSheetMenu';
+import { isPlayerLandscape, playerContentWidth, playerControlsScale, playerDiscSize, playerVideoFrameHeight } from '@/utils/playerLayout';
 import { BottomSheetOption } from '@/components/BottomSheetOption';
 import * as Sharing from 'expo-sharing';
 import { useAuth } from '@/contexts/AuthContext';
@@ -235,6 +236,15 @@ export default function RecordingsScreen() {
   const [miniPlayerVisible, setMiniPlayerVisible] = useState(false);
   // Dimensiones reactivas (se actualizan al rotar), usadas por el vídeo en pantalla completa.
   const { width: liveWindowWidth, height: liveWindowHeight } = useWindowDimensions();
+  // Reproductor sin scroll: se miden el cuerpo (bajo la cabecera) y el área del
+  // disco/vídeo para ajustar todo al hueco real (ver utils/playerLayout.ts).
+  // Hasta medirlos se usa una estimación y el contenido se mantiene invisible, para
+  // no mostrar un primer fotograma con medidas incorrectas.
+  const [playerBodyMeasured, setPlayerBody] = useState<{ w: number; h: number } | null>(null);
+  const [playerMediaMeasured, setPlayerMedia] = useState<{ w: number; h: number } | null>(null);
+  const playerBody = playerBodyMeasured ?? { w: liveWindowWidth, h: liveWindowHeight * 0.8 };
+  const playerMedia = playerMediaMeasured ?? { w: liveWindowWidth, h: liveWindowHeight * 0.4 };
+  const playerMeasured = playerBodyMeasured !== null && playerMediaMeasured !== null;
 
   const [showHeaderMenu, setShowHeaderMenu] = useState(false);
   const [headerHeight, setHeaderHeight] = useState(0);
@@ -2745,8 +2755,9 @@ export default function RecordingsScreen() {
   const playerHeaderTint = isDark ? '#FFFFFF' : '#241d3d';
   const playerGlassBg = isDark ? 'rgba(124,106,247,0.14)' : 'rgba(230,230,236,0.6)';
   const playerGlassBorder = isDark ? 'rgba(255,255,255,0.2)' : 'rgba(42,27,71,0.18)';
-  const videoFrameHeight = Math.min(1450 * (windowWidth / 1284), Dimensions.get('window').height * 0.42);
-  const waveformWidth = windowWidth - rp(48);
+  const playerLandscape = isPlayerLandscape(playerBody.w, playerBody.h);
+  const playerScale = playerControlsScale(playerBody.h, isVideoTrack, playerLandscape);
+  const playerContentW = playerContentWidth(playerLandscape ? playerBody.w / 2 : playerBody.w);
 
   // Al entrar en pantalla completa de vídeo, se libera el bloqueo de orientación de la
   // app para que el usuario pueda girar el móvil y ver el vídeo en horizontal (16:9).
@@ -3250,12 +3261,15 @@ export default function RecordingsScreen() {
               resizeMode="cover"
               style={{ flex: 1 }}
             >
-              <View
+              <SafeAreaView
+                // Inset inferior medido en nativo dentro de la ventana del Modal (ver CLAUDE.md).
+                edges={{ bottom: isVideoTrack && isFullscreen ? 'off' : 'maximum' }}
                 style={{
                   flex: 1,
                   paddingTop: isVideoTrack && isFullscreen ? 0 : insets.top,
                   paddingLeft: isVideoTrack && isFullscreen ? 0 : insets.left,
                   paddingRight: isVideoTrack && isFullscreen ? 0 : insets.right,
+                  paddingBottom: isVideoTrack && isFullscreen ? 0 : rp(12),
                 }}
               >
                 {/* Header: chevron glass (minimiza, sigue reproduciendo) | REPRODUCIENDO AHORA | X glass (cierra) — oculto en pantalla completa de vídeo */}
@@ -3283,21 +3297,22 @@ export default function RecordingsScreen() {
                   </View>
                 )}
 
-                <ScrollView
-                  contentContainerStyle={{
-                    flexGrow: 1,
-                    paddingBottom: isVideoTrack && isFullscreen ? 0 : Math.max(insets.bottom, rp(12)),
-                  }}
-                  bounces={false}
-                  showsVerticalScrollIndicator={false}
-                  scrollEnabled={!(isVideoTrack && isFullscreen)}
+                {/* Sin scroll: área de disco/vídeo (se queda con el hueco sobrante) + controles
+                    escalados al alto disponible. En horizontal, uno al lado del otro. */}
+                <View
+                  style={{ flex: 1, flexDirection: playerLandscape && !(isVideoTrack && isFullscreen) ? 'row' : 'column', opacity: playerMeasured ? 1 : 0 }}
+                  onLayout={(e) => setPlayerBody({ w: e.nativeEvent.layout.width, h: e.nativeEvent.layout.height })}
                 >
+                  <View
+                    style={{ flex: 1, alignItems: 'center', justifyContent: isVideoTrack && !playerLandscape ? 'flex-start' : 'center' }}
+                    onLayout={(e) => setPlayerMedia({ w: e.nativeEvent.layout.width, h: e.nativeEvent.layout.height })}
+                  >
                   {/* Disco (audio) o frame de vídeo a sangre, pegado bajo el header */}
                   {isVideoTrack ? (
                     <View style={{ position: 'relative' }}>
                     <PlayerVideoFrame
-                      height={isFullscreen ? liveWindowHeight : videoFrameHeight}
-                      width={isFullscreen ? liveWindowWidth : windowWidth}
+                      height={isFullscreen ? liveWindowHeight : playerVideoFrameHeight(playerMedia.w, playerMedia.h)}
+                      width={isFullscreen ? liveWindowWidth : playerMedia.w}
                     >
                       {videoUrlLoading && (
                         <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
@@ -3379,11 +3394,12 @@ export default function RecordingsScreen() {
                               isDark
                             />
                           </View>
-                          <View
+                          <SafeAreaView
+                            edges={{ bottom: 'maximum' }}
                             style={[
                               styles.videoBottomBar,
                               {
-                                paddingBottom: Math.max(insets.bottom, 14),
+                                paddingBottom: 14,
                                 paddingLeft: insets.left + 20,
                                 paddingRight: insets.right + 20,
                               },
@@ -3402,7 +3418,7 @@ export default function RecordingsScreen() {
                               width={Math.max(0, liveWindowWidth - (insets.left + 20) - (insets.right + 20))}
                               onSeek={seekToRatio}
                             />
-                          </View>
+                          </SafeAreaView>
                         </Animated.View>
                       </>
                     ) : (
@@ -3430,7 +3446,7 @@ export default function RecordingsScreen() {
                             progress={playerProgress}
                             currentLabel={formatDuration(Math.floor((positionMillis || 0) / 1000))}
                             durationLabel={formatDuration(Math.floor((durationMillis || 0) / 1000))}
-                            width={Math.max(0, windowWidth - 32)}
+                            width={Math.max(0, playerMedia.w - 32)}
                             onSeek={seekToRatio}
                           />
                         </View>
@@ -3438,21 +3454,20 @@ export default function RecordingsScreen() {
                     )}
                     </View>
                   ) : (
-                    <View style={{ alignItems: 'center', paddingTop: rp(24) }}>
-                      <PlayerDisc
-                        progress={playerProgress}
-                        filename={currentTrack?.title || 'Sin título'}
-                        isDark={isDark}
-                        size={Math.min(windowWidth * 0.72, 300)}
-                      />
-                    </View>
+                    <PlayerDisc
+                      progress={playerProgress}
+                      filename={currentTrack?.title || 'Sin título'}
+                      isDark={isDark}
+                      size={playerDiscSize(playerMedia.w, playerMedia.h, playerLandscape)}
+                    />
                   )}
+                  </View>
 
                   {/* En pantalla completa de vídeo se ocultan título/waveform/controles, solo header + vídeo */}
                   {!(isVideoTrack && isFullscreen) && (
-                    <>
+                    <View style={{ width: playerLandscape ? '50%' : '100%', alignItems: 'center', justifyContent: 'center' }}>
                       {/* Título + subtítulo (fecha · duración) */}
-                      <View style={{ paddingHorizontal: rp(24), alignItems: 'center', marginTop: rp(20) }}>
+                      <View style={{ paddingHorizontal: 24, alignItems: 'center', marginTop: 20 * playerScale, maxWidth: playerContentW + 48 }}>
                         <Text style={[styles.playerTitle, { color: playerHeaderTint }]} numberOfLines={1}>
                           {currentTrack?.title || 'Sin título'}
                         </Text>
@@ -3467,15 +3482,16 @@ export default function RecordingsScreen() {
 
                       {/* Waveform + tiempos: solo para audio, en vídeo el progreso va superpuesto sobre el propio vídeo */}
                       {!isVideoTrack && (
-                        <View style={{ marginTop: rp(20), alignItems: 'center' }}>
+                        <View style={{ marginTop: 20 * playerScale, alignItems: 'center' }}>
                           <AnimatedWaveform
                             progress={playerProgress}
                             isDark={isDark}
-                            width={waveformWidth}
+                            width={playerContentW}
+                            heightScale={playerScale}
                             seed={currentTrack?.id}
                             onSeek={seekToRatio}
                           />
-                          <View style={[styles.progressRow, { width: waveformWidth, marginTop: rp(8) }]}>
+                          <View style={[styles.progressRow, { width: playerContentW, marginTop: 8 * playerScale }]}>
                             <Text style={[styles.timeText, { color: playerHeaderTint }]}>{formatDuration(Math.floor((positionMillis || 0) / 1000))}</Text>
                             <View style={{ flex: 1 }} />
                             <Text style={[styles.timeText, { color: playerHeaderTint }]}>{formatDuration(Math.floor((durationMillis || 0) / 1000))}</Text>
@@ -3486,9 +3502,10 @@ export default function RecordingsScreen() {
                       {/* Cápsula de controles secundarios: al pulsar la velocidad, la propia
                           cápsula hace un swap animado a un selector de velocidad en el
                           mismo espacio, en vez de abrir un panel aparte debajo. */}
-                      <View style={{ marginTop: rp(24), paddingHorizontal: rp(40) }}>
+                      <View style={{ marginTop: 24 * playerScale, width: Math.max(0, playerContentW - 32) }}>
                         <PlayerControlsCapsule
                           isDark={isDark}
+                          scale={playerScale}
                           onShare={() => { if (currentTrack) handleShare(currentTrack); }}
                           playbackRate={playbackRate}
                           showSpeedSelector={showSpeedMenu}
@@ -3501,7 +3518,7 @@ export default function RecordingsScreen() {
                       </View>
 
                       {/* Fila de transporte principal */}
-                      <View style={{ marginTop: rp(28), marginBottom: rp(24) }}>
+                      <View style={{ marginTop: 28 * playerScale, marginBottom: 24 * playerScale }}>
                         <PlayerTransportRow
                           isPlaying={isPlaying}
                           isLoading={isMediaLoading}
@@ -3509,12 +3526,13 @@ export default function RecordingsScreen() {
                           onPrevious={playPrev}
                           onNext={playNext}
                           isDark={isDark}
+                          scale={playerScale}
                         />
                       </View>
-                    </>
+                    </View>
                   )}
-                </ScrollView>
-              </View>
+                </View>
+              </SafeAreaView>
             </ImageBackground>
           </Animated.View>
 

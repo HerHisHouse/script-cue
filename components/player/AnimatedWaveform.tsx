@@ -10,6 +10,7 @@ interface AnimatedWaveformProps {
   amplitudes?: number[]; // si hay datos reales de picos de audio, pasarlos aquí (0 a 1 cada uno)
   seed?: string; // id del archivo, para que la forma pseudo-aleatoria sea estable entre renders
   onSeek?: (ratio: number) => void;
+  heightScale?: number; // escala según el alto disponible (ver utils/playerLayout.ts)
 }
 
 const ACCENT = '#a78bfa';
@@ -31,7 +32,7 @@ function pseudoRandom(seedStr: string, index: number) {
   return Math.abs(Math.sin(h));
 }
 
-export function AnimatedWaveform({ progress, isDark, width, amplitudes, seed = 'default', onSeek }: AnimatedWaveformProps) {
+export function AnimatedWaveform({ progress, isDark, width, amplitudes, seed = 'default', onSeek, heightScale = 1 }: AnimatedWaveformProps) {
   const barCount = Math.max(24, Math.min(60, Math.floor(width / BAR_PITCH)));
   const widthRef = useRef(width);
   widthRef.current = width;
@@ -81,10 +82,10 @@ export function AnimatedWaveform({ progress, isDark, width, amplitudes, seed = '
       minDist={0}
       enabled={!!onSeek}
     >
-      <View style={styles.touchArea}>
+      <View style={[styles.touchArea, { paddingVertical: 14 * heightScale }]}>
         <View style={[styles.row, { width }]}>
           {bars.map((amp, i) => {
-            const height = 14 + amp * 46;
+            const height = (14 + amp * 46) * heightScale;
             let color;
             if (i < playedCount) color = ACCENT2;
             else if (i === playedCount) color = ACCENT;
@@ -109,6 +110,6 @@ export function AnimatedWaveform({ progress, isDark, width, amplitudes, seed = '
 }
 
 const styles = StyleSheet.create({
-  touchArea: { paddingVertical: 14, justifyContent: 'center' },
+  touchArea: { justifyContent: 'center' },
   row: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center' },
 });

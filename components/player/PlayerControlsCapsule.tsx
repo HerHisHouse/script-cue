@@ -1,8 +1,9 @@
 import React, { useEffect, useRef } from 'react';
-import { View, Pressable, Text, StyleSheet, Animated, Easing } from 'react-native';
+import { View, Pressable, Text, StyleSheet, Animated, Easing, Platform } from 'react-native';
 import { BlurView } from 'expo-blur';
 import { ANDROID_BLUR_METHOD } from '@/utils/blur';
 import { Share, Repeat, Repeat1, ListMusic } from 'lucide-react-native';
+import { PLAYER_SURFACE_DARK, PLAYER_SURFACE_LIGHT } from './PlayerDisc';
 
 const ACCENT = '#a78bfa';
 const ACCENT2 = '#7c6af7';
@@ -19,11 +20,15 @@ interface PlayerControlsCapsuleProps {
   loopMode: 'off' | 'all' | 'one';
   onCycleLoop: () => void;
   onOpenPlaylist: () => void;
+  /** Escala según el alto disponible (ver utils/playerLayout.ts). */
+  scale?: number;
 }
 
 export function PlayerControlsCapsule({
-  isDark, onShare, playbackRate, showSpeedSelector, onToggleSpeedSelector, onSelectRate, loopMode, onCycleLoop, onOpenPlaylist,
+  isDark, onShare, playbackRate, showSpeedSelector, onToggleSpeedSelector, onSelectRate, loopMode, onCycleLoop, onOpenPlaylist, scale = 1,
 }: PlayerControlsCapsuleProps) {
+  const iconSize = 22 * scale;
+  const slot = { width: 50 * scale, height: 50 * scale };
   const iconColor = isDark ? '#ffffff' : '#372a5c';
   const activeColor = isDark ? ACCENT : ACCENT2;
 
@@ -46,8 +51,14 @@ export function PlayerControlsCapsule({
   const speedTranslateY = anim.interpolate({ inputRange: [0, 1], outputRange: [8, 0] });
 
   return (
-    <View style={styles.wrapper}>
-      <BlurView experimentalBlurMethod={ANDROID_BLUR_METHOD} intensity={isDark ? 55 : 50} tint={isDark ? 'dark' : 'light'} style={StyleSheet.absoluteFill} />
+    <View style={[styles.wrapper, { height: 60 * scale, borderRadius: 30 * scale }]}>
+      {/* En Android el blur muestra lo que hay detrás del Modal del reproductor (la
+          lista de Grabaciones), así que allí va un fondo sólido. */}
+      {Platform.OS === 'android' ? (
+        <View style={[StyleSheet.absoluteFill, { backgroundColor: isDark ? PLAYER_SURFACE_DARK : PLAYER_SURFACE_LIGHT }]} />
+      ) : (
+        <BlurView experimentalBlurMethod={ANDROID_BLUR_METHOD} intensity={isDark ? 55 : 50} tint={isDark ? 'dark' : 'light'} style={StyleSheet.absoluteFill} />
+      )}
       <View
         style={[
           StyleSheet.absoluteFill,
@@ -59,21 +70,21 @@ export function PlayerControlsCapsule({
         style={[styles.row, { opacity: mainOpacity, transform: [{ translateY: mainTranslateY }] }]}
         pointerEvents={showSpeedSelector ? 'none' : 'auto'}
       >
-        <Pressable style={styles.slot} onPress={onShare} hitSlop={12} accessibilityLabel="Compartir">
-          <Share size={22} color={iconColor} />
+        <Pressable style={[styles.slot, slot]} onPress={onShare} hitSlop={12} accessibilityLabel="Compartir">
+          <Share size={iconSize} color={iconColor} />
         </Pressable>
-        <Pressable style={styles.slot} onPress={onToggleSpeedSelector} hitSlop={12} accessibilityLabel={`Velocidad: ${playbackRate}x`}>
+        <Pressable style={[styles.slot, slot]} onPress={onToggleSpeedSelector} hitSlop={12} accessibilityLabel={`Velocidad: ${playbackRate}x`}>
           <Text style={[styles.speedLabel, { color: playbackRate !== 1 ? activeColor : iconColor }]}>{playbackRate}x</Text>
         </Pressable>
-        <Pressable style={styles.slot} onPress={onCycleLoop} hitSlop={12} accessibilityLabel="Modo de repetición">
+        <Pressable style={[styles.slot, slot]} onPress={onCycleLoop} hitSlop={12} accessibilityLabel="Modo de repetición">
           {loopMode === 'one' ? (
-            <Repeat1 size={22} color={activeColor} />
+            <Repeat1 size={iconSize} color={activeColor} />
           ) : (
-            <Repeat size={22} color={loopMode === 'all' ? activeColor : iconColor} />
+            <Repeat size={iconSize} color={loopMode === 'all' ? activeColor : iconColor} />
           )}
         </Pressable>
-        <Pressable style={styles.slot} onPress={onOpenPlaylist} hitSlop={12} accessibilityLabel="Playlist">
-          <ListMusic size={22} color={iconColor} />
+        <Pressable style={[styles.slot, slot]} onPress={onOpenPlaylist} hitSlop={12} accessibilityLabel="Playlist">
+          <ListMusic size={iconSize} color={iconColor} />
         </Pressable>
       </Animated.View>
 
@@ -88,6 +99,7 @@ export function PlayerControlsCapsule({
               key={rate}
               style={({ pressed }) => [
                 styles.rateSlot,
+                { height: 44 * scale },
                 selected && { backgroundColor: isDark ? 'rgba(255,255,255,0.16)' : 'rgba(124,106,247,0.16)' },
                 pressed && { opacity: 0.7 },
               ]}
@@ -108,8 +120,6 @@ export function PlayerControlsCapsule({
 
 const styles = StyleSheet.create({
   wrapper: {
-    height: 60,
-    borderRadius: 30,
     overflow: 'hidden',
     borderWidth: 1,
     borderColor: 'rgba(167,139,250,0.25)',
@@ -124,12 +134,11 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-around',
   },
-  slot: { alignItems: 'center', justifyContent: 'center', width: 50, height: 50 },
+  slot: { alignItems: 'center', justifyContent: 'center' },
   speedLabel: { fontSize: 15, fontWeight: '700' },
   speedRow: { paddingHorizontal: 6 },
   rateSlot: {
     flex: 1,
-    height: 44,
     marginHorizontal: 2,
     borderRadius: 18,
     alignItems: 'center',
