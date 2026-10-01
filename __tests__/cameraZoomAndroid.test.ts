@@ -1,0 +1,100 @@
+import {
+  clampDisplayZoom,
+  isBenignZoomError,
+  pickAndroidDevice,
+  displayToDeviceZoom,
+  formatAndroidZoomLabel,
+  resolveLens,
+  PRACTICAL_MAX_DISPLAY_ZOOM,
+  ULTRA_WIDE_CROSSOVER_ZOOM,
+} from '../utils/cameraZoomAndroid';
+
+describe('cameraZoomAndroid (Galaxy A53)', () => {
+  it('reparte 0.5x → 1x sobre el zoom 1 → 1.81 de la ultra angular', () => {
+    expect(displayToDeviceZoom(0.5, 'ultra-wide')).toBeCloseTo(1);
+    expect(displayToDeviceZoom(1, 'ultra-wide')).toBeCloseTo(ULTRA_WIDE_CROSSOVER_ZOOM);
+    expect(displayToDeviceZoom(2.5, 'wide')).toBe(2.5);
+  });
+
+  it('cruza a la principal en 1x y vuelve con histéresis', () => {
+    expect(resolveLens(0.99, 'ultra-wide', false)).toBe('ultra-wide');
+    expect(resolveLens(1, 'ultra-wide', false)).toBe('wide');
+    expect(resolveLens(0.97, 'wide', false)).toBe('wide');
+    expect(resolveLens(0.9, 'wide', false)).toBe('ultra-wide');
+  });
+
+  it('grabando nunca cambia de lente y recorta al rango de la activa', () => {
+    expect(resolveLens(3, 'ultra-wide', true)).toBe('ultra-wide');
+    expect(resolveLens(0.5, 'wide', true)).toBe('wide');
+    expect(clampDisplayZoom(3, 'ultra-wide', true)).toBe(1);
+    expect(clampDisplayZoom(0.5, 'wide', true)).toBe(1);
+    expect(clampDisplayZoom(99, 'wide', false)).toBe(PRACTICAL_MAX_DISPLAY_ZOOM);
+  });
+
+  it('etiquetas', () => {
+    expect(formatAndroidZoomLabel(0.5)).toBe('0.5x');
+    expect(formatAndroidZoomLabel(1)).toBe('1x');
+    expect(formatAndroidZoomLabel(2.46)).toBe('2.5x');
+  });
+});
+
+describe('isBenignZoomError', () => {
+  it('solo reconoce los dos errores conocidos de CameraX', () => {
+    expect(isBenignZoomError(new Error('androidx.camera.core.CameraControl$OperationCanceledException: Camera is not active.'))).toBe(true);
+    expect(isBenignZoomError(new Error('OperationCanceledException: Cancelled due to another zoom value being set'))).toBe(true);
+    expect(isBenignZoomError(new Error('Camera is disconnected'))).toBe(false);
+    expect(isBenignZoomError(new Error('CameraAccessException: CAMERA_ERROR'))).toBe(false);
+  });
+});
+
+describe('pickAndroidDevice (A53)', () => {
+  const devices = [
+    { id: '0', position: 'back', type: 'wide-angle', isVirtualDevice: false },
+    { id: '1', position: 'front', type: 'wide-angle', isVirtualDevice: false },
+    { id: '2', position: 'back', type: 'ultra-wide-angle', isVirtualDevice: false },
+    { id: '3', position: 'front', type: 'telephoto', isVirtualDevice: false },
+  ];
+  it('elige por id y la frontal principal', () => {
+    expect(pickAndroidDevice(devices, 'back', 'wide')?.id).toBe('0');
+    expect(pickAndroidDevice(devices, 'back', 'ultra-wide')?.id).toBe('2');
+    expect(pickAndroidDevice(devices, 'front', 'wide')?.id).toBe('1');
+  });
+});
+
+describe('pickAndroidDevice (otros móviles)', () => {
+  it('no toma la id 2 como ultra angular si es la frontal', () => {
+    const devices = [
+      { id: '0', position: 'back', type: 'wide-angle', isVirtualDevice: false },
+      { id: '1', position: 'back', type: 'telephoto', isVirtualDevice: false },
+      { id: '2', position: 'front', type: 'wide-angle', isVirtualDevice: false },
+    ];
+    expect(pickAndroidDevice(devices, 'back', 'ultra-wide')).toBeUndefined();
+    expect(pickAndroidDevice(devices, 'back', 'wide')?.id).toBe('0');
+    // La id 1 es trasera: la frontal se busca por posición.
+    expect(pickAndroidDevice(devices, 'front', 'wide')?.id).toBe('2');
+  });
+
+  it('no toma la id 2 como ultra angular si es un teleobjetivo trasero', () => {
+    const devices = [
+      { id: '0', position: 'back', type: 'wide-angle', isVirtualDevice: false },
+      { id: '1', position: 'front', type: 'wide-angle', isVirtualDevice: false },
+      { id: '2', position: 'back', type: 'telephoto', isVirtualDevice: false },
+      { id: '4', position: 'back', type: 'ultra-wide-angle', isVirtualDevice: false },
+    ];
+    expect(pickAndroidDevice(devices, 'back', 'ultra-wide')?.id).toBe('4');
+  });
+
+  it('si la id 0 es la frontal, la principal trasera se busca por tipo', () => {
+    const devices = [
+      { id: '0', position: 'front', type: 'wide-angle', isVirtualDevice: false },
+      { id: '5', position: 'back', type: 'wide-angle', isVirtualDevice: false },
+    ];
+    expect(pickAndroidDevice(devices, 'back', 'wide')?.id).toBe('5');
+    expect(pickAndroidDevice(devices, 'back', 'ultra-wide')).toBeUndefined();
+  });
+
+  it('sin ninguna trasera de tipo wide-angle, usa la primera trasera', () => {
+    const devices = [{ id: '7', position: 'back', type: 'telephoto', isVirtualDevice: false }];
+    expect(pickAndroidDevice(devices, 'back', 'wide')?.id).toBe('7');
+  });
+});
