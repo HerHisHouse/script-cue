@@ -211,6 +211,10 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     maxHeight: '80%', // To prevent it from taking the whole screen if there are many items
+    // Mismo radio que `clip`: sin él, la sombra (boxShadow en Android) es un rectángulo
+    // y asoma por las esquinas superiores redondeadas del panel.
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
   },
   clip: {
     borderTopLeftRadius: 20,
