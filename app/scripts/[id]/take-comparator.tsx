@@ -6,8 +6,6 @@ import {
 import { useDialogMaxHeight, dialogScrollStyle } from '@/hooks/useDialogMaxHeight';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter, useLocalSearchParams } from 'expo-router';
-import { BlurView } from 'expo-blur';
-import { ANDROID_BLUR_METHOD } from '@/utils/blur';
 import { Video, ResizeMode } from 'expo-av';
 import * as FileSystem from 'expo-file-system/legacy';
 import * as Sharing from 'expo-sharing';
@@ -20,6 +18,7 @@ import { supabase } from '@/utils/supabase';
 import { getSettings } from '@/utils/appSettings';
 import { rf, rp } from '@/utils/responsive';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
+import { ModalGlassFill } from '@/components/ModalGlassFill';
 
 type TakeStatus = 'pending_processing' | 'processing_preview' | 'ready' | 'error';
 
@@ -834,7 +833,7 @@ export default function TakeComparatorScreen() {
         <Modal visible transparent animationType="fade" supportedOrientations={['portrait', 'landscape', 'landscape-left', 'landscape-right']}>
           <View style={styles.renameModalOverlay}>
             <View style={[styles.renameModalClip, { borderColor: glassBorder }]}>
-              <BlurView experimentalBlurMethod={ANDROID_BLUR_METHOD} intensity={isDark ? 55 : 65} tint={isDark ? 'dark' : 'light'} style={[StyleSheet.absoluteFill, { borderRadius: rp(16) }]} />
+              <ModalGlassFill isDark={isDark} intensity={isDark ? 55 : 65} borderRadius={rp(16)} />
               <View style={[StyleSheet.absoluteFill, { backgroundColor: glassBg, borderRadius: rp(16) }]} />
               <View style={styles.renameModalContent}>
                 <Text style={[styles.renameModalTitle, { color: fg }]}>Renombrar toma</Text>
@@ -864,7 +863,7 @@ export default function TakeComparatorScreen() {
         <Modal visible transparent animationType="fade" supportedOrientations={['portrait', 'landscape', 'landscape-left', 'landscape-right']}>
           <View style={styles.renameModalOverlay}>
             <View style={[styles.renameModalClip, { borderColor: glassBorder, maxHeight: dialogMaxHeight }]}>
-              <BlurView experimentalBlurMethod={ANDROID_BLUR_METHOD} intensity={isDark ? 55 : 65} tint={isDark ? 'dark' : 'light'} style={[StyleSheet.absoluteFill, { borderRadius: rp(16) }]} />
+              <ModalGlassFill isDark={isDark} intensity={isDark ? 55 : 65} borderRadius={rp(16)} />
               <View style={[StyleSheet.absoluteFill, { backgroundColor: glassBg, borderRadius: rp(16) }]} />
               <ScrollView style={dialogScrollStyle} bounces={false}>
               <View style={styles.renameModalContent}>

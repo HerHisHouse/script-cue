@@ -25,6 +25,7 @@ import { rf, rp } from '@/utils/responsive';
 import { BETA_LIMITS, isUserBetaLimited } from '@/constants/betaLimits';
 import { BottomSheetMenu } from '@/components/BottomSheetMenu';
 import { BottomSheetOption } from '@/components/BottomSheetOption';
+import { ModalGlassFill } from '@/components/ModalGlassFill';
 
 type SortOrder = 'az' | 'last_opened' | 'date';
 const SORT_STORAGE_KEY = 'guiones_sort_order';
@@ -921,7 +922,7 @@ export default function IndexScreen() {
                 { borderColor: isDark ? 'rgba(167,139,250,0.25)' : 'rgba(124,106,247,0.15)' },
               ]}
             >
-              <BlurView experimentalBlurMethod={ANDROID_BLUR_METHOD} intensity={isDark ? 55 : 65} tint={isDark ? 'dark' : 'light'} style={StyleSheet.absoluteFill} />
+              <ModalGlassFill isDark={isDark} intensity={isDark ? 55 : 65} />
               <View
                 style={[
                   StyleSheet.absoluteFill,

@@ -62,6 +62,7 @@ import { getIntroPreferences, setIntroPreference } from '@/utils/introPreference
 import { setAudioModeForPlayback } from '@/utils/audioMode';
 import { rf, rp } from '@/utils/responsive';
 import { trackEvent } from '@/utils/analytics';
+import { ModalGlassFill } from '@/components/ModalGlassFill';
 
 const COACH_DISCLAIMER_KEY = '@coach_disclaimer_shown';
 
@@ -962,7 +963,7 @@ export default function CoachModeScreen() {
          supportedOrientations={['portrait', 'landscape', 'landscape-left', 'landscape-right']}>
           <View style={styles.modalOverlay}>
             <View style={[styles.modalContent, { borderWidth: 1, borderColor: cardBorder, overflow: 'hidden', maxHeight: dialogMaxHeight }]}>
-              <BlurView experimentalBlurMethod={ANDROID_BLUR_METHOD} intensity={isDark ? 55 : 65} tint={isDark ? 'dark' : 'light'} style={StyleSheet.absoluteFill} />
+              <ModalGlassFill isDark={isDark} intensity={isDark ? 55 : 65} />
               <View style={[StyleSheet.absoluteFill, { backgroundColor: modalOverlayTint }]} />
               <ScrollView style={dialogScrollStyle} contentContainerStyle={{ alignItems: 'center' }} bounces={false}>
               <View style={styles.modalHeader}>

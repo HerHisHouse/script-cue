@@ -24,8 +24,6 @@ import {
 
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter, useLocalSearchParams, Stack } from 'expo-router';
-import { BlurView } from 'expo-blur';
-import { ANDROID_BLUR_METHOD } from '@/utils/blur';
 import { GlassCardSurface } from '@/components/GlassCardSurface';
 import { GlassBackdrop } from '@/components/GlassBackdrop';
 import { withAlpha } from '@/utils/colorUtils';
@@ -85,6 +83,7 @@ import {
 } from '@/utils/sceneConfig';
 import { trackEvent } from '@/utils/analytics';
 import { useAndroidNavStripColor } from '@/components/AndroidNavBarGuard';
+import { ModalGlassFill } from '@/components/ModalGlassFill';
 
 type SceneItem = ParsedScript['scenes'][0];
 
@@ -3577,7 +3576,7 @@ export default function CastingModeScreen() {
           >
             <View style={[styles.qualityShadowWrapper, getCardShadow(isDark)]}>
               <View style={[styles.qualityClip, { borderColor: glassBorder }]}>
-                <BlurView experimentalBlurMethod={ANDROID_BLUR_METHOD} intensity={isDark ? 55 : 65} tint={isDark ? 'dark' : 'light'} style={[StyleSheet.absoluteFill, { borderRadius: rp(20) }]} />
+                <ModalGlassFill isDark={isDark} intensity={isDark ? 55 : 65} borderRadius={rp(20)} />
                 <View style={[StyleSheet.absoluteFill, { backgroundColor: glassBg, borderRadius: rp(20) }]} />
                 <View style={styles.qualitySection}>
               <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: rp(16), gap: rp(8) }}>

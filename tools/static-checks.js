@@ -71,6 +71,27 @@ for (const t of targets) {
   if (fs.existsSync(t)) walk(t);
 }
 
+// 7) BlurView dentro de un <Modal>: en Android no difumina nada propio y deja ver la
+// pantalla de detrás (menús muy translúcidos). Ahí va <ModalGlassFill>. Ver CLAUDE.md.
+function checkBlurInsideModal(dir) {
+  for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+    const full = path.join(dir, entry.name);
+    if (entry.isDirectory()) { checkBlurInsideModal(full); continue; }
+    if (!/\.(tsx|jsx)$/.test(entry.name)) continue;
+    let depth = 0;
+    fs.readFileSync(full, 'utf8').split('\n').forEach((line, i) => {
+      if (/^\s*(\/\/|\/\*|\*|\{\/\*)/.test(line)) return; // comentarios
+      depth +=(line.match(/<Modal\b/g) || []).length;
+      if (depth > 0 && line.includes('<BlurView')) {
+        errors.push(`[modal-blur] BlurView dentro de un <Modal> en ${path.relative(projectRoot, full)}:${i + 1}; usa <ModalGlassFill> (ver CLAUDE.md)`);
+      }
+      depth -= (line.match(/<\/Modal>/g) || []).length;
+    });
+  }
+}
+checkBlurInsideModal(path.join(projectRoot, 'app'));
+checkBlurInsideModal(path.join(projectRoot, 'components'));
+
 // 6) Barra de navegación de Android: la raíz debe pasar por AndroidNavBarGuard
 // (contenido por encima de la barra de botones; hasta abajo con gestos). Ya se
 // quitó una vez por error y la app quedó por detrás de los botones. Ver CLAUDE.md.

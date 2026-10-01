@@ -23,8 +23,6 @@ import {
 import { useDialogMaxHeight, dialogScrollStyle } from '@/hooks/useDialogMaxHeight';
 import { Dimensions } from 'react-native';
 import * as ScreenOrientation from 'expo-screen-orientation';
-import { BlurView } from 'expo-blur';
-import { ANDROID_BLUR_METHOD } from '@/utils/blur';
 import { PinchGestureHandler, State } from 'react-native-gesture-handler';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Headphones, Trash2, Clock, FileAudio, MoreVertical, Edit2, Share2, Search, Grid3x3, List, Send, ChevronRight, ChevronDown, Circle, X, Maximize2, Minimize2, Video as VideoIcon, CheckSquare, Square, MinusSquare, Download, Filter, ArrowUpAZ, Check, Calendar, Cloud, Smartphone, FileText } from 'lucide-react-native';
@@ -73,6 +71,7 @@ import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { setAudioModeForPlayback, setAudioModeForBackgroundPlayback } from '@/utils/audioMode';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { REMOTE_CMD_KEY } from '@/services/playbackService';
+import { ModalGlassFill } from '@/components/ModalGlassFill';
 
 // TrackPlayer for lock screen controls - Optional (only works in native builds)
 let TrackPlayer: any = null;
@@ -3579,7 +3578,7 @@ export default function RecordingsScreen() {
                   { borderColor: isDark ? 'rgba(167,139,250,0.25)' : 'rgba(124,106,247,0.15)' },
                 ]}
               >
-                <BlurView experimentalBlurMethod={ANDROID_BLUR_METHOD} intensity={isDark ? 55 : 65} tint={isDark ? 'dark' : 'light'} style={StyleSheet.absoluteFill} />
+                <ModalGlassFill isDark={isDark} intensity={isDark ? 55 : 65} />
                 <View
                   style={[
                     StyleSheet.absoluteFill,
@@ -3727,7 +3726,7 @@ export default function RecordingsScreen() {
                 { borderColor: isDark ? 'rgba(167,139,250,0.25)' : 'rgba(124,106,247,0.15)' },
               ]}
             >
-              <BlurView experimentalBlurMethod={ANDROID_BLUR_METHOD} intensity={isDark ? 55 : 65} tint={isDark ? 'dark' : 'light'} style={StyleSheet.absoluteFill} />
+              <ModalGlassFill isDark={isDark} intensity={isDark ? 55 : 65} />
               <View
                 style={[
                   StyleSheet.absoluteFill,

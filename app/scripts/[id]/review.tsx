@@ -29,6 +29,7 @@ import { ArrowLeft, Edit, Trash2, Plus, CheckCircle, X, Save, Check, FileText } 
 import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { CoachTour, CoachTourRect, CoachTourStepContent } from '@/components/CoachTour';
 import { WebView } from 'react-native-webview';
+import { ModalGlassFill } from '@/components/ModalGlassFill';
 
 const REVIEW_TOUR_KEY = 'hideReviewTourV1';
 
@@ -706,7 +707,7 @@ export default function ReviewScreen() {
           >
             <Pressable style={s.modalOverlay} onPress={() => setEditModalVisible(false)}>
               <Pressable onPress={e => e.stopPropagation()} style={s.modalContent}>
-                <BlurView experimentalBlurMethod={ANDROID_BLUR_METHOD} intensity={isDark ? 55 : 75} tint={isDark ? 'dark' : 'light'} style={StyleSheet.absoluteFill} />
+                <ModalGlassFill isDark={isDark} intensity={isDark ? 55 : 75} />
                 <View style={[StyleSheet.absoluteFill, { backgroundColor: isDark ? 'rgba(124,106,247,0.40)' : 'rgba(235,230,245,0.40)' }]} />
                 <SafeAreaView edges={{ bottom: 'additive' }} style={{ padding: rp(24) }}>
                 <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: rp(12) }}>
@@ -787,7 +788,7 @@ export default function ReviewScreen() {
          supportedOrientations={['portrait', 'landscape', 'landscape-left', 'landscape-right']}>
           <Pressable style={[s.modalOverlay, { backgroundColor: 'rgba(0,0,0,0.4)' }]} onPress={() => setEmotionModalVisible(false)}>
             <SafeAreaView edges={{ bottom: 'additive' }} style={[s.modalContent, { paddingBottom: rp(20) }]}>
-              <BlurView experimentalBlurMethod={ANDROID_BLUR_METHOD} intensity={isDark ? 55 : 75} tint={isDark ? 'dark' : 'light'} style={StyleSheet.absoluteFill} />
+              <ModalGlassFill isDark={isDark} intensity={isDark ? 55 : 75} />
               <View style={[StyleSheet.absoluteFill, { backgroundColor: isDark ? 'rgba(124,106,247,0.40)' : 'rgba(235,230,245,0.40)' }]} />
               <View style={{ paddingHorizontal: rp(20), paddingTop: rp(20), paddingBottom: rp(12), borderBottomWidth: 1, borderBottomColor: cardBorder }}>
                 <Text style={[s.modalTitle, { color: onBg, marginBottom: 0 }]}>Dirección Interpretativa</Text>
@@ -817,7 +818,7 @@ export default function ReviewScreen() {
           <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
             <Pressable style={s.modalOverlay} onPress={() => setShowAddModal(false)}>
               <Pressable onPress={e => e.stopPropagation()} style={s.modalContent}>
-                <BlurView experimentalBlurMethod={ANDROID_BLUR_METHOD} intensity={isDark ? 55 : 75} tint={isDark ? 'dark' : 'light'} style={StyleSheet.absoluteFill} />
+                <ModalGlassFill isDark={isDark} intensity={isDark ? 55 : 75} />
                 <View style={[StyleSheet.absoluteFill, { backgroundColor: isDark ? 'rgba(124,106,247,0.40)' : 'rgba(235,230,245,0.40)' }]} />
                 <SafeAreaView edges={{ bottom: 'additive' }} style={{ padding: rp(24) }}>
                 <Text style={[s.modalTitle, { color: onBg }]}>Añadir línea</Text>
@@ -897,7 +898,7 @@ export default function ReviewScreen() {
          supportedOrientations={['portrait', 'landscape', 'landscape-left', 'landscape-right']}>
           <View style={s.modalOverlay}>
             <View style={[s.modalContent, { maxHeight: dialogMaxHeight }]}>
-              <BlurView experimentalBlurMethod={ANDROID_BLUR_METHOD} intensity={isDark ? 55 : 75} tint={isDark ? 'dark' : 'light'} style={StyleSheet.absoluteFill} />
+              <ModalGlassFill isDark={isDark} intensity={isDark ? 55 : 75} />
               <View style={[StyleSheet.absoluteFill, { backgroundColor: isDark ? 'rgba(124,106,247,0.40)' : 'rgba(235,230,245,0.40)' }]} />
               <ScrollView style={dialogScrollStyle} bounces={false}>
               <SafeAreaView edges={{ bottom: 'additive' }} style={{ padding: rp(24) }}>

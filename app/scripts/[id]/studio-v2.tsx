@@ -81,6 +81,7 @@ import DraggableFlatList, { ScaleDecorator, RenderItemParams, ShadowDecorator, O
 import * as Haptics from 'expo-haptics';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { trackEvent } from '@/utils/analytics';
+import { ModalGlassFill } from '@/components/ModalGlassFill';
 
 export default function StudioV2Screen() {
     const router = useRouter();
@@ -2327,7 +2328,7 @@ export default function StudioV2Screen() {
                      supportedOrientations={['portrait', 'landscape', 'landscape-left', 'landscape-right']}>
                         <View style={styles.modalOverlay}>
                             <View style={[styles.modalContent, { maxHeight: dialogMaxHeight }]}>
-                                <BlurView experimentalBlurMethod={ANDROID_BLUR_METHOD} intensity={isDark ? 55 : 75} tint={isDark ? 'dark' : 'light'} style={StyleSheet.absoluteFill} />
+                                <ModalGlassFill isDark={isDark} intensity={isDark ? 55 : 75} />
                                 <View style={[StyleSheet.absoluteFill, { backgroundColor: isDark ? 'rgba(124,106,247,0.40)' : 'rgba(235,230,245,0.40)' }]} />
                                 <ScrollView style={dialogScrollStyle} contentContainerStyle={{ alignItems: 'center' }} bounces={false}>
                                 <View style={styles.modalHeader}>
@@ -2378,7 +2379,7 @@ export default function StudioV2Screen() {
                      supportedOrientations={['portrait', 'landscape', 'landscape-left', 'landscape-right']}>
                         <View style={styles.modalOverlay}>
                             <View style={[styles.modalContent, { maxHeight: dialogMaxHeight }]}>
-                                <BlurView experimentalBlurMethod={ANDROID_BLUR_METHOD} intensity={isDark ? 55 : 75} tint={isDark ? 'dark' : 'light'} style={StyleSheet.absoluteFill} />
+                                <ModalGlassFill isDark={isDark} intensity={isDark ? 55 : 75} />
                                 <View style={[StyleSheet.absoluteFill, { backgroundColor: isDark ? 'rgba(124,106,247,0.40)' : 'rgba(235,230,245,0.40)' }]} />
                                 <ScrollView style={dialogScrollStyle} contentContainerStyle={{ alignItems: 'center' }} bounces={false}>
                                 <View style={styles.modalHeader}>
@@ -2428,7 +2429,7 @@ export default function StudioV2Screen() {
                      supportedOrientations={['portrait', 'landscape', 'landscape-left', 'landscape-right']}>
                         <View style={styles.modalOverlay}>
                             <View style={[styles.modalContent, { maxHeight: dialogMaxHeight }]}>
-                                <BlurView experimentalBlurMethod={ANDROID_BLUR_METHOD} intensity={isDark ? 55 : 75} tint={isDark ? 'dark' : 'light'} style={StyleSheet.absoluteFill} />
+                                <ModalGlassFill isDark={isDark} intensity={isDark ? 55 : 75} />
                                 <View style={[StyleSheet.absoluteFill, { backgroundColor: isDark ? 'rgba(124,106,247,0.40)' : 'rgba(235,230,245,0.40)' }]} />
                                 <ScrollView style={dialogScrollStyle} contentContainerStyle={{ alignItems: 'center' }} bounces={false}>
                                 <View style={styles.modalHeader}>
@@ -2477,7 +2478,7 @@ export default function StudioV2Screen() {
                      supportedOrientations={['portrait', 'landscape', 'landscape-left', 'landscape-right']}>
                         <View style={styles.modalOverlay}>
                             <View style={[styles.modalContent, { maxHeight: dialogMaxHeight }]}>
-                                <BlurView experimentalBlurMethod={ANDROID_BLUR_METHOD} intensity={isDark ? 55 : 75} tint={isDark ? 'dark' : 'light'} style={StyleSheet.absoluteFill} />
+                                <ModalGlassFill isDark={isDark} intensity={isDark ? 55 : 75} />
                                 <View style={[StyleSheet.absoluteFill, { backgroundColor: isDark ? 'rgba(124,106,247,0.40)' : 'rgba(235,230,245,0.40)' }]} />
                                 <ScrollView style={dialogScrollStyle} contentContainerStyle={{ alignItems: 'center' }} bounces={false}>
                                 <View style={styles.modalHeader}>
@@ -2545,7 +2546,7 @@ export default function StudioV2Screen() {
                                         }
                                     ]}
                                 >
-                                    <BlurView experimentalBlurMethod={ANDROID_BLUR_METHOD} intensity={isDark ? 55 : 75} tint={isDark ? 'dark' : 'light'} style={StyleSheet.absoluteFill} />
+                                    <ModalGlassFill isDark={isDark} intensity={isDark ? 55 : 75} />
                                     <View style={[StyleSheet.absoluteFill, { backgroundColor: isDark ? 'rgba(124,106,247,0.40)' : 'rgba(235,230,245,0.40)' }]} />
                                     <View style={styles.modalHeader}>
                                         <Text style={[styles.modalTitle, { color: onBg }]}>Añadir Nueva Línea</Text>

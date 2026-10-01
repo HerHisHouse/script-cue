@@ -1,10 +1,9 @@
 import React, { useRef, useEffect, useState } from 'react';
 import { View, Text, Pressable, Modal, StyleSheet, ScrollView, Animated, PanResponder, Dimensions } from 'react-native';
-import { BlurView } from 'expo-blur';
-import { ANDROID_BLUR_METHOD } from '@/utils/blur';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useTheme } from '@/contexts/ThemeContext';
 import { getShadowStyle } from '@/utils/cardShadow';
+import { ModalGlassFill } from '@/components/ModalGlassFill';
 
 export interface BottomSheetMenuProps {
   visible: boolean;
@@ -162,7 +161,7 @@ export function BottomSheetMenu({ visible, onClose, title, children, backgroundC
         <SafeAreaView edges={{ bottom: 'maximum' }} style={[styles.clip, { paddingBottom: 20 }]}>
           {useGlass ? (
             <>
-              <BlurView experimentalBlurMethod={ANDROID_BLUR_METHOD} intensity={intensity ?? (isDark ? 55 : 75)} tint={isDark ? 'dark' : 'light'} style={StyleSheet.absoluteFill} />
+              <ModalGlassFill isDark={isDark} intensity={intensity ?? (isDark ? 55 : 75)} />
               <View style={[StyleSheet.absoluteFill, { backgroundColor: glassOverlayTint }]} />
               {!!dimOpacity && (
                 <View style={[StyleSheet.absoluteFill, { backgroundColor: `rgba(0,0,0,${dimOpacity})` }]} />

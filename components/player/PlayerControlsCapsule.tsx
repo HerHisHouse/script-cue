@@ -1,9 +1,7 @@
 import React, { useEffect, useRef } from 'react';
-import { View, Pressable, Text, StyleSheet, Animated, Easing, Platform } from 'react-native';
-import { BlurView } from 'expo-blur';
-import { ANDROID_BLUR_METHOD } from '@/utils/blur';
+import { View, Pressable, Text, StyleSheet, Animated, Easing } from 'react-native';
 import { Share, Repeat, Repeat1, ListMusic } from 'lucide-react-native';
-import { PLAYER_SURFACE_DARK, PLAYER_SURFACE_LIGHT } from './PlayerDisc';
+import { ModalGlassFill } from '@/components/ModalGlassFill';
 
 const ACCENT = '#a78bfa';
 const ACCENT2 = '#7c6af7';
@@ -52,13 +50,8 @@ export function PlayerControlsCapsule({
 
   return (
     <View style={[styles.wrapper, { height: 60 * scale, borderRadius: 30 * scale }]}>
-      {/* En Android el blur muestra lo que hay detrás del Modal del reproductor (la
-          lista de Grabaciones), así que allí va un fondo sólido. */}
-      {Platform.OS === 'android' ? (
-        <View style={[StyleSheet.absoluteFill, { backgroundColor: isDark ? PLAYER_SURFACE_DARK : PLAYER_SURFACE_LIGHT }]} />
-      ) : (
-        <BlurView experimentalBlurMethod={ANDROID_BLUR_METHOD} intensity={isDark ? 55 : 50} tint={isDark ? 'dark' : 'light'} style={StyleSheet.absoluteFill} />
-      )}
+      {/* Va dentro del Modal del reproductor: ver ModalGlassFill. */}
+      <ModalGlassFill isDark={isDark} intensity={isDark ? 55 : 50} />
       <View
         style={[
           StyleSheet.absoluteFill,

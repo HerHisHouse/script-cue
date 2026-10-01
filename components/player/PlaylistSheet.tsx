@@ -1,11 +1,10 @@
 import React from 'react';
 import { View, Text, Pressable, StyleSheet, Modal } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
-import { BlurView } from 'expo-blur';
-import { ANDROID_BLUR_METHOD } from '@/utils/blur';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import DraggableFlatList, { RenderItemParams } from 'react-native-draggable-flatlist';
 import { GripVertical, Headphones, Video as VideoIcon } from 'lucide-react-native';
+import { ModalGlassFill } from '@/components/ModalGlassFill';
 
 const ACCENT = '#a78bfa';
 
@@ -74,7 +73,7 @@ export function PlaylistSheet({ visible, onClose, tracks, onReorder, onSelectTra
         <Pressable style={styles.backdrop} onPress={onClose} />
         {/* SafeAreaView nativo: mide el solape real con la barra del sistema dentro del Modal. */}
         <SafeAreaView edges={{ bottom: 'maximum' }} style={[styles.sheet, { paddingBottom: 20 }]}>
-          <BlurView experimentalBlurMethod={ANDROID_BLUR_METHOD} intensity={isDark ? 55 : 75} tint={isDark ? 'dark' : 'light'} style={StyleSheet.absoluteFill} />
+          <ModalGlassFill isDark={isDark} intensity={isDark ? 55 : 75} />
           <View style={[StyleSheet.absoluteFill, { backgroundColor: isDark ? 'rgba(124,106,247,0.40)' : 'rgba(235,230,245,0.40)' }]} />
           <View style={styles.handle} />
           <Text style={[styles.title, { color: textPrimary }]}>Playlist</Text>

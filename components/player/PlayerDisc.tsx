@@ -1,8 +1,7 @@
 import React from 'react';
-import { View, Text, StyleSheet, Platform } from 'react-native';
+import { View, Text, StyleSheet } from 'react-native';
 import Svg, { Circle } from 'react-native-svg';
-import { BlurView } from 'expo-blur';
-import { ANDROID_BLUR_METHOD } from '@/utils/blur';
+import { ModalGlassFill } from '@/components/ModalGlassFill';
 import { Headphones } from 'lucide-react-native';
 
 interface PlayerDiscProps {
@@ -14,9 +13,6 @@ interface PlayerDiscProps {
 
 const ACCENT = '#a78bfa';
 const ACCENT2 = '#7c6af7';
-// Fondo sólido de las piezas "glass" del reproductor en Android (ver PlayerControlsCapsule).
-export const PLAYER_SURFACE_LIGHT = '#F3F0FC';
-export const PLAYER_SURFACE_DARK = '#1A1530';
 
 export function PlayerDisc({ progress, filename, isDark, size = 300 }: PlayerDiscProps) {
   // Diseñado a 300 dp: trazo, icono y textos acompañan al tamaño real del disco.
@@ -55,18 +51,8 @@ export function PlayerDisc({ progress, filename, isDark, size = 300 }: PlayerDis
       </Svg>
 
       <View style={[styles.innerClip, { width: innerSize, height: innerSize, borderRadius: innerSize / 2 }]}>
-        {/* En Android el blur muestra lo que hay detrás del Modal del reproductor (la
-            lista de Grabaciones), así que allí va un fondo sólido. */}
-        {Platform.OS === 'android' ? (
-          <View style={[StyleSheet.absoluteFill, { backgroundColor: isDark ? PLAYER_SURFACE_DARK : PLAYER_SURFACE_LIGHT }]} />
-        ) : (
-          <BlurView
-            experimentalBlurMethod={ANDROID_BLUR_METHOD}
-            intensity={isDark ? 50 : 40}
-            tint={isDark ? 'dark' : 'light'}
-            style={StyleSheet.absoluteFill}
-          />
-        )}
+        {/* Va dentro del Modal del reproductor: ver ModalGlassFill. */}
+        <ModalGlassFill isDark={isDark} intensity={isDark ? 50 : 40} />
         <View
           style={[
             StyleSheet.absoluteFill,

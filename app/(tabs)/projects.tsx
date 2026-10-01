@@ -19,6 +19,7 @@ import { BETA_LIMITS, isUserBetaLimited } from '@/constants/betaLimits';
 import { BottomSheetMenu } from '@/components/BottomSheetMenu';
 import { BottomSheetOption } from '@/components/BottomSheetOption';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
+import { ModalGlassFill } from '@/components/ModalGlassFill';
 
 const VIEW_MODE_STORAGE_KEY = 'proyectos_view_mode';
 
@@ -766,7 +767,7 @@ export default function ProjectsScreen() {
                 { borderColor: isDark ? 'rgba(167,139,250,0.25)' : 'rgba(124,106,247,0.15)' },
               ]}
             >
-              <BlurView experimentalBlurMethod={ANDROID_BLUR_METHOD} intensity={isDark ? 55 : 65} tint={isDark ? 'dark' : 'light'} style={StyleSheet.absoluteFill} />
+              <ModalGlassFill isDark={isDark} intensity={isDark ? 55 : 65} />
               <View
                 style={[
                   StyleSheet.absoluteFill,
@@ -980,7 +981,7 @@ export default function ProjectsScreen() {
                 { borderColor: isDark ? 'rgba(167,139,250,0.25)' : 'rgba(124,106,247,0.15)' },
               ]}
             >
-              <BlurView experimentalBlurMethod={ANDROID_BLUR_METHOD} intensity={isDark ? 55 : 65} tint={isDark ? 'dark' : 'light'} style={StyleSheet.absoluteFill} />
+              <ModalGlassFill isDark={isDark} intensity={isDark ? 55 : 65} />
               <View
                 style={[
                   StyleSheet.absoluteFill,

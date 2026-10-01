@@ -9,14 +9,13 @@ import {
     ActivityIndicator,
     Alert,
 } from 'react-native';
-import { BlurView } from 'expo-blur';
-import { ANDROID_BLUR_METHOD } from '@/utils/blur';
 import { supabase } from '@/utils/supabase';
 import { useTheme } from '@/contexts/ThemeContext';
 import { useAuth } from '@/contexts/AuthContext';
 import { X, Folder, Check, Home } from 'lucide-react-native';
 import { Project } from '@/types/database';
 import { rf, rp } from '@/utils/responsive';
+import { ModalGlassFill } from '@/components/ModalGlassFill';
 
 // Sentinel usado como projectId cuando el destino elegido es la pantalla
 // principal de Proyectos (solo válido para mover carpetas, nunca archivos).
@@ -162,7 +161,7 @@ export function SendToModal({ visible, onClose, onMove, currentProjectId, allowR
                         { borderColor: cardBorder },
                     ]}
                 >
-                    <BlurView experimentalBlurMethod={ANDROID_BLUR_METHOD} intensity={isDark ? 55 : 65} tint={isDark ? 'dark' : 'light'} style={StyleSheet.absoluteFill} />
+                    <ModalGlassFill isDark={isDark} intensity={isDark ? 55 : 65} />
                     <View
                         style={[
                             StyleSheet.absoluteFill,

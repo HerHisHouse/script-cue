@@ -134,6 +134,15 @@ al "arreglar un margen" quitando la reserva de la raíz, y la app quedó por det
 - Lo protegen `__tests__/androidNavBar.test.ts` y una regla de `tools/static-checks.js`.
 - Pantallas nuevas: `SafeAreaView edges={['top','left','right']}` + `insets.bottom` en lo que vaya pegado abajo.
 
+### Fondos "glass" dentro de un `Modal`
+
+En Android, un `BlurView` dentro de un `<Modal>` no tiene nada propio que difuminar (el Modal es otra ventana) y
+deja ver la pantalla de detrás: los menús quedaban muy translúcidos comparados con iOS. Dentro de un `Modal`
+(bottom sheets, diálogos, reproductor) usa `<ModalGlassFill isDark intensity />` (`components/ModalGlassFill.tsx`):
+blur real en iOS, fondo sólido en Android. Fuera de un `Modal`, `BlurView` con `ANDROID_BLUR_METHOD` sí funciona.
+`tools/static-checks.js` falla si encuentra un `<BlurView` dentro de `<Modal>` en el mismo archivo; los
+componentes que se renderizan dentro del Modal de otro archivo (p.ej. `PlayerDisc`) no los detecta, ojo con ellos.
+
 ### Native config quirks worth knowing
 
 - `plugins/` has several custom Expo config plugins applied in `app.json`: `withAndroidNetworkConfig.js`,
