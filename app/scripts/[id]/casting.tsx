@@ -56,6 +56,8 @@ import {
   resolveLens,
   type AndroidLens,
 } from '@/utils/cameraZoomAndroid';
+import { ExpoSpeechRecognitionModule, useSpeechRecognitionEvent } from 'expo-speech-recognition';
+import { matchesActivationPhrase } from '@/utils/voiceActivation';
 import { FontAwesome5 } from '@expo/vector-icons';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/utils/supabase';
@@ -124,6 +126,11 @@ const ActionTimingInput = ({ actionId, isManualAction, duration, adjustment, upd
     />
   );
 };
+
+// Plano General Automático: en iOS se activa por voz ("plano general") en vez
+// de con doble palmada. Android sigue con la palmada hasta su propia fase; el
+// código de palmada se conserva detrás de este flag para poder volver atrás.
+const USE_VOICE_WIDE_SHOT = Platform.OS === 'ios';
 
 export default function CastingModeScreen() {
   const router = useRouter();
@@ -489,9 +496,11 @@ export default function CastingModeScreen() {
           '🎬 Plano general automático',
           'Así funciona:\n\n' +
           '1️⃣ Colócate según la silueta guía para fijar tu plano general\n\n' +
-          '2️⃣ Usa el zoom (0.5x/1x/2x) para ajustar tu plano de trabajo como quieras\n\n' +
+          '2️⃣ Usa el zoom para ajustar tu plano de trabajo como quieras\n\n' +
           '3️⃣ Graba tu presentación con normalidad\n\n' +
-          '4️⃣ Da dos palmadas cuando quieras mostrar el plano general\n\n' +
+          (USE_VOICE_WIDE_SHOT
+            ? '4️⃣ Di "plano general" cuando quieras mostrarlo (por ejemplo: "Vamos con el plano general")\n\n'
+            : '4️⃣ Da dos palmadas cuando quieras mostrar el plano general\n\n') +
           '5️⃣ La cámara hará zoom out automáticamente para que gires o muestres perfiles',
           [
             {
@@ -517,6 +526,13 @@ export default function CastingModeScreen() {
 
     function activateWideShot() {
       setAutoWideShotEnabled(value);
+      // iOS: el permiso de reconocimiento de voz se pide al activar el
+      // interruptor, no al empezar a grabar con la cámara ya en marcha.
+      if (value && USE_VOICE_WIDE_SHOT) {
+        ExpoSpeechRecognitionModule.requestPermissionsAsync().catch((e) =>
+          console.warn('[PlanoGeneral] No se pudo pedir el permiso de reconocimiento de voz:', e),
+        );
+      }
       const neutralZoomValue = getNeutralZoomValue(zoomStops);
       const widestZoomValue = getWidestZoomValue(zoomStops);
       if (!value) {
@@ -540,6 +556,42 @@ export default function CastingModeScreen() {
   const clapTimestampsRef = useRef<number[]>([]);
   const lastClapPeakRef = useRef<number>(0);
   const clapMeteringRecordingRef = useRef<Audio.Recording | null>(null);
+
+  // Activación por voz (iOS) — refs y eventos del reconocimiento
+  const voiceListeningRef = useRef(false);
+  // Una sola transición por presentación: con resultados parciales la frase
+  // llega en varios eventos seguidos.
+  const wideShotTriggeredRef = useRef(false);
+  // Sube en cada arranque y en cada parada: si la grabación se para mientras
+  // start() aún espera permisos o idiomas, ese arranque ya no abre el micrófono.
+  const voiceSessionRef = useRef(0);
+
+  useSpeechRecognitionEvent('result', (event) => {
+    if (!voiceListeningRef.current || wideShotTriggeredRef.current) return;
+    const transcript = event.results[0]?.transcript || '';
+    if (matchesActivationPhrase(transcript)) {
+      wideShotTriggeredRef.current = true;
+      console.log('[PlanoGeneral] Frase de activación detectada:', transcript);
+      triggerWideShotTransition();
+    }
+  });
+
+  useSpeechRecognitionEvent('error', (event) => {
+    if (!voiceListeningRef.current) return;
+    console.warn('[PlanoGeneral] Error en reconocimiento de voz:', event.error, event.message);
+  });
+
+  useSpeechRecognitionEvent('end', () => {
+    if (voiceListeningRef.current) console.log('[PlanoGeneral] El reconocimiento de voz terminó antes que la grabación');
+  });
+
+  // Si se sale de la pantalla grabando, no dejar el micrófono del reconocimiento abierto
+  useEffect(() => () => {
+    if (voiceListeningRef.current) {
+      voiceListeningRef.current = false;
+      ExpoSpeechRecognitionModule.abort();
+    }
+  }, []);
   // ────────────────────────────────────────────────────────────────────
 
   const handleFreeTextChange = useCallback((newPlain: string) => {
@@ -1661,6 +1713,59 @@ export default function CastingModeScreen() {
     }
   }
 
+  async function startVoiceActivationListening() {
+    if (!autoWideShotEnabled || castingType !== 'free') return;
+    const session = ++voiceSessionRef.current;
+    wideShotTriggeredRef.current = false;
+    try {
+      // El permiso ya se pidió al activar el interruptor; aquí solo se comprueba.
+      const { granted } = await ExpoSpeechRecognitionModule.getPermissionsAsync();
+      if (!granted) {
+        console.warn('[PlanoGeneral] Sin permiso de reconocimiento de voz');
+        return;
+      }
+      // Solo reconocimiento en el dispositivo: si el español no está descargado
+      // en el iPhone, no se activa (pendiente: alerta que explique cómo descargarlo).
+      const { installedLocales } = await ExpoSpeechRecognitionModule.getSupportedLocales({});
+      if (!ExpoSpeechRecognitionModule.supportsOnDeviceRecognition() || !installedLocales.includes('es-ES')) {
+        console.warn('[PlanoGeneral] Reconocimiento en el dispositivo no disponible para es-ES', installedLocales);
+        return;
+      }
+      if (session !== voiceSessionRef.current) return; // la grabación ya se paró
+      voiceListeningRef.current = true;
+      ExpoSpeechRecognitionModule.start({
+        lang: 'es-ES',
+        interimResults: true,
+        continuous: true,
+        requiresOnDeviceRecognition: true,
+        contextualStrings: ['plano general'],
+        // La misma sesión de audio que deja expo-av antes de grabar
+        // (playAndRecord + mixWithOthers + allowBluetooth, modo por defecto).
+        // Sin esto el paquete la cambia a modo "measurement", que también
+        // afecta al audio que graba la cámara.
+        iosCategory: {
+          category: 'playAndRecord',
+          categoryOptions: ['mixWithOthers', 'allowBluetooth'],
+          mode: 'default',
+        },
+      });
+      console.log('[PlanoGeneral] Reconocimiento de voz iniciado ✅');
+    } catch (e) {
+      // No interrumpe la grabación de vídeo — solo advertencia
+      voiceListeningRef.current = false;
+      console.warn('[PlanoGeneral] No se pudo iniciar el reconocimiento de voz (vídeo no afectado):', e);
+    }
+  }
+
+  function stopVoiceActivationListening() {
+    voiceSessionRef.current++;
+    if (!voiceListeningRef.current) return;
+    voiceListeningRef.current = false;
+    // abort y no stop: no hace falta un resultado final una vez parada la grabación
+    ExpoSpeechRecognitionModule.abort();
+    console.log('[PlanoGeneral] Reconocimiento de voz detenido');
+  }
+
   function triggerWideShotTransition() {
     // Sync the animated value with the current zoom state before animating
     // to avoid a jump when the Animated.Value is out of sync
@@ -1723,9 +1828,11 @@ export default function CastingModeScreen() {
         setLineTimingsCount(0);
         activateKeepAwakeAsync();
 
-        // Iniciar detección de palmada (solo Teleprompter Libre con toggle activo)
+        // Iniciar la activación del plano general (solo Teleprompter Libre con
+        // toggle activo): voz en iOS, palmada en Android.
         // Modo seguro: try/catch interno — no bloquea si hay conflicto de audio en iOS
-        startClapDetection();
+        if (USE_VOICE_WIDE_SHOT) startVoiceActivationListening();
+        else startClapDetection();
 
         // Timer is now managed by the declarative useEffect above (tied to isPlaying/isRecording)
         // No need to start a manual interval here
@@ -1790,8 +1897,9 @@ export default function CastingModeScreen() {
     setIsPlaying(false);
     deactivateKeepAwake();
 
-    // Detener detección de palmada antes de parar la cámara
-    await stopClapDetection();
+    // Detener la activación del plano general antes de parar la cámara
+    if (USE_VOICE_WIDE_SHOT) stopVoiceActivationListening();
+    else await stopClapDetection();
 
     try {
       const video = await cameraRef.current.stopRecording();
@@ -1921,8 +2029,9 @@ export default function CastingModeScreen() {
       (cameraRef.current as any)._cancelRecording = true;
       Promise.resolve(cameraRef.current.stopRecording()).finally(releaseLensLock);
 
-      // Detener detección de palmada (no bloqueante)
-      stopClapDetection();
+      // Detener la activación del plano general (no bloqueante)
+      if (USE_VOICE_WIDE_SHOT) stopVoiceActivationListening();
+      else stopClapDetection();
 
       setIsRecording(false);
       setIsPlaying(false);
@@ -3456,18 +3565,19 @@ export default function CastingModeScreen() {
                         textColor={fg}
                         borderColor={glassBorder}
                         trackColorActive={colors.primary}
-                        infoText="Activa el toggle si necesitas hacer un plano general al final de tu presentación. Solo tendrás que dar 2 palmadas."
+                        infoText={`Activa el toggle si necesitas hacer un plano general al final de tu presentación. ${USE_VOICE_WIDE_SHOT ? 'Solo tendrás que decir "plano general".' : 'Solo tendrás que dar 2 palmadas.'}`}
                       />
 
                       {/* Mensaje de plano de trabajo manual (visible si el toggle está activo) */}
                       {autoWideShotEnabled && (
                         <View style={{ paddingHorizontal: 20, marginTop: 8 }}>
                           <Text style={{ color: fgSecondary, fontSize: rf(12), marginBottom: 8 }}>
-                            Ajusta tu plano de trabajo con el zoom (0.5x/1x/2x)
-                            y colócate libremente
+                            Ajusta tu plano de trabajo con el zoom y colócate libremente
                           </Text>
                           <Text style={{ color: fgSecondary, fontSize: rf(11), marginTop: 6, textAlign: 'center' }}>
-                            Da dos palmadas durante la grabación para hacer zoom out al plano general
+                            {USE_VOICE_WIDE_SHOT
+                              ? 'Di "plano general" durante la grabación para hacer zoom out al plano general'
+                              : 'Da dos palmadas durante la grabación para hacer zoom out al plano general'}
                           </Text>
                         </View>
                       )}
