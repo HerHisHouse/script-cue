@@ -64,7 +64,13 @@
       "./plugins/withAndroidNetworkConfig.js",
       "./plugins/withMaxFontScale.js",
       "./plugins/withAudioEchoCancellation.js",
-      "./plugins/withIosPodsDeploymentTarget.js"
+      "./plugins/withIosPodsDeploymentTarget.js",
+      [
+        "expo-speech-recognition",
+        {
+          "speechRecognitionPermission": "ScriptCue necesita reconocer tu voz para activar el cambio a plano general durante la Presentación."
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true
