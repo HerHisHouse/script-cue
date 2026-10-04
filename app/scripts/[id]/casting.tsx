@@ -526,11 +526,13 @@ export default function CastingModeScreen() {
 
     function activateWideShot() {
       setAutoWideShotEnabled(value);
-      // iOS: el permiso de reconocimiento de voz se pide al activar el
-      // interruptor, no al empezar a grabar con la cámara ya en marcha.
+      // iOS: el permiso se pide al activar el interruptor, no al empezar a
+      // grabar con la cámara ya en marcha. Solo el del micrófono: con
+      // reconocimiento en el dispositivo no hace falta el de "reconocimiento de
+      // voz", cuyo aviso de Apple dice que la voz se envía a sus servidores.
       if (value && USE_VOICE_WIDE_SHOT) {
-        ExpoSpeechRecognitionModule.requestPermissionsAsync().catch((e) =>
-          console.warn('[PlanoGeneral] No se pudo pedir el permiso de reconocimiento de voz:', e),
+        ExpoSpeechRecognitionModule.requestMicrophonePermissionsAsync().catch((e) =>
+          console.warn('[PlanoGeneral] No se pudo pedir el permiso del micrófono:', e),
         );
       }
       const neutralZoomValue = getNeutralZoomValue(zoomStops);
@@ -1719,34 +1721,37 @@ export default function CastingModeScreen() {
     wideShotTriggeredRef.current = false;
     try {
       // El permiso ya se pidió al activar el interruptor; aquí solo se comprueba.
-      const { granted } = await ExpoSpeechRecognitionModule.getPermissionsAsync();
+      const { granted } = await ExpoSpeechRecognitionModule.getMicrophonePermissionsAsync();
       if (!granted) {
-        console.warn('[PlanoGeneral] Sin permiso de reconocimiento de voz');
+        console.warn('[PlanoGeneral] Sin permiso del micrófono');
         return;
       }
-      // Solo reconocimiento en el dispositivo: si el español no está descargado
-      // en el iPhone, no se activa (pendiente: alerta que explique cómo descargarlo).
+      // Solo reconocimiento en el dispositivo (requiresOnDeviceRecognition). No se
+      // usa supportsOnDeviceRecognition(): consulta el idioma del sistema y no el
+      // español, y daba false en un iPhone donde sí funciona. Si el modelo local
+      // no está disponible, start() emite un 'error' (pendiente: alerta que
+      // explique cómo descargar el español).
       const { installedLocales } = await ExpoSpeechRecognitionModule.getSupportedLocales({});
-      if (!ExpoSpeechRecognitionModule.supportsOnDeviceRecognition() || !installedLocales.includes('es-ES')) {
-        console.warn('[PlanoGeneral] Reconocimiento en el dispositivo no disponible para es-ES', installedLocales);
+      if (!installedLocales.includes('es-ES')) {
+        console.warn('[PlanoGeneral] es-ES no admitido por el reconocedor', installedLocales);
         return;
       }
       if (session !== voiceSessionRef.current) return; // la grabación ya se paró
       voiceListeningRef.current = true;
+      // La sesión de audio activa tal cual: al grabar es la de vision-camera
+      // (playAndRecord + defaultToSpeaker, modo videoRecording). Sin esto el
+      // paquete la cambia a modo "measurement", que afecta al audio del vídeo.
+      const audioSession = ExpoSpeechRecognitionModule.getAudioSessionCategoryAndOptionsIOS();
       ExpoSpeechRecognitionModule.start({
         lang: 'es-ES',
         interimResults: true,
         continuous: true,
         requiresOnDeviceRecognition: true,
         contextualStrings: ['plano general'],
-        // La misma sesión de audio que deja expo-av antes de grabar
-        // (playAndRecord + mixWithOthers + allowBluetooth, modo por defecto).
-        // Sin esto el paquete la cambia a modo "measurement", que también
-        // afecta al audio que graba la cámara.
         iosCategory: {
-          category: 'playAndRecord',
-          categoryOptions: ['mixWithOthers', 'allowBluetooth'],
-          mode: 'default',
+          category: audioSession.category,
+          categoryOptions: audioSession.categoryOptions,
+          mode: audioSession.mode,
         },
       });
       console.log('[PlanoGeneral] Reconocimiento de voz iniciado ✅');
