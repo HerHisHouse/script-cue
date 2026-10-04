@@ -20,6 +20,7 @@ import {
   Modal,
   useWindowDimensions,
   ImageBackground,
+  Linking,
 } from 'react-native';
 
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -531,9 +532,28 @@ export default function CastingModeScreen() {
       // reconocimiento en el dispositivo no hace falta el de "reconocimiento de
       // voz", cuyo aviso de Apple dice que la voz se envía a sus servidores.
       if (value && USE_VOICE_WIDE_SHOT) {
-        ExpoSpeechRecognitionModule.requestMicrophonePermissionsAsync().catch((e) =>
-          console.warn('[PlanoGeneral] No se pudo pedir el permiso del micrófono:', e),
-        );
+        ExpoSpeechRecognitionModule.requestMicrophonePermissionsAsync()
+          .then(async ({ granted }) => {
+            if (granted) return;
+            // Sin micrófono la activación por voz no puede funcionar: se apaga
+            // el interruptor y se explica cómo dar el permiso (iOS ya no vuelve
+            // a preguntar una vez denegado; solo se cambia desde Ajustes).
+            setAutoWideShotEnabled(false);
+            // Mismo motivo que el aviso de "Así funciona": iOS no presenta el
+            // aviso mientras el menú de configuración (otro Modal) siga abierto.
+            setShowMenu(false);
+            await new Promise((resolve) => setTimeout(resolve, MENU_DISMISS_DELAY_MS));
+            showCastingAlert(
+              '🎙️ Micrófono desactivado',
+              'Para activar el plano general con la voz, ScriptCue necesita acceso al micrófono.\n\n' +
+              'Puedes activarlo en Ajustes → ScriptCue → Micrófono.',
+              [
+                { text: 'Ahora no' },
+                { text: 'Abrir Ajustes', onPress: () => { Linking.openSettings(); } },
+              ],
+            );
+          })
+          .catch((e) => console.warn('[PlanoGeneral] No se pudo pedir el permiso del micrófono:', e));
       }
       const neutralZoomValue = getNeutralZoomValue(zoomStops);
       const widestZoomValue = getWidestZoomValue(zoomStops);
