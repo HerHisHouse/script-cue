@@ -68,6 +68,8 @@ const supabase = createClient(
 );
 
 const requireUser = require('./auth').createRequireUser(supabase);
+const sceneAnalysis = require('./sceneAnalysis');
+const { recordServerError } = require('./errorReports');
 // Costes aproximados por proveedor (en euros)
 const API_COSTS = {
   openai_tts:        0.000015, // por carácter (0.015€/1000 chars)
@@ -88,11 +90,12 @@ async function logApiUsage({
   durationSeconds = 0,
   scriptId = null,
   mode = null,
+  estimatedCost: precomputedCost = null, // para proveedores con precio distinto de entrada y salida
 }) {
   try {
     const costPerUnit = API_COSTS[provider] || 0;
     const units = characters || tokens || durationSeconds || 0;
-    const estimatedCost = units * costPerUnit;
+    const estimatedCost = precomputedCost ?? units * costPerUnit;
 
     await supabase.from('api_usage').insert({
       user_id: userId,
@@ -2105,7 +2108,126 @@ Idioma: Español. Tono: constructivo, inspirador y exploratorio.`;
     } catch (error) {
         console.error('[Coach] Error:', error);
         await fs.promises.rm(tempDir, { recursive: true, force: true }).catch(() => { });
-        res.status(500).json({ error: error.message });
+        // Endpoint antiguo (versiones de la app anteriores al Modo Escena sobre el guion): esas
+        // versiones muestran `error` tal cual, así que va un mensaje legible con el código.
+        const reference = await recordServerError(supabase, {
+            userId: req.user ? req.user.id : userId,
+            mode: 'scene_legacy',
+            error,
+            details: { recordingId, scriptId },
+        });
+        res.status(500).json({ error: `No hemos podido analizar la escena. Inténtalo de nuevo más tarde (código ${reference}).`, reference });
+    }
+});
+
+// ============================================================
+// MODO ESCENA: análisis del guion (sin grabación). Ver server/sceneAnalysis.js
+// ============================================================
+let anthropicClient = null;
+function getAnthropic() {
+    if (!process.env.ANTHROPIC_API_KEY) throw new Error('Falta ANTHROPIC_API_KEY en el servidor');
+    if (!anthropicClient) {
+        const Anthropic = require('@anthropic-ai/sdk');
+        anthropicClient = new (Anthropic.default || Anthropic)();
+    }
+    return anthropicClient;
+}
+
+app.post('/analyze-scene', requireUser, async (req, res) => {
+    const userId = req.user ? req.user.id : null;
+    const { scriptId, sceneId, characterId } = req.body || {};
+    const fail = (status, errorCode, error) => res.status(status).json({ success: false, errorCode, error });
+
+    if (!userId) return fail(401, 'UNAUTHORIZED', 'Tu sesión ha caducado. Vuelve a iniciar sesión e inténtalo de nuevo.');
+    if (!scriptId || !sceneId || !characterId) return fail(400, 'MISSING_FIELDS', 'Elige una escena y un personaje para analizar.');
+
+    try {
+        const { data: script } = await supabase.from('scripts').select('id, title, user_id').eq('id', scriptId).maybeSingle();
+        if (!script || script.user_id !== userId) return fail(404, 'SCRIPT_NOT_FOUND', 'No encontramos este guion.');
+
+        const { data: scene } = await supabase.from('scenes').select('id, heading, scene_number')
+            .eq('id', sceneId).eq('script_id', scriptId).maybeSingle();
+        if (!scene) return fail(404, 'SCENE_NOT_FOUND', 'No encontramos esta escena. Puede que el guion se haya editado.');
+
+        const { data: character } = await supabase.from('characters').select('id, name')
+            .eq('id', characterId).eq('script_id', scriptId).maybeSingle();
+        if (!character) return fail(404, 'CHARACTER_NOT_FOUND', 'No encontramos este personaje en el guion.');
+
+        const { data: lines, error: linesError } = await supabase.from('lines')
+            .select('character_name, content, order_index')
+            .eq('scene_id', sceneId)
+            .order('order_index', { ascending: true });
+        if (linesError) throw linesError;
+        if (!lines || lines.length === 0) return fail(422, 'EMPTY_SCENE', 'Esta escena no tiene texto para analizar.');
+        if (!lines.some((l) => sceneAnalysis.sameName(l.character_name, character.name))) {
+            return fail(422, 'CHARACTER_NOT_IN_SCENE', `${character.name} no habla en esta escena. Elige otro personaje.`);
+        }
+
+        // Guion completo como contexto (qué ha pasado antes, adónde va la historia). Con una
+        // sola escena no hace falta: la escena ya es todo el guion.
+        let scriptContext = null;
+        const { data: allScenes } = await supabase.from('scenes')
+            .select('id, heading, scene_number, order_index')
+            .eq('script_id', scriptId)
+            .order('order_index', { ascending: true });
+        if (allScenes && allScenes.length > 1) {
+            const { data: allLines, error: allLinesError } = await supabase.from('lines')
+                .select('scene_id, character_name, content, order_index')
+                .in('scene_id', allScenes.map((s) => s.id))
+                .order('order_index', { ascending: true });
+            if (allLinesError) throw allLinesError;
+            const byScene = new Map(allScenes.map((s) => [s.id, []]));
+            for (const l of allLines || []) byScene.get(l.scene_id)?.push(l);
+            scriptContext = sceneAnalysis.buildScriptContext(
+                allScenes.map((s) => ({ ...s, lines: byScene.get(s.id) })),
+                sceneId,
+            );
+        }
+
+        const { analysis, usage } = await sceneAnalysis.runSceneAnalysis(getAnthropic(), {
+            scriptTitle: script.title,
+            sceneHeading: scene.heading,
+            sceneNumber: scene.scene_number,
+            characterName: character.name,
+            lines,
+            scriptContext,
+        });
+
+        await logApiUsage({
+            userId,
+            provider: 'anthropic_scene_analysis',
+            tokens: usage.inputTokens + usage.outputTokens,
+            estimatedCost: usage.estimatedCost,
+            scriptId,
+            mode: 'scene',
+        });
+
+        const updatedAt = new Date().toISOString();
+        const { error: saveError } = await supabase.from('scene_analyses').upsert({
+            user_id: userId,
+            script_id: scriptId,
+            scene_id: sceneId,
+            character_id: characterId,
+            analysis,
+            model: sceneAnalysis.SCENE_ANALYSIS_MODEL,
+            updated_at: updatedAt,
+        }, { onConflict: 'user_id,scene_id,character_id' });
+        if (saveError) console.warn('[Escena] No se pudo guardar el análisis:', saveError.message);
+
+        res.json({ success: true, analysis, updatedAt });
+    } catch (error) {
+        const reference = await recordServerError(supabase, {
+            userId,
+            mode: 'scene',
+            error,
+            details: { scriptId, sceneId, characterId, model: sceneAnalysis.SCENE_ANALYSIS_MODEL },
+        });
+        res.status(500).json({
+            success: false,
+            errorCode: 'ANALYSIS_FAILED',
+            reference,
+            error: 'No hemos podido analizar la escena. Inténtalo de nuevo en unos minutos.',
+        });
     }
 });
 
