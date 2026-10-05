@@ -70,6 +70,7 @@ const supabase = createClient(
 const requireUser = require('./auth').createRequireUser(supabase);
 const sceneAnalysis = require('./sceneAnalysis');
 const { recordServerError } = require('./errorReports');
+const betaLimits = require('./betaLimits');
 // Costes aproximados por proveedor (en euros)
 const API_COSTS = {
   openai_tts:        0.000015, // por carácter (0.015€/1000 chars)
@@ -2161,6 +2162,19 @@ app.post('/analyze-scene', requireUser, async (req, res) => {
         if (!lines || lines.length === 0) return fail(422, 'EMPTY_SCENE', 'Esta escena no tiene texto para analizar.');
         if (!lines.some((l) => sceneAnalysis.sameName(l.character_name, character.name))) {
             return fail(422, 'CHARACTER_NOT_IN_SCENE', `${character.name} no habla en esta escena. Elige otro personaje.`);
+        }
+
+        // Beta: un único análisis por guion (sea cual sea la escena o el personaje). Crear nuevas
+        // propuestas también es una llamada a la IA, así que también cuenta.
+        if (betaLimits.isUserBetaLimited(req.user)) {
+            const { count, error: countError } = await supabase.from('scene_analyses')
+                .select('id', { count: 'exact', head: true })
+                .eq('user_id', userId)
+                .eq('script_id', scriptId);
+            if (countError) throw countError;
+            if ((count || 0) >= betaLimits.BETA_LIMITS.MAX_SCENE_ANALYSES_PER_SCRIPT) {
+                return fail(403, 'BETA_SCENE_ANALYSIS_LIMIT', 'En la versión beta puedes hacer un análisis por guion y ya lo has usado en este guion.');
+            }
         }
 
         // Guion completo como contexto (qué ha pasado antes, adónde va la historia). Con una

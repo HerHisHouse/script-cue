@@ -38,6 +38,7 @@ import { createErrorReference, reportErrorToSupport, SUPPORT_EMAIL } from '@/uti
 import { useTheme } from '@/contexts/ThemeContext';
 import { GlassCard } from '@/components/GlassCard';
 import { useAuth } from '@/contexts/AuthContext';
+import { BETA_LIMITS, isUserBetaLimited } from '@/constants/betaLimits';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { rf, rp } from '@/utils/responsive';
 import { trackEvent } from '@/utils/analytics';
@@ -58,6 +59,7 @@ const INFO_TEXT =
 const USER_FIXABLE_ERRORS = new Set([
   'UNAUTHORIZED', 'MISSING_FIELDS', 'SCRIPT_NOT_FOUND', 'SCENE_NOT_FOUND',
   'CHARACTER_NOT_FOUND', 'EMPTY_SCENE', 'CHARACTER_NOT_IN_SCENE', 'MAX_PROPOSAL_BATCHES',
+  'BETA_SCENE_ANALYSIS_LIMIT',
 ]);
 
 // Igual que MAX_PROPOSAL_BATCHES en server/sceneAnalysis.js.
@@ -98,7 +100,7 @@ export default function SceneModeScreen() {
   const scriptId = String(id);
   const { colors, isDark } = useTheme();
   const dialogMaxHeight = useDialogMaxHeight();
-  const { user } = useAuth();
+  const { user, profile } = useAuth();
   const insets = useSafeAreaInsets();
 
   // Paleta "sobre imagen de fondo" del diseño glass, igual que Modo Análisis / Editar guion
@@ -217,6 +219,25 @@ export default function SceneModeScreen() {
   const batchIndex = selectedBatch != null && selectedBatch < tandas.length ? selectedBatch : tandas.length - 1;
   const shownBatch = tandas[batchIndex];
   const canCreateMore = tandas.length < MAX_PROPOSAL_BATCHES;
+
+  // Beta: un solo análisis por guion (el servidor también lo aplica). Si ya existe, se indica cuál es.
+  const betaLimited = isUserBetaLimited(user, profile);
+  const betaAnalysisUsed = betaLimited && Object.keys(saved).length >= BETA_LIMITS.MAX_SCENE_ANALYSES_PER_SCRIPT;
+  const usedAnalysis = useMemo(() => {
+    if (!betaAnalysisUsed) return null;
+    const [usedSceneId, usedCharacterId] = Object.keys(saved)[0].split(':');
+    const usedScene = scenes.find(s => s.id === usedSceneId);
+    const usedCharacter = characters.find(c => c.id === usedCharacterId);
+    return usedScene && usedCharacter ? { scene: usedScene, character: usedCharacter } : null;
+  }, [betaAnalysisUsed, saved, scenes, characters]);
+
+  function openUsedAnalysis() {
+    if (!usedAnalysis) return;
+    setSceneId(usedAnalysis.scene.id);
+    setCharacterId(usedAnalysis.character.id);
+    setSelectedBatch(null);
+    setActiveTab('lectura');
+  }
 
   function goBack() {
     if (characterId) { setCharacterId(null); return; }
@@ -409,14 +430,31 @@ export default function SceneModeScreen() {
             <Text style={[styles.introText, { color: onBg2 }]}>
               Con esta información te dará diferentes propuestas de actuación.
             </Text>
-            <TouchableOpacity style={[styles.analyzeButton, primaryButtonBg]} onPress={() => startAnalysis()} disabled={analyzing}>
-              {analyzing ? <ActivityIndicator color="#fff" /> : (
-                <>
-                  <Sparkles size={20} color="#fff" />
-                  <Text style={styles.analyzeButtonText}>Analizar escena</Text>
-                </>
-              )}
-            </TouchableOpacity>
+            {betaAnalysisUsed ? (
+              <View style={[styles.betaNotice, { borderColor: cardBorder }]}>
+                <Text style={[styles.betaNoticeText, { color: onBg }]}>
+                  En la versión beta puedes hacer un análisis por guion
+                  {usedAnalysis
+                    ? ` y ya lo has usado en la escena ${usedAnalysis.scene.scene_number} con ${usedAnalysis.character.name.toUpperCase()}.`
+                    : ' y ya lo has usado.'}
+                </Text>
+                {usedAnalysis && (
+                  <TouchableOpacity style={[styles.analyzeButton, primaryButtonBg]} onPress={openUsedAnalysis}>
+                    <Brain size={20} color="#fff" />
+                    <Text style={styles.analyzeButtonText}>Ver mi análisis</Text>
+                  </TouchableOpacity>
+                )}
+              </View>
+            ) : (
+              <TouchableOpacity style={[styles.analyzeButton, primaryButtonBg]} onPress={() => startAnalysis()} disabled={analyzing}>
+                {analyzing ? <ActivityIndicator color="#fff" /> : (
+                  <>
+                    <Sparkles size={20} color="#fff" />
+                    <Text style={styles.analyzeButtonText}>Analizar escena</Text>
+                  </>
+                )}
+              </TouchableOpacity>
+            )}
             {analyzing && (
               <Text style={[styles.introHint, { color: onBg2 }]}>Puede tardar hasta un minuto.</Text>
             )}
@@ -527,7 +565,11 @@ export default function SceneModeScreen() {
           )}
 
           <View style={styles.reanalyzeRow}>
-            {canCreateMore ? (
+            {betaLimited ? (
+              <Text style={[styles.reanalyzeDate, { color: onBg2 }]}>
+                En la versión beta cada guion incluye un análisis, así que no se pueden crear más propuestas.
+              </Text>
+            ) : canCreateMore ? (
               <>
                 <TouchableOpacity style={[styles.secondaryButton, styles.newProposalsButton, { borderColor: colors.primary }]} onPress={() => startAnalysis(true)} disabled={analyzing}>
                   {analyzing ? <ActivityIndicator size="small" color={accent} /> : <RefreshCw size={18} color={accent} />}
@@ -677,6 +719,8 @@ const styles = StyleSheet.create({
   introList: { alignSelf: 'center', alignItems: 'flex-start', gap: 2 },
   introListItem: { flexDirection: 'row', gap: 8 },
   introListText: { textAlign: 'left' },
+  betaNotice: { width: '100%', alignItems: 'center', borderTopWidth: 1, paddingTop: rp(16), marginTop: rp(8) },
+  betaNoticeText: { fontSize: rf(14), lineHeight: 20, textAlign: 'center' },
   introHint: { fontSize: rf(12), marginTop: 4 },
   analyzeButton: {
     flexDirection: 'row',

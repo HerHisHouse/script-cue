@@ -112,7 +112,8 @@ guion completo como contexto (bloque cacheado; en guiones enormes, las escenas m
 texto se lee de `lines` (no de la tabla antigua `dialogues`) y el resultado se guarda en `scene_analyses` por escena y
 personaje: `{ lectura, tandas: [{ propuestas, createdAt }] }`. "Crear nuevas propuestas" (`newProposals: true`)
 añade una tanda (máx. 10) pidiendo que sea distinta de todas las anteriores, y la pestaña Historial permite volver a
-ellas. No hay comparación entre tomas. `/analyze-recording` y `coach_feedback` quedan solo para las versiones de la
+ellas. No hay comparación entre tomas. Beta: un solo análisis (lectura o tanda) por guion para usuarios beta,
+aplicado en el servidor (`server/betaLimits.js`, misma regla que `constants/betaLimits.ts`) y avisado en la app. `/analyze-recording` y `coach_feedback` quedan solo para las versiones de la
 app anteriores a este cambio.
 
 ### Errores que ve el usuario

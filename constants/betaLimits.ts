@@ -4,8 +4,12 @@
  * Para desactivar restricciones al salir de beta:
  * Cambia IS_BETA_LIMITED a false.
  */
+// Misma regla y valores que server/betaLimits.js (el servidor también aplica el límite del Modo
+// Escena); __tests__/betaLimits.test.ts comprueba que coinciden.
 export const BETA_LIMITS = {
   MAX_SCRIPTS: 3,
+  // Modo Escena: análisis (lectura o tanda de propuestas) por guion.
+  MAX_SCENE_ANALYSES_PER_SCRIPT: 1,
   IS_BETA_LIMITED: true, // Cambiar a false para eliminar la restricción al salir de beta
 } as const;
 
