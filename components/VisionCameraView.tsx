@@ -1,5 +1,5 @@
 import React, { forwardRef, useEffect, useImperativeHandle, useRef, useState } from 'react';
-import { Platform, StyleSheet, View, Text, TouchableOpacity } from 'react-native';
+import { Linking, Platform, StyleSheet, View, Text, TouchableOpacity } from 'react-native';
 import {
   Camera,
   useCameraDevice,
@@ -64,10 +64,20 @@ const VisionCameraView = forwardRef((props: VisionCameraProps, ref) => {
   const { facing, zoom, videoQuality, isActive = true, onZoomInfo, androidLens = 'wide', onAndroidLensInfo } = props;
   const isAndroid = Platform.OS === 'android';
 
-  const { hasPermission: hasCameraPermission, requestPermission: requestCameraPermission } =
-    useCameraPermission();
-  const { hasPermission: hasMicPermission, requestPermission: requestMicPermission } =
-    useMicrophonePermission();
+  const {
+    hasPermission: hasCameraPermission,
+    requestPermission: requestCameraPermission,
+    canRequestPermission: canRequestCameraPermission,
+  } = useCameraPermission();
+  const {
+    hasPermission: hasMicPermission,
+    requestPermission: requestMicPermission,
+    canRequestPermission: canRequestMicPermission,
+  } = useMicrophonePermission();
+  // Si falta un permiso que el sistema ya no deja volver a pedir (se denegó),
+  // solo se puede dar desde los Ajustes de la app.
+  const mustOpenSettings =
+    (!hasCameraPermission && !canRequestCameraPermission) || (!hasMicPermission && !canRequestMicPermission);
 
   // Dispositivo combinado (ultra-wide + wide + telephoto) — mismo comportamiento
   // que el default de expo-camera, que ya permitía zoom out por debajo de 1x.
@@ -183,26 +193,40 @@ const VisionCameraView = forwardRef((props: VisionCameraProps, ref) => {
   }));
 
   if (!hasCameraPermission || !hasMicPermission) {
+    // Dos piezas: el fondo negro se queda donde va la cámara (debajo de los
+    // controles de la pantalla que la usa) y la tarjeta con el botón se dibuja
+    // por encima de ellos. Si la tarjeta fuera parte del fondo, la capa de
+    // controles de casting (teleprompter incluido) se quedaba los toques y el
+    // botón no se podía pulsar.
     return (
-      <View
-        style={[
-          StyleSheet.absoluteFill,
-          { backgroundColor: '#000', justifyContent: 'center', alignItems: 'center', padding: 30 },
-        ]}
-      >
-        <Text style={{ color: '#fff', textAlign: 'center', fontSize: rf(16), marginBottom: 20 }}>
-          La aplicación requiere permisos de cámara y micrófono.
-        </Text>
-        <TouchableOpacity
-          onPress={() => {
-            requestCameraPermission();
-            requestMicPermission();
-          }}
-          style={{ backgroundColor: '#10B981', paddingHorizontal: 20, paddingVertical: 10, borderRadius: 8 }}
+      <>
+        <View style={[StyleSheet.absoluteFill, { backgroundColor: '#000' }]} />
+        <View
+          pointerEvents="box-none"
+          style={[StyleSheet.absoluteFill, { justifyContent: 'center', alignItems: 'center', padding: 30, zIndex: 100, elevation: 100 }]}
         >
-          <Text style={{ color: '#fff', fontWeight: '600' }}>Dar Permisos</Text>
-        </TouchableOpacity>
-      </View>
+          <View style={{ backgroundColor: '#000', borderRadius: 16, padding: 24, alignItems: 'center' }}>
+            <Text style={{ color: '#fff', textAlign: 'center', fontSize: rf(16), marginBottom: 20 }}>
+              La aplicación requiere permisos de cámara y micrófono.
+            </Text>
+            <TouchableOpacity
+              onPress={async () => {
+                if (mustOpenSettings) {
+                  // Al volver de Ajustes, useCameraPermission/useMicrophonePermission
+                  // releen el estado y la cámara aparece sola.
+                  Linking.openSettings();
+                  return;
+                }
+                if (!hasCameraPermission) await requestCameraPermission();
+                if (!hasMicPermission) await requestMicPermission();
+              }}
+              style={{ backgroundColor: '#10B981', paddingHorizontal: 20, paddingVertical: 10, borderRadius: 8 }}
+            >
+              <Text style={{ color: '#fff', fontWeight: '600' }}>{mustOpenSettings ? 'Abrir Ajustes' : 'Dar Permisos'}</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </>
     );
   }
 

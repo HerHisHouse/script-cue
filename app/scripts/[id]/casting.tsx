@@ -481,6 +481,112 @@ export default function CastingModeScreen() {
   // BottomSheetMenu tarda 250 ms en animar su cierre y luego desmonta su Modal.
   const MENU_DISMISS_DELAY_MS = 450;
 
+  // Apaga el Plano General Automático y explica por qué. Se cierra antes el
+  // menú de configuración: iOS no presenta el aviso mientras ese Modal siga
+  // abierto (mismo motivo que el aviso de "Así funciona").
+  async function turnOffWideShotWithAlert(title: string, message: string, buttons?: CastingAlertButton[]) {
+    setAutoWideShotEnabled(false);
+    setShowMenu(false);
+    await new Promise((resolve) => setTimeout(resolve, MENU_DISMISS_DELAY_MS));
+    showCastingAlert(title, message, buttons);
+  }
+
+  // iOS no dice qué idiomas tiene descargados para el reconocimiento en el
+  // dispositivo (getSupportedLocales devuelve los admitidos), así que se hace un
+  // arranque de prueba sin grabar: si falta el español, iOS responde con
+  // 'service-not-allowed' ("Assets are not installed, Siri or Dictation is
+  // disabled") o 'language-not-supported'. Sin error en ese margen = disponible.
+  function probeIosSpanishOnDevice(): Promise<boolean> {
+    return new Promise((resolve) => {
+      let done = false;
+      const errorSub = ExpoSpeechRecognitionModule.addListener('error', (event) => {
+        finish(event.error !== 'service-not-allowed' && event.error !== 'language-not-supported');
+      });
+      const timer = setTimeout(() => finish(true), 2000);
+      function finish(available: boolean) {
+        if (done) return;
+        done = true;
+        clearTimeout(timer);
+        errorSub.remove();
+        ExpoSpeechRecognitionModule.abort();
+        resolve(available);
+      }
+      // Misma sesión de audio que haya (la de la cámara), igual que al grabar.
+      const audioSession = ExpoSpeechRecognitionModule.getAudioSessionCategoryAndOptionsIOS();
+      ExpoSpeechRecognitionModule.start({
+        lang: 'es-ES',
+        requiresOnDeviceRecognition: true,
+        iosCategory: {
+          category: audioSession.category,
+          categoryOptions: audioSession.categoryOptions,
+          mode: audioSession.mode,
+        },
+      });
+    });
+  }
+
+  async function ensureVoiceWideShotAvailable() {
+    try {
+      // Solo el permiso del micrófono: con reconocimiento en el dispositivo no
+      // hace falta el de "reconocimiento de voz", cuyo aviso de Apple dice que la
+      // voz se envía a sus servidores.
+      const { granted } = await ExpoSpeechRecognitionModule.requestMicrophonePermissionsAsync();
+      if (!granted) {
+        // Una vez denegado el sistema ya no vuelve a preguntar; solo se cambia desde Ajustes.
+        await turnOffWideShotWithAlert(
+          '🎙️ Micrófono desactivado',
+          'Para activar el plano general con la voz, ScriptCue necesita acceso al micrófono.\n\n' +
+          (Platform.OS === 'android'
+            ? 'Puedes activarlo en Ajustes → Aplicaciones → ScriptCue → Permisos → Micrófono.'
+            : 'Puedes activarlo en Ajustes → ScriptCue → Micrófono.'),
+          [
+            { text: 'Ahora no' },
+            { text: 'Abrir Ajustes', onPress: () => { Linking.openSettings(); } },
+          ],
+        );
+        return;
+      }
+
+      if (Platform.OS === 'android') {
+        const { installedLocales } = await ExpoSpeechRecognitionModule.getSupportedLocales({});
+        if (installedLocales.includes('es-ES')) return;
+        await turnOffWideShotWithAlert(
+          '🗣️ Español no disponible',
+          'Para activar el plano general con la voz, tu móvil necesita el reconocimiento de voz en español.\n\n' +
+          'Pulsa «Descargar español» y, cuando termine, vuelve a activar la opción.',
+          [
+            { text: 'Ahora no' },
+            {
+              text: 'Descargar español',
+              onPress: () => {
+                // Android 13 abre su propio diálogo de descarga; en Android 14+
+                // descarga directamente y avisa al terminar.
+                ExpoSpeechRecognitionModule.androidTriggerOfflineModelDownload({ locale: 'es-ES' })
+                  .then(({ status }) => {
+                    if (status === 'download_success') {
+                      showCastingAlert('✅ Español descargado', 'Ya puedes activar el plano general automático.');
+                    }
+                  })
+                  .catch((e) => console.warn('[PlanoGeneral] No se pudo descargar el español:', e));
+              },
+            },
+          ],
+        );
+        return;
+      }
+
+      if (await probeIosSpanishOnDevice()) return;
+      await turnOffWideShotWithAlert(
+        '🗣️ Español no disponible',
+        'Para activar el plano general con la voz, tu iPhone necesita el dictado en español.\n\n' +
+        'Ve a Ajustes → General → Teclado, activa «Dictado» y añade el teclado «Español (España)». ' +
+        'Después vuelve a activar la opción.',
+      );
+    } catch (e) {
+      console.warn('[PlanoGeneral] No se pudo comprobar el plano general por voz:', e);
+    }
+  }
+
   async function handleAutoWideShotToggle(value: boolean) {
     if (value && !WIDE_SHOT_SUPPORTED) {
       // iOS/Android no presentan el aviso mientras el menú (otro Modal) sigue abierto.
@@ -534,36 +640,9 @@ export default function CastingModeScreen() {
 
     function activateWideShot() {
       setAutoWideShotEnabled(value);
-      // iOS: el permiso se pide al activar el interruptor, no al empezar a
-      // grabar con la cámara ya en marcha. Solo el del micrófono: con
-      // reconocimiento en el dispositivo no hace falta el de "reconocimiento de
-      // voz", cuyo aviso de Apple dice que la voz se envía a sus servidores.
-      if (value) {
-        ExpoSpeechRecognitionModule.requestMicrophonePermissionsAsync()
-          .then(async ({ granted }) => {
-            if (granted) return;
-            // Sin micrófono la activación por voz no puede funcionar: se apaga
-            // el interruptor y se explica cómo dar el permiso (una vez denegado
-            // el sistema ya no vuelve a preguntar; solo se cambia desde Ajustes).
-            setAutoWideShotEnabled(false);
-            // Mismo motivo que el aviso de "Así funciona": iOS no presenta el
-            // aviso mientras el menú de configuración (otro Modal) siga abierto.
-            setShowMenu(false);
-            await new Promise((resolve) => setTimeout(resolve, MENU_DISMISS_DELAY_MS));
-            showCastingAlert(
-              '🎙️ Micrófono desactivado',
-              'Para activar el plano general con la voz, ScriptCue necesita acceso al micrófono.\n\n' +
-              (Platform.OS === 'android'
-                ? 'Puedes activarlo en Ajustes → Aplicaciones → ScriptCue → Permisos → Micrófono.'
-                : 'Puedes activarlo en Ajustes → ScriptCue → Micrófono.'),
-              [
-                { text: 'Ahora no' },
-                { text: 'Abrir Ajustes', onPress: () => { Linking.openSettings(); } },
-              ],
-            );
-          })
-          .catch((e) => console.warn('[PlanoGeneral] No se pudo pedir el permiso del micrófono:', e));
-      }
+      // Micrófono y español se comprueban al activar el interruptor, no al
+      // empezar a grabar con la cámara ya en marcha.
+      if (value) ensureVoiceWideShotAvailable();
       const neutralZoomValue = getNeutralZoomValue(zoomStops);
       const widestZoomValue = getWidestZoomValue(zoomStops);
       if (!value) {
