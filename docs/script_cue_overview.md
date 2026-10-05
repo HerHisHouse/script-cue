@@ -52,10 +52,11 @@ Convierte el móvil en un estudio de grabación profesional.
 *   **Teleprompter**: El guion se desplaza por la pantalla a una velocidad ajustable mientras la cámara frontal graba.
 *   **Sin Eco**: Tecnología que silencia el audio del usuario mientras la IA "compañera" habla, permitiendo grabar un self-tape con audio limpio listo para enviar.
 
-### **Modo Coach (Análisis por IA)** 👨‍🏫
-Un entrenador de actuación en el bolsillo.
-*   **Análisis**: Tras una grabación, la IA analiza la dicción, el ritmo (tempo), la intención emocional y la naturalidad.
-*   **Feedback**: Devuelve consejos específicos y ejercicios personalizados para mejorar la interpretación de esa escena concreta.
+### **Modo Escena (Análisis del guion por IA)** 🎭
+Un compañero de lectura de mesa, no un evaluador.
+*   **Qué analiza**: Solo el texto. El actor elige una escena (si el guion tiene varias) y su personaje; la IA nunca escucha ni valora su interpretación.
+*   **Lectura**: Objetivo del personaje, obstáculo, relación con el otro y ritmo (los giros de la escena), siempre apoyados en réplicas concretas del guion.
+*   **Propuestas**: De 4 a 8 maneras distintas de jugar la escena (según su extensión), cada una con la elección, en qué parte del texto se apoya y cómo probarla en el ensayo.
 
 ---
 

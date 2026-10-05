@@ -96,11 +96,28 @@ Decide which side new backend logic belongs on:
   `npm run typecheck`/`lint` to cover them.
 - **`server/` Express app** (`index.js`, deployed per `render.yaml`) — anything needing ffmpeg or a heavier
   native dependency: `/merge` and `/process-casting` (mix TTS audio with a recorded video/audio take),
-  `/compress-video`, `/analyze-recording` (Coach mode feedback), `/generate-quiz`, `/tts-azure` / `/tts-hume`
+  `/compress-video`, `/analyze-scene` (Modo Escena, ver abajo), `/generate-quiz`, `/tts-azure` / `/tts-hume`
   (providers without a convenient Deno/edge SDK), `/api/azure/voices`, `/api/tts/preview/:provider/:voiceId`,
   `/usage/summary`. It logs per-call API cost estimates to the `api_usage` table via `logApiUsage()`
   (`API_COSTS` table near the top of `index.js`) — follow that pattern when adding a new paid-API call so cost
   tracking stays consistent.
+
+### Modo Escena (`app/scripts/[id]/coach.tsx`)
+
+Analiza **solo el guion**, nunca una grabación ni la actuación del usuario: elige escena (tabla `scenes`; se salta si
+hay una) y personaje, y `POST /analyze-scene` devuelve una lectura (objetivo, obstáculo, relación, ritmo) y de 4 a 8
+propuestas para interpretarla de maneras distintas. Prompt, esquema y validación en `server/sceneAnalysis.js` (Claude
+Sonnet 5 con salida JSON estructurada, `ANTHROPIC_API_KEY` en Render; tests en `__tests__/sceneAnalysis.test.ts`). La IA recibe además el
+guion completo como contexto (bloque cacheado; en guiones enormes, las escenas más cercanas). El
+texto se lee de `lines` (no de la tabla antigua `dialogues`) y el resultado se guarda en `scene_analyses` por escena y
+personaje. No hay comparación entre tomas. `/analyze-recording` y `coach_feedback` quedan solo para las versiones de la
+app anteriores a este cambio.
+
+### Errores que ve el usuario
+
+Nunca se muestra el error técnico en bruto. El servidor guarda el detalle en `error_reports` con un código
+(`SC-XXXXXX`, `server/errorReports.js`) y responde con un mensaje legible más ese código; la app lo enseña con
+"Reportar el problema" (`utils/errorReports.ts`: guarda el reporte y abre el correo a info@scriptcue.es).
 
 ### Database
 

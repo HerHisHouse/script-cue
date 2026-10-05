@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import {
   View,
   Text,
@@ -6,92 +6,81 @@ import {
   TouchableOpacity,
   ScrollView,
   ActivityIndicator,
-  Dimensions,
-  Image,
-  FlatList,
   Modal,
   ImageBackground,
 } from 'react-native';
 import { useDialogMaxHeight, dialogScrollStyle } from '@/hooks/useDialogMaxHeight';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
-import { BlurView } from 'expo-blur';
-import { ANDROID_BLUR_METHOD } from '@/utils/blur';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { useRouter, useLocalSearchParams, Stack } from 'expo-router';
 import {
   ArrowLeft,
-  Play,
-  Pause,
-  Video as VideoIcon,
-  Mic,
   Brain,
   Sparkles,
   Activity,
-  MessageSquare,
-  Repeat,
   ChevronRight,
-  TrendingUp,
-  Dumbbell,
-  RefreshCw,
   Info,
   AlertCircle,
   Square,
   CheckSquare,
-  TrendingDown,
-  Clapperboard,
-  Eye,
   Target,
   Users,
-  Volume2,
-  Square as StopSquare,
-  Cloud,
-  Smartphone
+  ShieldAlert,
+  RefreshCw,
+  Play,
+  User,
 } from 'lucide-react-native';
-import { Audio, Video, ResizeMode } from 'expo-av';
 import { supabase } from '@/utils/supabase';
-import { RecordingAvailability, getAvailabilityMap, getDeviceFileUri, isDevicePath, OTHER_DEVICE_MESSAGE } from '@/utils/recordingLocation';
 import { serverAuthHeaders } from '@/utils/serverAuth';
 import { RENDER_SERVER_URL } from '@/utils/serverUrl';
+import { createErrorReference, reportErrorToSupport, SUPPORT_EMAIL } from '@/utils/errorReports';
 import { useTheme } from '@/contexts/ThemeContext';
 import { GlassCard } from '@/components/GlassCard';
 import { useAuth } from '@/contexts/AuthContext';
-import type { Recording } from '@/types/database';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { getSettings } from '@/utils/appSettings';
-import { getIntroPreferences, setIntroPreference } from '@/utils/introPreferences';
-import { setAudioModeForPlayback } from '@/utils/audioMode';
 import { rf, rp } from '@/utils/responsive';
 import { trackEvent } from '@/utils/analytics';
 import { ModalGlassFill } from '@/components/ModalGlassFill';
 
+// Modo Escena: análisis interpretativo hecho SOLO sobre el guion (escena + personaje). No usa
+// grabaciones ni valora la actuación. El análisis lo genera POST /analyze-scene (server/) y se
+// guarda en la tabla scene_analyses por escena y personaje.
+
 const COACH_DISCLAIMER_KEY = '@coach_disclaimer_shown';
+const ANALYSIS_TIMEOUT_MS = 120000;
+const MODE = 'scene';
 
-const SCREEN_WIDTH = Dimensions.get('window').width;
+const INFO_TEXT =
+  'Elige una escena y tu personaje: ScriptCue lee el guion y te propone distintas maneras de interpretarlo. No analiza ni valora tu actuación: es un laboratorio para explorar.';
 
-// Define tabs
-type TabType = 'feedback' | 'propuestas' | 'comparacion';
+// Errores que el propio usuario puede resolver: se explican sin ofrecer reporte.
+const USER_FIXABLE_ERRORS = new Set([
+  'UNAUTHORIZED', 'MISSING_FIELDS', 'SCRIPT_NOT_FOUND', 'SCENE_NOT_FOUND',
+  'CHARACTER_NOT_FOUND', 'EMPTY_SCENE', 'CHARACTER_NOT_IN_SCENE',
+]);
 
-// Mapeo de etiquetas con tildes para visualización
-const feedbackLabels: Record<string, string> = {
-  presencia: 'PRESENCIA',
-  objetivo: 'OBJETIVO',
-  relacion: 'RELACIÓN',
-  ritmo: 'RITMO'
-};
+interface SceneRow { id: string; heading: string; scene_number: number; order_index: number }
+interface LineRow { scene_id: string; character_name: string; content: string; order_index: number }
+interface CharacterRow { id: string; name: string; is_user_character: boolean | null }
+interface Lectura { objetivo: string; obstaculo: string; relacion: string; ritmo: string }
+interface Propuesta { titulo: string; eleccion: string; en_el_texto: string; como_probarlo: string }
+interface SceneAnalysis { lectura: Lectura; propuestas: Propuesta[] }
+interface SavedAnalysis { analysis: SceneAnalysis; updatedAt: string }
 
-const getFeedbackIcon = (key: string, color: string) => {
-  switch (key) {
-    case 'presencia': return <Eye size={20} color={color} />;
-    case 'objetivo': return <Target size={20} color={color} />;
-    case 'relacion': return <Users size={20} color={color} />;
-    case 'ritmo': return <Activity size={20} color={color} />;
-    default: return <Activity size={20} color={color} />;
-  }
-};
+const LECTURA_ITEMS: { key: keyof Lectura; label: string; Icon: typeof Target }[] = [
+  { key: 'objetivo', label: 'Objetivo', Icon: Target },
+  { key: 'obstaculo', label: 'Obstáculo', Icon: ShieldAlert },
+  { key: 'relacion', label: 'Relación', Icon: Users },
+  { key: 'ritmo', label: 'Ritmo', Icon: Activity },
+];
 
-export default function CoachModeScreen() {
+const isActionLine = (name: string) => ['ACCIÓN', 'ACCION'].includes(name.trim().toUpperCase());
+const analysisKey = (sceneId: string, characterId: string) => `${sceneId}:${characterId}`;
+
+export default function SceneModeScreen() {
   const router = useRouter();
   const { id } = useLocalSearchParams();
+  const scriptId = String(id);
   const { colors, isDark } = useTheme();
   const dialogMaxHeight = useDialogMaxHeight();
   const { user } = useAuth();
@@ -102,900 +91,439 @@ export default function CoachModeScreen() {
   const onBg2 = isDark ? '#a0a0c0' : '#5c5678';
   const cardBg = isDark ? 'rgba(124,106,247,0.08)' : 'rgba(255,255,255,0.55)';
   const cardBorder = isDark ? 'rgba(167,139,250,0.25)' : 'rgba(124,106,247,0.15)';
-  const fieldBg = isDark ? 'rgba(255,255,255,0.06)' : 'rgba(255,255,255,0.7)';
-  const chipBg = isDark ? 'rgba(255,255,255,0.08)' : 'rgba(104,58,121,0.08)';
+  const accent = isDark ? '#FFFFFF' : colors.primary;
   const glassHeaderBtn = isDark
     ? { backgroundColor: 'rgba(124,106,247,0.14)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.2)' }
     : { backgroundColor: colors.primary };
-  // Mismo tratamiento que el botón "Subir y Analizar" de Importar Guion / Modo Análisis
   const primaryButtonBg = isDark
     ? { backgroundColor: 'rgba(124,106,247,0.80)', borderWidth: 1.5, borderColor: 'rgba(255,255,255,0.5)' }
     : { backgroundColor: colors.primary };
-  // Sobre el fondo glass morado de la pestaña activa, el propio colors.primary (lila) apenas
-  // contrasta en oscuro; en claro sigue siendo el morado del tema.
-  const activeTabColor = isDark ? '#FFFFFF' : colors.primary;
-  const coachBg = () => (isDark ? require('@/assets/images/ui-dark-bg.png') : require('@/assets/images/ui-light-bg.png'));
+  const activeTabBg = isDark ? 'rgba(124,106,247,0.20)' : 'rgba(104,58,121,0.12)';
   const modalOverlayTint = isDark ? 'rgba(124,106,247,0.20)' : 'rgba(235,230,245,0.55)';
+  const coachBg = () => (isDark ? require('@/assets/images/ui-dark-bg.png') : require('@/assets/images/ui-light-bg.png'));
 
-  const [infoDialog, setInfoDialog] = useState<{ visible: boolean; title: string; message: string; onClose?: () => void }>({
-    visible: false,
-    title: '',
-    message: '',
-  });
-
-  const showInfo = (title: string, message: string, onClose?: () => void) => {
-    setInfoDialog({ visible: true, title, message, onClose });
-  };
-
-  const closeInfoDialog = () => {
-    const onClose = infoDialog.onClose;
-    setInfoDialog({ visible: false, title: '', message: '' });
-    onClose?.();
-  };
-
-  const [recordings, setRecordings] = useState<Recording[]>([]);
-  // Local / Nube / En otro dispositivo, comprobado en este dispositivo (ver utils/recordingLocation.ts)
-  const [availability, setAvailability] = useState<Record<string, RecordingAvailability>>({});
-  useEffect(() => {
-    let cancelled = false;
-    getAvailabilityMap(recordings).then(map => { if (!cancelled) setAvailability(map); });
-    return () => { cancelled = true; };
-  }, [recordings]);
   const [loading, setLoading] = useState(true);
-  const [isLocalOnly, setIsLocalOnly] = useState(false);
-
-  useEffect(() => {
-    const checkLocalMode = async () => {
-      const settings = await getSettings();
-      setIsLocalOnly(settings?.useLocalOnly || false);
-    };
-    checkLocalMode();
-  }, []);
-  const [selectedRecording, setSelectedRecording] = useState<Recording | null>(null);
-  const [analysis, setAnalysis] = useState<any | null>(null);
+  const [scenes, setScenes] = useState<SceneRow[]>([]);
+  const [lines, setLines] = useState<LineRow[]>([]);
+  const [characters, setCharacters] = useState<CharacterRow[]>([]);
+  const [saved, setSaved] = useState<Record<string, SavedAnalysis>>({});
+  const [sceneId, setSceneId] = useState<string | null>(null);
+  const [characterId, setCharacterId] = useState<string | null>(null);
   const [analyzing, setAnalyzing] = useState(false);
-  const [activeTab, setActiveTab] = useState<'feedback' | 'propuestas' | 'comparacion'>('feedback');
-  const [comparingWith, setComparingWith] = useState<string | null>(null);
+  const [activeTab, setActiveTab] = useState<'lectura' | 'propuestas'>('lectura');
 
-  // States for preview audio
-  const [previewingId, setPreviewingId] = useState<string | null>(null);
-  const previewSoundRef = useRef<Audio.Sound | null>(null);
-  const [analyzedIds, setAnalyzedIds] = useState<Set<string>>(new Set());
-  const [playbackStatus, setPlaybackStatus] = useState<any>(null);
-  const [sound, setSound] = useState<Audio.Sound | null>(null);
   const [showDisclaimer, setShowDisclaimer] = useState(false);
   const [dontShowAgain, setDontShowAgain] = useState(false);
+  const [infoDialog, setInfoDialog] = useState({ visible: false, title: '', message: '' });
+  const [errorDialog, setErrorDialog] = useState<{ visible: boolean; reference: string; technicalMessage?: string }>({
+    visible: false,
+    reference: '',
+  });
 
-  const [characters, setCharacters] = useState<any[]>([]);
-  const [selectedCharacterId, setSelectedCharacterId] = useState<string | null>(null);
-  const [selectedCharacterName, setSelectedCharacterName] = useState<string>('');
-  const [showCharacterSelector, setShowCharacterSelector] = useState(false);
+  const showInfo = (title: string, message: string) => setInfoDialog({ visible: true, title, message });
 
-  const videoRef = useRef<Video>(null);
-
-  // Check if disclaimer should be shown
   useEffect(() => {
-    checkDisclaimer();
+    AsyncStorage.getItem(COACH_DISCLAIMER_KEY)
+      .then(value => { if (value !== 'true') setShowDisclaimer(true); })
+      .catch(() => setShowDisclaimer(true));
   }, []);
 
-  async function checkDisclaimer() {
+  const loadData = useCallback(async () => {
     try {
-      const value = await AsyncStorage.getItem(COACH_DISCLAIMER_KEY);
-      if (value !== 'true') {
-        setShowDisclaimer(true);
+      const { data: sceneData } = await supabase
+        .from('scenes')
+        .select('id, heading, scene_number, order_index')
+        .eq('script_id', scriptId)
+        .order('order_index', { ascending: true });
+      const sceneRows = (sceneData || []) as SceneRow[];
+
+      const [linesRes, charsRes, savedRes] = await Promise.all([
+        sceneRows.length
+          ? supabase.from('lines').select('scene_id, character_name, content, order_index')
+            .in('scene_id', sceneRows.map(s => s.id)).order('order_index', { ascending: true })
+          : Promise.resolve({ data: [] as LineRow[] }),
+        supabase.from('characters').select('id, name, is_user_character').eq('script_id', scriptId).order('name'),
+        supabase.from('scene_analyses').select('scene_id, character_id, analysis, updated_at').eq('script_id', scriptId),
+      ]);
+
+      setScenes(sceneRows);
+      setLines((linesRes.data || []) as LineRow[]);
+      setCharacters((charsRes.data || []) as CharacterRow[]);
+      const savedMap: Record<string, SavedAnalysis> = {};
+      for (const row of savedRes.data || []) {
+        savedMap[analysisKey(row.scene_id, row.character_id)] = { analysis: row.analysis, updatedAt: row.updated_at };
       }
+      setSaved(savedMap);
+      // Guion de una sola escena (lo habitual): se salta el paso de elegir escena.
+      if (sceneRows.length === 1) setSceneId(sceneRows[0].id);
     } catch (e) {
-      console.error('Error checking disclaimer:', e);
-      setShowDisclaimer(true); // Show by default if error
+      console.error('[Escena] Error cargando el guion:', e);
+    } finally {
+      setLoading(false);
     }
+  }, [scriptId]);
+
+  useEffect(() => {
+    loadData();
+    if (user) trackEvent(user.id, 'mode_opened', MODE, { script_id: scriptId });
+  }, [loadData, user, scriptId]);
+
+  // Por escena: réplicas, quién habla (en orden de aparición) y las primeras líneas para reconocerla.
+  const sceneInfo = useMemo(() => {
+    const info: Record<string, { dialogueCount: number; speakers: string[]; preview: string }> = {};
+    for (const scene of scenes) info[scene.id] = { dialogueCount: 0, speakers: [], preview: '' };
+    for (const line of lines) {
+      const entry = info[line.scene_id];
+      if (!entry || isActionLine(line.character_name)) continue;
+      entry.dialogueCount++;
+      const name = line.character_name.trim().toUpperCase();
+      if (!entry.speakers.includes(name)) entry.speakers.push(name);
+      if (!entry.preview) entry.preview = `${name}: ${line.content.trim()}`;
+    }
+    return info;
+  }, [scenes, lines]);
+
+  const selectedScene = scenes.find(s => s.id === sceneId) || null;
+  const selectedCharacter = characters.find(c => c.id === characterId) || null;
+  const sceneCharacters = useMemo(() => {
+    if (!sceneId) return [];
+    const speakers = sceneInfo[sceneId]?.speakers || [];
+    return speakers
+      .map(name => characters.find(c => c.name.trim().toUpperCase() === name))
+      .filter((c): c is CharacterRow => !!c);
+  }, [sceneId, sceneInfo, characters]);
+
+  const current = sceneId && characterId ? saved[analysisKey(sceneId, characterId)] : undefined;
+  const singleScene = scenes.length === 1;
+
+  function goBack() {
+    if (characterId) { setCharacterId(null); return; }
+    if (sceneId && !singleScene) { setSceneId(null); return; }
+    router.back();
   }
 
   async function handleDisclaimerAccept() {
     if (dontShowAgain) {
-      try {
-        await AsyncStorage.setItem(COACH_DISCLAIMER_KEY, 'true');
-      } catch (e) {
-        console.error('Error saving disclaimer preference:', e);
-      }
+      await AsyncStorage.setItem(COACH_DISCLAIMER_KEY, 'true').catch(() => { });
     }
     setShowDisclaimer(false);
   }
 
-  useEffect(() => {
-    loadRecordings();
-    loadCharacters();
-
-    // Enable playback mode - FORCE SPEAKER OUTPUT
-    setAudioModeForPlayback();
-  }, [id]);
-
-  useEffect(() => {
-    return () => {
-      if (sound) {
-        sound.unloadAsync();
-      }
-      if (previewSoundRef.current) {
-        previewSoundRef.current.unloadAsync();
-      }
-    };
-  }, [sound]);
-
-  async function loadCharacters() {
-    try {
-      const { data } = await supabase
-        .from('characters')
-        .select('id, name')
-        .eq('script_id', id)
-        .order('name');
-      
-      if (data) setCharacters(data);
-    } catch (e) {
-      console.error('Error loading characters:', e);
-    }
-  }
-
-  // Video component needs source prop handling. 
-  // We need to fetch signed URL for video too if it's selected.
-  const [videoSignedUrl, setVideoSignedUrl] = useState<string | null>(null);
-
-  useEffect(() => {
-    if (selectedRecording?.type === 'video' && selectedRecording.audio_url) {
-      resolvePlayableUrl(selectedRecording.audio_url).then(url => setVideoSignedUrl(url));
-    } else {
-      setVideoSignedUrl(null);
-    }
-  }, [selectedRecording]);
-
-  async function loadRecordings() {
-    try {
-      if (!id) return;
-      const { data, error } = await supabase
-        .from('recordings')
-        .select('*')
-        .eq('script_id', id)
-        .order('created_at', { ascending: false });
-
-      if (error) throw error;
-      setRecordings(data || []);
-
-      // Fetch analyzed IDs
-      const { data: feedbackData } = await supabase
-        .from('coach_feedback')
-        .select('recording_id');
-      
-      if (feedbackData) {
-        setAnalyzedIds(new Set(feedbackData.map(f => f.recording_id)));
-      }
-    } catch (e) {
-      console.error('Error loading recordings:', e);
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  async function selectRecording(rec: Recording) {
-    if (sound) {
-      await sound.unloadAsync();
-      setSound(null);
-    }
-    setPlaybackStatus(null); // Reset status
-
-    setSelectedRecording(rec);
-    setAnalysis(null);
-    setActiveTab('feedback');
-
-    // Intentar cargar el personaje guardado en la grabación
-    if (rec.character_id) {
-      const char = characters.find(c => c.id === rec.character_id);
-      if (char) {
-        setSelectedCharacterId(rec.character_id);
-        setSelectedCharacterName(char.name.toUpperCase());
-      } else {
-        setSelectedCharacterId(rec.character_id);
-        setSelectedCharacterName(''); // fallback
-      }
-    } else {
-      // Si la grabación no tiene personaje, pedir al usuario que lo elija
-      setSelectedCharacterId(null);
-      setSelectedCharacterName('');
-    }
-
-    checkExistingAnalysis(rec.id);
-  }
-
-  async function checkExistingAnalysis(recordingId: string) {
-    try {
-      console.log('[Escena] Buscando análisis guardado para:', recordingId);
-      
-      const { data, error } = await supabase
-        .from('coach_feedback')
-        .select('*')
-        .eq('recording_id', recordingId)
-        .order('created_at', { ascending: false }) // el más reciente primero
-        .limit(1)
-        .single();
-
-      if (error) {
-        console.log('[Escena] No hay análisis guardado:', error.message);
-        return; // No hay análisis, mostrar botón de analizar
-      }
-
-      if (data) {
-        console.log('[Escena] Análisis encontrado:', Object.keys(data));
-        console.log('[Escena] Campos del feedback:', 
-          data.feedback ? Object.keys(data.feedback) : 'feedback vacío');
-        
-        // El análisis puede estar en data.feedback directamente
-        // o puede ser que data sea el feedback en sí
-        // Verificar ambas posibilidades:
-        
-        if (data.feedback && 
-            (data.feedback.presencia || data.feedback.propuestas)) {
-          // Formato nuevo: feedback está dentro del campo feedback
-          setAnalysis(data.feedback);
-          console.log('[Escena] ✅ Análisis nuevo cargado desde campo feedback');
-        } else if (data.presencia || data.propuestas) {
-          // Formato donde el JSON está en la raíz del registro
-          setAnalysis(data);
-          console.log('[Escena] ✅ Análisis cargado desde raíz del registro');
-        } else {
-          console.warn('[Escena] ⚠️ Análisis encontrado pero formato no reconocido');
-          console.warn('[Escena] Estructura:', JSON.stringify(data).substring(0, 200));
-        }
-      }
-    } catch (e) {
-      console.error('[Escena] Error en checkExistingAnalysis:', e);
-    }
-  }
-
-  async function startAnalysis(compareWithId?: string) {
-    if (!selectedRecording || !user) return;
-
+  async function startAnalysis() {
+    if (!sceneId || !characterId || analyzing) return;
     setAnalyzing(true);
-    if (compareWithId) setComparingWith(compareWithId);
-    else setComparingWith(null);
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), ANALYSIS_TIMEOUT_MS);
 
     try {
-      const renderUrl = RENDER_SERVER_URL;
-
-      // Create abort controller for timeout
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 300000); // 5 minutes
-
-      const requestBody = {
-        recordingPath: selectedRecording.audio_url,
-        recordingId: selectedRecording.id,
-        userId: user.id,
-        scriptId: id,
-        sceneId: selectedRecording.scene_id,
-        recordingType: selectedRecording.type || 'audio',
-        characterId: selectedCharacterId || selectedRecording.character_id,
-        characterName: selectedCharacterName, // Siempre enviarlo
-        compareWithId: compareWithId
-      };
-      console.log('[Escena] Enviando personaje:', selectedCharacterName);
-      console.log('[DEBUG] Request body:', JSON.stringify(requestBody, null, 2));
-
-      if (user) trackEvent(user.id, 'mode_opened', 'scene', { script_id: id, recording_id: selectedRecording?.id });
-      const response = await fetch(`${renderUrl}/analyze-recording`, {
+      const response = await fetch(`${RENDER_SERVER_URL}/analyze-scene`, {
         method: 'POST',
-        headers: {
-          ...(await serverAuthHeaders()),
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify(requestBody),
-        signal: controller.signal
+        headers: { ...(await serverAuthHeaders()), 'Content-Type': 'application/json' },
+        body: JSON.stringify({ scriptId, sceneId, characterId }),
+        signal: controller.signal,
       });
+      let data: any = null;
+      try { data = await response.json(); } catch { data = null; }
 
-      clearTimeout(timeoutId);
-
-      console.log('[DEBUG] Response received!');
-      console.log('[DEBUG] Response status:', response.status);
-      console.log('[DEBUG] Response ok:', response.ok);
-      console.log('[DEBUG] Response headers:', JSON.stringify([...response.headers.entries()]));
-
-      if (!response.ok) {
-        let errorData;
-        try {
-          errorData = await response.json();
-        } catch(e) {
-          errorData = { error: await response.text() };
-        }
-        
-        if (errorData.errorCode === 'NO_CHARACTER') {
-          // Mostrar el selector de personaje
-          setAnalyzing(false);
-          setShowCharacterSelector(true);
-          return;
-        }
-
-        const status = response.status;
-        console.error('[DEBUG] Error response body:', errorData);
-
-        if (status === 404) {
-          throw new Error('El endpoint de análisis no existe en el servidor. Por favor, haz push de los cambios de server/index.js a Render.');
-        }
-
-        throw new Error(`Error ${status}: ${errorData.error}`);
+      if (response.ok && data?.success && data.analysis) {
+        setSaved(prev => ({
+          ...prev,
+          [analysisKey(sceneId, characterId)]: { analysis: data.analysis, updatedAt: data.updatedAt || new Date().toISOString() },
+        }));
+        setActiveTab('lectura');
+        if (user) trackEvent(user.id, 'analysis_completed', MODE, { script_id: scriptId });
+        return;
       }
 
-      const responseText = await response.text();
-      console.log('[DEBUG] Response text:', responseText);
-
-      let result;
-      try {
-        result = JSON.parse(responseText);
-      } catch (e) {
-        console.error('[DEBUG] Failed to parse response as JSON:', e);
-        throw new Error('Respuesta inválida del servidor (no es JSON)');
+      if (data?.errorCode && USER_FIXABLE_ERRORS.has(data.errorCode)) {
+        showInfo('No se puede analizar', data.error);
+        return;
       }
-
-      console.log('[DEBUG] Parsed result:', JSON.stringify(result, null, 2));
-
-      if (result.success && result.analysis) {
-        console.log('[DEBUG] Analysis received successfully!');
-        setAnalysis(result.analysis);
-
-        // PERSISTENCE locally in state for icons
-        setAnalyzedIds(prev => new Set(prev).add(selectedRecording.id));
-        if (user) trackEvent(user.id, 'analysis_completed', 'scene', { script_id: id });
-        
-        // Clean comparison state
-        setComparingWith(null);
-      } else {
-        console.error('[DEBUG] Result does not have success=true or analysis field');
-        throw new Error('Respuesta inválida del coach');
-      }
-
+      setErrorDialog({
+        visible: true,
+        // El servidor ya guardó el detalle con su código; si no llegó, el detalle va en el reporte.
+        reference: data?.reference || createErrorReference(),
+        technicalMessage: data?.reference ? undefined : `HTTP ${response.status} en /analyze-scene${data ? '' : ' (respuesta no JSON)'}`,
+      });
     } catch (e: any) {
-      console.error('Analysis error:', e);
-
-      if (e.name === 'AbortError') {
-        showInfo('Timeout', 'El análisis tardó demasiado tiempo. El archivo puede ser muy largo. Intenta con una grabación más corta.');
-      } else if (e.message.includes('503')) {
-        showInfo('Servidor Ocupado', 'El servidor está procesando demasiadas peticiones. Espera 1 minuto e intenta de nuevo.');
-      } else {
-        showInfo('Error de Análisis', e.message);
-      }
+      setErrorDialog({
+        visible: true,
+        reference: createErrorReference(),
+        technicalMessage: e?.name === 'AbortError'
+          ? `Tiempo agotado (${ANALYSIS_TIMEOUT_MS / 1000}s) en /analyze-scene`
+          : `Error de red en /analyze-scene: ${e?.message || e}`,
+      });
     } finally {
-      setComparingWith(null);
+      clearTimeout(timeoutId);
       setAnalyzing(false);
     }
   }
 
-  async function getSignedUrl(path: string): Promise<string | null> {
-    try {
-      const { data, error } = await supabase.storage
-        .from('recordings')
-        .createSignedUrl(path, 3600); // 1 hour validity
-
-      if (error) throw error;
-      return data.signedUrl;
-    } catch (e) {
-      console.error('Error getting signed URL:', e);
-      return null;
-    }
-  }
-
-  // Archivo en este dispositivo (grabado aquí o descargado "Offline") → nube (URL firmada).
-  // Una grabación "solo local" de otro dispositivo no se puede reproducir aquí.
-  async function resolvePlayableUrl(path: string): Promise<string | null> {
-    const deviceUri = await getDeviceFileUri(path);
-    if (deviceUri) return deviceUri;
-    if (isDevicePath(path)) {
-      showInfo('No disponible', OTHER_DEVICE_MESSAGE);
-      return null;
-    }
-    if (path.startsWith('http')) return path;
-    return getSignedUrl(path);
-  }
-
-  async function playAudio(path: string) {
-    try {
-      if (sound) {
-        await sound.unloadAsync();
-      }
-
-      const playableUrl = await resolvePlayableUrl(path);
-      if (!playableUrl) {
-        if (!isDevicePath(path)) showInfo('Error', 'No se pudo obtener la URL del audio');
-        return;
-      }
-
-      const { sound: newSound } = await Audio.Sound.createAsync(
-        { uri: playableUrl },
-        { shouldPlay: true }
+  async function handleReport() {
+    const { reference, technicalMessage } = errorDialog;
+    setErrorDialog({ visible: false, reference: '' });
+    const { saved: reportSaved, emailOpened } = await reportErrorToSupport({
+      reference,
+      mode: MODE,
+      technicalMessage,
+      details: { scriptId, sceneId, characterId },
+    });
+    if (!emailOpened) {
+      showInfo(
+        reportSaved ? 'Reporte enviado' : 'No se pudo enviar el reporte',
+        reportSaved
+          ? `Gracias, lo revisaremos. Si quieres darnos más detalles, escríbenos a ${SUPPORT_EMAIL} indicando el código ${reference}.`
+          : `Escríbenos a ${SUPPORT_EMAIL} indicando el código ${reference} y lo revisaremos.`,
       );
-      setSound(newSound);
-      newSound.setOnPlaybackStatusUpdate(setPlaybackStatus);
-    } catch (e) {
-      console.error('Playback error:', e);
-      showInfo('Error de reproducción', 'No se pudo reproducir el archivo. Código: -1008 (Acceso denegado o archivo no encontrado).');
     }
   }
 
-  async function togglePlayback() {
-    if (!selectedRecording) return;
+  const formatDate = (iso: string) =>
+    new Date(iso).toLocaleDateString('es-ES', { day: 'numeric', month: 'short', year: 'numeric' });
 
-    // Handle Video Playback Logic
-    if (selectedRecording.type === 'video') {
-      if (videoRef.current) {
-        if (playbackStatus?.isPlaying) {
-          videoRef.current.pauseAsync();
-        } else {
-          videoRef.current.playAsync();
-        }
-      }
-      return;
-    }
+  const headerTitle = characterId ? 'Análisis de la escena' : sceneId ? 'Elige tu personaje' : 'Modo Escena';
 
-    // Handle Audio Playback Logic
-    if (sound) {
-      if (playbackStatus?.isPlaying) {
-        await sound.pauseAsync();
-      } else {
-        await sound.playAsync();
-      }
-    } else {
-      // First time play
-      await playAudio(selectedRecording.audio_url);
-    }
-  }
-
-  async function togglePreview(recording: Recording) {
-    try {
-      if (previewingId === recording.id) {
-        if (previewSoundRef.current) {
-          await previewSoundRef.current.stopAsync();
-          await previewSoundRef.current.unloadAsync();
-          previewSoundRef.current = null;
-        }
-        setPreviewingId(null);
-      } else {
-        if (previewSoundRef.current) {
-          await previewSoundRef.current.stopAsync();
-          await previewSoundRef.current.unloadAsync();
-        }
-        setPreviewingId(recording.id);
-
-        const playableUrl = await resolvePlayableUrl(recording.audio_url);
-        if (!playableUrl) {
-          if (!isDevicePath(recording.audio_url)) showInfo('Error', 'No se pudo obtener el audio');
-          setPreviewingId(null);
-          return;
-        }
-
-        const { sound: newSound } = await Audio.Sound.createAsync(
-          { uri: playableUrl },
-          { shouldPlay: true }
+  const renderSceneList = () => (
+    <View style={styles.listContent}>
+      <Text style={[styles.subtitle, { color: onBg2 }]}>Elige la escena que quieres trabajar.</Text>
+      {scenes.map(scene => {
+        const info = sceneInfo[scene.id];
+        const analyzed = Object.keys(saved).some(k => k.startsWith(`${scene.id}:`));
+        return (
+          <TouchableOpacity key={scene.id} activeOpacity={0.8} onPress={() => setSceneId(scene.id)}>
+            <GlassCard isDark={isDark} style={styles.rowCardOuter} contentStyle={styles.rowCard} backgroundColor={cardBg} borderColor={cardBorder} shadowRecipe={{ offsetY: 2, blur: 10, opacity: 0.05 }} shadowAlwaysOn>
+              <View style={{ flex: 1 }}>
+                <Text style={[styles.rowTitle, { color: onBg }]} numberOfLines={2}>
+                  {`Escena ${scene.scene_number}${scene.heading ? ` · ${scene.heading}` : ''}`}
+                </Text>
+                {!!info?.speakers.length && (
+                  <Text style={[styles.rowMeta, { color: accent }]} numberOfLines={1}>{info.speakers.join(' · ')}</Text>
+                )}
+                {!!info?.preview && (
+                  <Text style={[styles.rowPreview, { color: onBg2 }]} numberOfLines={2}>{info.preview}</Text>
+                )}
+                {analyzed && (
+                  <View style={[styles.badge, { backgroundColor: colors.primary + '20' }]}>
+                    <Brain size={12} color={accent} />
+                    <Text style={[styles.badgeText, { color: accent }]}>Analizada</Text>
+                  </View>
+                )}
+              </View>
+              <ChevronRight size={20} color={onBg2} />
+            </GlassCard>
+          </TouchableOpacity>
         );
-        previewSoundRef.current = newSound;
+      })}
+    </View>
+  );
 
-        newSound.setOnPlaybackStatusUpdate((status) => {
-          if (status.isLoaded && status.didJustFinish) {
-            setPreviewingId(null);
-            newSound.unloadAsync();
-            previewSoundRef.current = null;
-          }
-        });
-      }
-    } catch (e) {
-      console.error('Preview error:', e);
-      setPreviewingId(null);
-    }
-  }
+  const renderCharacterList = () => (
+    <View style={styles.listContent}>
+      {selectedScene && (
+        <Text style={[styles.subtitle, { color: onBg2 }]} numberOfLines={2}>
+          {singleScene ? '¿Qué personaje interpretas?' : `Escena ${selectedScene.scene_number}${selectedScene.heading ? ` · ${selectedScene.heading}` : ''}`}
+        </Text>
+      )}
+      {sceneCharacters.length === 0 ? (
+        <Text style={[styles.subtitle, { color: onBg2 }]}>Esta escena no tiene réplicas de ningún personaje.</Text>
+      ) : (
+        sceneCharacters.map(char => {
+          const isUser = !!char.is_user_character;
+          const analyzed = !!(sceneId && saved[analysisKey(sceneId, char.id)]);
+          return (
+            <TouchableOpacity key={char.id} activeOpacity={0.8} onPress={() => { setCharacterId(char.id); setActiveTab('lectura'); }}>
+              <GlassCard
+                isDark={isDark}
+                style={styles.rowCardOuter}
+                contentStyle={styles.rowCard}
+                backgroundColor={cardBg}
+                borderColor={isUser ? colors.primary : cardBorder}
+                shadowRecipe={{ offsetY: 2, blur: 10, opacity: 0.05 }}
+                shadowAlwaysOn
+              >
+                <User size={20} color={isUser ? accent : onBg2} style={{ marginRight: 12 }} />
+                <View style={{ flex: 1 }}>
+                  <Text style={[styles.rowTitle, { color: onBg }]}>{char.name.toUpperCase()}</Text>
+                  {(isUser || analyzed) && (
+                    <Text style={[styles.rowMeta, { color: accent }]}>
+                      {[isUser ? 'Tu personaje' : null, analyzed ? 'Analizado' : null].filter(Boolean).join(' · ')}
+                    </Text>
+                  )}
+                </View>
+                <ChevronRight size={20} color={onBg2} />
+              </GlassCard>
+            </TouchableOpacity>
+          );
+        })
+      )}
+    </View>
+  );
 
-  const renderRecordingItem = ({ item }: { item: Recording }) => (
-    <TouchableOpacity
-      style={[styles.recordingCard, { backgroundColor: cardBg, borderColor: cardBorder }]}
-      onPress={() => selectRecording(item)}
-    >
-      <View style={[styles.iconBox, { backgroundColor: chipBg }]}>
-        {item.type === 'video' ? (
-          <VideoIcon size={24} color={isDark ? '#FFFFFF' : colors.primary} />
-        ) : (
-          <Mic size={24} color={isDark ? '#FFFFFF' : colors.primary} />
+  const renderAnalysis = () => (
+    <View>
+      <View style={styles.selectionSummary}>
+        <Text style={[styles.summaryCharacter, { color: onBg }]}>{selectedCharacter?.name.toUpperCase()}</Text>
+        {selectedScene && (
+          <Text style={[styles.summaryScene, { color: onBg2 }]} numberOfLines={2}>
+            {`Escena ${selectedScene.scene_number}${selectedScene.heading ? ` · ${selectedScene.heading}` : ''}`}
+          </Text>
         )}
       </View>
-      <View style={{ flex: 1 }}>
-        <Text style={[styles.recordingTitle, { color: onBg }]}>
-          {item.title || `${new Date(item.created_at).toLocaleDateString()} - ${new Date(item.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`}
-        </Text>
-        <Text style={[styles.recordingSubtitle, { color: onBg2 }]}>
-            {item.duration_seconds ? `${Math.round(item.duration_seconds)}s` : 'Analizar duración'}
-        </Text>
-        {/* Indicador de ubicación del archivo, visto desde este dispositivo */}
-        <View style={styles.storageIndicator}>
-          {(() => {
-            const where = availability[item.id] ?? (isDevicePath(item.audio_url) ? 'device' : 'cloud');
-            const Icon = where === 'cloud' ? Cloud : Smartphone;
-            const label = where === 'device' ? 'Local' : where === 'cloud' ? 'Nube' : 'En otro dispositivo';
-            return (
-              <View style={styles.storageTag}>
-                <Icon size={11} color={onBg2} />
-                <Text style={[styles.storageTagText, { color: onBg2 }]}>
-                  {label}
-                </Text>
-              </View>
-            );
-          })()}
-        </View>
-      </View>
-      <ChevronRight size={20} color={onBg2} />
-      {analyzedIds.has(item.id) && (
-          <View style={[styles.analyzedBadge, { backgroundColor: colors.primary + '20' }]}>
-              <Brain size={12} color={isDark ? '#FFFFFF' : colors.primary} />
-              <Text style={[styles.analyzedBadgeText, { color: isDark ? '#FFFFFF' : colors.primary }]}>Analizada</Text>
+
+      {!current ? (
+        <View style={styles.introSection}>
+          <View style={[styles.introCard, { backgroundColor: cardBg, borderWidth: 1, borderColor: cardBorder }]}>
+            <Brain size={48} color={accent} style={{ marginBottom: 16 }} />
+            <Text style={[styles.introTitle, { color: onBg }]}>Lectura de la escena</Text>
+            <Text style={[styles.introText, { color: onBg2 }]}>
+              ScriptCue leerá el guion contigo: qué quiere tu personaje, qué se lo impide y cómo cambia la escena, con varias maneras distintas de interpretarla.
+            </Text>
+            <TouchableOpacity style={[styles.analyzeButton, primaryButtonBg]} onPress={startAnalysis} disabled={analyzing}>
+              {analyzing ? <ActivityIndicator color="#fff" /> : (
+                <>
+                  <Sparkles size={20} color="#fff" />
+                  <Text style={styles.analyzeButtonText}>Analizar escena</Text>
+                </>
+              )}
+            </TouchableOpacity>
+            {analyzing && (
+              <Text style={[styles.introHint, { color: onBg2 }]}>Puede tardar hasta un minuto.</Text>
+            )}
           </View>
-      )}
-    </TouchableOpacity>
-  );
-  const renderAnalysisContent = () => {
-    if (!analysis) return null;
-
-    if (analysis.feedback?.error) {
-      return (
-        <View style={[styles.tabContent, { padding: 20, alignItems: 'center', marginTop: 40 }]}>
-          <AlertCircle size={48} color="#ef4444" style={{ marginBottom: 16 }} />
-          <Text style={{ color: onBg, textAlign: 'center', fontSize: rf(16), lineHeight: 24, marginBottom: 16 }}>
-            Ocurrió un error en el servidor de ScriptCue al procesar esta grabación.
-          </Text>
-          <Text style={{ color: onBg2, textAlign: 'center', fontSize: rf(14), lineHeight: 20 }}>
-            {analysis.feedback.error}
-          </Text>
-          <TouchableOpacity
-            style={[styles.analyzeButton, primaryButtonBg, { marginTop: 24 }]}
-            onPress={() => startAnalysis(comparingWith || undefined)}
-            disabled={analyzing}
-          >
-            {analyzing ? <ActivityIndicator color="#fff" /> : <Text style={styles.analyzeButtonText}>Reintentar Análisis</Text>}
-          </TouchableOpacity>
         </View>
-      );
-    }
+      ) : (
+        <>
+          <View style={styles.tabsRow}>
+            {([['lectura', 'Lectura', Activity], ['propuestas', 'Propuestas', Sparkles]] as const).map(([key, label, Icon]) => {
+              const active = activeTab === key;
+              return (
+                <TouchableOpacity
+                  key={key}
+                  style={[styles.tab, { borderColor: active ? colors.primary : 'transparent' }, active && { backgroundColor: activeTabBg }]}
+                  onPress={() => setActiveTab(key)}
+                >
+                  <Icon size={18} color={active ? accent : onBg2} />
+                  <Text style={[styles.tabText, { color: active ? accent : onBg2 }]}>{label}</Text>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
 
-    const isOldFormat = !analysis.feedback?.presencia && !analysis.propuestas;
-    if (isOldFormat) {
-      return (
-        <View style={[styles.tabContent, { padding: 20, alignItems: 'center', marginTop: 40 }]}>
-          <AlertCircle size={48} color={colors.warning} style={{ marginBottom: 16 }} />
-          <Text style={{ color: onBg, textAlign: 'center', fontSize: rf(16), lineHeight: 24 }}>
-            Este análisis fue generado con una versión anterior de la app. Graba una nueva toma para verlo en el nuevo formato.
-          </Text>
-        </View>
-      );
-    }
-
-    switch (activeTab) {
-      case 'feedback':
-        return (
-          <View style={styles.tabContent}>
-            <GlassCard isDark={isDark} contentStyle={styles.scoreCard} backgroundColor={cardBg} borderColor={cardBorder} shadowRecipe={{ offsetY: 2, blur: 10, opacity: 0.05 }} shadowAlwaysOn>
-              {Object.entries(analysis.feedback || {}).map(([key, value]: [string, any], index: number) => (
-                <View key={key} style={styles.verticalFeedbackItem}>
-                  {index > 0 && <View style={[styles.horizontalDivider, { backgroundColor: cardBorder }]} />}
-                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 8 }}>
-                    {getFeedbackIcon(key, colors.primary)}
-                    <Text style={[styles.feedbackLabelVertical, { color: colors.primary, marginBottom: 0 }]}>
-                      {feedbackLabels[key] || key.toUpperCase()}
-                    </Text>
+          {activeTab === 'lectura' ? (
+            <View style={styles.tabContent}>
+              <GlassCard isDark={isDark} contentStyle={styles.lecturaCard} backgroundColor={cardBg} borderColor={cardBorder} shadowRecipe={{ offsetY: 2, blur: 10, opacity: 0.05 }} shadowAlwaysOn>
+                {LECTURA_ITEMS.map(({ key, label, Icon }, index) => (
+                  <View key={key} style={styles.lecturaItem}>
+                    {index > 0 && <View style={[styles.divider, { backgroundColor: cardBorder }]} />}
+                    <View style={styles.lecturaLabelRow}>
+                      <Icon size={20} color={accent} />
+                      <Text style={[styles.lecturaLabel, { color: accent }]}>{label}</Text>
+                    </View>
+                    <Text style={[styles.lecturaValue, { color: onBg }]}>{current.analysis.lectura[key]}</Text>
                   </View>
-                  <Text style={[styles.feedbackValueVertical, { color: onBg }]}>
-                    {value}
-                  </Text>
-                </View>
-              ))}
-            </GlassCard>
-          </View>
-        );
-      case 'propuestas':
-        return (
-          <View style={styles.tabContent}>
-            <Text style={[styles.sectionTitle, { color: colors.primary, marginBottom: 16 }]}>Propuestas de Exploración</Text>
-            {(analysis.propuestas || []).map((prop: any, i: number) => (
-              <GlassCard key={i} isDark={isDark} style={styles.propuestaCardOuter} contentStyle={[styles.propuestaCard, { borderLeftColor: '#a78bfa' }]} backgroundColor={cardBg} borderColor={cardBorder} borderRadius={12} shadowRecipe={{ offsetY: 2, blur: 10, opacity: 0.05 }} shadowAlwaysOn>
-                <View style={styles.propuestaNumberBox}>
-                  <Text style={styles.propuestaNumber}>{i + 1}</Text>
-                </View>
-                <View style={{ flex: 1 }}>
-                  <Text style={[styles.propuestaTitle, { color: onBg }]}>{prop.titulo}</Text>
-                  <Text style={[styles.propuestaDesc, { color: onBg2 }]}>{prop.descripcion}</Text>
-                </View>
+                ))}
               </GlassCard>
-            ))}
-            <TouchableOpacity
-                style={[styles.secondaryButton, { borderColor: colors.primary, marginTop: 24 }]}
-                onPress={() => {
-                  if (!selectedRecording) return;
-                  if (selectedRecording.type === 'video') {
-                    router.push(`/scripts/${id}/casting`);
-                  } else {
-                    router.push(`/scripts/${id}/studio-v2`);
-                  }
-                }}
+            </View>
+          ) : (
+            <View style={styles.tabContent}>
+              {current.analysis.propuestas.map((prop, i) => (
+                <GlassCard key={i} isDark={isDark} style={styles.propuestaCardOuter} contentStyle={[styles.propuestaCard, { borderLeftColor: '#a78bfa' }]} backgroundColor={cardBg} borderColor={cardBorder} borderRadius={12} shadowRecipe={{ offsetY: 2, blur: 10, opacity: 0.05 }} shadowAlwaysOn>
+                  <View style={styles.propuestaNumberBox}>
+                    <Text style={styles.propuestaNumber}>{i + 1}</Text>
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={[styles.propuestaTitle, { color: onBg }]}>{prop.titulo}</Text>
+                    <Text style={[styles.propuestaText, { color: onBg }]}>{prop.eleccion}</Text>
+                    {!!prop.en_el_texto && (
+                      <>
+                        <Text style={[styles.propuestaLabel, { color: accent }]}>En el texto</Text>
+                        <Text style={[styles.propuestaText, { color: onBg2 }]}>{prop.en_el_texto}</Text>
+                      </>
+                    )}
+                    {!!prop.como_probarlo && (
+                      <>
+                        <Text style={[styles.propuestaLabel, { color: accent }]}>Cómo probarlo</Text>
+                        <Text style={[styles.propuestaText, { color: onBg2 }]}>{prop.como_probarlo}</Text>
+                      </>
+                    )}
+                  </View>
+                </GlassCard>
+              ))}
+              <TouchableOpacity
+                style={[styles.secondaryButton, { borderColor: colors.primary, marginTop: rp(12) }]}
+                onPress={() => router.push(`/scripts/${scriptId}/studio-v2`)}
               >
-                <Repeat size={20} color={colors.primary} />
-                <Text style={[styles.secondaryButtonText, { color: colors.primary }]}>Nueva toma con este feedback</Text>
+                <Play size={20} color={accent} />
+                <Text style={[styles.secondaryButtonText, { color: accent }]}>Ensayar en Modo Estudio</Text>
+              </TouchableOpacity>
+            </View>
+          )}
+
+          <View style={styles.reanalyzeRow}>
+            <Text style={[styles.reanalyzeDate, { color: onBg2 }]}>Analizado el {formatDate(current.updatedAt)}</Text>
+            <TouchableOpacity style={styles.reanalyzeButton} onPress={startAnalysis} disabled={analyzing}>
+              {analyzing ? <ActivityIndicator size="small" color={accent} /> : <RefreshCw size={16} color={accent} />}
+              <Text style={[styles.reanalyzeText, { color: accent }]}>{analyzing ? 'Analizando…' : 'Volver a analizar'}</Text>
             </TouchableOpacity>
           </View>
-        );
-      case 'comparacion':
-        const comp = analysis.comparacion;
-        
-        // Función para detectar si ScriptCue devolvió el texto de instrucción (placeholder) o frases genéricas de 'no hay toma'
-        const isPlaceholder = (str: string) => {
-            if (!str) return true;
-            const s = str.toLowerCase();
-            return s.includes('caminos nuevos') || 
-                   s.includes('qué caminos nuevos') ||
-                   s.includes('que caminos nuevos') ||
-                   s.includes('no hay toma') ||
-                   s.includes('sin toma') ||
-                   s.includes('no aplica') ||
-                   s.includes('no hay información') ||
-                   s.includes('no aplicable') ||
-                   s === 'n/a' ||
-                   s === 'null';
-        };
+        </>
+      )}
+    </View>
+  );
 
-        // Detección robusta: hay historial solo si exploracion es válido
-        const hasHistory = comp && 
-          comp.exploracion !== null && 
-          comp.exploracion !== undefined && 
-          typeof comp.exploracion === 'string' &&
-          comp.exploracion.trim().length > 0 &&
-          !isPlaceholder(comp.exploracion);
-
-        // Descubrimientos siempre se muestra aunque sea primer análisis
-        const descubrimientos = comp?.descubrimientos && 
-          comp.descubrimientos !== 'null' ? comp.descubrimientos : null;
-
-        return (
-          <View style={styles.tabContent}>
-            <GlassCard isDark={isDark} contentStyle={styles.scoreCard} backgroundColor={cardBg} borderColor={cardBorder} shadowRecipe={{ offsetY: 2, blur: 10, opacity: 0.05 }} shadowAlwaysOn>
-              <Text style={[styles.sectionTitle, { color: colors.primary, marginBottom: 16 }]}>
-                {hasHistory ? "Descubrimientos de la toma" : "Comparar Interpretación"}
-              </Text>
-              
-              {hasHistory ? (
-                <View style={styles.comparisonGrid}>
-                  {Object.entries(comp).map(([key, value]: [string, any], index: number) => {
-                    if (key === 'descubrimientos' || value === null || value === 'null' || value === '') return null;
-                    return (
-                      <View key={key} style={styles.comparisonItemRow}>
-                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 4 }}>
-                          {getFeedbackIcon(key, colors.primary)}
-                          <Text style={[styles.comparisonLabelVertical, { color: colors.primary }]}>
-                            {feedbackLabels[key] || key.toUpperCase()}
-                          </Text>
-                        </View>
-                        <Text style={[styles.comparisonValueVertical, { color: onBg }]}>{value}</Text>
-                      </View>
-                    );
-                  })}
-                  {descubrimientos && (
-                    <View style={styles.comparisonItemRow}>
-                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 4 }}>
-                        {getFeedbackIcon('descubrimientos', colors.primary)}
-                        <Text style={[styles.comparisonLabelVertical, { color: colors.primary }]}>
-                          DESCUBRIMIENTOS
-                        </Text>
-                      </View>
-                      <Text style={[styles.comparisonValueVertical, { color: onBg }]}>{descubrimientos}</Text>
-                    </View>
-                  )}
-                </View>
-              ) : (
-                <View style={styles.emptyComparison}>
-                  <Activity size={40} color={onBg2} style={{ opacity: 0.3, marginBottom: 12 }} />
-                  <Text style={[styles.emptyComparisonText, { color: onBg2, marginBottom: 16 }]}>
-                    Esta es tu primera toma analizada de esta escena. ¿Quieres compararla con otra grabación?
-                  </Text>
-                  
-                  {recordings.filter(r => r.id !== selectedRecording?.id && r.scene_id === selectedRecording?.scene_id).length > 0 ? (
-                    <View style={{ width: '100%', gap: 8 }}>
-                      {recordings
-                        .filter(r => r.id !== selectedRecording?.id && r.scene_id === selectedRecording?.scene_id)
-                        .map(r => (
-                          <TouchableOpacity
-                            key={r.id}
-                            style={[
-                                styles.comparisonOption, 
-                                { backgroundColor: fieldBg, borderColor: comparingWith === r.id ? colors.primary : cardBorder },
-                                comparingWith === r.id && { borderWidth: 2 }
-                            ]}
-                            onPress={() => startAnalysis(r.id)}
-                            disabled={analyzing}
-                          >
-                            {analyzing && comparingWith === r.id ? (
-                                <ActivityIndicator size="small" color={colors.primary} />
-                            ) : (
-                                <Repeat size={16} color={comparingWith === r.id ? colors.primary : onBg2} />
-                            )}
-                            <View style={{ flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
-                              <View style={{ flex: 1, marginLeft: 8 }}>
-                                <Text style={[
-                                    styles.comparisonOptionText, 
-                                    { color: comparingWith === r.id ? colors.primary : onBg }
-                                ]}>
-                                  {r.title || (r.type === 'video' ? 'Grabación de Vídeo' : 'Grabación de Audio')}
-                                </Text>
-                                <Text style={{ fontSize: 12, color: onBg2, marginTop: 2 }}>
-                                  {r.type === 'video' ? 'Vídeo' : 'Audio'} • {r.duration_seconds ? `${Math.round(r.duration_seconds)}s` : '--s'}
-                                </Text>
-                              </View>
-                              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
-                                {comparingWith === r.id && <Sparkles size={14} color={colors.primary} />}
-                                
-                                <TouchableOpacity 
-                                  style={{ padding: 4 }}
-                                  onPress={(e) => {
-                                    e.stopPropagation(); // Evitar que seleccione la grabación
-                                    togglePreview(r);
-                                  }}
-                                >
-                                  {previewingId === r.id ? (
-                                    <StopSquare size={18} color={colors.primary} fill={colors.primary} />
-                                  ) : (
-                                    <Volume2 size={18} color={onBg2} />
-                                  )}
-                                </TouchableOpacity>
-                              </View>
-                            </View>
-                          </TouchableOpacity>
-                        ))}
-                    </View>
-                  ) : (
-                    <Text style={{ fontSize: rf(12), color: onBg2, fontStyle: 'italic', textAlign: 'center' }}>
-                      No hay otras grabaciones de la misma escena para comparar.
-                    </Text>
-                  )}
-                </View>
-              )}
-            </GlassCard>
-          </View>
-        );
-    }
-  };
-
-  if (loading) {
-    return (
-      <ImageBackground source={coachBg()} resizeMode="cover" style={styles.center}>
-        <ActivityIndicator size="large" color={colors.primary} />
-      </ImageBackground>
-    );
-  }
-
-  // --- VIEW: RECORDING SELECTION ---
-  if (!selectedRecording) {
-    return (
-      <ImageBackground source={coachBg()} resizeMode="cover" style={styles.container}>
+  return (
+    <ImageBackground source={coachBg()} resizeMode="cover" style={styles.container}>
       <SafeAreaView style={[styles.container, { backgroundColor: 'transparent' }]} edges={['top', 'left', 'right']}>
         <Stack.Screen options={{ headerShown: false }} />
         <View style={[styles.header, { borderBottomColor: cardBorder }]}>
-          <TouchableOpacity onPress={() => router.back()} style={[styles.backButton, glassHeaderBtn]}>
+          <TouchableOpacity onPress={goBack} style={[styles.headerButton, glassHeaderBtn]}>
             <ArrowLeft size={20} color="#FFFFFF" />
           </TouchableOpacity>
-          <Text style={[styles.headerTitle, { color: onBg }]}>Modo Escena</Text>
-          <TouchableOpacity
-            onPress={() => showInfo('Modo Escena', 'Parte de una grabación y recibe propuestas para explorar tu personaje desde ángulos distintos. No es una evaluación: es un laboratorio.')}
-            style={[styles.backButton, glassHeaderBtn]}
-          >
+          <Text style={[styles.headerTitle, { color: onBg }]}>{headerTitle}</Text>
+          <TouchableOpacity onPress={() => showInfo('Modo Escena', INFO_TEXT)} style={[styles.headerButton, glassHeaderBtn]}>
             <Info size={20} color="#FFFFFF" />
           </TouchableOpacity>
         </View>
 
-        <View style={styles.content}>
-          <Text style={[styles.subtitle, { color: onBg2 }]}>
-            Selecciona una grabación para recibir propuestas.
-          </Text>
+        {loading ? (
+          <View style={styles.center}><ActivityIndicator size="large" color={colors.primary} /></View>
+        ) : scenes.length === 0 ? (
+          <View style={styles.emptyState}>
+            <AlertCircle size={40} color={onBg2} style={{ marginBottom: 12 }} />
+            <Text style={[styles.subtitle, { color: onBg2 }]}>Este guion todavía no tiene escenas con texto.</Text>
+          </View>
+        ) : (
+          <ScrollView style={styles.content} contentContainerStyle={{ paddingBottom: rp(24) + insets.bottom }}>
+            {!sceneId ? renderSceneList() : !characterId ? renderCharacterList() : renderAnalysis()}
+          </ScrollView>
+        )}
 
-          {isLocalOnly && (
-            <View style={[styles.localModeBanner, { 
-              backgroundColor: colors.warning + '15',
-              borderColor: colors.warning + '40',
-            }]}>
-              <View style={styles.localModeBannerContent}>
-                <Text style={styles.localModeBannerIcon}>📱</Text>
-                <View style={{ flex: 1 }}>
-                  <Text style={[styles.localModeBannerTitle, { color: colors.warning }]}>
-                    Modo local activo
-                  </Text>
-                  <Text style={[styles.localModeBannerText, { color: onBg2 }]}>
-                    Tus grabaciones no se están subiendo a la nube.
-                  </Text>
-                </View>
-                <TouchableOpacity
-                  onPress={() => router.push('/settings')}
-                  style={styles.localModeBannerAction}
-                >
-                  <Text style={[styles.localModeBannerActionText, { color: colors.warning }]}>
-                    Cambiar
-                  </Text>
-                </TouchableOpacity>
-              </View>
-            </View>
-          )}
-
-          <FlatList
-            data={recordings}
-            renderItem={renderRecordingItem}
-            keyExtractor={(item) => item.id}
-            contentContainerStyle={{ padding: rp(20), paddingBottom: rp(20) + insets.bottom }}
-            ListEmptyComponent={
-              <View style={styles.emptyState}>
-                <View style={[styles.infoCard, { backgroundColor: cardBg, borderColor: cardBorder }]}>
-                  <Mic size={48} color="#FFFFFF" style={{ marginBottom: 16 }} />
-                  <Text style={[styles.infoTitle, { color: onBg }]}>No hay grabaciones disponibles</Text>
-                  <Text style={[styles.infoDescription, { color: onBg2 }]}>
-                    Ve al &ldquo;Modo Estudio&rdquo; o &ldquo;Modo Casting&rdquo; para grabar una escena.
-                  </Text>
-                </View>
-
-                <View style={styles.emptyActions}>
-                  <TouchableOpacity
-                    style={[styles.actionButton, primaryButtonBg, { shadowColor: colors.primary }]}
-                    onPress={() => router.push(`/scripts/${id}/studio-v2`)}
-                  >
-                    <Play size={24} color="#FFFFFF" />
-                    <Text style={styles.actionText}>ESTUDIO</Text>
-                  </TouchableOpacity>
-
-                  <TouchableOpacity
-                    style={[styles.actionButton, primaryButtonBg, { shadowColor: colors.primary }]}
-                    onPress={() => router.push(`/scripts/${id}/casting`)}
-                  >
-                    <Clapperboard size={24} color="#FFFFFF" />
-                    <Text style={styles.actionText}>CASTING</Text>
-                  </TouchableOpacity>
-                </View>
-              </View>
-            }
-          />
-        </View>
-
-        {/* DISCLAIMER MODAL */}
         <Modal
           visible={showDisclaimer}
           transparent
           animationType="fade"
           onRequestClose={() => { }}
-         supportedOrientations={['portrait', 'landscape', 'landscape-left', 'landscape-right']}>
+          supportedOrientations={['portrait', 'landscape', 'landscape-left', 'landscape-right']}
+        >
           <View style={styles.modalOverlay}>
             <View style={[styles.modalContent, { borderWidth: 1, borderColor: cardBorder, overflow: 'hidden', maxHeight: dialogMaxHeight }]}>
               <ModalGlassFill isDark={isDark} intensity={isDark ? 55 : 65} />
               <View style={[StyleSheet.absoluteFill, { backgroundColor: modalOverlayTint }]} />
               <ScrollView style={dialogScrollStyle} contentContainerStyle={{ alignItems: 'center' }} bounces={false}>
-              <View style={styles.modalHeader}>
-                <AlertCircle size={48} color={colors.primary} />
-                <Text style={[styles.modalTitle, { color: onBg }]}>Aviso Importante</Text>
-              </View>
-
-              <Text style={[styles.modalText, { color: onBg }]}>
-                El modo Escena es una herramienta de entrenamiento para explorar personajes y escenas desde distintas perspectivas. Diseñada para complementar el estudio y la preparación actoral, no para sustituir la formación profesional.
-              </Text>
-
-              <TouchableOpacity
-                style={styles.checkboxRow}
-                onPress={() => setDontShowAgain(!dontShowAgain)}
-                activeOpacity={0.7}
-              >
-                {dontShowAgain ? (
-                  <CheckSquare size={24} color={colors.primary} />
-                ) : (
-                  <Square size={24} color={onBg2} />
-                )}
-                <Text style={[styles.checkboxText, { color: onBg }]}>
-                  No volver a mostrar este mensaje
+                <View style={styles.modalHeader}>
+                  <AlertCircle size={48} color={colors.primary} />
+                  <Text style={[styles.modalTitle, { color: onBg }]}>Aviso Importante</Text>
+                </View>
+                <Text style={[styles.modalText, { color: onBg }]}>
+                  El modo Escena es una herramienta de entrenamiento para explorar personajes y escenas desde distintas perspectivas. Diseñada para complementar el estudio y la preparación actoral, no para sustituir la formación profesional.
                 </Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={[styles.modalButton, { backgroundColor: colors.primary }]}
-                onPress={handleDisclaimerAccept}
-              >
-                <Text style={styles.modalButtonText}>Entendido</Text>
-              </TouchableOpacity>
+                <TouchableOpacity style={styles.checkboxRow} onPress={() => setDontShowAgain(!dontShowAgain)} activeOpacity={0.7}>
+                  {dontShowAgain ? <CheckSquare size={24} color={colors.primary} /> : <Square size={24} color={onBg2} />}
+                  <Text style={[styles.checkboxText, { color: onBg }]}>No volver a mostrar este mensaje</Text>
+                </TouchableOpacity>
+                <TouchableOpacity style={[styles.modalButton, { backgroundColor: colors.primary }]} onPress={handleDisclaimerAccept}>
+                  <Text style={styles.modalButtonText}>Entendido</Text>
+                </TouchableOpacity>
               </ScrollView>
             </View>
           </View>
@@ -1007,237 +535,20 @@ export default function CoachModeScreen() {
           message={infoDialog.message}
           singleButton
           confirmText="OK"
-          onConfirm={closeInfoDialog}
-          onCancel={closeInfoDialog}
+          onConfirm={() => setInfoDialog({ visible: false, title: '', message: '' })}
+          onCancel={() => setInfoDialog({ visible: false, title: '', message: '' })}
+        />
+
+        <ConfirmDialog
+          visible={errorDialog.visible}
+          title="No hemos podido analizar la escena"
+          message={`Ha ocurrido un problema al analizar la escena. Inténtalo de nuevo en unos minutos; si se repite, repórtanoslo para que podamos revisarlo.\n\nCódigo: ${errorDialog.reference}`}
+          confirmText="Reportar el problema"
+          cancelText="Cerrar"
+          onConfirm={handleReport}
+          onCancel={() => setErrorDialog({ visible: false, reference: '' })}
         />
       </SafeAreaView>
-      </ImageBackground>
-    );
-  }
-
-  // --- VIEW: ANALYSIS / DETAILS ---
-  return (
-    <ImageBackground source={coachBg()} resizeMode="cover" style={styles.container}>
-    <SafeAreaView style={[styles.container, { backgroundColor: 'transparent' }]} edges={['top', 'left', 'right']}>
-      <Stack.Screen options={{ headerShown: false }} />
-      <View style={[styles.header, { borderBottomColor: cardBorder }]}>
-        <TouchableOpacity onPress={() => setSelectedRecording(null)} style={[styles.backButton, glassHeaderBtn]}>
-          <ArrowLeft size={20} color="#FFFFFF" />
-        </TouchableOpacity>
-        <Text style={[styles.headerTitle, { color: onBg }]}>Análisis de la escena</Text>
-        <TouchableOpacity
-          onPress={() => showInfo('Modo Escena', 'Parte de una grabación y recibe propuestas para explorar tu personaje desde ángulos distintos. No es una evaluación: es un laboratorio.')}
-          style={[styles.backButton, glassHeaderBtn]}
-        >
-          <Info size={20} color="#FFFFFF" />
-        </TouchableOpacity>
-      </View>
-
-      <ScrollView style={styles.content} contentContainerStyle={{ paddingBottom: rp(24) + insets.bottom }}>
-        {/* PLAYER SECTION */}
-        <View style={styles.playerSection}>
-          {selectedRecording.type === 'video' ? (
-            videoSignedUrl ? (
-              <Video
-                ref={videoRef}
-                source={{ uri: videoSignedUrl }}
-                style={styles.videoPlayer}
-                resizeMode={ResizeMode.CONTAIN}
-                useNativeControls
-                isLooping
-                onPlaybackStatusUpdate={status => setPlaybackStatus(status)}
-              />
-            ) : (
-              <ActivityIndicator size="large" color={colors.primary} />
-            )
-          ) : (
-            <View style={styles.audioPlayer}>
-              <TouchableOpacity onPress={togglePlayback} style={[styles.playButton, { backgroundColor: colors.primary }]}>
-                {playbackStatus?.isPlaying ? <Pause size={40} color="#FFFFFF" /> : <Play size={40} color="#FFFFFF" />}
-              </TouchableOpacity>
-              <Text style={styles.audioLabel}>Reproducir grabación</Text>
-            </View>
-          )}
-        </View>
-
-        {!analysis ? (
-          <View style={styles.introSection}>
-            <View style={[styles.introCard, { backgroundColor: cardBg, borderWidth: 1, borderColor: cardBorder }]}>
-              <Brain size={48} color={isDark ? '#FFFFFF' : colors.primary} style={{ marginBottom: 16 }} />
-              <Text style={[styles.introTitle, { color: onBg }]}>Análisis de Interpretación</Text>
-              <Text style={[styles.introText, { color: onBg2 }]}>
-                ScriptCue analizará la escena para darte propuestas de actuación diferentes.
-              </Text>
-
-              {/* Modal selector de personaje */}
-              {showCharacterSelector ? (
-                <View style={styles.modalOverlay}>
-                  <View style={[styles.modalContent, { borderWidth: 1, borderColor: cardBorder, overflow: 'hidden' }]}>
-                    <BlurView experimentalBlurMethod={ANDROID_BLUR_METHOD} intensity={isDark ? 55 : 65} tint={isDark ? 'dark' : 'light'} style={StyleSheet.absoluteFill} />
-                    <View style={[StyleSheet.absoluteFill, { backgroundColor: modalOverlayTint }]} />
-                    <Text style={[styles.modalTitle, { color: onBg }]}>
-                      ¿Qué personaje interpretas?
-                    </Text>
-                    <Text style={[styles.modalText, { color: onBg2 }]}>
-                      Necesitamos saber tu personaje para analizar 
-                      solo tus intervenciones.
-                    </Text>
-                    
-                    <View style={{ gap: 8, marginTop: 16, width: '100%' }}>
-                      {characters.map(char => (
-                        <TouchableOpacity
-                          key={char.id}
-                          style={[
-                            styles.characterOption,
-                            {
-                              backgroundColor: fieldBg,
-                              borderColor: selectedCharacterId === char.id
-                                ? colors.primary
-                                : cardBorder,
-                              borderWidth: selectedCharacterId === char.id ? 2 : 1,
-                            }
-                          ]}
-                          onPress={() => {
-                            setSelectedCharacterId(char.id);
-                            setSelectedCharacterName(char.name.toUpperCase());
-                          }}
-                        >
-                          <Text style={[
-                            styles.characterOptionText, 
-                            { 
-                              color: selectedCharacterId === char.id 
-                                ? colors.primary 
-                                : onBg,
-                              fontWeight: selectedCharacterId === char.id ? '700' : '400'
-                            }
-                          ]}>
-                            {char.name}
-                          </Text>
-                        </TouchableOpacity>
-                      ))}
-                    </View>
-
-                    <TouchableOpacity
-                      style={[
-                        styles.modalButton,
-                        {
-                          backgroundColor: selectedCharacterId
-                            ? colors.primary
-                            : chipBg,
-                          marginTop: 20
-                        }
-                      ]}
-                      disabled={!selectedCharacterId}
-                      onPress={async () => {
-                        setShowCharacterSelector(false);
-                        
-                        // Guardar el personaje en la grabación para futuras veces
-                        if (selectedCharacterId && selectedRecording) {
-                          await supabase
-                            .from('recordings')
-                            .update({ character_id: selectedCharacterId })
-                            .eq('id', selectedRecording.id);
-                        }
-                        
-                        // Lanzar el análisis
-                        startAnalysis();
-                      }}
-                    >
-                      <Text style={styles.modalButtonText}>Analizar</Text>
-                    </TouchableOpacity>
-
-                    <TouchableOpacity
-                      onPress={() => setShowCharacterSelector(false)}
-                      style={{ marginTop: 12 }}
-                    >
-                      <Text style={[styles.comparisonLabel, { color: onBg2 }]}>
-                        Cancelar
-                      </Text>
-                    </TouchableOpacity>
-                  </View>
-                </View>
-              ) : (
-                <TouchableOpacity
-                  style={[styles.analyzeButton, primaryButtonBg]}
-                  onPress={() => {
-                    if (!selectedCharacterName) {
-                      // Mostrar selector de personaje
-                      setShowCharacterSelector(true);
-                    } else {
-                      // Ya tiene personaje, analizar directamente
-                      startAnalysis();
-                    }
-                  }}
-                  disabled={analyzing}
-                >
-                  {analyzing ? (
-                    <ActivityIndicator color="#fff" />
-                  ) : (
-                    <>
-                      <Sparkles size={20} color="#fff" />
-                      <Text style={styles.analyzeButtonText}>
-                        {selectedCharacterName 
-                          ? `Analizar como ${selectedCharacterName}`
-                          : 'Analizar'}
-                      </Text>
-                    </>
-                  )}
-                </TouchableOpacity>
-              )}
-            </View>
-          </View>
-        ) : (
-          <>
-            {/* Scroll Indicator */}
-            <View style={styles.scrollIndicator}>
-              <Text style={[styles.scrollHint, { color: onBg2 }]}>← Desliza para ver más →</Text>
-            </View>
-
-            {/* TABS HEADER */}
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.tabsContainer}>
-              <TouchableOpacity
-                style={[styles.tab, { borderColor: activeTab === 'feedback' ? colors.primary : 'transparent' }, activeTab === 'feedback' && { backgroundColor: isDark ? 'rgba(124,106,247,0.20)' : 'rgba(104,58,121,0.12)' }]}
-                onPress={() => setActiveTab('feedback')}
-              >
-                <Activity size={18} color={activeTab === 'feedback' ? activeTabColor : onBg2} />
-                <Text style={[styles.tabText, { color: activeTab === 'feedback' ? activeTabColor : onBg2 }]}>Análisis</Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={[styles.tab, { borderColor: activeTab === 'propuestas' ? colors.primary : 'transparent' }, activeTab === 'propuestas' && { backgroundColor: isDark ? 'rgba(124,106,247,0.20)' : 'rgba(104,58,121,0.12)' }]}
-                onPress={() => setActiveTab('propuestas')}
-              >
-                <Sparkles size={18} color={activeTab === 'propuestas' ? activeTabColor : onBg2} />
-                <Text style={[styles.tabText, { color: activeTab === 'propuestas' ? activeTabColor : onBg2 }]}>Propuestas</Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={[styles.tab, { borderColor: activeTab === 'comparacion' ? colors.primary : 'transparent' }, activeTab === 'comparacion' && { backgroundColor: isDark ? 'rgba(124,106,247,0.20)' : 'rgba(104,58,121,0.12)' }]}
-                onPress={() => setActiveTab('comparacion')}
-              >
-                <TrendingUp size={18} color={activeTab === 'comparacion' ? activeTabColor : onBg2} />
-                <Text style={[styles.tabText, { color: activeTab === 'comparacion' ? activeTabColor : onBg2 }]}>Comparación</Text>
-              </TouchableOpacity>
-            </ScrollView>
-
-            {/* CONTENT */}
-            {renderAnalysisContent()}
-
-
-          </>
-        )}
-      </ScrollView>
-
-      <ConfirmDialog
-        visible={infoDialog.visible}
-        title={infoDialog.title}
-        message={infoDialog.message}
-        singleButton
-        confirmText="OK"
-        onConfirm={closeInfoDialog}
-        onCancel={closeInfoDialog}
-      />
-    </SafeAreaView>
     </ImageBackground>
   );
 }
@@ -1254,97 +565,38 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
   },
   headerTitle: { fontSize: rf(18), fontWeight: '600' },
-  backButton: { width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center' },
+  headerButton: { width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center' },
   content: { flex: 1 },
-  subtitle: { padding: rp(20), fontSize: rf(14), textAlign: 'center' },
-  recordingCard: {
+  listContent: { padding: rp(20) },
+  subtitle: { fontSize: rf(14), textAlign: 'center', marginBottom: rp(16), lineHeight: 20 },
+  emptyState: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: rp(32) },
+
+  rowCardOuter: { marginBottom: 12 },
+  rowCard: { flexDirection: 'row', alignItems: 'center', padding: rp(16) },
+  rowTitle: { fontSize: rf(16), fontWeight: '700' },
+  rowMeta: { fontSize: rf(12), fontWeight: '600', marginTop: 4, letterSpacing: 0.3 },
+  rowPreview: { fontSize: rf(13), marginTop: 6, lineHeight: 18 },
+  badge: {
+    alignSelf: 'flex-start',
     flexDirection: 'row',
     alignItems: 'center',
-    padding: rp(16),
-    borderRadius: 12,
-    borderWidth: 1,
-    marginBottom: 12,
-    position: 'relative',
+    gap: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 10,
+    marginTop: 8,
   },
-  iconBox: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginRight: 16,
-  },
-  recordingTitle: { fontSize: rf(16), fontWeight: '600' },
-  recordingSubtitle: { fontSize: rf(12), marginTop: 4 },
-  emptyState: { alignItems: 'center', marginTop: 60, paddingHorizontal: rp(20) },
-  emptyText: { textAlign: 'center', marginTop: 16 },
-  infoCard: {
-    width: '100%',
-    borderRadius: 16,
-    borderWidth: 1,
-    padding: rp(24),
-    alignItems: 'center',
-  },
-  infoTitle: {
-    fontSize: rf(20),
-    fontWeight: '700',
-    textAlign: 'center',
-    marginBottom: 12,
-  },
-  infoDescription: {
-    fontSize: rf(14),
-    textAlign: 'center',
-    lineHeight: 20,
-  },
+  badgeText: { fontSize: rf(10), fontWeight: '700', textTransform: 'uppercase' },
 
-  // Player
-  playerSection: {
-    height: 200,
-    backgroundColor: '#000',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  videoPlayer: {
-    width: '100%',
-    height: '100%',
-  },
-  audioPlayer: {
-    width: '100%',
-    height: '100%',
-    backgroundColor: '#000',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  playButton: {
-    width: 80,
-    height: 80,
-    borderRadius: 40,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginBottom: 12,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-    elevation: 8,
-  },
-  audioLabel: {
-    color: '#FFFFFF',
-    fontSize: rf(14),
-    fontWeight: '500',
-    opacity: 0.7,
-  },
+  selectionSummary: { alignItems: 'center', paddingHorizontal: rp(20), paddingTop: rp(20) },
+  summaryCharacter: { fontSize: rf(18), fontWeight: '800', letterSpacing: 1 },
+  summaryScene: { fontSize: rf(13), marginTop: 4, textAlign: 'center' },
 
-  // Intro
   introSection: { padding: rp(20) },
-  introCard: {
-    padding: rp(30),
-    borderRadius: 16,
-    alignItems: 'center',
-    gap: 12,
-  },
+  introCard: { padding: rp(30), borderRadius: 16, alignItems: 'center', gap: 12 },
   introTitle: { fontSize: rf(20), fontWeight: '700' },
   introText: { textAlign: 'center', lineHeight: 20 },
+  introHint: { fontSize: rf(12), marginTop: 4 },
   analyzeButton: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -1356,12 +608,7 @@ const styles = StyleSheet.create({
   },
   analyzeButtonText: { color: '#fff', fontSize: rf(16), fontWeight: '600' },
 
-  // Tabs
-  tabsContainer: {
-    paddingHorizontal: rp(20),
-    paddingVertical: rp(12),
-    borderBottomWidth: 0,
-  },
+  tabsRow: { flexDirection: 'row', paddingHorizontal: rp(20), paddingTop: rp(16), gap: 8 },
   tab: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -1369,126 +616,20 @@ const styles = StyleSheet.create({
     paddingVertical: rp(8),
     paddingHorizontal: rp(16),
     borderRadius: 20,
-    marginRight: 8,
     borderWidth: 1,
   },
   tabText: { fontSize: rf(14), fontWeight: '600' },
   tabContent: { padding: rp(20) },
-  scrollIndicator: { alignItems: 'center', marginBottom: 8 },
-  scrollHint: { fontSize: rf(10), opacity: 0.5 },
 
-  // Feedback Vertical
-  verticalFeedbackItem: {
-    paddingVertical: rp(12),
-    width: '100%',
-  },
-  horizontalDivider: {
-    height: 1,
-    width: '100%',
-    marginBottom: 16,
-    opacity: 0.3,
-  },
-  feedbackLabelVertical: {
-    fontSize: rf(13),
-    fontWeight: '800',
-    letterSpacing: 1.2,
-    marginBottom: 8,
-    textTransform: 'uppercase'
-  },
-  feedbackValueVertical: {
-    fontSize: rf(15),
-    lineHeight: 22,
-    textAlign: 'left',
-  },
-  comparisonLabelVertical: {
-    fontSize: rf(13),
-    fontWeight: '800',
-    letterSpacing: 1.2,
-    marginBottom: 8,
-    textTransform: 'uppercase'
-  },
-  comparisonValueVertical: {
-    fontSize: rf(15),
-    lineHeight: 22,
-    textAlign: 'left',
-  },
+  lecturaCard: { padding: rp(20) },
+  lecturaItem: { paddingVertical: rp(12), width: '100%' },
+  divider: { height: 1, width: '100%', marginBottom: 16, opacity: 0.3 },
+  lecturaLabelRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 8 },
+  lecturaLabel: { fontSize: rf(13), fontWeight: '800', letterSpacing: 1.2, textTransform: 'uppercase' },
+  lecturaValue: { fontSize: rf(15), lineHeight: 22 },
 
-  scoreCard: {
-    padding: rp(20),
-  },
-  sectionTitle: { fontSize: rf(16), fontWeight: '700', marginBottom: 16 },
-  feedbackRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    paddingVertical: rp(8),
-    borderBottomWidth: 0.5,
-    borderBottomColor: 'rgba(0,0,0,0.05)',
-  },
-  feedbackLabel: { fontSize: rf(14), fontWeight: '500' },
-  feedbackValue: { fontSize: rf(14), flex: 1, textAlign: 'right', marginLeft: 16 },
-  bulletRow: { flexDirection: 'row', gap: 10, marginBottom: 12 },
-  bulletText: { fontSize: rf(14), lineHeight: 20, flex: 1 },
-  exerciseCard: {
-    padding: rp(16),
-    borderRadius: 12,
-    marginBottom: 12,
-  },
-  exerciseHeader: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 8 },
-  exerciseTitle: { fontSize: rf(16), fontWeight: '600' },
-  exerciseDesc: { fontSize: rf(14), lineHeight: 20 },
-
-  // Comparison Styles
-  comparisonGrid: {
-    gap: 12,
-  },
-  comparisonRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingVertical: 4,
-  },
-  comparisonLabel: {
-    fontSize: rf(12),
-    fontWeight: '600',
-    textTransform: 'uppercase',
-    letterSpacing: 0.5,
-  },
-  trendContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    minWidth: 100,
-    justifyContent: 'flex-end',
-  },
-  trendText: {
-    fontSize: rf(11),
-    fontWeight: '800',
-  },
-  comparisonText: {
-    fontSize: rf(15),
-    lineHeight: 22,
-  },
-  emptyComparison: {
-    alignItems: 'center',
-    paddingVertical: 20,
-  },
-  emptyComparisonText: {
-    fontSize: rf(13),
-    textAlign: 'center',
-    lineHeight: 18,
-  },
-
-  comparisonItemRow: {
-    paddingVertical: 8,
-  },
-  propuestaCardOuter: {
-    marginBottom: 12,
-  },
-  propuestaCard: {
-    flexDirection: 'row',
-    padding: rp(16),
-    borderLeftWidth: 4,
-  },
+  propuestaCardOuter: { marginBottom: 12 },
+  propuestaCard: { flexDirection: 'row', padding: rp(16), borderLeftWidth: 4 },
   propuestaNumberBox: {
     width: 28,
     height: 28,
@@ -1498,20 +639,10 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginRight: 12,
   },
-  propuestaNumber: {
-    color: '#a78bfa',
-    fontSize: rf(14),
-    fontWeight: '700',
-  },
-  propuestaTitle: {
-    fontSize: rf(16),
-    fontWeight: '700',
-    marginBottom: 4,
-  },
-  propuestaDesc: {
-    fontSize: rf(14),
-    lineHeight: 20,
-  },
+  propuestaNumber: { color: '#a78bfa', fontSize: rf(14), fontWeight: '700' },
+  propuestaTitle: { fontSize: rf(16), fontWeight: '700', marginBottom: 6 },
+  propuestaLabel: { fontSize: rf(11), fontWeight: '800', letterSpacing: 1, textTransform: 'uppercase', marginTop: 10, marginBottom: 2 },
+  propuestaText: { fontSize: rf(14), lineHeight: 20 },
 
   secondaryButton: {
     flexDirection: 'row',
@@ -1524,160 +655,18 @@ const styles = StyleSheet.create({
   },
   secondaryButtonText: { fontSize: rf(15), fontWeight: '700' },
 
-  // Modal
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.5)',
-    justifyContent: 'center',
-    padding: rp(20),
-  },
-  modalContent: {
-    borderRadius: 24,
-    padding: rp(24),
-    alignItems: 'center',
-  },
-  modalHeader: {
-    alignItems: 'center',
-    marginBottom: 20,
-  },
-  modalTitle: {
-    fontSize: rf(22),
-    fontWeight: '700',
-    marginTop: 12,
-  },
-  modalText: {
-    fontSize: rf(15),
-    textAlign: 'center',
-    lineHeight: 22,
-  },
-  checkboxRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-    marginTop: 24,
-    marginBottom: 24,
-  },
-  checkboxText: {
-    fontSize: rf(14),
-  },
-  modalButton: {
-    width: '100%',
-    paddingVertical: rp(16),
-    borderRadius: 16,
-    alignItems: 'center',
-  },
-  modalButtonText: {
-    color: '#fff',
-    fontSize: rf(16),
-    fontWeight: '700',
-  },
-  characterOption: {
-    padding: rp(14),
-    borderRadius: rp(10),
-    borderWidth: 1,
-    width: '100%',
-  },
-  characterOptionText: {
-    fontSize: rf(15),
-    textAlign: 'center',
-  },
-  comparisonOption: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-    padding: rp(12),
-    borderRadius: 8,
-    borderWidth: 1,
-  },
-  comparisonOptionText: {
-    fontSize: rf(13),
-    fontWeight: '500',
-  },
-  analyzedBadge: {
-    position: 'absolute',
-    bottom: rp(10),
-    right: rp(10),
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    paddingHorizontal: 8,
-    paddingVertical: 2,
-    borderRadius: 10,
-  },
-  analyzedBadgeText: {
-    fontSize: rf(10),
-    fontWeight: '700',
-    textTransform: 'uppercase',
-  },
-  emptyActions: {
-    marginTop: 30,
-    width: '100%',
-    maxWidth: 300,
-    gap: 12,
-  },
-  actionButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 8,
-    paddingVertical: rp(16),
-    paddingHorizontal: rp(12),
-    borderRadius: 12,
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-    elevation: 4,
-    minHeight: rp(56),
-  },
-  actionText: {
-    fontSize: rf(15),
-    fontWeight: '700',
-    color: '#FFFFFF',
-    textAlign: 'center',
-  },
-  localModeBanner: {
-    marginHorizontal: rp(16),
-    marginTop: rp(8),
-    marginBottom: rp(4),
-    borderRadius: rp(10),
-    borderWidth: 1,
-    padding: rp(12),
-  },
-  localModeBannerContent: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: rp(10),
-  },
-  localModeBannerIcon: {
-    fontSize: rf(20),
-  },
-  localModeBannerTitle: {
-    fontSize: rf(13),
-    fontWeight: '700',
-    marginBottom: rp(2),
-  },
-  localModeBannerText: {
-    fontSize: rf(12),
-    lineHeight: rf(16),
-  },
-  localModeBannerAction: {
-    paddingHorizontal: rp(8),
-    paddingVertical: rp(4),
-  },
-  localModeBannerActionText: {
-    fontSize: rf(13),
-    fontWeight: '600',
-  },
-  storageIndicator: {
-    marginTop: rp(4),
-  },
-  storageTag: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: rp(3),
-  },
-  storageTagText: {
-    fontSize: rf(10),
-    opacity: 0.6,
-  },
+  reanalyzeRow: { alignItems: 'center', paddingHorizontal: rp(20), gap: 8 },
+  reanalyzeDate: { fontSize: rf(12) },
+  reanalyzeButton: { flexDirection: 'row', alignItems: 'center', gap: 6, padding: rp(8) },
+  reanalyzeText: { fontSize: rf(14), fontWeight: '600' },
+
+  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', padding: rp(20) },
+  modalContent: { borderRadius: 24, padding: rp(24), alignItems: 'center' },
+  modalHeader: { alignItems: 'center', marginBottom: 20 },
+  modalTitle: { fontSize: rf(22), fontWeight: '700', marginTop: 12 },
+  modalText: { fontSize: rf(15), textAlign: 'center', lineHeight: 22 },
+  checkboxRow: { flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: 24, marginBottom: 24 },
+  checkboxText: { fontSize: rf(14) },
+  modalButton: { width: '100%', paddingVertical: rp(16), borderRadius: 16, alignItems: 'center' },
+  modalButtonText: { color: '#fff', fontSize: rf(16), fontWeight: '700' },
 });
