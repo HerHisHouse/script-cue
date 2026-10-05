@@ -132,6 +132,14 @@ const ActionTimingInput = ({ actionId, isManualAction, duration, adjustment, upd
 // en versiones anteriores el Plano General Automático no se puede activar.
 const WIDE_SHOT_SUPPORTED = Platform.OS !== 'android' || Number(Platform.Version) >= 33;
 
+// Oculto en Android hasta validarlo en un móvil de gama alta: en el Galaxy A53
+// cada lente es una cámara aparte y, grabando, el plano general no puede cambiar
+// a la ultra angular (con la grabación persistente de CameraX se perdía el audio
+// tras el cambio y la imagen iba a tirones). Todo el código de Android se
+// conserva; para volver a ofrecerlo basta con poner esto a true y validarlo.
+const SHOW_WIDE_SHOT_ON_ANDROID = false;
+const SHOW_WIDE_SHOT_TOGGLE = Platform.OS !== 'android' || SHOW_WIDE_SHOT_ON_ANDROID;
+
 export default function CastingModeScreen() {
   const router = useRouter();
   const { id } = useLocalSearchParams();
@@ -3591,31 +3599,35 @@ export default function CastingModeScreen() {
                       )}
                       <View style={{ height: 1, backgroundColor: glassBorder, marginVertical: 8 }} />
 
-                      {/* 2. Plano General Automático */}
-                      <BottomSheetToggle
-                        label="Plano general automático"
-                        Icon={Maximize2}
-                        value={autoWideShotEnabled}
-                        onValueChange={handleAutoWideShotToggle}
-                        iconColor={fg}
-                        textColor={fg}
-                        borderColor={glassBorder}
-                        trackColorActive={colors.primary}
-                        infoText='Activa el toggle si necesitas hacer un plano general al final de tu presentación. Solo tendrás que decir "plano general".'
-                      />
+                      {/* 2. Plano General Automático (oculto en Android, ver SHOW_WIDE_SHOT_ON_ANDROID) */}
+                      {SHOW_WIDE_SHOT_TOGGLE && (
+                        <>
+                          <BottomSheetToggle
+                            label="Plano general automático"
+                            Icon={Maximize2}
+                            value={autoWideShotEnabled}
+                            onValueChange={handleAutoWideShotToggle}
+                            iconColor={fg}
+                            textColor={fg}
+                            borderColor={glassBorder}
+                            trackColorActive={colors.primary}
+                            infoText='Activa el toggle si necesitas hacer un plano general al final de tu presentación. Solo tendrás que decir "plano general".'
+                          />
 
-                      {/* Mensaje de plano de trabajo manual (visible si el toggle está activo) */}
-                      {autoWideShotEnabled && (
-                        <View style={{ paddingHorizontal: 20, marginTop: 8 }}>
-                          <Text style={{ color: fgSecondary, fontSize: rf(12), marginBottom: 8 }}>
-                            Ajusta tu plano de trabajo con el zoom y colócate libremente
-                          </Text>
-                          <Text style={{ color: fgSecondary, fontSize: rf(11), marginTop: 6, textAlign: 'center' }}>
-                            Di &quot;plano general&quot; durante la grabación para hacer zoom out al plano general
-                          </Text>
-                        </View>
+                          {/* Mensaje de plano de trabajo manual (visible si el toggle está activo) */}
+                          {autoWideShotEnabled && (
+                            <View style={{ paddingHorizontal: 20, marginTop: 8 }}>
+                              <Text style={{ color: fgSecondary, fontSize: rf(12), marginBottom: 8 }}>
+                                Ajusta tu plano de trabajo con el zoom y colócate libremente
+                              </Text>
+                              <Text style={{ color: fgSecondary, fontSize: rf(11), marginTop: 6, textAlign: 'center' }}>
+                                Di &quot;plano general&quot; durante la grabación para hacer zoom out al plano general
+                              </Text>
+                            </View>
+                          )}
+                          <View style={{ height: 1, backgroundColor: glassBorder, marginVertical: 8 }} />
+                        </>
                       )}
-                      <View style={{ height: 1, backgroundColor: glassBorder, marginVertical: 8 }} />
 
                       {/* 3. Modo Espejo */}
                       <BottomSheetToggle
