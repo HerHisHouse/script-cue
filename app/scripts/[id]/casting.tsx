@@ -128,10 +128,14 @@ const ActionTimingInput = ({ actionId, isManualAction, duration, adjustment, upd
   );
 };
 
-// Plano General Automático: en iOS se activa por voz ("plano general") en vez
-// de con doble palmada. Android sigue con la palmada hasta su propia fase; el
-// código de palmada se conserva detrás de este flag para poder volver atrás.
-const USE_VOICE_WIDE_SHOT = Platform.OS === 'ios';
+// Plano General Automático: se activa por voz ("plano general") en vez de con
+// doble palmada, en iOS y Android. El código de palmada se conserva detrás de
+// este flag para poder volver atrás.
+const USE_VOICE_WIDE_SHOT = true;
+
+// El reconocimiento continuo del paquete en Android necesita Android 13 (API 33).
+// En versiones anteriores el Plano General Automático no se puede activar.
+const WIDE_SHOT_SUPPORTED = Platform.OS !== 'android' || Number(Platform.Version) >= 33;
 
 export default function CastingModeScreen() {
   const router = useRouter();
@@ -483,6 +487,16 @@ export default function CastingModeScreen() {
   const MENU_DISMISS_DELAY_MS = 450;
 
   async function handleAutoWideShotToggle(value: boolean) {
+    if (value && !WIDE_SHOT_SUPPORTED) {
+      // iOS/Android no presentan el aviso mientras el menú (otro Modal) sigue abierto.
+      setShowMenu(false);
+      await new Promise((resolve) => setTimeout(resolve, MENU_DISMISS_DELAY_MS));
+      showCastingAlert(
+        '🎬 Plano general automático',
+        'Esta función necesita Android 13 o superior. Actualiza el sistema de tu móvil para poder usarla.',
+      );
+      return;
+    }
     if (value) {
       const hideInfo = await AsyncStorage.getItem('casting_hide_wideshot_info');
 
@@ -536,8 +550,8 @@ export default function CastingModeScreen() {
           .then(async ({ granted }) => {
             if (granted) return;
             // Sin micrófono la activación por voz no puede funcionar: se apaga
-            // el interruptor y se explica cómo dar el permiso (iOS ya no vuelve
-            // a preguntar una vez denegado; solo se cambia desde Ajustes).
+            // el interruptor y se explica cómo dar el permiso (una vez denegado
+            // el sistema ya no vuelve a preguntar; solo se cambia desde Ajustes).
             setAutoWideShotEnabled(false);
             // Mismo motivo que el aviso de "Así funciona": iOS no presenta el
             // aviso mientras el menú de configuración (otro Modal) siga abierto.
@@ -546,7 +560,9 @@ export default function CastingModeScreen() {
             showCastingAlert(
               '🎙️ Micrófono desactivado',
               'Para activar el plano general con la voz, ScriptCue necesita acceso al micrófono.\n\n' +
-              'Puedes activarlo en Ajustes → ScriptCue → Micrófono.',
+              (Platform.OS === 'android'
+                ? 'Puedes activarlo en Ajustes → Aplicaciones → ScriptCue → Permisos → Micrófono.'
+                : 'Puedes activarlo en Ajustes → ScriptCue → Micrófono.'),
               [
                 { text: 'Ahora no' },
                 { text: 'Abrir Ajustes', onPress: () => { Linking.openSettings(); } },
@@ -1761,18 +1777,22 @@ export default function CastingModeScreen() {
       // La sesión de audio activa tal cual: al grabar es la de vision-camera
       // (playAndRecord + defaultToSpeaker, modo videoRecording). Sin esto el
       // paquete la cambia a modo "measurement", que afecta al audio del vídeo.
-      const audioSession = ExpoSpeechRecognitionModule.getAudioSessionCategoryAndOptionsIOS();
+      // En Android no hay sesión de audio que heredar: el paquete graba el
+      // micrófono en la propia app y CameraX sigue grabando el suyo en paralelo.
+      const audioSession = Platform.OS === 'ios' ? ExpoSpeechRecognitionModule.getAudioSessionCategoryAndOptionsIOS() : null;
       ExpoSpeechRecognitionModule.start({
         lang: 'es-ES',
         interimResults: true,
         continuous: true,
         requiresOnDeviceRecognition: true,
         contextualStrings: ['plano general'],
-        iosCategory: {
-          category: audioSession.category,
-          categoryOptions: audioSession.categoryOptions,
-          mode: audioSession.mode,
-        },
+        ...(audioSession ? {
+          iosCategory: {
+            category: audioSession.category,
+            categoryOptions: audioSession.categoryOptions,
+            mode: audioSession.mode,
+          },
+        } : {}),
       });
       console.log('[PlanoGeneral] Reconocimiento de voz iniciado ✅');
     } catch (e) {
