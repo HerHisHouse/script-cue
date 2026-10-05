@@ -2945,8 +2945,8 @@ export default function RecordingsScreen() {
             backgroundColor: 'rgba(124,106,247,0.12)',
             borderColor: 'rgba(124,106,247,0.35)',
           }]}>
-            <ActivityIndicator size="small" color={colors.primary} />
-            <Text style={[styles.processingBannerText, { color: colors.primary }]}>
+            <ActivityIndicator size="small" color={isDark ? '#FFFFFF' : colors.primary} />
+            <Text style={[styles.processingBannerText, { color: isDark ? '#FFFFFF' : colors.primary }]}>
               {processingJobs.some(id => id.startsWith('teleprompter_')) && processingJobs.some(id => id.startsWith('casting_') || id.startsWith('job_'))
                 ? 'Procesando tus vídeos en segundo plano...'
                 : processingJobs.some(id => id.startsWith('teleprompter_'))
