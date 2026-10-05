@@ -128,13 +128,9 @@ const ActionTimingInput = ({ actionId, isManualAction, duration, adjustment, upd
   );
 };
 
-// Plano General Automático: se activa por voz ("plano general") en vez de con
-// doble palmada, en iOS y Android. El código de palmada se conserva detrás de
-// este flag para poder volver atrás.
-const USE_VOICE_WIDE_SHOT = true;
-
-// El reconocimiento continuo del paquete en Android necesita Android 13 (API 33).
-// En versiones anteriores el Plano General Automático no se puede activar.
+// Plano General Automático: se activa por voz ("plano general"). El
+// reconocimiento continuo del paquete en Android necesita Android 13 (API 33);
+// en versiones anteriores el Plano General Automático no se puede activar.
 const WIDE_SHOT_SUPPORTED = Platform.OS !== 'android' || Number(Platform.Version) >= 33;
 
 export default function CastingModeScreen() {
@@ -513,9 +509,7 @@ export default function CastingModeScreen() {
           '1️⃣ Colócate según la silueta guía para fijar tu plano general\n\n' +
           '2️⃣ Usa el zoom para ajustar tu plano de trabajo como quieras\n\n' +
           '3️⃣ Graba tu presentación con normalidad\n\n' +
-          (USE_VOICE_WIDE_SHOT
-            ? '4️⃣ Di "plano general" cuando quieras mostrarlo (por ejemplo: "Vamos con el plano general")\n\n'
-            : '4️⃣ Da dos palmadas cuando quieras mostrar el plano general\n\n') +
+          '4️⃣ Di "plano general" cuando quieras mostrarlo (por ejemplo: "Vamos con el plano general")\n\n' +
           '5️⃣ La cámara hará zoom out automáticamente para que gires o muestres perfiles',
           [
             {
@@ -545,7 +539,7 @@ export default function CastingModeScreen() {
       // grabar con la cámara ya en marcha. Solo el del micrófono: con
       // reconocimiento en el dispositivo no hace falta el de "reconocimiento de
       // voz", cuyo aviso de Apple dice que la voz se envía a sus servidores.
-      if (value && USE_VOICE_WIDE_SHOT) {
+      if (value) {
         ExpoSpeechRecognitionModule.requestMicrophonePermissionsAsync()
           .then(async ({ granted }) => {
             if (granted) return;
@@ -587,15 +581,7 @@ export default function CastingModeScreen() {
   // Animated.Value que controla el zoom real de la cámara durante la transición
   const zoomAnimValue = useRef(new Animated.Value(1)).current;
 
-  // Detección de palmada — umbrales y refs
-  const CLAP_THRESHOLD_DB = -18;     // Rebajado: más fácil de detectar sin perder precisión
-  const DOUBLE_CLAP_WINDOW_MS = 1200; // Ventana ligeramente más amplia para dar más margen
-  const CLAP_DEBOUNCE_MS = 180;      // Más rápido: capta mejor la segunda palmada
-  const clapTimestampsRef = useRef<number[]>([]);
-  const lastClapPeakRef = useRef<number>(0);
-  const clapMeteringRecordingRef = useRef<Audio.Recording | null>(null);
-
-  // Activación por voz (iOS) — refs y eventos del reconocimiento
+  // Activación por voz del plano general — refs y eventos del reconocimiento
   const voiceListeningRef = useRef(false);
   // Una sola transición por presentación: con resultados parciales la frase
   // llega en varios eventos seguidos.
@@ -1664,93 +1650,6 @@ export default function CastingModeScreen() {
     }
   }
 
-  // ── Detección de doble palmada ─────────────────────────────────────
-  /**
-   * Abre una grabación auxiliar de metering durante la grabación de vídeo.
-   * NOTA DE SEGURIDAD: En iOS, expo-camera y expo-av comparten AVAudioSession.
-   * El try/catch garantiza que un eventual conflicto nunca afecte la grabación
-   * de vídeo. → Probar obligatoriamente en dispositivo físico antes de publicar.
-   */
-  async function startClapDetection() {
-    console.log('[Teleprompter] Intentando iniciar detección de palmada, facing actual:', facing);
-    console.log('[Teleprompter] Condiciones:', { autoWideShotEnabled, castingType });
-    if (!autoWideShotEnabled || castingType !== 'free') return;
-    try {
-      console.log('[Teleprompter] Solicitando Audio.Recording.createAsync...');
-      const { recording } = await Audio.Recording.createAsync(
-        {
-          isMeteringEnabled: true,
-          android: {
-            extension: '.m4a',
-            outputFormat: Audio.AndroidOutputFormat.MPEG_4,
-            audioEncoder: Audio.AndroidAudioEncoder.AAC,
-            sampleRate: 16000,
-            numberOfChannels: 1,
-            bitRate: 16000,
-          },
-          ios: {
-            extension: '.m4a',
-            outputFormat: Audio.IOSOutputFormat.MPEG4AAC,
-            audioQuality: Audio.IOSAudioQuality.MIN,
-            sampleRate: 16000,
-            numberOfChannels: 1,
-            bitRate: 16000,
-            linearPCMBitDepth: 16,
-            linearPCMIsBigEndian: false,
-            linearPCMIsFloat: false,
-          },
-          web: {},
-        },
-        (status) => {
-          if (!status.isRecording || status.metering === undefined) return;
-          handleClapDetection(status.metering);
-        },
-        50
-      );
-      clapMeteringRecordingRef.current = recording;
-      console.log('[Teleprompter] Detección de palmada iniciada ✅');
-    } catch (e) {
-      // No interrumpe la grabación de vídeo — solo advertencia
-      console.warn('[Teleprompter] No se pudo iniciar detección de palmada (vídeo no afectado):', e);
-    }
-  }
-
-  async function stopClapDetection() {
-    if (!clapMeteringRecordingRef.current) return;
-    try {
-      await clapMeteringRecordingRef.current.stopAndUnloadAsync();
-    } catch { }
-    const uri = clapMeteringRecordingRef.current.getURI();
-    if (uri) {
-      try { await FileSystem.deleteAsync(uri, { idempotent: true }); } catch { }
-    }
-    clapMeteringRecordingRef.current = null;
-    clapTimestampsRef.current = [];
-    lastClapPeakRef.current = 0;
-    console.log('[Teleprompter] Detección de palmada detenida');
-  }
-
-  function handleClapDetection(db: number) {
-    if (db < CLAP_THRESHOLD_DB) return;
-    const now = Date.now();
-
-    // Debounce: ignorar picos muy seguidos (eco, reverberación de la sala)
-    if (now - lastClapPeakRef.current < CLAP_DEBOUNCE_MS) return;
-    lastClapPeakRef.current = now;
-
-    // Registrar y limpiar timestamps fuera de la ventana
-    clapTimestampsRef.current.push(now);
-    clapTimestampsRef.current = clapTimestampsRef.current.filter(
-      t => now - t < DOUBLE_CLAP_WINDOW_MS
-    );
-
-    if (clapTimestampsRef.current.length >= 2) {
-      console.log('[Teleprompter] Doble palmada detectada');
-      triggerWideShotTransition();
-      clapTimestampsRef.current = []; // Resetear para no re-disparar
-    }
-  }
-
   async function startVoiceActivationListening() {
     if (!autoWideShotEnabled || castingType !== 'free') return;
     const session = ++voiceSessionRef.current;
@@ -1873,11 +1772,10 @@ export default function CastingModeScreen() {
         setLineTimingsCount(0);
         activateKeepAwakeAsync();
 
-        // Iniciar la activación del plano general (solo Teleprompter Libre con
-        // toggle activo): voz en iOS, palmada en Android.
-        // Modo seguro: try/catch interno — no bloquea si hay conflicto de audio en iOS
-        if (USE_VOICE_WIDE_SHOT) startVoiceActivationListening();
-        else startClapDetection();
+        // Iniciar la activación por voz del plano general (solo Teleprompter
+        // Libre con toggle activo). Modo seguro: try/catch interno — no bloquea
+        // la grabación de vídeo si el reconocimiento falla.
+        startVoiceActivationListening();
 
         // Timer is now managed by the declarative useEffect above (tied to isPlaying/isRecording)
         // No need to start a manual interval here
@@ -1943,8 +1841,7 @@ export default function CastingModeScreen() {
     deactivateKeepAwake();
 
     // Detener la activación del plano general antes de parar la cámara
-    if (USE_VOICE_WIDE_SHOT) stopVoiceActivationListening();
-    else await stopClapDetection();
+    stopVoiceActivationListening();
 
     try {
       const video = await cameraRef.current.stopRecording();
@@ -2075,8 +1972,7 @@ export default function CastingModeScreen() {
       Promise.resolve(cameraRef.current.stopRecording()).finally(releaseLensLock);
 
       // Detener la activación del plano general (no bloqueante)
-      if (USE_VOICE_WIDE_SHOT) stopVoiceActivationListening();
-      else stopClapDetection();
+      stopVoiceActivationListening();
 
       setIsRecording(false);
       setIsPlaying(false);
@@ -3610,7 +3506,7 @@ export default function CastingModeScreen() {
                         textColor={fg}
                         borderColor={glassBorder}
                         trackColorActive={colors.primary}
-                        infoText={`Activa el toggle si necesitas hacer un plano general al final de tu presentación. ${USE_VOICE_WIDE_SHOT ? 'Solo tendrás que decir "plano general".' : 'Solo tendrás que dar 2 palmadas.'}`}
+                        infoText='Activa el toggle si necesitas hacer un plano general al final de tu presentación. Solo tendrás que decir "plano general".'
                       />
 
                       {/* Mensaje de plano de trabajo manual (visible si el toggle está activo) */}
@@ -3620,9 +3516,7 @@ export default function CastingModeScreen() {
                             Ajusta tu plano de trabajo con el zoom y colócate libremente
                           </Text>
                           <Text style={{ color: fgSecondary, fontSize: rf(11), marginTop: 6, textAlign: 'center' }}>
-                            {USE_VOICE_WIDE_SHOT
-                              ? 'Di "plano general" durante la grabación para hacer zoom out al plano general'
-                              : 'Da dos palmadas durante la grabación para hacer zoom out al plano general'}
+                            Di &quot;plano general&quot; durante la grabación para hacer zoom out al plano general
                           </Text>
                         </View>
                       )}
