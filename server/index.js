@@ -2135,7 +2135,7 @@ function getAnthropic() {
 
 app.post('/analyze-scene', requireUser, async (req, res) => {
     const userId = req.user ? req.user.id : null;
-    const { scriptId, sceneId, characterId } = req.body || {};
+    const { scriptId, sceneId, characterId, newProposals = false } = req.body || {};
     const fail = (status, errorCode, error) => res.status(status).json({ success: false, errorCode, error });
 
     if (!userId) return fail(401, 'UNAUTHORIZED', 'Tu sesión ha caducado. Vuelve a iniciar sesión e inténtalo de nuevo.');
@@ -2184,14 +2184,43 @@ app.post('/analyze-scene', requireUser, async (req, res) => {
             );
         }
 
-        const { analysis, usage } = await sceneAnalysis.runSceneAnalysis(getAnthropic(), {
+        const params = {
             scriptTitle: script.title,
             sceneHeading: scene.heading,
             sceneNumber: scene.scene_number,
             characterName: character.name,
             lines,
             scriptContext,
-        });
+        };
+        const now = new Date().toISOString();
+
+        // "Crear nuevas propuestas": la lectura ya existe y se añade una tanda distinta de las
+        // anteriores, sin perderlas. Sin análisis previo, se hace el análisis completo.
+        let existing = null;
+        if (newProposals) {
+            const { data: row } = await supabase.from('scene_analyses').select('analysis, updated_at')
+                .eq('user_id', userId).eq('scene_id', sceneId).eq('character_id', characterId).maybeSingle();
+            existing = row ? sceneAnalysis.toStoredAnalysis(row.analysis, row.updated_at) : null;
+        }
+
+        let stored;
+        let usage;
+        if (existing) {
+            if (existing.tandas.length >= sceneAnalysis.MAX_PROPOSAL_BATCHES) {
+                return fail(422, 'MAX_PROPOSAL_BATCHES', `Ya tienes ${sceneAnalysis.MAX_PROPOSAL_BATCHES} tandas de propuestas para esta escena. Repasa las anteriores en el Historial.`);
+            }
+            const result = await sceneAnalysis.runNewProposals(getAnthropic(), {
+                ...params,
+                lectura: existing.lectura,
+                previousProposals: sceneAnalysis.allProposals(existing),
+            });
+            usage = result.usage;
+            stored = { lectura: existing.lectura, tandas: [...existing.tandas, { propuestas: result.propuestas, createdAt: now }] };
+        } else {
+            const result = await sceneAnalysis.runSceneAnalysis(getAnthropic(), params);
+            usage = result.usage;
+            stored = { lectura: result.analysis.lectura, tandas: [{ propuestas: result.analysis.propuestas, createdAt: now }] };
+        }
 
         await logApiUsage({
             userId,
@@ -2202,25 +2231,24 @@ app.post('/analyze-scene', requireUser, async (req, res) => {
             mode: 'scene',
         });
 
-        const updatedAt = new Date().toISOString();
         const { error: saveError } = await supabase.from('scene_analyses').upsert({
             user_id: userId,
             script_id: scriptId,
             scene_id: sceneId,
             character_id: characterId,
-            analysis,
+            analysis: stored,
             model: sceneAnalysis.SCENE_ANALYSIS_MODEL,
-            updated_at: updatedAt,
+            updated_at: now,
         }, { onConflict: 'user_id,scene_id,character_id' });
         if (saveError) console.warn('[Escena] No se pudo guardar el análisis:', saveError.message);
 
-        res.json({ success: true, analysis, updatedAt });
+        res.json({ success: true, analysis: stored, updatedAt: now });
     } catch (error) {
         const reference = await recordServerError(supabase, {
             userId,
             mode: 'scene',
             error,
-            details: { scriptId, sceneId, characterId, model: sceneAnalysis.SCENE_ANALYSIS_MODEL },
+            details: { scriptId, sceneId, characterId, newProposals, model: sceneAnalysis.SCENE_ANALYSIS_MODEL },
         });
         res.status(500).json({
             success: false,

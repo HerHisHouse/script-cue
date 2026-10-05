@@ -57,6 +57,17 @@ const ANALYSIS_SCHEMA = {
     },
 };
 
+// Solo propuestas (tandas nuevas): la lectura de la escena ya existe.
+const PROPOSALS_SCHEMA = {
+    type: 'object',
+    additionalProperties: false,
+    required: ['propuestas'],
+    properties: { propuestas: ANALYSIS_SCHEMA.properties.propuestas },
+};
+
+// Tandas de propuestas por escena y personaje: acota el coste y la lista de "ya propuestas" del prompt.
+const MAX_PROPOSAL_BATCHES = 10;
+
 const isActionLine = (characterName) => {
     const n = String(characterName || '').trim().toUpperCase();
     return n === 'ACCIÓN' || n === 'ACCION';
@@ -137,17 +148,12 @@ function buildScriptContext(scenes, selectedSceneId, maxChars = MAX_SCRIPT_CONTE
     return parts.join('\n\n');
 }
 
-function buildUserPrompt({ scriptTitle, sceneHeading, sceneNumber = null, characterName, lines, hasScriptContext = false }) {
-    const character = String(characterName).trim().toUpperCase();
+function sceneHeader({ scriptTitle, sceneHeading, sceneNumber, character, lines, hasScriptContext }) {
     const others = speakersOf(lines).filter((n) => n !== character);
-    const dialogueCount = lines.filter((l) => !isActionLine(l.character_name)).length;
-    const { min, max } = proposalRange(dialogueCount);
-
     const sceneLabel = sceneNumber != null ? `Escena ${sceneNumber} · ${sceneHeading || 'Sin título'}` : (sceneHeading || 'Sin título');
     const contextNote = hasScriptContext
         ? `\nTienes el guion completo arriba como contexto. Analiza SOLO esta escena; puedes apoyarte en lo que ocurre en otras escenas para entender lo que está en juego, pero las citas deben ser de esta escena.\n`
         : '';
-
     return `Guion: "${scriptTitle}"
 Escena a analizar: ${sceneLabel}
 Personaje del actor: ${character}
@@ -155,7 +161,22 @@ Otros personajes en la escena: ${others.length ? others.join(', ') : 'ninguno'}
 
 ${contextNote}
 ESCENA A ANALIZAR:
-${buildSceneText(lines)}
+${buildSceneText(lines)}`;
+}
+
+function proposalsSpec(lines) {
+    const dialogueCount = lines.filter((l) => !isActionLine(l.character_name)).length;
+    const { min, max } = proposalRange(dialogueCount);
+    return `entre ${min} y ${max}, según lo que dé de sí la escena. Claramente distintas entre sí (no variaciones de la misma idea): cambia el objetivo, la táctica, la relación de poder o lo que el personaje oculta. Para cada una:
+- titulo: nombre corto de la elección (p. ej. "Como una despedida").
+- eleccion: la decisión interpretativa en una frase.
+- en_el_texto: las réplicas que permiten este juego y por qué.
+- como_probarlo: una pauta concreta para ensayarlo: dónde cambia la intención, qué táctica usar.`;
+}
+
+function buildUserPrompt({ scriptTitle, sceneHeading, sceneNumber = null, characterName, lines, hasScriptContext = false }) {
+    const character = String(characterName).trim().toUpperCase();
+    return `${sceneHeader({ scriptTitle, sceneHeading, sceneNumber, character, lines, hasScriptContext })}
 
 LECTURA (todo sobre ${character}):
 - objetivo: qué quiere ${character} del otro en esta escena, en verbo activo, con la réplica que lo sugiere.
@@ -163,33 +184,54 @@ LECTURA (todo sobre ${character}):
 - relacion: qué está en juego entre ellos y cómo cambia a lo largo de la escena.
 - ritmo: los giros (beats) del texto: dónde cambia la escena y qué los provoca, citando las réplicas.
 
-PROPUESTAS: entre ${min} y ${max}, según lo que dé de sí la escena. Claramente distintas entre sí (no variaciones de la misma idea): cambia el objetivo, la táctica, la relación de poder o lo que el personaje oculta. Para cada una:
-- titulo: nombre corto de la elección (p. ej. "Como una despedida").
-- eleccion: la decisión interpretativa en una frase.
-- en_el_texto: las réplicas que permiten este juego y por qué.
-- como_probarlo: una pauta concreta para ensayarlo: dónde cambia la intención, qué táctica usar.`;
+PROPUESTAS: ${proposalsSpec(lines)}`;
+}
+
+/** Tanda nueva de propuestas para una escena ya leída: totalmente distintas de las anteriores. */
+function buildNewProposalsPrompt({ scriptTitle, sceneHeading, sceneNumber = null, characterName, lines, hasScriptContext = false, lectura, previousProposals }) {
+    const character = String(characterName).trim().toUpperCase();
+    const previous = previousProposals
+        .map((p, i) => `${i + 1}. ${p.titulo}: ${p.eleccion}`)
+        .join('\n');
+    return `${sceneHeader({ scriptTitle, sceneHeading, sceneNumber, character, lines, hasScriptContext })}
+
+LECTURA YA HECHA DE LA ESCENA (úsala como base, no la repitas):
+- Objetivo: ${lectura.objetivo}
+- Obstáculo: ${lectura.obstaculo}
+- Relación: ${lectura.relacion}
+- Ritmo: ${lectura.ritmo}
+
+PROPUESTAS QUE EL ACTOR YA TIENE (no las repitas ni propongas variaciones de ellas):
+${previous}
+
+NUEVAS PROPUESTAS para ${character}: ${proposalsSpec(lines)}
+Tienen que ser TOTALMENTE DIFERENTES de las que el actor ya tiene: otro objetivo, otra táctica, otra relación de poder u otro secreto. Busca lecturas de la escena que no se hayan explorado todavía; si una idea se parece a una de la lista, descártala.`;
+}
+
+const textOf = (v) => (typeof v === 'string' ? v.trim() : '');
+
+function normalizeProposals(raw) {
+    return (Array.isArray(raw) ? raw : [])
+        .map((p) => ({
+            titulo: textOf(p && p.titulo),
+            eleccion: textOf(p && p.eleccion),
+            en_el_texto: textOf(p && p.en_el_texto),
+            como_probarlo: textOf(p && p.como_probarlo),
+        }))
+        .filter((p) => p.titulo && p.eleccion)
+        .slice(0, MAX_PROPOSALS);
 }
 
 /** Limpia la respuesta del modelo y aplica el tope de propuestas (la API no valida tamaños de array). */
 function normalizeAnalysis(raw) {
-    const text = (v) => (typeof v === 'string' ? v.trim() : '');
     const lectura = raw && raw.lectura ? raw.lectura : {};
-    const propuestas = (Array.isArray(raw && raw.propuestas) ? raw.propuestas : [])
-        .map((p) => ({
-            titulo: text(p && p.titulo),
-            eleccion: text(p && p.eleccion),
-            en_el_texto: text(p && p.en_el_texto),
-            como_probarlo: text(p && p.como_probarlo),
-        }))
-        .filter((p) => p.titulo && p.eleccion)
-        .slice(0, MAX_PROPOSALS);
-
+    const propuestas = normalizeProposals(raw && raw.propuestas);
     const normalized = {
         lectura: {
-            objetivo: text(lectura.objetivo),
-            obstaculo: text(lectura.obstaculo),
-            relacion: text(lectura.relacion),
-            ritmo: text(lectura.ritmo),
+            objetivo: textOf(lectura.objetivo),
+            obstaculo: textOf(lectura.obstaculo),
+            relacion: textOf(lectura.relacion),
+            ritmo: textOf(lectura.ritmo),
         },
         propuestas,
     };
@@ -199,10 +241,23 @@ function normalizeAnalysis(raw) {
     return normalized;
 }
 
-/** Llama a Claude y devuelve { analysis, usage }. Lanza si la respuesta no es utilizable. */
-async function runSceneAnalysis(anthropic, { scriptTitle, sceneHeading, sceneNumber = null, characterName, lines, scriptContext = null }) {
+/**
+ * Lo que se guarda en scene_analyses.analysis: la lectura (una vez) y las tandas de propuestas
+ * en orden. Los análisis guardados antes del historial ({ lectura, propuestas }) pasan a ser la tanda 1.
+ */
+function toStoredAnalysis(raw, fallbackDate) {
+    if (!raw || !raw.lectura) return null;
+    if (Array.isArray(raw.tandas)) return { lectura: raw.lectura, tandas: raw.tandas };
+    return { lectura: raw.lectura, tandas: [{ propuestas: raw.propuestas || [], createdAt: fallbackDate }] };
+}
+
+function allProposals(stored) {
+    return stored.tandas.flatMap((t) => t.propuestas || []);
+}
+
+function systemBlocks(scriptTitle, scriptContext) {
     // Prompt fijo + guion completo (cacheado: se reaprovecha al analizar otra escena o personaje
-    // del mismo guion en los minutos siguientes). Lo propio de cada análisis va en el mensaje.
+    // del mismo guion, o al pedir más propuestas, en los minutos siguientes).
     const system = [{ type: 'text', text: SYSTEM_PROMPT }];
     if (scriptContext) {
         system.push({
@@ -211,17 +266,17 @@ async function runSceneAnalysis(anthropic, { scriptTitle, sceneHeading, sceneNum
             cache_control: { type: 'ephemeral' },
         });
     }
+    return system;
+}
 
+async function callClaude(anthropic, { system, prompt, schema }) {
     const response = await anthropic.messages.create({
         model: SCENE_ANALYSIS_MODEL,
         max_tokens: 16000,
         thinking: { type: 'adaptive' },
         system,
-        messages: [{
-            role: 'user',
-            content: buildUserPrompt({ scriptTitle, sceneHeading, sceneNumber, characterName, lines, hasScriptContext: !!scriptContext }),
-        }],
-        output_config: { format: { type: 'json_schema', schema: ANALYSIS_SCHEMA } },
+        messages: [{ role: 'user', content: prompt }],
+        output_config: { format: { type: 'json_schema', schema } },
     });
 
     if (response.stop_reason === 'refusal') {
@@ -234,14 +289,13 @@ async function runSceneAnalysis(anthropic, { scriptTitle, sceneHeading, sceneNum
     const textBlock = response.content.find((b) => b.type === 'text');
     if (!textBlock) throw new Error('Claude no devolvió texto');
 
-    const analysis = normalizeAnalysis(JSON.parse(textBlock.text));
     const usage = response.usage || {};
     const uncached = usage.input_tokens || 0;
     const cacheWrite = usage.cache_creation_input_tokens || 0;
     const cacheRead = usage.cache_read_input_tokens || 0;
     const outputTokens = usage.output_tokens || 0;
     return {
-        analysis,
+        data: JSON.parse(textBlock.text),
         usage: {
             inputTokens: uncached + cacheWrite + cacheRead,
             outputTokens,
@@ -254,19 +308,50 @@ async function runSceneAnalysis(anthropic, { scriptTitle, sceneHeading, sceneNum
     };
 }
 
+/** Primer análisis: lectura + primera tanda. Devuelve { analysis: { lectura, propuestas }, usage }. */
+async function runSceneAnalysis(anthropic, { scriptTitle, sceneHeading, sceneNumber = null, characterName, lines, scriptContext = null }) {
+    const { data, usage } = await callClaude(anthropic, {
+        system: systemBlocks(scriptTitle, scriptContext),
+        prompt: buildUserPrompt({ scriptTitle, sceneHeading, sceneNumber, characterName, lines, hasScriptContext: !!scriptContext }),
+        schema: ANALYSIS_SCHEMA,
+    });
+    return { analysis: normalizeAnalysis(data), usage };
+}
+
+/** Tanda nueva sobre una lectura existente. Devuelve { propuestas, usage }. */
+async function runNewProposals(anthropic, { scriptTitle, sceneHeading, sceneNumber = null, characterName, lines, scriptContext = null, lectura, previousProposals }) {
+    const { data, usage } = await callClaude(anthropic, {
+        system: systemBlocks(scriptTitle, scriptContext),
+        prompt: buildNewProposalsPrompt({
+            scriptTitle, sceneHeading, sceneNumber, characterName, lines,
+            hasScriptContext: !!scriptContext, lectura, previousProposals,
+        }),
+        schema: PROPOSALS_SCHEMA,
+    });
+    const propuestas = normalizeProposals(data && data.propuestas);
+    if (propuestas.length === 0) throw new Error('La nueva tanda llegó sin propuestas');
+    return { propuestas, usage };
+}
+
 module.exports = {
     SCENE_ANALYSIS_MODEL,
     MIN_PROPOSALS,
     MAX_PROPOSALS,
+    MAX_PROPOSAL_BATCHES,
     ANALYSIS_SCHEMA,
+    PROPOSALS_SCHEMA,
     SYSTEM_PROMPT,
     proposalRange,
     buildSceneText,
     buildScriptContext,
     buildUserPrompt,
+    buildNewProposalsPrompt,
     MAX_SCRIPT_CONTEXT_CHARS,
     normalizeAnalysis,
+    toStoredAnalysis,
+    allProposals,
     runSceneAnalysis,
+    runNewProposals,
     isActionLine,
     sameName,
 };

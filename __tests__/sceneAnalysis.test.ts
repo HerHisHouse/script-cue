@@ -138,6 +138,47 @@ describe('Modo Escena: análisis sobre el guion', () => {
     expect(usage.estimatedCost).toBeCloseTo(100 * 2e-6 + 5000 * 0.2e-6 + 1000 * 10e-6);
   });
 
+  it('los análisis guardados antes del historial pasan a ser la tanda 1', () => {
+    const legacy = { lectura: VALID.lectura, propuestas: VALID.propuestas.slice(0, 2) };
+    const stored = scene.toStoredAnalysis(legacy, '2026-10-05T10:00:00Z');
+    expect(stored.tandas).toEqual([{ propuestas: legacy.propuestas, createdAt: '2026-10-05T10:00:00Z' }]);
+    const already = { lectura: VALID.lectura, tandas: [{ propuestas: [], createdAt: 'x' }] };
+    expect(scene.toStoredAnalysis(already, 'y')).toEqual(already);
+    expect(scene.toStoredAnalysis(null, 'y')).toBeNull();
+  });
+
+  it('una tanda nueva lista todas las propuestas anteriores y pide que sean totalmente distintas', () => {
+    const stored = { lectura: scene.normalizeAnalysis(VALID).lectura, tandas: [
+      { propuestas: [{ titulo: 'Como una despedida', eleccion: 'Se va para siempre' }], createdAt: 'a' },
+      { propuestas: [{ titulo: 'Desde la burla', eleccion: 'Se ríe de él' }], createdAt: 'b' },
+    ] };
+    const prompt = scene.buildNewProposalsPrompt({
+      scriptTitle: 'Cocina', sceneHeading: 'INT. COCINA', characterName: 'MARTA', lines: LINES,
+      lectura: stored.lectura, previousProposals: scene.allProposals(stored),
+    });
+    expect(prompt).toContain('1. Como una despedida: Se va para siempre');
+    expect(prompt).toContain('2. Desde la burla: Se ríe de él');
+    expect(prompt).toContain('TOTALMENTE DIFERENTES');
+    expect(prompt).toContain('Objetivo: Que David se quede');
+    expect(prompt).not.toContain('LECTURA (todo sobre');
+  });
+
+  it('la tanda nueva pide solo propuestas (esquema propio) y nunca más de 8', async () => {
+    const create = jest.fn().mockResolvedValue({
+      stop_reason: 'end_turn',
+      content: [{ type: 'text', text: JSON.stringify({ propuestas: VALID.propuestas }) }],
+      usage: { input_tokens: 10, output_tokens: 10 },
+    });
+    const { propuestas } = await scene.runNewProposals({ messages: { create } }, {
+      scriptTitle: 'Cocina', sceneHeading: '', characterName: 'MARTA', lines: LINES,
+      lectura: VALID.lectura, previousProposals: [],
+    });
+    expect(create.mock.calls[0][0].output_config.format.schema).toBe(scene.PROPOSALS_SCHEMA);
+    expect(Object.keys(scene.PROPOSALS_SCHEMA.properties)).toEqual(['propuestas']);
+    expect(propuestas).toHaveLength(8);
+    expect(scene.MAX_PROPOSAL_BATCHES).toBe(10);
+  });
+
   it('genera códigos de referencia legibles (SC- + 6 caracteres sin 0/O/1/I)', () => {
     for (let i = 0; i < 50; i++) {
       expect(createErrorReference()).toMatch(/^SC-[A-HJ-NP-Z2-9]{6}$/);

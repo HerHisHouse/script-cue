@@ -29,6 +29,7 @@ import {
   RefreshCw,
   Play,
   User,
+  History,
 } from 'lucide-react-native';
 import { supabase } from '@/utils/supabase';
 import { serverAuthHeaders } from '@/utils/serverAuth';
@@ -56,15 +57,22 @@ const INFO_TEXT =
 // Errores que el propio usuario puede resolver: se explican sin ofrecer reporte.
 const USER_FIXABLE_ERRORS = new Set([
   'UNAUTHORIZED', 'MISSING_FIELDS', 'SCRIPT_NOT_FOUND', 'SCENE_NOT_FOUND',
-  'CHARACTER_NOT_FOUND', 'EMPTY_SCENE', 'CHARACTER_NOT_IN_SCENE',
+  'CHARACTER_NOT_FOUND', 'EMPTY_SCENE', 'CHARACTER_NOT_IN_SCENE', 'MAX_PROPOSAL_BATCHES',
 ]);
+
+// Igual que MAX_PROPOSAL_BATCHES en server/sceneAnalysis.js.
+const MAX_PROPOSAL_BATCHES = 10;
+
+const INTRO_POINTS = ['Qué quiere tu personaje.', 'Qué se lo impide.', 'Qué relación tiene.'];
 
 interface SceneRow { id: string; heading: string; scene_number: number; order_index: number }
 interface LineRow { scene_id: string; character_name: string; content: string; order_index: number }
 interface CharacterRow { id: string; name: string; is_user_character: boolean | null }
 interface Lectura { objetivo: string; obstaculo: string; relacion: string; ritmo: string }
 interface Propuesta { titulo: string; eleccion: string; en_el_texto: string; como_probarlo: string }
-interface SceneAnalysis { lectura: Lectura; propuestas: Propuesta[] }
+interface Tanda { propuestas: Propuesta[]; createdAt: string }
+// La lectura se genera una vez; cada "Crear nuevas propuestas" añade una tanda sin borrar las anteriores.
+interface SceneAnalysis { lectura: Lectura; tandas: Tanda[] }
 interface SavedAnalysis { analysis: SceneAnalysis; updatedAt: string }
 
 const LECTURA_ITEMS: { key: keyof Lectura; label: string; Icon: typeof Target }[] = [
@@ -75,6 +83,13 @@ const LECTURA_ITEMS: { key: keyof Lectura; label: string; Icon: typeof Target }[
 ];
 
 const isActionLine = (name: string) => ['ACCIÓN', 'ACCION'].includes(name.trim().toUpperCase());
+
+// Los análisis guardados antes del historial ({ lectura, propuestas }) se leen como la tanda 1.
+function toSceneAnalysis(raw: any, fallbackDate: string): SceneAnalysis | null {
+  if (!raw?.lectura) return null;
+  if (Array.isArray(raw.tandas)) return { lectura: raw.lectura, tandas: raw.tandas };
+  return { lectura: raw.lectura, tandas: [{ propuestas: raw.propuestas || [], createdAt: fallbackDate }] };
+}
 const analysisKey = (sceneId: string, characterId: string) => `${sceneId}:${characterId}`;
 
 export default function SceneModeScreen() {
@@ -110,7 +125,9 @@ export default function SceneModeScreen() {
   const [sceneId, setSceneId] = useState<string | null>(null);
   const [characterId, setCharacterId] = useState<string | null>(null);
   const [analyzing, setAnalyzing] = useState(false);
-  const [activeTab, setActiveTab] = useState<'lectura' | 'propuestas'>('lectura');
+  const [activeTab, setActiveTab] = useState<'lectura' | 'propuestas' | 'historial'>('lectura');
+  // Tanda de propuestas que se está viendo (null = la más reciente).
+  const [selectedBatch, setSelectedBatch] = useState<number | null>(null);
 
   const [showDisclaimer, setShowDisclaimer] = useState(false);
   const [dontShowAgain, setDontShowAgain] = useState(false);
@@ -151,7 +168,8 @@ export default function SceneModeScreen() {
       setCharacters((charsRes.data || []) as CharacterRow[]);
       const savedMap: Record<string, SavedAnalysis> = {};
       for (const row of savedRes.data || []) {
-        savedMap[analysisKey(row.scene_id, row.character_id)] = { analysis: row.analysis, updatedAt: row.updated_at };
+        const analysis = toSceneAnalysis(row.analysis, row.updated_at);
+        if (analysis) savedMap[analysisKey(row.scene_id, row.character_id)] = { analysis, updatedAt: row.updated_at };
       }
       setSaved(savedMap);
       // Guion de una sola escena (lo habitual): se salta el paso de elegir escena.
@@ -195,6 +213,10 @@ export default function SceneModeScreen() {
 
   const current = sceneId && characterId ? saved[analysisKey(sceneId, characterId)] : undefined;
   const singleScene = scenes.length === 1;
+  const tandas = current?.analysis.tandas ?? [];
+  const batchIndex = selectedBatch != null && selectedBatch < tandas.length ? selectedBatch : tandas.length - 1;
+  const shownBatch = tandas[batchIndex];
+  const canCreateMore = tandas.length < MAX_PROPOSAL_BATCHES;
 
   function goBack() {
     if (characterId) { setCharacterId(null); return; }
@@ -209,7 +231,7 @@ export default function SceneModeScreen() {
     setShowDisclaimer(false);
   }
 
-  async function startAnalysis() {
+  async function startAnalysis(newProposals = false) {
     if (!sceneId || !characterId || analyzing) return;
     setAnalyzing(true);
     const controller = new AbortController();
@@ -219,18 +241,18 @@ export default function SceneModeScreen() {
       const response = await fetch(`${RENDER_SERVER_URL}/analyze-scene`, {
         method: 'POST',
         headers: { ...(await serverAuthHeaders()), 'Content-Type': 'application/json' },
-        body: JSON.stringify({ scriptId, sceneId, characterId }),
+        body: JSON.stringify({ scriptId, sceneId, characterId, newProposals }),
         signal: controller.signal,
       });
       let data: any = null;
       try { data = await response.json(); } catch { data = null; }
 
-      if (response.ok && data?.success && data.analysis) {
-        setSaved(prev => ({
-          ...prev,
-          [analysisKey(sceneId, characterId)]: { analysis: data.analysis, updatedAt: data.updatedAt || new Date().toISOString() },
-        }));
-        setActiveTab('lectura');
+      const updatedAt = data?.updatedAt || new Date().toISOString();
+      const analysis = response.ok && data?.success ? toSceneAnalysis(data.analysis, updatedAt) : null;
+      if (analysis) {
+        setSaved(prev => ({ ...prev, [analysisKey(sceneId, characterId)]: { analysis, updatedAt } }));
+        setSelectedBatch(null);
+        setActiveTab(newProposals ? 'propuestas' : 'lectura');
         if (user) trackEvent(user.id, 'analysis_completed', MODE, { script_id: scriptId });
         return;
       }
@@ -331,7 +353,7 @@ export default function SceneModeScreen() {
           const isUser = !!char.is_user_character;
           const analyzed = !!(sceneId && saved[analysisKey(sceneId, char.id)]);
           return (
-            <TouchableOpacity key={char.id} activeOpacity={0.8} onPress={() => { setCharacterId(char.id); setActiveTab('lectura'); }}>
+            <TouchableOpacity key={char.id} activeOpacity={0.8} onPress={() => { setCharacterId(char.id); setActiveTab('lectura'); setSelectedBatch(null); }}>
               <GlassCard
                 isDark={isDark}
                 style={styles.rowCardOuter}
@@ -375,10 +397,19 @@ export default function SceneModeScreen() {
           <View style={[styles.introCard, { backgroundColor: cardBg, borderWidth: 1, borderColor: cardBorder }]}>
             <Brain size={48} color={accent} style={{ marginBottom: 16 }} />
             <Text style={[styles.introTitle, { color: onBg }]}>Lectura de la escena</Text>
+            <Text style={[styles.introText, { color: onBg2 }]}>ScriptCue leerá el guion para saber:</Text>
+            <View style={styles.introList}>
+              {INTRO_POINTS.map(point => (
+                <View key={point} style={styles.introListItem}>
+                  <Text style={[styles.introText, { color: onBg2 }]}>-</Text>
+                  <Text style={[styles.introText, styles.introListText, { color: onBg2 }]}>{point}</Text>
+                </View>
+              ))}
+            </View>
             <Text style={[styles.introText, { color: onBg2 }]}>
-              ScriptCue leerá el guion contigo: qué quiere tu personaje, qué se lo impide y cómo cambia la escena, con varias maneras distintas de interpretarla.
+              Con esta información te dará diferentes propuestas de actuación.
             </Text>
-            <TouchableOpacity style={[styles.analyzeButton, primaryButtonBg]} onPress={startAnalysis} disabled={analyzing}>
+            <TouchableOpacity style={[styles.analyzeButton, primaryButtonBg]} onPress={() => startAnalysis()} disabled={analyzing}>
               {analyzing ? <ActivityIndicator color="#fff" /> : (
                 <>
                   <Sparkles size={20} color="#fff" />
@@ -394,7 +425,11 @@ export default function SceneModeScreen() {
       ) : (
         <>
           <View style={styles.tabsRow}>
-            {([['lectura', 'Lectura', Activity], ['propuestas', 'Propuestas', Sparkles]] as const).map(([key, label, Icon]) => {
+            {([
+              ['lectura', 'Lectura', Activity],
+              ['propuestas', 'Propuestas', Sparkles],
+              ...(tandas.length > 1 ? [['historial', 'Historial', History] as const] : []),
+            ] as const).map(([key, label, Icon]) => {
               const active = activeTab === key;
               return (
                 <TouchableOpacity
@@ -424,9 +459,41 @@ export default function SceneModeScreen() {
                 ))}
               </GlassCard>
             </View>
+          ) : activeTab === 'historial' ? (
+            <View style={styles.tabContent}>
+              {tandas.map((tanda, index) => ({ tanda, index })).reverse().map(({ tanda, index }) => {
+                const viewing = index === batchIndex;
+                return (
+                  <TouchableOpacity key={index} activeOpacity={0.8} onPress={() => { setSelectedBatch(index); setActiveTab('propuestas'); }}>
+                    <GlassCard isDark={isDark} style={styles.rowCardOuter} contentStyle={styles.historyCard} backgroundColor={cardBg} borderColor={viewing ? colors.primary : cardBorder} shadowRecipe={{ offsetY: 2, blur: 10, opacity: 0.05 }} shadowAlwaysOn>
+                      <View style={{ flex: 1 }}>
+                        <Text style={[styles.rowTitle, { color: onBg }]}>
+                          {`Tanda ${index + 1}`}
+                          <Text style={[styles.historyDate, { color: onBg2 }]}>{`  ·  ${formatDate(tanda.createdAt)}`}</Text>
+                        </Text>
+                        {tanda.propuestas.map((prop, i) => (
+                          <Text key={i} style={[styles.rowPreview, { color: onBg2 }]} numberOfLines={1}>{`${i + 1}. ${prop.titulo}`}</Text>
+                        ))}
+                        {viewing && (
+                          <View style={[styles.badge, { backgroundColor: colors.primary + '20' }]}>
+                            <Text style={[styles.badgeText, { color: accent }]}>Viendo</Text>
+                          </View>
+                        )}
+                      </View>
+                      <ChevronRight size={20} color={onBg2} />
+                    </GlassCard>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
           ) : (
             <View style={styles.tabContent}>
-              {current.analysis.propuestas.map((prop, i) => (
+              {tandas.length > 1 && shownBatch && (
+                <Text style={[styles.batchHeader, { color: onBg2 }]}>
+                  {`Tanda ${batchIndex + 1} de ${tandas.length} · ${formatDate(shownBatch.createdAt)}`}
+                </Text>
+              )}
+              {(shownBatch?.propuestas ?? []).map((prop, i) => (
                 <GlassCard key={i} isDark={isDark} style={styles.propuestaCardOuter} contentStyle={[styles.propuestaCard, { borderLeftColor: '#a78bfa' }]} backgroundColor={cardBg} borderColor={cardBorder} borderRadius={12} shadowRecipe={{ offsetY: 2, blur: 10, opacity: 0.05 }} shadowAlwaysOn>
                   <View style={styles.propuestaNumberBox}>
                     <Text style={styles.propuestaNumber}>{i + 1}</Text>
@@ -460,11 +527,21 @@ export default function SceneModeScreen() {
           )}
 
           <View style={styles.reanalyzeRow}>
-            <Text style={[styles.reanalyzeDate, { color: onBg2 }]}>Analizado el {formatDate(current.updatedAt)}</Text>
-            <TouchableOpacity style={styles.reanalyzeButton} onPress={startAnalysis} disabled={analyzing}>
-              {analyzing ? <ActivityIndicator size="small" color={accent} /> : <RefreshCw size={16} color={accent} />}
-              <Text style={[styles.reanalyzeText, { color: accent }]}>{analyzing ? 'Analizando…' : 'Volver a analizar'}</Text>
-            </TouchableOpacity>
+            {canCreateMore ? (
+              <>
+                <TouchableOpacity style={[styles.secondaryButton, styles.newProposalsButton, { borderColor: colors.primary }]} onPress={() => startAnalysis(true)} disabled={analyzing}>
+                  {analyzing ? <ActivityIndicator size="small" color={accent} /> : <RefreshCw size={18} color={accent} />}
+                  <Text style={[styles.secondaryButtonText, { color: accent }]}>{analyzing ? 'Creando propuestas…' : 'Crear nuevas propuestas'}</Text>
+                </TouchableOpacity>
+                <Text style={[styles.reanalyzeDate, { color: onBg2 }]}>
+                  {analyzing ? 'Puede tardar hasta un minuto.' : 'Serán distintas de las que ya tienes; las anteriores quedan en el Historial.'}
+                </Text>
+              </>
+            ) : (
+              <Text style={[styles.reanalyzeDate, { color: onBg2 }]}>
+                {`Has llegado al máximo de ${MAX_PROPOSAL_BATCHES} tandas para esta escena. Puedes repasarlas en el Historial.`}
+              </Text>
+            )}
           </View>
         </>
       )}
@@ -596,6 +673,10 @@ const styles = StyleSheet.create({
   introCard: { padding: rp(30), borderRadius: 16, alignItems: 'center', gap: 12 },
   introTitle: { fontSize: rf(20), fontWeight: '700' },
   introText: { textAlign: 'center', lineHeight: 20 },
+  // La lista se centra como bloque, pero sus líneas quedan alineadas a la izquierda, una debajo de otra.
+  introList: { alignSelf: 'center', alignItems: 'flex-start', gap: 2 },
+  introListItem: { flexDirection: 'row', gap: 8 },
+  introListText: { textAlign: 'left' },
   introHint: { fontSize: rf(12), marginTop: 4 },
   analyzeButton: {
     flexDirection: 'row',
@@ -656,9 +737,11 @@ const styles = StyleSheet.create({
   secondaryButtonText: { fontSize: rf(15), fontWeight: '700' },
 
   reanalyzeRow: { alignItems: 'center', paddingHorizontal: rp(20), gap: 8 },
+  newProposalsButton: { alignSelf: 'stretch' },
+  historyCard: { flexDirection: 'row', alignItems: 'center', padding: rp(16) },
+  historyDate: { fontSize: rf(13), fontWeight: '400' },
+  batchHeader: { fontSize: rf(13), textAlign: 'center', marginBottom: rp(12) },
   reanalyzeDate: { fontSize: rf(12) },
-  reanalyzeButton: { flexDirection: 'row', alignItems: 'center', gap: 6, padding: rp(8) },
-  reanalyzeText: { fontSize: rf(14), fontWeight: '600' },
 
   modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', padding: rp(20) },
   modalContent: { borderRadius: 24, padding: rp(24), alignItems: 'center' },

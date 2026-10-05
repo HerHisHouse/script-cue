@@ -110,7 +110,9 @@ propuestas para interpretarla de maneras distintas. Prompt, esquema y validació
 Sonnet 5 con salida JSON estructurada, `ANTHROPIC_API_KEY` en Render; tests en `__tests__/sceneAnalysis.test.ts`). La IA recibe además el
 guion completo como contexto (bloque cacheado; en guiones enormes, las escenas más cercanas). El
 texto se lee de `lines` (no de la tabla antigua `dialogues`) y el resultado se guarda en `scene_analyses` por escena y
-personaje. No hay comparación entre tomas. `/analyze-recording` y `coach_feedback` quedan solo para las versiones de la
+personaje: `{ lectura, tandas: [{ propuestas, createdAt }] }`. "Crear nuevas propuestas" (`newProposals: true`)
+añade una tanda (máx. 10) pidiendo que sea distinta de todas las anteriores, y la pestaña Historial permite volver a
+ellas. No hay comparación entre tomas. `/analyze-recording` y `coach_feedback` quedan solo para las versiones de la
 app anteriores a este cambio.
 
 ### Errores que ve el usuario
