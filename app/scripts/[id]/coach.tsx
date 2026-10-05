@@ -418,7 +418,7 @@ export default function SceneModeScreen() {
           <View style={[styles.introCard, { backgroundColor: cardBg, borderWidth: 1, borderColor: cardBorder }]}>
             <Brain size={48} color={accent} style={{ marginBottom: 16 }} />
             <Text style={[styles.introTitle, { color: onBg }]}>Lectura de la escena</Text>
-            <Text style={[styles.introText, { color: onBg2 }]}>ScriptCue leerá el guion para saber:</Text>
+            <Text style={[styles.introText, styles.introTextLeft, { color: onBg2 }]}>ScriptCue leerá el guion para saber:</Text>
             <View style={styles.introList}>
               {INTRO_POINTS.map(point => (
                 <View key={point} style={styles.introListItem}>
@@ -427,7 +427,7 @@ export default function SceneModeScreen() {
                 </View>
               ))}
             </View>
-            <Text style={[styles.introText, { color: onBg2 }]}>
+            <Text style={[styles.introText, styles.introTextLeft, { color: onBg2 }]}>
               Con esta información te dará diferentes propuestas de actuación.
             </Text>
             {betaAnalysisUsed ? (
@@ -719,6 +719,8 @@ const styles = StyleSheet.create({
   introList: { alignSelf: 'center', alignItems: 'flex-start', gap: 2 },
   introListItem: { flexDirection: 'row', gap: 8 },
   introListText: { textAlign: 'left' },
+  // Primera y última frase alineadas a la izquierda con el mismo margen; la lista va centrada.
+  introTextLeft: { alignSelf: 'stretch', textAlign: 'left' },
   betaNotice: { width: '100%', alignItems: 'center', borderTopWidth: 1, paddingTop: rp(16), marginTop: rp(8) },
   betaNoticeText: { fontSize: rf(14), lineHeight: 20, textAlign: 'center' },
   introHint: { fontSize: rf(12), marginTop: 4 },
