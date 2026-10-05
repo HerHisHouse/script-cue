@@ -42,7 +42,6 @@ import { transcribeAudio } from '@/services/transcription'; // Import transcript
 import { calculateSimilarity } from '@/utils/stringUtils'; // Helper for similarity
 import { ArrowLeft, Mic, RotateCcw, Play, Pause, Square, Video, SwitchCamera, Settings2, SkipBack, SkipForward, MoreVertical, EyeOff, Eye, Minus, Plus, Volume2, X, Timer, Clapperboard, Trash2, ChevronRight, MessageSquare, FileText, Type, Snail, Rabbit, FlipHorizontal, Bold, Italic, Underline, AlignLeft, AlignCenter, AlignRight, Keyboard as KeyboardIcon, Info, MonitorPlay, Maximize2, CheckCircle2, Layers, Highlighter } from 'lucide-react-native';
 import * as Haptics from 'expo-haptics';
-import SilhouetteGuide, { ShotType } from '@/components/SilhouetteGuide';
 // Fase M1: NO se importan hooks de vision-camera aquí (useCameraDevice, etc.) —
 // viven exclusivamente dentro de VisionCameraView.tsx (cargado con require())
 // y llegan aquí solo vía onZoomInfo (iOS) y onAndroidLensInfo (Android).
@@ -506,11 +505,11 @@ export default function CastingModeScreen() {
         showCastingAlert(
           '🎬 Plano general automático',
           'Así funciona:\n\n' +
-          '1️⃣ Colócate según la silueta guía para fijar tu plano general\n\n' +
-          '2️⃣ Usa el zoom para ajustar tu plano de trabajo como quieras\n\n' +
-          '3️⃣ Graba tu presentación con normalidad\n\n' +
-          '4️⃣ Di "plano general" cuando quieras mostrarlo (por ejemplo: "Vamos con el plano general")\n\n' +
-          '5️⃣ La cámara hará zoom out automáticamente para que gires o muestres perfiles',
+          '1. Asegúrate de que se te ve de cuerpo entero en tu plano general.\n\n' +
+          '2. Usa el zoom para ajustar tu plano de presentación.\n\n' +
+          '3. Graba tu presentación con normalidad.\n\n' +
+          '4. Di "plano general" cuando quieras que se abra el plano (por ejemplo "Pasamos a un plano general").\n\n' +
+          '5. La cámara hará zoom out automáticamente.',
           [
             {
               text: 'No volver a mostrar',
@@ -2767,11 +2766,6 @@ export default function CastingModeScreen() {
           )}
           {castingType === 'free' && globalBackground !== 'transparent' && (
             <View style={[StyleSheet.absoluteFill, { backgroundColor: globalBackground }]} />
-          )}
-
-          {/* Silueta guía de encuadre — solo Teleprompter Libre, antes de grabar */}
-          {castingType === 'free' && autoWideShotEnabled && !isRecording && zoom === getWidestZoomValue(zoomStops) && (
-            <SilhouetteGuide shotType="wide" />
           )}
 
           {/* UI Overlay - Absolute positioned */}
