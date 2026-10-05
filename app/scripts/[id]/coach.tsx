@@ -464,7 +464,7 @@ export default function SceneModeScreen() {
         <>
           <View style={styles.tabsRow}>
             {([
-              ['lectura', 'Lectura', Activity],
+              ['lectura', 'Análisis', Activity],
               ['propuestas', 'Propuestas', Sparkles],
               ...(tandas.length > 1 ? [['historial', 'Historial', History] as const] : []),
             ] as const).map(([key, label, Icon]) => {
@@ -564,6 +564,7 @@ export default function SceneModeScreen() {
             </View>
           )}
 
+          {activeTab === 'propuestas' && (
           <View style={styles.reanalyzeRow}>
             {betaLimited ? (
               <Text style={[styles.reanalyzeDate, { color: onBg2 }]}>
@@ -585,6 +586,7 @@ export default function SceneModeScreen() {
               </Text>
             )}
           </View>
+          )}
         </>
       )}
     </View>
