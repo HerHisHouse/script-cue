@@ -742,6 +742,10 @@ export default function CastingModeScreen() {
 
   // Refs
   const flatListRef = useRef<FlatList>(null);
+  // Alto real de la lista del formato "Guion": su mitad es el relleno de arriba y de abajo, para que
+  // cualquier línea (también la primera y la última) pueda quedar en el centro. Un padding en '%' se
+  // calcula sobre el ANCHO en React Native, y por eso la línea activa quedaba demasiado arriba.
+  const [cascadeListHeight, setCascadeListHeight] = useState(Dimensions.get('window').height);
   const autoAdvanceTimerRef = useRef<NodeJS.Timeout | null>(null);
 
   // 1. Load Data & Permissions
@@ -1382,6 +1386,20 @@ export default function CastingModeScreen() {
       handleLineLogic();
     }
   }, [currentIndex, isPlaying, castingType, loading, configuredLines.length, teleprompterReadingPosition]);
+
+  useEffect(() => {
+    // Al medir (o cambiar al girar) el alto de la lista, recoloca la línea activa sin volver a
+    // lanzar su lógica de audio (por eso no va en el efecto de arriba).
+    if (configuredLines.length > 0 && flatListRef.current) {
+      flatListRef.current.scrollToIndex({
+        index: currentIndex,
+        animated: false,
+        viewPosition: teleprompterReadingPosition === 'top' ? 0 : 0.5,
+        viewOffset: teleprompterReadingPosition === 'top' ? (teleprompterTopSafeOffset + rp(16)) : 0,
+      });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cascadeListHeight]);
 
   async function handleLineLogic() {
     const item = configuredLines[currentIndex];
@@ -3013,7 +3031,11 @@ export default function CastingModeScreen() {
                       data={configuredLines}
                       keyExtractor={(item) => 'afterLineId' in item ? item.id : item.id}
                       showsVerticalScrollIndicator={false}
-                      contentContainerStyle={{ paddingVertical: '50%', paddingLeft: Math.max(insets.left, rp(24)), paddingRight: Math.max(insets.right, rp(24)) }}
+                      onLayout={(e) => {
+                        const h = e.nativeEvent.layout.height;
+                        if (h > 0 && Math.abs(h - cascadeListHeight) > 1) setCascadeListHeight(h);
+                      }}
+                      contentContainerStyle={{ paddingVertical: Math.round(cascadeListHeight / 2), paddingLeft: Math.max(insets.left, rp(24)), paddingRight: Math.max(insets.right, rp(24)) }}
                       renderItem={({ item, index }) => {
                         const isActive = index === currentIndex;
                         const isManualAction = 'afterLineId' in item;
