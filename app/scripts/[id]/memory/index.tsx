@@ -44,7 +44,7 @@ const GAMES = [
     },
     {
         id: 'echo',
-        title: 'Eco de Memoria',
+        title: 'Eco',
         description: 'Lee, memoriza y repite tras el silencio.',
         icon: Mic,
         color: '#10B981', // Green
@@ -52,7 +52,7 @@ const GAMES = [
     },
     {
         id: 'quiz',
-        title: 'Quiz Memory',
+        title: 'Quiz',
         description: 'Pon a prueba tu conocimiento del texto.',
         icon: HelpCircle,
         color: '#EC4899', // Pink

@@ -300,7 +300,7 @@ export default function QuizModeScreen() {
                         un quiz de comprensión.
                         {'\n\n'}
                         Te recomendamos usar otros modos de memorización
-                        como Texto Fantasma o Eco de Memoria para este guion.
+                        como Texto Fantasma o Eco para este guion.
                     </Text>
                     <TouchableOpacity
                         style={[styles.backButton, primaryButtonBg]}
@@ -339,7 +339,7 @@ export default function QuizModeScreen() {
                                 />
                             </View>
                             <Text style={[styles.welcomeTitle, { color: fg }]}>
-                                Quiz Memory
+                                Quiz
                             </Text>
                             <Text style={[styles.welcomeSubtitle, { color: activeAccent }]}>
                                 Comprensión Profunda del Guion

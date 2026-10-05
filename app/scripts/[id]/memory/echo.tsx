@@ -488,7 +488,7 @@ export default function EchoModeScreen() {
                 </TouchableOpacity>
 
                 <View style={styles.headerTitleContainer}>
-                    <Text style={[styles.headerTitle, { color: fg }]}>Eco de Memoria</Text>
+                    <Text style={[styles.headerTitle, { color: fg }]}>Eco</Text>
                     {gameActive && (
                         <View style={styles.livesContainer}>
                             {[...Array(5)].map((_, i) => (
