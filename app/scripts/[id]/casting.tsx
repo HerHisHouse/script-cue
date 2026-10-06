@@ -928,7 +928,7 @@ export default function CastingModeScreen() {
       const [{ data: scriptData }, { data: charData }, { data: sceneData }] = await Promise.all([
         supabase.from('scripts').select('*').eq('id', id).single(),
         supabase.from('characters').select('*').eq('script_id', id),
-        supabase.from('scenes').select('id, heading, scene_number, order_index').eq('script_id', id).order('order_index', { ascending: true }),
+        supabase.from('scenes').select('id, heading, scene_number, order_index').eq('script_id', id).eq('included', true).order('order_index', { ascending: true }),
       ]);
       setScriptScenes(sceneData || []);
 

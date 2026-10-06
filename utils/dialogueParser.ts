@@ -12,6 +12,8 @@ export interface DialogueLine {
   isUserCharacter: boolean;
   orderIndex: number;
   sceneId: string;
+  /** false si la escena no está incluida (scenes.included); solo llega así a "Revisar guion". */
+  sceneIncluded?: boolean;
   // New fields for Casting Mode timing
   isAction?: boolean; // If true, this is an action card, not dialogue
   customTimingAdjustment?: number; // Seconds to add/subtract from calculated time

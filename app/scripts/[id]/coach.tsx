@@ -152,6 +152,7 @@ export default function SceneModeScreen() {
       const { data: sceneData } = await supabase
         .from('scenes')
         .select('id, heading, scene_number, order_index')
+        .eq('included', true)
         .eq('script_id', scriptId)
         .order('order_index', { ascending: true });
       const sceneRows = (sceneData || []) as SceneRow[];

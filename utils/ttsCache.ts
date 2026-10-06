@@ -392,9 +392,10 @@ export async function preGenerateScriptAudio(
             .from('lines')
             .select(`
                 *,
-                scenes!inner(script_id)
+                scenes!inner(script_id, included)
             `)
-            .eq('scenes.script_id', scriptId);
+            .eq('scenes.script_id', scriptId)
+            .eq('scenes.included', true); // solo las escenas incluidas en "Revisar guion"
 
         if (error || !lines) {
             console.error('Error loading lines:', error);

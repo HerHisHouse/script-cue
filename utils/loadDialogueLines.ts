@@ -7,12 +7,17 @@ import { sortLinesInScriptOrder } from './lineOrdering';
  * This replaces the old extractDialogue logic that relied on scenes.content being an array.
  * Now dialogues are stored in the separate 'lines' table.
  */
-export async function loadDialogueLines(scriptId: string): Promise<DialogueLine[]> {
+export async function loadDialogueLines(
+    scriptId: string,
+    options: { includeExcludedScenes?: boolean } = {},
+): Promise<DialogueLine[]> {
     try {
         // Load lines with scene information
         // Ojo: `.order(..., { foreignTable: 'scenes' })` solo ordena la tabla anidada, no las
         // filas de `lines`, así que el orden entre escenas se resuelve en sortLinesInScriptOrder.
-        const { data: rawLines, error: linesError } = await supabase
+        // Solo las escenas que el usuario incluyó en "Revisar guion" (scenes.included);
+        // la propia pantalla de revisión pide todas para poder elegir.
+        let linesQuery = supabase
             .from('lines')
             .select(`
                 *,
@@ -20,10 +25,13 @@ export async function loadDialogueLines(scriptId: string): Promise<DialogueLine[
                     id,
                     script_id,
                     order_index,
-                    scene_number
+                    scene_number,
+                    included
                 )
             `)
-            .eq('scenes.script_id', scriptId)
+            .eq('scenes.script_id', scriptId);
+        if (!options.includeExcludedScenes) linesQuery = linesQuery.eq('scenes.included', true);
+        const { data: rawLines, error: linesError } = await linesQuery
             .order('order_index', { ascending: true });
         const lines = rawLines ? sortLinesInScriptOrder(rawLines) : rawLines;
 
@@ -65,6 +73,7 @@ export async function loadDialogueLines(scriptId: string): Promise<DialogueLine[
                 isUserCharacter: character?.is_user_character || false,
                 orderIndex: index,
                 sceneId: line.scenes.id,
+                sceneIncluded: line.scenes.included !== false,
                 isAction,
                 voiceDirection: line.voice_direction,
             };
