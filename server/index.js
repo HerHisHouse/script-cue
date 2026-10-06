@@ -72,6 +72,7 @@ const sceneAnalysis = require('./sceneAnalysis');
 const inworldTts = require('./inworldTts');
 const elevenLabsTts = require('./elevenLabsTts');
 const audioLevels = require('./audioLevels');
+const aiAlignment = require('./aiAlignment');
 const { recordServerError } = require('./errorReports');
 const betaLimits = require('./betaLimits');
 // Costes aproximados por proveedor (en euros)
@@ -791,6 +792,18 @@ async function mixAudioTracks(jobId, tempDir, userAudioFile, mixedAudioFile, lin
                 console.log(`[Job ${jobId}] Audio IA línea ${timing.index}`);
             }
         }
+    }
+
+    // Cada réplica de la IA, en el momento en que sonó de verdad (ver aiAlignment.js):
+    // la marca de la app llega antes y la IA colada en el micro se oía como eco.
+    try {
+        const aligned = await aiAlignment.alignAiSegments(ffmpegPath, userAudioFile, aiSegments);
+        aligned.forEach((segment, i) => {
+            console.log(`[Job ${jobId}] IA ${i}: ${aiSegments[i].startTime.toFixed(3)}s -> ${segment.startTime.toFixed(3)}s (${segment.alignment}${segment.score ? `, ${segment.score.toFixed(2)}` : ''})`);
+            aiSegments[i] = segment;
+        });
+    } catch (alignError) {
+        console.warn(`[Job ${jobId}] No se pudo alinear la IA, se usan las marcas de la app:`, alignError.message);
     }
 
     const filterParts = [];

@@ -1165,7 +1165,15 @@ export default function CastingModeScreen() {
     await stopListening();
     setSpeaking(true);
 
-    const lineStartTime = isRecording ? (Date.now() - recordingStartTime.current) / 1000 : 0;
+    // Inicio de la réplica en la grabación. Se corrige cuando el audio empieza a
+    // sonar de verdad: medido aquí llegaba unos 300 ms antes (carga del audio) y
+    // el servidor ponía la IA por delante de la que se colaba en el micro (eco).
+    let lineStartTime = isRecording ? (Date.now() - recordingStartTime.current) / 1000 : 0;
+    const markPlaybackStarted = (positionMillis = 0) => {
+      if (isRecording) {
+        lineStartTime = (Date.now() - positionMillis - recordingStartTime.current) / 1000;
+      }
+    };
 
     // Helper interno para reproducir un URI de audio local
     const playLocalAudio = async (audioUri: string) => {
@@ -1177,7 +1185,12 @@ export default function CastingModeScreen() {
         { shouldPlay: true, volume: ttsVolume }
       );
       soundRef.current = sound;
+      let playbackStartMarked = false;
       sound.setOnPlaybackStatusUpdate((status) => {
+        if (!playbackStartMarked && status.isLoaded && status.isPlaying && status.positionMillis > 0) {
+          playbackStartMarked = true;
+          markPlaybackStarted(status.positionMillis);
+        }
         if (status.isLoaded && status.didJustFinish) {
           const duration = (status.durationMillis || 0) / 1000;
           if (isRecording) {
@@ -1206,6 +1219,7 @@ export default function CastingModeScreen() {
         language: settings?.systemTtsLanguage || 'es-ES',
         rate,
         voice: voiceId,
+        onStart: () => markPlaybackStarted(),
         onDone: () => {
           if (isRecording) {
             lineTimingsRef.current.push({
