@@ -138,7 +138,7 @@ export function ScriptCard({ script, onPress, onLongPress, selected = false, sho
           >
             <FileText size={24} color={isDark ? '#FFFFFF' : colors.primary} />
           </View>
-          <View style={[styles.content]}>
+          <View style={[styles.content, showMenuButton && !showSelectionCheckbox && styles.contentBesideMenu]}>
             <Text
               style={[
                 styles.title,
@@ -281,6 +281,13 @@ const styles = StyleSheet.create({
   content: {
     flex: 1,
     justifyContent: 'space-between',
+  },
+  // El botón ⋮ (menuButton) flota en la esquina; sin este hueco, un título largo
+  // pasaba por debajo de él (en iOS y Android, según la longitud y la letra).
+  // menuButton ocupa hasta 8 + 32 px desde el borde y la tarjeta tiene 16 px de
+  // padding: se reservan los 24 restantes más un poco de aire.
+  contentBesideMenu: {
+    paddingRight: 28,
   },
   menuButton: {
     position: 'absolute',
