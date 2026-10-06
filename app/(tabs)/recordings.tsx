@@ -1645,14 +1645,46 @@ export default function RecordingsScreen() {
     loadAndPlay(0, q);
   }
 
+  // expo-av lanza AudioFocusNotAcquiredException en Android cuando cree que la
+  // app está en segundo plano (p. ej. al volver de Ajustes o de otra app) y
+  // Android le niega el audio. Sin capturarla, el vídeo no arrancaba (y en
+  // desarrollo salía "Uncaught"). Se reintenta una vez y, si sigue fallando, se
+  // deja en pausa y se avisa.
+  async function playVideoSafely(action: 'play' | 'replay'): Promise<boolean> {
+    const video = videoRef.current;
+    if (!video) return false;
+    const run = () => (action === 'replay' ? video.replayAsync() : video.playAsync());
+    try {
+      await run();
+      return true;
+    } catch (e) {
+      if (!String(e).includes('AudioFocusNotAcquired')) {
+        console.warn('[Reproductor] No se pudo reproducir el vídeo:', e);
+        return false;
+      }
+    }
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    try {
+      await run();
+      return true;
+    } catch (e) {
+      console.warn('[Reproductor] Sin foco de audio tras reintentar:', e);
+      setIsPlaying(false);
+      Alert.alert(
+        'No se pudo reproducir',
+        'El sistema no ha dejado reproducir el audio en este momento. Vuelve a intentarlo; si sigue pasando, cierra y vuelve a abrir la app.',
+      );
+      return false;
+    }
+  }
+
   async function togglePlayPause() {
     const current = queue[currentIndex];
     if (current?.type === 'video') {
       if (isPlaying) {
         await videoRef.current?.pauseAsync();
         setIsPlaying(false);
-      } else {
-        await videoRef.current?.playAsync();
+      } else if (await playVideoSafely('play')) {
         setIsPlaying(true);
       }
       return;
@@ -1691,8 +1723,7 @@ export default function RecordingsScreen() {
   async function forcePlay() {
     const current = queue[currentIndex];
     if (current?.type === 'video') {
-      await videoRef.current?.playAsync();
-      setIsPlaying(true);
+      if (await playVideoSafely('play')) setIsPlaying(true);
       return;
     }
     if (await isTrackPlayerReady()) {
@@ -3326,6 +3357,14 @@ export default function RecordingsScreen() {
                           style={{ width: '100%', height: '100%' }}
                           resizeMode={ResizeMode.CONTAIN}
                           shouldPlay={isPlaying}
+                          onLoad={(status) => {
+                            // Al abrir el vídeo se reproduce solo (shouldPlay). Si Android
+                            // le niega el audio, expo-av se queda en el primer fotograma sin
+                            // avisar: se reintenta y, si sigue sin poder, se avisa.
+                            if (isPlaying && status.isLoaded && !status.isPlaying) {
+                              playVideoSafely('play');
+                            }
+                          }}
                           onPlaybackStatusUpdate={status => {
                             if (status.isLoaded) {
                               // Throttle: solo actualizar posición cada 100ms para evitar re-renders constantes
@@ -3345,7 +3384,7 @@ export default function RecordingsScreen() {
                               if (status.didJustFinish) {
                                 const currentLoop = loopModeRef.current;
                                 if (currentLoop === 'one') {
-                                  videoRef.current?.replayAsync();
+                                  playVideoSafely('replay');
                                 } else if (currentLoop === 'all') {
                                   const nextIndex = (currentIndex + 1) % queue.length;
                                   loadAndPlay(nextIndex, queue);
