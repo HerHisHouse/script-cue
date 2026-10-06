@@ -47,6 +47,12 @@ function draggableCardShadow(isDark: boolean, isActive: boolean, charColor: stri
     : { shadowColor: charColor, shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.35, shadowRadius: 20, elevation: 6 };
 }
 
+// Voces con selector de emoción por réplica: Expresiva (ElevenLabs) y Natural
+// (Inworld), que interpretan las mismas etiquetas de emoción.
+function supportsEmotionSelector(voiceProvider: string | null | undefined): boolean {
+  return voiceProvider === 'elevenlabs' || voiceProvider === 'inworld';
+}
+
 export default function ReviewScreen() {
   const router = useRouter();
   const { id, force } = useLocalSearchParams<{ id: string; force?: string }>();
@@ -171,14 +177,14 @@ export default function ReviewScreen() {
 
   const [characters, setCharacters] = useState<any[]>([]);
 
-  // Índice de la primera línea que muestra el selector de emoción (solo voz
-  // Expresiva/ElevenLabs) — usado tanto por el tour como por
+  // Índice de la primera línea que muestra el selector de emoción (voz
+  // Expresiva o Natural) — usado tanto por el tour como por
   // la propia lista para saber a qué tarjeta engancharle el ref de medición.
   const emotionTourIndex = React.useMemo(() => {
     return lines.findIndex(l => {
       if (l.isAction || l.isUserCharacter) return false;
       const charData = characters.find(c => c.name.toLowerCase().trim() === l.characterName.toLowerCase().trim());
-      return charData?.voice_provider === 'elevenlabs';
+      return supportsEmotionSelector(charData?.voice_provider);
     });
   }, [lines, characters]);
   const [selectedChar, setSelectedChar] = useState<any>(null);
@@ -275,13 +281,13 @@ export default function ReviewScreen() {
     ];
 
     // Solo tiene sentido este paso si hay al menos una línea con voz Expresiva
-    // (ElevenLabs) — es la única condición bajo la que se
+    // o Natural — es la única condición bajo la que se
     // muestra el selector de emoción en la tarjeta.
     if (emotionTourIndex !== -1) {
       steps.push({
         content: {
           title: 'Configura la emoción',
-          description: 'Si el personaje usa una voz "Expresiva", puedes elegir cómo interpreta cada frase.',
+          description: 'Si el personaje usa una voz "Expresiva" o "Natural", puedes elegir cómo interpreta cada frase.',
         },
         prepare: async () => {
           flatListRef.current?.scrollToIndex?.({ index: emotionTourIndex, animated: true, viewPosition: 0.4 });
@@ -582,7 +588,7 @@ export default function ReviewScreen() {
             const index = getIndex() ?? 0;
             const charColor = item.isAction ? colors.primary : (item.isUserCharacter ? '#10B981' : (item.color || colors.primary));
             const charData = characters.find(c => c.name.toLowerCase().trim() === item.characterName.toLowerCase().trim());
-            const isElevenLabs = charData?.voice_provider === 'elevenlabs';
+            const hasEmotionSelector = supportsEmotionSelector(charData?.voice_provider);
 
             return (
               <ScaleDecorator activeScale={1.02}>
@@ -609,7 +615,7 @@ export default function ReviewScreen() {
                     <Text style={[s.dialogueText, { color: onBg }]}>{item.text}</Text>
 
                     <View style={s.cardFooterRow}>
-                      {!item.isAction && !item.isUserCharacter && isElevenLabs ? (
+                      {!item.isAction && !item.isUserCharacter && hasEmotionSelector ? (
                         <View style={{ alignItems: 'flex-start' }}>
                           <Text style={[s.emotionLabel, { color: onBg2 }]}>Configurar emoción</Text>
                           <TouchableOpacity
