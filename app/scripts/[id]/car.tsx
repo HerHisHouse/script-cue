@@ -42,6 +42,7 @@ import {
   playVoicePreview,
   stopVoicePreview,
   getAzureVoices,
+  INWORLD_VOICES,
   VOICE_PROVIDERS_CONFIG,
   PROVIDER_INFO_MESSAGE
 } from '@/utils/voiceService';
@@ -137,7 +138,7 @@ async function setupIosLockScreen(
 }
 
 type CarModePhase = 'idle' | 'playing_ai' | 'listening_user' | 'processing_command' | 'auto_advancing';
-type VoiceProviderType = 'openai' | 'elevenlabs' | 'azure' | 'system' | 'hume';
+type VoiceProviderType = 'openai' | 'elevenlabs' | 'azure' | 'system' | 'hume' | 'inworld';
 
 interface CharacterVoiceConfig {
   characterName: string;
@@ -461,7 +462,7 @@ export default function CarModeScreen() {
       });
     };
 
-    if (effectiveProvider === 'elevenlabs' || effectiveProvider === 'azure' || effectiveProvider === 'hume') {
+    if (effectiveProvider === 'elevenlabs' || effectiveProvider === 'azure' || effectiveProvider === 'hume' || effectiveProvider === 'inworld') {
       try {
         if (mySequence !== sequenceRef.current) return;
 
@@ -869,6 +870,12 @@ export default function CarModeScreen() {
         const voice = { id: voiceId, name: voiceId, provider: 'hume' } as any;
         await playVoicePreview(voice);
         setTimeout(() => setPlayingVoiceId(null), 5000);
+      } else if (provider === 'inworld') {
+        const voice = INWORLD_VOICES.find(v => v.id === voiceId);
+        if (voice) {
+          await playVoicePreview(voice);
+          setTimeout(() => setPlayingVoiceId(null), 5000);
+        }
       } else if (provider === 'azure') {
         const voice = azureVoices.find((v: VoiceOption) => v.id === voiceId);
         if (voice) {

@@ -8,7 +8,7 @@ import { generateElevenLabsAudio } from './elevenLabsClient';
 // TIPOS
 // ============================================
 
-export type VoiceProvider = 'openai' | 'elevenlabs' | 'azure' | 'system' | 'hume';
+export type VoiceProvider = 'openai' | 'elevenlabs' | 'azure' | 'system' | 'hume' | 'inworld';
 
 export const VOICE_PROVIDERS_CONFIG = [
   { 
@@ -17,7 +17,8 @@ export const VOICE_PROVIDERS_CONFIG = [
     subtitle: 'Voces del dispositivo'
   },
   {
-    value: 'hume',
+    // "Natural" era Hume hasta que cerró su API de TTS (13/11/2026); ahora es Inworld.
+    value: 'inworld',
     label: '🎙 Natural',
     subtitle: 'Voces realistas'
   },
@@ -151,6 +152,21 @@ export const HUME_VOICES: VoiceOption[] = [
     language: 'en',
     country: 'US',
   },
+];
+
+// ============================================
+// VOCES DE INWORLD — "Natural" (lista estática)
+// Voces castellanas de Inworld elegidas escuchando una muestra; el id es el
+// voiceId de Inworld.
+// ============================================
+
+export const INWORLD_VOICES: VoiceOption[] = [
+  { id: 'Alvaro', name: 'Álvaro', provider: 'inworld', description: 'Voz masculina cálida y articulada', gender: 'male', language: 'es', country: 'ES' },
+  { id: 'Joaquin', name: 'Joaquín', provider: 'inworld', description: 'Voz masculina cálida y cercana', gender: 'male', language: 'es', country: 'ES' },
+  { id: 'Ruben', name: 'Rubén', provider: 'inworld', description: 'Voz masculina natural y serena', gender: 'male', language: 'es', country: 'ES' },
+  { id: 'Marta', name: 'Marta', provider: 'inworld', description: 'Voz femenina cercana y expresiva', gender: 'female', language: 'es', country: 'ES' },
+  { id: 'Mercedes', name: 'Mercedes', provider: 'inworld', description: 'Voz femenina luminosa y natural', gender: 'female', language: 'es', country: 'ES' },
+  { id: 'Pilar', name: 'Pilar', provider: 'inworld', description: 'Voz femenina clara y serena', gender: 'female', language: 'es', country: 'ES' },
 ];
 
 // ============================================
@@ -343,7 +359,7 @@ export async function playVoicePreview(voice: VoiceOption): Promise<void> {
     const sampleText = 'Hola, esta es una muestra de mi voz en Scriptquiu. Espero que te guste.';
     const tempPath = `${FileSystem.cacheDirectory}voice_preview_${Date.now()}.mp3`;
 
-    if (voice.provider === 'elevenlabs' || voice.provider === 'azure' || voice.provider === 'openai' || voice.provider === 'hume') {
+    if (voice.provider === 'elevenlabs' || voice.provider === 'azure' || voice.provider === 'openai' || voice.provider === 'hume' || voice.provider === 'inworld') {
       const renderUrl = RENDER_SERVER_URL;
       if (!renderUrl) {
         throw new Error(`RENDER_SERVER_URL no configurado para preview de ${voice.provider}`);
@@ -440,6 +456,7 @@ export async function getAllVoices(forceRefresh = false): Promise<{
   elevenlabs: VoiceOption[];
   azure: VoiceOption[];
   hume: VoiceOption[];
+  inworld: VoiceOption[];
 }> {
   const elevenLabsVoices = await getElevenLabsVoices(forceRefresh);
   const azureVoices = await getAzureVoices(forceRefresh);
@@ -449,6 +466,7 @@ export async function getAllVoices(forceRefresh = false): Promise<{
     elevenlabs: elevenLabsVoices,
     azure: azureVoices,
     hume: HUME_VOICES,
+    inworld: INWORLD_VOICES,
   };
 }
 
@@ -473,6 +491,10 @@ export async function getVoiceById(voiceId: string): Promise<VoiceOption | null>
   // Luego en Hume
   const humeVoice = HUME_VOICES.find(v => v.id === voiceId);
   if (humeVoice) return humeVoice;
+
+  // Luego en Inworld ("Natural")
+  const inworldVoice = INWORLD_VOICES.find(v => v.id === voiceId);
+  if (inworldVoice) return inworldVoice;
 
   return null;
 }

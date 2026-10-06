@@ -1,7 +1,8 @@
 import { TTSAdapter } from '../types';
 import { ScriptLineWithDirection } from '../../../types/voiceDirection';
 
-const ELEVENLABS_PREFIXES: Record<string, string> = {
+// Exportado: Inworld ("Natural") usa las mismas etiquetas, ver inworld.adapter.ts.
+export const ELEVENLABS_PREFIXES: Record<string, string> = {
   whispering: "[whispering]",
   shouting: "[shouting]",
   crying: "[crying]",

@@ -20,6 +20,7 @@ import {
     VoiceProvider,
     OPENAI_VOICES,
     HUME_VOICES,
+    INWORLD_VOICES,
     getElevenLabsVoices,
     playVoicePreview,
     stopVoicePreview,
@@ -36,8 +37,8 @@ interface SystemVoice {
 
 interface VoiceSelectorProps {
     selectedVoiceId?: string;
-    provider: 'openai' | 'elevenlabs' | 'azure' | 'system' | 'hume';
-    onVoiceSelect: (voiceId: string, provider: 'openai' | 'elevenlabs' | 'azure' | 'system' | 'hume') => void;
+    provider: 'openai' | 'elevenlabs' | 'azure' | 'system' | 'hume' | 'inworld';
+    onVoiceSelect: (voiceId: string, provider: 'openai' | 'elevenlabs' | 'azure' | 'system' | 'hume' | 'inworld') => void;
     disabled?: boolean;
     systemLanguage?: string;
     selectedVoiceName?: string;
@@ -114,6 +115,8 @@ export function VoiceSelector({
                 setVoices(OPENAI_VOICES);
             } else if (provider === 'hume') {
                 setVoices(HUME_VOICES);
+            } else if (provider === 'inworld') {
+                setVoices(INWORLD_VOICES);
             } else if (provider === 'system') {
                 const sysVoices = await Speech.getAvailableVoicesAsync();
                 const filtered = sysVoices
@@ -236,6 +239,9 @@ export function VoiceSelector({
                     if (v) name = v.name;
                 } else if (provider === 'hume') {
                     const v = HUME_VOICES.find(v => v.id === selectedVoiceId);
+                    if (v) name = v.name;
+                } else if (provider === 'inworld') {
+                    const v = INWORLD_VOICES.find(v => v.id === selectedVoiceId);
                     if (v) name = v.name;
                 }
                 
@@ -368,7 +374,8 @@ export function VoiceSelector({
             case 'elevenlabs': return 'Voces Expresivas';
             case 'azure': return 'Voces de Azure';
             case 'system': return 'Voces Estándar';
-            case 'hume': return 'Voces Naturales';
+            case 'hume':
+            case 'inworld': return 'Voces Naturales';
         }
     };
 

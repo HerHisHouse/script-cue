@@ -6,7 +6,7 @@ describe('normalizeVoiceProvider', () => {
         expect(DEFAULT_VOICE_PROVIDER).toBe('system');
     });
 
-    it.each(['elevenlabs', 'azure', 'hume', 'system'])('conserva %s', (p) => {
+    it.each(['elevenlabs', 'azure', 'hume', 'inworld', 'system'])('conserva %s', (p) => {
         expect(normalizeVoiceProvider(p)).toBe(p);
     });
 

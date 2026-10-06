@@ -3076,6 +3076,19 @@ app.get('/api/tts/preview/:provider/:voiceId', requireUser, async (req, res) => 
               characters: textToSpeak.length,
               mode: 'preview',
             });
+        } else if (provider === 'inworld') {
+            const textToSpeak = "Hola, esta es una muestra de mi voz en Scriptquiu. Espero que te guste.";
+            audioBuffer = await inworldTts.synthesizeInworldMp3({
+                text: textToSpeak,
+                voice: voiceId,
+                apiKey: (process.env.INWORLD_API_KEY || '').trim(),
+            });
+            await logApiUsage({
+              userId: req.user ? req.user.id : null,
+              provider: 'inworld_tts',
+              characters: textToSpeak.length,
+              mode: 'preview',
+            });
         } else {
             return res.status(400).json({ error: 'Provider not supported for previews' });
         }

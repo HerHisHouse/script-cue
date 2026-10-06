@@ -22,7 +22,7 @@ interface TTSCacheEntry {
 }
 
 interface VoiceConfig {
-    provider: 'openai' | 'elevenlabs' | 'azure' | 'system' | 'hume';
+    provider: 'openai' | 'elevenlabs' | 'azure' | 'system' | 'hume' | 'inworld';
     voiceId?: string; // OpenAI voice, ElevenLabs voice ID, or Azure voice name
 }
 
@@ -291,6 +291,34 @@ export async function generateAndCacheAudio(
                 return null;
             }
             arrayBuffer = await response.arrayBuffer();
+        } else if (provider === 'inworld') {
+            // Voces "Natural" (Inworld) a través del servidor, que guarda la clave
+            // y registra el coste. Mismo contrato que /tts-hume.
+            const renderUrl = RENDER_SERVER_URL;
+            if (!renderUrl) {
+                console.warn('[Inworld TTS] RENDER_SERVER_URL no configurado');
+                return null;
+            }
+            try {
+                const response = await fetch(`${renderUrl}/tts-inworld`, {
+                    method: 'POST',
+                    headers: { ...(await serverAuthHeaders()), 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        text: (providerInput as any).text,
+                        description: (providerInput as any).description,
+                        voiceId,
+                        scriptId,
+                    }),
+                });
+                if (!response.ok) {
+                    console.error(`[Inworld TTS] Error ${response.status}:`, await response.text());
+                    return null; // Sin pasar a otro proveedor de pago: ver la nota del bloque de Hume.
+                }
+                arrayBuffer = await response.arrayBuffer();
+            } catch (error) {
+                console.error('[Inworld TTS] Excepción al llamar al servidor:', error);
+                return null;
+            }
         } else if (provider === 'hume') {
             const renderUrl = RENDER_SERVER_URL;
             if (!renderUrl) {
