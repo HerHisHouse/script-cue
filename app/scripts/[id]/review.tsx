@@ -29,6 +29,7 @@ import { ArrowLeft, Edit, Trash2, Plus, CheckCircle, X, Save, Check, FileText } 
 import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { CoachTour, CoachTourRect, CoachTourStepContent } from '@/components/CoachTour';
 import { WebView } from 'react-native-webview';
+import { AndroidPdfViewer } from '@/components/AndroidPdfViewer';
 import { ModalGlassFill } from '@/components/ModalGlassFill';
 
 const REVIEW_TOUR_KEY = 'hideReviewTourV1';
@@ -977,7 +978,18 @@ export default function ReviewScreen() {
               <View style={{ width: 40 }} />
             </View>
 
-            {pdfSignedUrl && (
+            {/* Android: su WebView no muestra PDF (lo descarga), ver AndroidPdfViewer */}
+            {pdfSignedUrl && Platform.OS === 'android' && (
+              <AndroidPdfViewer
+                url={pdfSignedUrl}
+                onError={() => {
+                  Alert.alert('Error', 'No se pudo cargar el PDF original.');
+                  setShowPdfViewer(false);
+                  setPdfSignedUrl(null);
+                }}
+              />
+            )}
+            {pdfSignedUrl && Platform.OS !== 'android' && (
               <WebView
                 source={{ uri: pdfSignedUrl }}
                 style={{ flex: 1, backgroundColor: '#FFFFFF' }}
