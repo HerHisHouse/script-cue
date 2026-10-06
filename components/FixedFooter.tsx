@@ -8,6 +8,17 @@ import { Folder, FileText, Mic, Settings, Users } from 'lucide-react-native';
 import { useRouter } from 'expo-router';
 import { rf, rp } from '@/utils/responsive';
 
+// Etiquetas del tab bar: siempre en una línea y del mismo tamaño. No crecen con
+// el tamaño de letra del sistema (como las del tab bar nativo de iOS): con la
+// letra al 110 % del Galaxy A53, "Grabaciones" no cabía en su hueco y se cortaba
+// ("Grabacion…") o se partía en dos líneas. En pantallas estrechas ya encoge
+// rf(11). No se usa adjustsFontSizeToFit: en Android, sin un alto fijo, deja la
+// letra diminuta.
+export const TAB_LABEL_TEXT_PROPS = {
+  numberOfLines: 1,
+  maxFontSizeMultiplier: 1,
+} as const;
+
 type Props = {
   activeKey?: 'projects' | 'index' | 'recordings' | 'settings' | 'community';
   dark?: boolean;
@@ -56,23 +67,23 @@ export function FixedFooter({ activeKey, dark = true }: Props) {
     <>
       <TouchableOpacity style={styles.item} activeOpacity={0.7} onPress={() => router.replace('/(tabs)')}>
         <TabIcon Icon={FileText} isActive={activeKey === 'index'} />
-        <Text style={[styles.label, { color: activeKey === 'index' ? active : inactive }]}>Guiones</Text>
+        <Text {...TAB_LABEL_TEXT_PROPS} style={[styles.label, { color: activeKey === 'index' ? active : inactive }]}>Guiones</Text>
       </TouchableOpacity>
       <TouchableOpacity style={styles.item} activeOpacity={0.7} onPress={() => router.replace('/(tabs)/recordings')}>
         <TabIcon Icon={Mic} isActive={activeKey === 'recordings'} />
-        <Text style={[styles.label, { color: activeKey === 'recordings' ? active : inactive }]}>Grabaciones</Text>
+        <Text {...TAB_LABEL_TEXT_PROPS} style={[styles.label, { color: activeKey === 'recordings' ? active : inactive }]}>Grabaciones</Text>
       </TouchableOpacity>
       <TouchableOpacity style={styles.item} activeOpacity={0.7} onPress={() => router.replace('/(tabs)/projects')}>
         <TabIcon Icon={Folder} isActive={activeKey === 'projects'} />
-        <Text style={[styles.label, { color: activeKey === 'projects' ? active : inactive }]}>Proyectos</Text>
+        <Text {...TAB_LABEL_TEXT_PROPS} style={[styles.label, { color: activeKey === 'projects' ? active : inactive }]}>Proyectos</Text>
       </TouchableOpacity>
       <TouchableOpacity style={styles.item} activeOpacity={0.7} onPress={() => router.replace('/(tabs)/community')}>
         <TabIcon Icon={Users} isActive={activeKey === 'community'} badge={true} />
-        <Text style={[styles.label, { color: activeKey === 'community' ? active : inactive }]}>Comunidad</Text>
+        <Text {...TAB_LABEL_TEXT_PROPS} style={[styles.label, { color: activeKey === 'community' ? active : inactive }]}>Comunidad</Text>
       </TouchableOpacity>
       <TouchableOpacity style={styles.item} activeOpacity={0.7} onPress={() => router.replace('/(tabs)/settings')}>
         <TabIcon Icon={Settings} isActive={activeKey === 'settings'} />
-        <Text style={[styles.label, { color: activeKey === 'settings' ? active : inactive }]}>Ajustes</Text>
+        <Text {...TAB_LABEL_TEXT_PROPS} style={[styles.label, { color: activeKey === 'settings' ? active : inactive }]}>Ajustes</Text>
       </TouchableOpacity>
     </>
   );
@@ -144,5 +155,8 @@ const styles = StyleSheet.create({
     fontSize: rf(11),
     fontWeight: '500',
     marginTop: rp(2),
+    alignSelf: 'stretch',
+    textAlign: 'center',
+    paddingHorizontal: 2,
   },
 });

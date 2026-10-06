@@ -555,6 +555,11 @@ const styles = StyleSheet.create({
     textTransform: 'uppercase',
     letterSpacing: 0.5,
     marginBottom: 2,
+    // Mismo motivo que el título de ModeGlassCard: con letterSpacing y la letra
+    // del sistema aumentada, Android mide de menos y se perdía texto
+    // ("PERSONAJE", "TU", "OTROS"). Todo el ancho de la columna, centrado.
+    alignSelf: 'stretch',
+    textAlign: 'center',
   },
   summaryColumnValue: {
     fontSize: rf(16),

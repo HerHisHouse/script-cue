@@ -199,5 +199,9 @@ const styles = StyleSheet.create({
   buttonText: {
     fontSize: rf(15),
     fontWeight: '600',
+    // Si el texto del botón ocupa dos líneas (letra grande del sistema), que
+    // quede centrado y no pegado al borde.
+    textAlign: 'center',
+    paddingHorizontal: rp(8),
   },
 });

@@ -8,6 +8,7 @@ import { ANDROID_BLUR_METHOD } from '@/utils/blur';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { rf, rp } from '@/utils/responsive';
 import { WINDOW_BG_DARK, WINDOW_BG_LIGHT } from '@/constants/windowBackground';
+import { TAB_LABEL_TEXT_PROPS } from '@/components/FixedFooter';
 
 const ICONS: Record<string, any> = {
   index: FileText,
@@ -65,7 +66,7 @@ function FloatingTabBar({ state, descriptors, navigation }: BottomTabBarProps) {
                   <Icon size={24} color={isFocused ? active : inactive} />
                   {route.name === 'community' && !isFocused && <View style={styles.badge} />}
                 </View>
-                <Text style={[styles.label, { color: isFocused ? active : inactive }]} numberOfLines={1}>
+                <Text {...TAB_LABEL_TEXT_PROPS} style={[styles.label, { color: isFocused ? active : inactive }]}>
                   {options.title}
                 </Text>
               </TouchableOpacity>
@@ -153,5 +154,8 @@ const styles = StyleSheet.create({
     fontSize: rf(11),
     fontWeight: '500',
     marginTop: rp(2),
+    alignSelf: 'stretch',
+    textAlign: 'center',
+    paddingHorizontal: 2,
   },
 });

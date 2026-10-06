@@ -88,6 +88,10 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     letterSpacing: 0.3,
     marginBottom: 4,
+    // Android mide de menos los textos con letterSpacing cuando la letra del
+    // sistema está aumentada: ajustado a su contenido se perdía la última letra
+    // ("Estudi"). Con todo el ancho de la tarjeta cabe siempre.
+    alignSelf: 'stretch',
   },
   description: {
     fontSize: rf(12.5),
