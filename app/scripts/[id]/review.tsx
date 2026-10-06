@@ -17,6 +17,7 @@ import { normalizeVoiceProvider } from '@/utils/voiceDefaults';
 import { DialogueLine } from '@/utils/dialogueParser';
 import { loadDialogueLines } from '@/utils/loadDialogueLines';
 import { persistLineOrder } from '@/utils/persistLineOrder';
+import { mergeVisibleOrder, insertAfter, scenesWithLines } from '@/utils/sceneSelection';
 import { bracketsToParentheses } from '@/utils/stringUtils';
 import { generateAndCacheAudio, invalidateCacheForLine } from '@/utils/ttsCache';
 import { getCardShadow } from '@/utils/cardShadow';
@@ -25,7 +26,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import DraggableFlatList, { ScaleDecorator } from 'react-native-draggable-flatlist';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import * as Haptics from 'expo-haptics';
-import { ArrowLeft, Edit, Trash2, Plus, CheckCircle, X, Save, Check, FileText } from 'lucide-react-native';
+import { ArrowLeft, Edit, Trash2, Plus, CheckCircle, X, Save, Check, FileText, ChevronRight } from 'lucide-react-native';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { CoachTour, CoachTourRect, CoachTourStepContent } from '@/components/CoachTour';
 import { WebView } from 'react-native-webview';
@@ -76,7 +77,14 @@ export default function ReviewScreen() {
   const accentOnGlass = isDark ? '#FFFFFF' : colors.primary;
   const bg = () => (isDark ? require('@/assets/images/ui-dark-bg.png') : require('@/assets/images/ui-light-bg.png'));
 
+  // `lines` es el guion COMPLETO (todas las escenas, para no romper el orden global);
+  // la lista muestra solo las escenas elegidas (visibleLines).
   const [lines, setLines] = useState<DialogueLine[]>([]);
+  // Escenas incluidas (scenes.included): en guiones de varias escenas el usuario elige
+  // primero cuáles prepara y solo se generan sus voces. Se guarda al confirmar.
+  const [scenes, setScenes] = useState<{ id: string; scene_number: number; heading: string | null; included: boolean }[]>([]);
+  const [selectedSceneIds, setSelectedSceneIds] = useState<Set<string>>(new Set());
+  const [step, setStep] = useState<'scenes' | 'lines'>('lines');
   const [loading, setLoading] = useState(true);
   const [isConfirming, setIsConfirming] = useState(false);
   const [confirmProgress, setConfirmProgress] = useState(0);
@@ -177,16 +185,23 @@ export default function ReviewScreen() {
 
   const [characters, setCharacters] = useState<any[]>([]);
 
+  const multiScene = scenes.length > 1;
+  const visibleLines = React.useMemo(
+    () => (multiScene ? lines.filter(l => selectedSceneIds.has(l.sceneId)) : lines),
+    [lines, multiScene, selectedSceneIds],
+  );
+  const sceneById = React.useMemo(() => new Map(scenes.map(sc => [sc.id, sc])), [scenes]);
+
   // Índice de la primera línea que muestra el selector de emoción (voz
   // Expresiva o Natural) — usado tanto por el tour como por
   // la propia lista para saber a qué tarjeta engancharle el ref de medición.
   const emotionTourIndex = React.useMemo(() => {
-    return lines.findIndex(l => {
+    return visibleLines.findIndex(l => {
       if (l.isAction || l.isUserCharacter) return false;
       const charData = characters.find(c => c.name.toLowerCase().trim() === l.characterName.toLowerCase().trim());
       return supportsEmotionSelector(charData?.voice_provider);
     });
-  }, [lines, characters]);
+  }, [visibleLines, characters]);
   const [selectedChar, setSelectedChar] = useState<any>(null);
 
   // ── Visor del PDF original (Fase 1: comparar el orden de diálogos contra
@@ -211,12 +226,18 @@ export default function ReviewScreen() {
 
         setScriptPdfPath(script?.pdf_url || null);
 
-        const [loadedLines, charsResult] = await Promise.all([
-          loadDialogueLines(id),
+        const [loadedLines, charsResult, scenesResult] = await Promise.all([
+          loadDialogueLines(id, { includeExcludedScenes: true }),
           supabase.from('characters').select('*').eq('script_id', id),
+          supabase.from('scenes').select('id, scene_number, heading, included').eq('script_id', id).order('order_index', { ascending: true }),
         ]);
         setLines(loadedLines);
         setCharacters(charsResult.data || []);
+        const pickable = scenesWithLines(scenesResult.data || [], loadedLines);
+        setScenes(pickable);
+        setSelectedSceneIds(new Set(pickable.filter(sc => sc.included !== false).map(sc => sc.id)));
+        // Varias escenas: primero se eligen cuáles preparar.
+        if (pickable.length > 1) setStep('scenes');
       } catch (e) {
         console.error('[Review] Error loading:', e);
         Alert.alert('Error', 'No se pudo cargar el guion');
@@ -327,7 +348,7 @@ export default function ReviewScreen() {
   };
 
   useEffect(() => {
-    if (loading) return;
+    if (loading || step !== 'lines') return;
     let cancelled = false;
     (async () => {
       const hidden = await AsyncStorage.getItem(REVIEW_TOUR_KEY);
@@ -337,7 +358,7 @@ export default function ReviewScreen() {
     })();
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [loading]);
+  }, [loading, step]);
 
   // ── Persist order ─────────────────────────────────────────────────────────
   const syncOrder = useCallback(async (newLines: DialogueLine[]) => {
@@ -426,7 +447,9 @@ export default function ReviewScreen() {
     if ((!selectedChar && selectedChar !== null) || !newLineText.trim()) return;
     setIsSaving(true);
     try {
-      const sceneId = lines[lines.length - 1]?.sceneId;
+      // Al final de lo que se ve (la última escena elegida), no del guion entero.
+      const lastVisible = visibleLines[visibleLines.length - 1];
+      const sceneId = lastVisible?.sceneId;
       if (!sceneId) throw new Error('No scene found');
       const newOrderIndex = lines.length + 1;
 
@@ -448,7 +471,9 @@ export default function ReviewScreen() {
         isAction: selectedChar === null,
         orderIndex: newOrderIndex, sceneId,
       };
-      setLines(prev => [...prev, newLine]);
+      const reordered = insertAfter(lines, newLine, lastVisible?.id ?? null);
+      setLines(reordered);
+      syncOrder(reordered);
       setShowAddModal(false);
       setNewLineText('');
       setSelectedChar(null);
@@ -467,10 +492,22 @@ export default function ReviewScreen() {
     if (!user) return;
     setIsConfirming(true);
     try {
+      // Primero las escenas: si falla, no se marca el guion como revisado ni se generan voces.
+      if (multiScene) {
+        const included = scenes.filter(sc => selectedSceneIds.has(sc.id)).map(sc => sc.id);
+        const excluded = scenes.filter(sc => !selectedSceneIds.has(sc.id)).map(sc => sc.id);
+        const results = await Promise.all([
+          included.length ? supabase.from('scenes').update({ included: true }).in('id', included) : null,
+          excluded.length ? supabase.from('scenes').update({ included: false }).in('id', excluded) : null,
+        ]);
+        const failed = results.find(res => res?.error);
+        if (failed?.error) throw failed.error;
+      }
       await supabase.from('scripts').update({ reviewed: true }).eq('id', id);
       await syncOrder(lines);
 
-      const aiLines = lines.filter(l => !l.isUserCharacter && !l.isAction);
+      // Solo las voces de las escenas elegidas (las que ya estaban hechas salen de la caché).
+      const aiLines = visibleLines.filter(l => !l.isUserCharacter && !l.isAction);
       setConfirmTotal(aiLines.length);
 
       const { data: charRows } = await supabase.from('characters').select('*').eq('script_id', id);
@@ -524,6 +561,84 @@ export default function ReviewScreen() {
     }
   };
 
+  // ── Paso de escenas (guiones de varias escenas) ───────────────────────────
+  const toggleScene = (sceneId: string) => {
+    setSelectedSceneIds(prev => {
+      const next = new Set(prev);
+      if (next.has(sceneId)) next.delete(sceneId); else next.add(sceneId);
+      return next;
+    });
+  };
+  const allScenesSelected = selectedSceneIds.size === scenes.length;
+
+  const renderScenePicker = () => (
+    <>
+      <ScrollView contentContainerStyle={{ paddingHorizontal: rp(16), paddingTop: rp(8), paddingBottom: 140 }}>
+        <Text style={[s.scenesIntro, { color: onBg2 }]}>
+          Elige las escenas que vas a trabajar: solo se prepararán sus voces. Podrás añadir más cuando quieras desde Revisar guion y aparecerán en su sitio.
+        </Text>
+        <TouchableOpacity
+          onPress={() => setSelectedSceneIds(allScenesSelected ? new Set() : new Set(scenes.map(sc => sc.id)))}
+          style={s.scenesToggleAll}
+        >
+          <Text style={[s.scenesToggleAllText, { color: accentOnGlass }]}>
+            {allScenesSelected ? 'Quitar todas' : 'Seleccionar todas'}
+          </Text>
+        </TouchableOpacity>
+        {scenes.map(scene => {
+          const sceneLines = lines.filter(l => l.sceneId === scene.id && !l.isAction);
+          const speakers = [...new Set(sceneLines.map(l => l.characterName.trim().toUpperCase()))];
+          const aiCount = sceneLines.filter(l => !l.isUserCharacter).length;
+          const checked = selectedSceneIds.has(scene.id);
+          return (
+            <TouchableOpacity key={scene.id} activeOpacity={0.85} onPress={() => toggleScene(scene.id)}
+              style={[s.cardShadowWrapper, getCardShadow(isDark)]}>
+              <View style={[s.sceneCard, { backgroundColor: cardBg, borderColor: checked ? colors.primary : cardBorder }]}>
+                <View style={[s.sceneCheck, { borderColor: checked ? colors.primary : onBg2, backgroundColor: checked ? colors.primary : 'transparent' }]}>
+                  {checked && <Check size={14} color="#FFFFFF" />}
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={[s.sceneTitle, { color: onBg }]} numberOfLines={2}>
+                    {`Escena ${scene.scene_number}${scene.heading ? ` · ${scene.heading}` : ''}`}
+                  </Text>
+                  {speakers.length > 0 && (
+                    <Text style={[s.sceneMeta, { color: accentOnGlass }]} numberOfLines={1}>{speakers.join(' · ')}</Text>
+                  )}
+                  <Text style={[s.scenePreview, { color: onBg2 }]} numberOfLines={2}>
+                    {sceneLines[0] ? `${sceneLines[0].characterName.trim().toUpperCase()}: ${sceneLines[0].cleanText || sceneLines[0].text}` : ''}
+                  </Text>
+                  <Text style={[s.sceneVoices, { color: onBg2 }]}>
+                    {aiCount === 1 ? '1 réplica con voz' : `${aiCount} réplicas con voz`}
+                  </Text>
+                </View>
+              </View>
+            </TouchableOpacity>
+          );
+        })}
+      </ScrollView>
+
+      <View style={s.footer}>
+        <BlurView experimentalBlurMethod={ANDROID_BLUR_METHOD} intensity={isDark ? 55 : 65} tint={isDark ? 'dark' : 'light'} style={StyleSheet.absoluteFill} />
+        <View style={[StyleSheet.absoluteFill, { backgroundColor: isDark ? 'rgba(124,106,247,0.14)' : 'rgba(235,230,245,0.5)' }]} />
+        <View style={[s.footerContent, { borderTopColor: cardBorder, paddingBottom: Math.max(insets.bottom, rp(16)) }]}>
+          <TouchableOpacity
+            onPress={() => setStep('lines')}
+            disabled={selectedSceneIds.size === 0}
+            style={[s.confirmBtn, { backgroundColor: colors.primary, opacity: selectedSceneIds.size === 0 ? 0.5 : 1 }]}
+            activeOpacity={0.85}
+          >
+            <Text style={s.confirmBtnText}>
+              {selectedSceneIds.size === 0
+                ? 'Elige al menos una escena'
+                : `Continuar con ${selectedSceneIds.size === 1 ? '1 escena' : `${selectedSceneIds.size} escenas`}`}
+            </Text>
+            {selectedSceneIds.size > 0 && <ChevronRight size={20} color="#fff" />}
+          </TouchableOpacity>
+        </View>
+      </View>
+    </>
+  );
+
   // ── Render ────────────────────────────────────────────────────────────────
   if (loading) {
     return (
@@ -544,15 +659,23 @@ export default function ReviewScreen() {
 
         {/* ── Header ── */}
         <View style={[s.header, { backgroundColor: 'transparent', borderBottomWidth: 0 }]}>
-          <TouchableOpacity onPress={() => router.back()} style={[s.headerIconBtn, glassHeaderBtn]}>
+          <TouchableOpacity
+            onPress={() => (step === 'lines' && multiScene ? setStep('scenes') : router.back())}
+            style={[s.headerIconBtn, glassHeaderBtn]}
+          >
             <ArrowLeft size={20} color={isDark ? onBg : '#FFFFFF'} />
           </TouchableOpacity>
           <View style={{ flex: 1, alignItems: 'center' }}>
-            <Text style={[s.headerTitle, { color: onBg, textAlign: 'center' }]}>Revisar guion</Text>
+            <Text style={[s.headerTitle, { color: onBg, textAlign: 'center' }]}>
+              {step === 'scenes' ? 'Elige las escenas' : 'Revisar guion'}
+            </Text>
             <Text style={[s.headerSub, { color: onBg2, textAlign: 'center' }]}>
-              {lines.length} líneas · Usa ≡ para reordenar
+              {step === 'scenes'
+                ? `${selectedSceneIds.size} de ${scenes.length} escenas`
+                : `${visibleLines.length} líneas · Usa ≡ para reordenar`}
             </Text>
           </View>
+          {step === 'scenes' ? <View style={{ width: 84 }} /> : (
           <View style={{ flexDirection: 'row', gap: 8 }}>
             <TouchableOpacity ref={pdfButtonRef} onPress={openPdfViewer} style={[s.headerIconBtn, glassHeaderBtn]} disabled={pdfViewerLoading}>
               {pdfViewerLoading ? (
@@ -572,15 +695,24 @@ export default function ReviewScreen() {
               <Plus size={18} color={isDark ? onBg : '#FFFFFF'} />
             </TouchableOpacity>
           </View>
+          )}
         </View>
+
+        {step === 'scenes' ? renderScenePicker() : (
+        <>
 
         {/* ── Draggable list ── */}
         <DraggableFlatList
           ref={flatListRef}
-          data={lines}
+          data={visibleLines}
           keyExtractor={item => item.id}
           onDragBegin={() => Haptics.selectionAsync()}
-          onDragEnd={({ data }) => { setLines(data); syncOrder(data); }}
+          onDragEnd={({ data }) => {
+            // Se reordena lo visible; las escenas no elegidas siguen pegadas a sus vecinas.
+            const merged = multiScene ? mergeVisibleOrder(lines, data) : data;
+            setLines(merged);
+            syncOrder(merged);
+          }}
           containerStyle={{ flex: 1, backgroundColor: 'transparent' }}
           contentContainerStyle={{ paddingHorizontal: rp(16), paddingTop: rp(12), paddingBottom: 140 }}
           onScrollToIndexFailed={() => {}}
@@ -589,9 +721,17 @@ export default function ReviewScreen() {
             const charColor = item.isAction ? colors.primary : (item.isUserCharacter ? '#10B981' : (item.color || colors.primary));
             const charData = characters.find(c => c.name.toLowerCase().trim() === item.characterName.toLowerCase().trim());
             const hasEmotionSelector = supportsEmotionSelector(charData?.voice_provider);
+            const sceneStart = multiScene && !isActive && (index === 0 || visibleLines[index - 1]?.sceneId !== item.sceneId)
+              ? sceneById.get(item.sceneId)
+              : undefined;
 
             return (
               <ScaleDecorator activeScale={1.02}>
+                {sceneStart && (
+                  <Text style={[s.sceneDivider, { color: onBg2 }]} numberOfLines={1}>
+                    {`ESCENA ${sceneStart.scene_number}${sceneStart.heading ? ` · ${sceneStart.heading}` : ''}`}
+                  </Text>
+                )}
                 <View style={[s.cardShadowWrapper, draggableCardShadow(isDark, isActive, charColor)]}>
                 <View style={[s.card, {
                   backgroundColor: cardBg,
@@ -700,6 +840,8 @@ export default function ReviewScreen() {
             )}
           </View>
         </View>
+        </>
+        )}
 
         {/* ── Edit Modal ── keyboard-safe bottom sheet outside the list ── */}
         <Modal
@@ -955,7 +1097,7 @@ export default function ReviewScreen() {
         <ConfirmDialog
           visible={showConfirmDialog}
           title="Confirmar guion"
-          message={`Se generarán voces para ${lines.filter(l => !l.isUserCharacter && !l.isAction).length} líneas de réplica. ¿Continuar?`}
+          message={`Se prepararán las voces de ${visibleLines.filter(l => !l.isUserCharacter && !l.isAction).length} líneas de réplica${multiScene ? ` (${selectedSceneIds.size} de ${scenes.length} escenas)` : ''}. Las que ya estaban hechas no se vuelven a generar. ¿Continuar?`}
           confirmText="Confirmar"
           cancelText="Cancelar"
           onConfirm={() => { setShowConfirmDialog(false); doConfirm(); }}
@@ -1044,6 +1186,16 @@ const s = StyleSheet.create({
   actionBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingHorizontal: rp(14), paddingVertical: rp(8), borderRadius: 8 },
   dragHandle: { width: 44, alignItems: 'center', justifyContent: 'center', borderLeftWidth: 1 },
   footer: { position: 'absolute', bottom: 0, left: 0, right: 0, overflow: 'hidden' },
+  scenesIntro: { fontSize: rf(14), lineHeight: 20, textAlign: 'center', marginBottom: rp(8), paddingHorizontal: rp(8) },
+  scenesToggleAll: { alignSelf: 'flex-end', paddingVertical: rp(8), paddingHorizontal: rp(4), marginBottom: rp(4) },
+  scenesToggleAllText: { fontSize: rf(14), fontWeight: '700' },
+  sceneCard: { flexDirection: 'row', alignItems: 'flex-start', gap: rp(12), padding: rp(14), borderRadius: 14, borderWidth: 1.5 },
+  sceneCheck: { width: 22, height: 22, borderRadius: 6, borderWidth: 2, alignItems: 'center', justifyContent: 'center', marginTop: 2 },
+  sceneTitle: { fontSize: rf(15), fontWeight: '700' },
+  sceneMeta: { fontSize: rf(12), fontWeight: '600', marginTop: 4, letterSpacing: 0.3 },
+  scenePreview: { fontSize: rf(13), marginTop: 6, lineHeight: 18 },
+  sceneVoices: { fontSize: rf(12), marginTop: 6 },
+  sceneDivider: { fontSize: rf(12), fontWeight: '700', letterSpacing: 0.6, marginTop: rp(8), marginBottom: rp(8), marginLeft: rp(4) },
   footerContent: { paddingHorizontal: rp(20), paddingTop: rp(16), borderTopWidth: 1 },
   confirmBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10, paddingVertical: rp(16), borderRadius: 14 },
   confirmBtnText: { color: '#fff', fontSize: rf(16), fontWeight: '700' },
