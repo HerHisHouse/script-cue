@@ -71,6 +71,7 @@ const requireUser = require('./auth').createRequireUser(supabase);
 const sceneAnalysis = require('./sceneAnalysis');
 const inworldTts = require('./inworldTts');
 const elevenLabsTts = require('./elevenLabsTts');
+const audioLevels = require('./audioLevels');
 const { recordServerError } = require('./errorReports');
 const betaLimits = require('./betaLimits');
 // Costes aproximados por proveedor (en euros)
@@ -794,8 +795,16 @@ async function mixAudioTracks(jobId, tempDir, userAudioFile, mixedAudioFile, lin
 
     const filterParts = [];
 
+    // Voz del actor normalizada con ganancia fija (dos pasadas, ver audioLevels.js):
+    // en una sola pasada el ruido del principio de la toma subía hasta el nivel
+    // de una voz hasta la primera frase.
+    const userPrefix = hasHeadphones ? 'highpass=f=80' : 'highpass=f=100,afftdn=nf=-25';
+    const userMeasured = await audioLevels.measureLoudness(ffmpeg, userAudioFile, userPrefix);
+    console.log(`[Job ${jobId}] Voz del actor medida:`, JSON.stringify(userMeasured));
+    const userFilter = audioLevels.userTrackFilter(userPrefix, userMeasured);
+
     if (hasHeadphones) {
-        filterParts.push('[0:a]highpass=f=80,loudnorm=I=-16:TP=-1.5:LRA=11[user_clean]');
+        filterParts.push(`[0:a]${userFilter}[user_clean]`);
         aiSegments.forEach((segment, idx) => {
             const delayMs = Math.round(segment.startTime * 1000);
             const duration = segment.duration || 3;
@@ -815,10 +824,7 @@ async function mixAudioTracks(jobId, tempDir, userAudioFile, mixedAudioFile, lin
             `alimiter=limit=0.95:attack=2:release=50[outa]`
         );
     } else {
-        filterParts.push(
-            '[0:a]highpass=f=100,afftdn=nf=-25,' +
-            'loudnorm=I=-16:TP=-1.5:LRA=11[user_normalized]'
-        );
+        filterParts.push(`[0:a]${userFilter}[user_normalized]`);
         let volumeExpression = '1';
         if (aiSegments.length > 0) {
             const conditions = aiSegments.map(segment => {
