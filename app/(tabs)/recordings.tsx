@@ -68,6 +68,7 @@ import {
   OTHER_DEVICE_MESSAGE,
 } from '@/utils/recordingLocation';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
+import { subscribePendingVideoJobs, finishVideoJob, type PendingVideoJob } from '@/utils/pendingVideoJobs';
 import { setAudioModeForPlayback, setAudioModeForBackgroundPlayback } from '@/utils/audioMode';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { REMOTE_CMD_KEY } from '@/services/playbackService';
@@ -187,6 +188,9 @@ export default function RecordingsScreen() {
   const [isLocalOnly, setIsLocalOnly] = useState(false);
   // Casting jobs en segundo plano
   const [processingJobs, setProcessingJobs] = useState<string[]>([]);
+  // Subidas de Casting que siguen en marcha (utils/pendingVideoJobs): el aviso
+  // sale ya mientras el vídeo sube, antes de que exista el trabajo en el servidor.
+  const [pendingUploads, setPendingUploads] = useState<PendingVideoJob[]>([]);
   const flatListRef = useRef<FlatList>(null);
   const [completedBanner, setCompletedBanner] = useState<string | null>(null);
   // URL resolved (signed Supabase URL or local file URI) for the current video being played
@@ -659,6 +663,24 @@ export default function RecordingsScreen() {
     }
   }, [params.pendingJobId]);
 
+  // Subidas en curso desde Casting: en cuanto el servidor devuelve el jobId, el
+  // trabajo entra en el seguimiento (Realtime + consulta periódica de abajo).
+  useEffect(() => subscribePendingVideoJobs((jobs) => {
+    setPendingUploads(jobs);
+    const confirmed = jobs.filter((j) => j.jobId).map((j) => j.jobId as string);
+    if (confirmed.length > 0) {
+      setProcessingJobs((prev) => [...prev, ...confirmed.filter((id) => !prev.includes(id))]);
+    }
+  }), []);
+
+  // Cada vez que se vuelve a esta pantalla, buscar trabajos en marcha (antes solo
+  // se hacía al abrirla por primera vez, cuando el vídeo aún ni existía en el servidor).
+  useFocusEffect(
+    useCallback(() => {
+      checkPendingJobs();
+    }, [checkPendingJobs])
+  );
+
   const downloadLargeCastingVideo = async (jobId: string) => {
     try {
       const castingServerUrl = process.env.EXPO_PUBLIC_CASTING_SERVER_URL || 'https://script-cue-merge-server-production.up.railway.app';
@@ -708,6 +730,7 @@ export default function RecordingsScreen() {
           if (job.status === 'completed') {
             console.log('[Realtime] Job completado, limpiando banner'); // DEBUG
             setProcessingJobs((prev) => prev.filter((jid) => jid !== job.job_id));
+            finishVideoJob(job.job_id);
             loadRecordings(true);
             
             setTimeout(() => {
@@ -720,6 +743,7 @@ export default function RecordingsScreen() {
           }
           if (job.status === 'completed_local') {
             setProcessingJobs((prev) => prev.filter((jid) => jid !== job.job_id));
+            finishVideoJob(job.job_id);
             const isLocalMode = job.error_message?.includes('Local');
             Alert.alert(
               isLocalMode ? '📹 Selftape listo (Modo Local)' : '📹 Selftape listo (archivo grande)',
@@ -738,6 +762,7 @@ export default function RecordingsScreen() {
           }
           if (job.status === 'error') {
             setProcessingJobs((prev) => prev.filter((jid) => jid !== job.job_id));
+            finishVideoJob(job.job_id);
             Alert.alert(
               '⚠️ Error procesando selftape',
               job.error_message ||
@@ -761,7 +786,7 @@ export default function RecordingsScreen() {
   useEffect(() => {
     if (processingJobs.length === 0) return;
 
-    // Polling cada 15 segundos como fallback a Realtime
+    // Consulta cada 8 segundos además de Realtime (que no siempre llega)
     const pollInterval = setInterval(async () => {
       if (!user?.id) return;
 
@@ -776,6 +801,7 @@ export default function RecordingsScreen() {
       for (const job of data) {
         if (job.status === 'completed') {
           setProcessingJobs(prev => prev.filter(id => id !== job.job_id));
+          finishVideoJob(job.job_id);
           loadRecordings(true);
           
           setTimeout(() => {
@@ -788,6 +814,7 @@ export default function RecordingsScreen() {
         }
         if (job.status === 'completed_local') {
           setProcessingJobs(prev => prev.filter(id => id !== job.job_id));
+          finishVideoJob(job.job_id);
           const isLocalMode = job.error_message?.includes('Local');
           Alert.alert(
             isLocalMode ? '📹 Selftape listo (Modo Local)' : '📹 Selftape listo (archivo grande)',
@@ -802,13 +829,14 @@ export default function RecordingsScreen() {
         }
         if (job.status === 'error') {
           setProcessingJobs(prev => prev.filter(id => id !== job.job_id));
+          finishVideoJob(job.job_id);
           Alert.alert(
             'Error procesando selftape',
             job.error_message || 'Hubo un problema. Inténtalo de nuevo.'
           );
         }
       }
-    }, 15000);
+    }, 8000);
 
     // Timeout de seguridad: limpiar banner si pasan 10 minutos
     const safetyTimeout = setTimeout(() => {
@@ -2977,19 +3005,22 @@ export default function RecordingsScreen() {
         />
 
         {/* Banner de procesamiento en segundo plano */}
-        {processingJobs.length > 0 && (
+        {(processingJobs.length > 0 || pendingUploads.some((u) => u.status === 'uploading')) && (
           <View style={[styles.processingBanner, {
             backgroundColor: 'rgba(124,106,247,0.12)',
             borderColor: 'rgba(124,106,247,0.35)',
           }]}>
             <ActivityIndicator size="small" color={isDark ? '#FFFFFF' : colors.primary} />
             <Text style={[styles.processingBannerText, { color: isDark ? '#FFFFFF' : colors.primary }]}>
-              {processingJobs.some(id => id.startsWith('teleprompter_')) && processingJobs.some(id => id.startsWith('casting_') || id.startsWith('job_'))
-                ? 'Procesando tus vídeos en segundo plano...'
-                : processingJobs.some(id => id.startsWith('teleprompter_'))
-                ? 'Procesando tu vídeo en segundo plano...'
-                : 'Procesando tu selftape en segundo plano...'
-              }
+              {(() => {
+                // Tipos de vídeo en marcha: subiendo (pendingUploads) o ya procesándose (processingJobs).
+                const kinds = new Set<string>([
+                  ...pendingUploads.filter((u) => u.status === 'uploading').map((u) => u.kind),
+                  ...processingJobs.map((id) => (id.startsWith('teleprompter_') ? 'video' : 'selftape')),
+                ]);
+                if (kinds.size > 1) return 'Procesando tus vídeos en segundo plano...';
+                return kinds.has('video') ? 'Procesando tu vídeo en segundo plano...' : 'Procesando tu selftape en segundo plano...';
+              })()}
             </Text>
           </View>
         )}

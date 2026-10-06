@@ -58,6 +58,7 @@ import {
 } from '@/utils/cameraZoomAndroid';
 import { ExpoSpeechRecognitionModule, useSpeechRecognitionEvent } from 'expo-speech-recognition';
 import { matchesActivationPhrase } from '@/utils/voiceActivation';
+import { trackVideoUpload } from '@/utils/pendingVideoJobs';
 import { FontAwesome5 } from '@expo/vector-icons';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/utils/supabase';
@@ -681,6 +682,9 @@ export default function CastingModeScreen() {
   // Una sola transición por presentación: con resultados parciales la frase
   // llega en varios eventos seguidos.
   const wideShotTriggeredRef = useRef(false);
+  // Modo de audio de iOS a restaurar al terminar una grabación sin auriculares
+  // (ver disableIosVoiceProcessing).
+  const audioModeToRestoreRef = useRef<ReturnType<typeof ExpoSpeechRecognitionModule.getAudioSessionCategoryAndOptionsIOS> | null>(null);
   // Sube en cada arranque y en cada parada: si la grabación se para mientras
   // start() aún espera permisos o idiomas, ese arranque ya no abre el micrófono.
   const voiceSessionRef = useRef(0);
@@ -1881,6 +1885,7 @@ export default function CastingModeScreen() {
       const started = await cameraRef.current.startRecording();
       if (!started) releaseLensLock();
       if (started) {
+        if (!userSelectedHeadphones) disableIosVoiceProcessing();
         setIsRecording(true);
         setRecordingTime(0);
         recordingTimeRef.current = 0;
@@ -1932,7 +1937,37 @@ export default function CastingModeScreen() {
     }
   }
 
+  // iOS, grabando SIN auriculares: la sesión de audio que deja vision-camera
+  // (modo videoRecording) aplica el procesado de voz de iOS cuando suena la IA
+  // por el altavoz y, a partir de ahí, la voz del actor quedaba unos 25 dB más
+  // baja (medido en tomas reales). En modo measurement no hay procesado: la voz
+  // se graba con el mismo nivel antes y después de la IA. La IA se cuela en el
+  // micrófono, pero el servidor silencia esa pista durante cada réplica.
+  // setCategoryIOS es del paquete de reconocimiento de voz, que ya está en la app.
+  function disableIosVoiceProcessing() {
+    if (Platform.OS !== 'ios') return;
+    try {
+      const current = ExpoSpeechRecognitionModule.getAudioSessionCategoryAndOptionsIOS();
+      audioModeToRestoreRef.current = current;
+      ExpoSpeechRecognitionModule.setCategoryIOS({ category: current.category, categoryOptions: current.categoryOptions, mode: 'measurement' });
+    } catch (e) {
+      console.warn('[Casting] No se pudo quitar el procesado de voz de iOS:', e);
+    }
+  }
+
+  function restoreAudioMode() {
+    const previous = audioModeToRestoreRef.current;
+    if (!previous) return;
+    audioModeToRestoreRef.current = null;
+    try {
+      ExpoSpeechRecognitionModule.setCategoryIOS({ category: previous.category, categoryOptions: previous.categoryOptions, mode: previous.mode });
+    } catch (e) {
+      console.warn('[Casting] No se pudo restaurar el modo de audio:', e);
+    }
+  }
+
   async function cancelCountdown() {
+    restoreAudioMode();
     countdownCancelledRef.current = true;
     if (cameraRef.current) {
       (cameraRef.current as any)._cancelRecording = true;
@@ -1945,6 +1980,7 @@ export default function CastingModeScreen() {
   }
 
   async function stopRecording() {
+    restoreAudioMode();
     if (!cameraRef.current) return;
 
     // Recuperar si había auriculares en la última grabación
@@ -2027,52 +2063,34 @@ export default function CastingModeScreen() {
 
       const castingServerUrl = process.env.EXPO_PUBLIC_CASTING_SERVER_URL || 'https://script-cue-merge-server-production.up.railway.app';
 
-      // Capturamos el jobId para pasarlo a Grabaciones aunque el race acabe antes
-      let capturedJobId: string | null = null;
-
-      const uploadPromise = (async () => {
+      // Igual que en Selftape: la subida sigue en segundo plano y se pasa a
+      // Grabaciones al momento, con el aviso de "procesando" desde el principio.
+      trackVideoUpload('video', async () => {
         const controller = new AbortController();
         const timeoutId = setTimeout(() => controller.abort(), 180000);
-        let response;
         try {
-          response = await fetch(`${castingServerUrl}/compress-video`, {
+          const response = await fetch(`${castingServerUrl}/compress-video`, {
             method: 'POST',
             headers: await serverAuthHeaders(),
             body: formData,
             signal: controller.signal,
           });
-          clearTimeout(timeoutId);
           if (!response.ok) {
-            console.error(`Error del servidor: ${response.status}`);
-            return;
+            return { error: { title: 'No se pudo enviar el vídeo', message: `El servidor respondió con un error (${response.status}). Inténtalo de nuevo.` } };
           }
           const result = await response.json();
-          if (result.jobId) {
-            capturedJobId = result.jobId;
-          } else {
-            console.error('El servidor no devolvió confirmación del trabajo en segundo plano.');
+          if (!result.jobId) {
+            return { error: { title: 'No se pudo enviar el vídeo', message: 'El servidor no confirmó el procesamiento. Inténtalo de nuevo.' } };
           }
-        } catch (fetchError: any) {
+          return { jobId: result.jobId as string };
+        } finally {
           clearTimeout(timeoutId);
-          console.error('Background upload failed:', fetchError);
         }
-      })();
-
-      // Wait max 5 seconds before navigating away
-      await Promise.race([
-        uploadPromise,
-        new Promise(resolve => setTimeout(resolve, 5000))
-      ]);
+      });
 
       setProcessingProgress(100);
       setIsProcessing(false);
-
-      // Redirigir a Grabaciones. Si tenemos jobId lo pasamos para mostrar el banner inmediatamente
-      if (capturedJobId) {
-        router.replace(`/(tabs)/recordings?pendingJobId=${capturedJobId}`);
-      } else {
-        router.replace('/(tabs)/recordings');
-      }
+      router.replace('/(tabs)/recordings');
 
     } catch (e: any) {
       console.error(e);
@@ -2083,6 +2101,7 @@ export default function CastingModeScreen() {
 
   // Cancelar grabación sin procesar
   function cancelRecording() {
+    restoreAudioMode();
     if (cameraRef.current && isRecording) {
       countdownCancelledRef.current = true;
       (cameraRef.current as any)._cancelRecording = true;
@@ -2183,72 +2202,41 @@ export default function CastingModeScreen() {
 
       const castingServerUrl = process.env.EXPO_PUBLIC_CASTING_SERVER_URL || 'https://script-cue-merge-server-production.up.railway.app';
 
-      // Capturamos el jobId para pasarlo a Grabaciones aunque el race acabe antes
-      let capturedJobId: string | null = null;
-
-      const uploadPromise = (async () => {
+      // La subida sigue en segundo plano (pendingVideoJobs): se pasa a Grabaciones
+      // al momento y allí sale el aviso de "procesando" desde el primer segundo.
+      trackVideoUpload('selftape', async () => {
         const controller = new AbortController();
         const timeoutId = setTimeout(() => controller.abort(), 120000);
-        let response;
         try {
-          response = await fetch(`${castingServerUrl}/process-casting`, {
+          const response = await fetch(`${castingServerUrl}/process-casting`, {
             method: 'POST',
             headers: await serverAuthHeaders(),
             body: formData,
             signal: controller.signal,
           });
-          clearTimeout(timeoutId);
-
           if (!response.ok) {
             const errorData = await response.json().catch(() => ({}));
             if (response.status === 413) {
-              showCastingAlert(
-                '📹 Vídeo demasiado grande',
-                errorData.error || 'Graba en calidad Básica (480p) para escenas largas.',
-                [{ text: 'Entendido' }]
-              );
-              return;
+              return { error: { title: '📹 Vídeo demasiado grande', message: errorData.error || 'Graba en calidad Básica (480p) para escenas largas.' } };
             }
             if (response.status === 502) {
-              showCastingAlert(
-                '⚠️ Error del servidor',
-                'El servidor no pudo procesar el vídeo. ' +
-                'Prueba con calidad Básica (480p) o graba una escena más corta.',
-                [{ text: 'Entendido' }]
-              );
-              return;
+              return { error: { title: '⚠️ Error del servidor', message: 'El servidor no pudo procesar el vídeo. Prueba con calidad Básica (480p) o graba una escena más corta.' } };
             }
-            console.error(`Error del servidor: ${response.status}`);
-            return;
+            return { error: { title: 'No se pudo enviar el selftape', message: `El servidor respondió con un error (${response.status}). Inténtalo de nuevo.` } };
           }
-
           const result = await response.json();
-          if (result.jobId) {
-            capturedJobId = result.jobId;
-          } else {
-            console.error('No jobId returned from server for selftape');
+          if (!result.jobId) {
+            return { error: { title: 'No se pudo enviar el selftape', message: 'El servidor no confirmó el procesamiento. Inténtalo de nuevo.' } };
           }
-        } catch (fetchError: any) {
+          return { jobId: result.jobId as string };
+        } finally {
           clearTimeout(timeoutId);
-          console.error('[Casting] Background upload failed:', fetchError);
         }
-      })();
-
-      // Timeout de 5s máximo para no bloquear al usuario
-      await Promise.race([
-        uploadPromise,
-        new Promise(resolve => setTimeout(resolve, 5000))
-      ]);
+      });
 
       setProcessingProgress(100);
       setIsProcessing(false);
-
-      // Redirigir a Grabaciones. Si tenemos jobId lo pasamos para mostrar el banner inmediatamente
-      if (capturedJobId) {
-        router.replace(`/(tabs)/recordings?pendingJobId=${capturedJobId}`);
-      } else {
-        router.replace('/(tabs)/recordings');
-      }
+      router.replace('/(tabs)/recordings');
 
     } catch (e: any) {
       console.error('[Casting] Error enviando vídeo:', e);
