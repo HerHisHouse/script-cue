@@ -39,7 +39,7 @@ export default function PrivacyScreen() {
                 </View>
 
                 <ScrollView style={styles.content} contentContainerStyle={styles.contentContainer}>
-                    <Text style={[styles.date, { color: onBg2 }]}>Última actualización: 20 de septiembre de 2026</Text>
+                    <Text style={[styles.date, { color: onBg2 }]}>Última actualización: 6 de octubre de 2026</Text>
 
                     <Text style={[styles.paragraph, { color: onBg2 }]}>
                         Esta Política de Privacidad describe cómo ScriptCue (“la Aplicación”, “nosotros”) recopila, utiliza y protege los datos personales del usuario (“tú”). Estos Términos y Condiciones y la Política de Privacidad se incorporan mutuamente por referencia y constituyen, en su conjunto, un único acuerdo contractual entre tú y ScriptCue.
@@ -146,7 +146,7 @@ export default function PrivacyScreen() {
                     <Text style={[styles.subsectionTitle, { color: onBg }]}>5.4 Transferencias internacionales</Text>
 
                     <Text style={[styles.paragraph, { color: onBg2 }]}>
-                        Algunos de nuestros proveedores, en concreto los servicios de inteligencia artificial OpenAI, ElevenLabs y Hume, tienen su sede en Estados Unidos. Cuando compartimos texto de guiones o transcripciones con estos proveedores, dicha transferencia internacional se realiza al amparo de las garantías previstas por cada proveedor (como cláusulas contractuales tipo aprobadas por la Comisión Europea o, en su caso, su adhesión al Data Privacy Framework UE-EE.UU.). Te recomendamos consultar las políticas de privacidad de estos proveedores para más detalle. Nunca se transfieren grabaciones completas de audio o vídeo a estos proveedores, solo texto.
+                        Algunos de nuestros proveedores, en concreto los servicios de inteligencia artificial OpenAI, ElevenLabs e Inworld, tienen su sede en Estados Unidos. Cuando compartimos texto de guiones o transcripciones con estos proveedores, dicha transferencia internacional se realiza al amparo de las garantías previstas por cada proveedor (como cláusulas contractuales tipo aprobadas por la Comisión Europea o, en su caso, su adhesión al Data Privacy Framework UE-EE.UU.). Te recomendamos consultar las políticas de privacidad de estos proveedores para más detalle. Nunca se transfieren grabaciones completas de audio o vídeo a estos proveedores, solo texto.
                     </Text>
 
                     <Text style={[styles.sectionTitle, { color: onBg }]}>6. Conservación de los datos</Text>
@@ -214,8 +214,8 @@ export default function PrivacyScreen() {
                                 <Text style={[styles.providerLabel, { color: onBg }]}>Ubicación: </Text>Estados Unidos (ver 5.4)
                             </Text>
                         </View>
-                        <View key="Hume" style={[styles.providerCard, { backgroundColor: cardBg, borderColor: cardBorder }]}>
-                            <Text style={[styles.providerName, { color: onBg }]}>Hume</Text>
+                        <View key="Inworld" style={[styles.providerCard, { backgroundColor: cardBg, borderColor: cardBorder }]}>
+                            <Text style={[styles.providerName, { color: onBg }]}>Inworld</Text>
                             <Text style={[styles.providerRow, { color: onBg2 }]}>
                                 <Text style={[styles.providerLabel, { color: onBg }]}>Finalidad: </Text>Generación de voz / réplicas de personajes (voces “naturales”)
                             </Text>
