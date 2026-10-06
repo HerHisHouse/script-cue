@@ -15,7 +15,7 @@ The repo has three runtime pieces:
 - **`supabase/functions/`** — Deno edge functions (Postgres/Auth/Storage lives in Supabase).
 - **`server/`** — a separate Node/Express microservice (`audio-merge-server`), deployed to Render
   (see `render.yaml`), with its own `package.json`/`node_modules`. It does the heavy lifting Supabase Edge
-  Functions can't: ffmpeg audio/video mixing, video compression, and some TTS provider calls (Azure, Hume).
+  Functions can't: ffmpeg audio/video mixing, video compression, and some TTS provider calls (Azure, Inworld).
 
 ## Commands
 
@@ -70,7 +70,7 @@ file. Treat failures here as real bugs to fix, not noise to bypass.
 - `utils/` holds most business logic as plain modules rather than hooks/services: `pdfParser.ts` /
   `dialogueParser.ts` (script → characters/scenes/dialogue), `tts.ts` / `ttsCache.ts` / `tts/` (TTS provider
   abstraction + Supabase-Storage-backed audio cache, keyed by text hash), `voiceService.ts` (provider/voice
-  catalog for OpenAI/ElevenLabs/Azure/Hume/system), `audio.ts` / `audioMode.ts` / `trackPlayerService.ts`
+  catalog for OpenAI/ElevenLabs/Azure/Inworld/system), `audio.ts` / `audioMode.ts` / `trackPlayerService.ts`
   (playback), `storage.ts` / `supabase.ts` (Supabase client + file storage), `cache.ts` / `metrics.ts`
   (generic cache + usage counters).
 - `services/` is a smaller, newer layer (`parseScript.ts`, `transcription.ts`, `playbackService.ts` for
@@ -78,12 +78,14 @@ file. Treat failures here as real bugs to fix, not noise to bypass.
 
 ### TTS provider abstraction
 
-Multiple TTS backends are supported per-character: `system` (device TTS, free), `hume` ("Natural"),
-`elevenlabs` ("Expresiva", emotion-configurable), plus `openai` and `azure`. Each provider has an adapter in
+Multiple TTS backends are supported per-character: `system` (device TTS, free), `inworld` ("Natural"; it
+replaced Hume, whose TTS API shut down on 13/11/2026), `elevenlabs` ("Expresiva"), plus `azure` (`openai` and
+`hume` are legacy values that `normalizeVoiceProvider` maps to `system`). Inworld and ElevenLabs share the same
+emotion tags (`ELEVENLABS_PREFIXES`). Each provider has an adapter in
 `utils/tts/adapters/*.adapter.ts` implementing `TTSAdapter.buildInput()` (`utils/tts/types.ts`); `voiceService.ts`
 holds the voice catalog and `ttsCache.ts` is the cache-first entry point that hashes text+voice config, checks
-Supabase Storage/`tts_cache` table before generating new audio, and calls the Azure/Hume paths through the
-`server/` microservice's `/tts-azure` and `/tts-hume` endpoints. When adding a new practice mode or changing how
+Supabase Storage/`tts_cache` table before generating new audio, and calls the Azure/Inworld paths through the
+`server/` microservice's `/tts-azure` and `/tts-inworld` endpoints. When adding a new practice mode or changing how
 lines are read aloud, go through this cache-first path rather than calling a provider SDK directly.
 
 ### Backend split: Supabase Edge Functions vs. `server/` (Render)
@@ -96,7 +98,7 @@ Decide which side new backend logic belongs on:
   `npm run typecheck`/`lint` to cover them.
 - **`server/` Express app** (`index.js`, deployed per `render.yaml`) — anything needing ffmpeg or a heavier
   native dependency: `/merge` and `/process-casting` (mix TTS audio with a recorded video/audio take),
-  `/compress-video`, `/analyze-recording` (Coach mode feedback), `/generate-quiz`, `/tts-azure` / `/tts-hume`
+  `/compress-video`, `/analyze-recording` (Coach mode feedback), `/generate-quiz`, `/tts-azure` / `/tts-inworld`
   (providers without a convenient Deno/edge SDK), `/api/azure/voices`, `/api/tts/preview/:provider/:voiceId`,
   `/usage/summary`. It logs per-call API cost estimates to the `api_usage` table via `logApiUsage()`
   (`API_COSTS` table near the top of `index.js`) — follow that pattern when adding a new paid-API call so cost
