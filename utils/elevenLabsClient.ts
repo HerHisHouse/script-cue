@@ -1,32 +1,24 @@
-export async function generateElevenLabsAudio(text: string, voiceId: string): Promise<ArrayBuffer> {
-  const apiKey = process.env.EXPO_PUBLIC_ELEVENLABS_API_KEY;
-  if (!apiKey) {
-    throw new Error('Missing ElevenLabs API Key');
+import { serverAuthHeaders } from './serverAuth';
+import { RENDER_SERVER_URL } from './serverUrl';
+
+/**
+ * Genera una réplica con ElevenLabs (voces "Expresiva") a través del servidor,
+ * que guarda la clave y registra el coste. Antes se llamaba a ElevenLabs desde la
+ * app con EXPO_PUBLIC_ELEVENLABS_API_KEY, que viajaba dentro del bundle.
+ * El texto ya trae las etiquetas de emoción ([crying]…) que interpreta eleven_v3.
+ */
+export async function generateElevenLabsAudio(text: string, voiceId: string, scriptId?: string): Promise<ArrayBuffer> {
+  if (!RENDER_SERVER_URL) {
+    throw new Error('RENDER_SERVER_URL no configurado');
   }
-
-  console.log(`[ElevenLabs API] Model: eleven_v3 | Text: "${text}"`);
-  
-  const response = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${voiceId}`, {
+  const response = await fetch(`${RENDER_SERVER_URL}/tts-elevenlabs`, {
     method: 'POST',
-    headers: {
-      'Accept': 'audio/mpeg',
-      'Content-Type': 'application/json',
-      'xi-api-key': apiKey,
-    },
-    body: JSON.stringify({
-      text: text,
-      model_id: "eleven_v3",
-      voice_settings: {
-        stability: 0.5,
-        similarity_boost: 0.75,
-      }
-    }),
+    headers: { ...(await serverAuthHeaders()), 'Content-Type': 'application/json' },
+    body: JSON.stringify({ text, voiceId, scriptId }),
   });
-
   if (!response.ok) {
     const errorBody = await response.text();
-    throw new Error(`ElevenLabs API Error: ${response.status} ${errorBody}`);
+    throw new Error(`ElevenLabs (servidor) ${response.status}: ${errorBody}`);
   }
-
   return await response.arrayBuffer();
 }

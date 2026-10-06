@@ -325,7 +325,7 @@ export async function generateAndCacheAudio(
             }
         } else if (provider === 'elevenlabs') {
             console.log(`[ElevenLabs] → Enviando a API: "${providerInput as string}"`);
-            arrayBuffer = await generateElevenLabsAudio(providerInput as string, voiceId || "21m00Tcm4TlvDq8ikWAM");
+            arrayBuffer = await generateElevenLabsAudio(providerInput as string, voiceId || "21m00Tcm4TlvDq8ikWAM", scriptId);
         }
 
         if (!arrayBuffer) throw new Error('Generation failed');

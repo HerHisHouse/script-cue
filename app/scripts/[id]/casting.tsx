@@ -64,7 +64,6 @@ import { supabase } from '@/utils/supabase';
 import { BottomSheetMenu } from '@/components/BottomSheetMenu';
 import { BottomSheetToggle } from '@/components/BottomSheetToggle';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
-import { generateElevenLabsAudio } from '@/utils/elevenLabsClient';
 import { useTheme } from '@/contexts/ThemeContext';
 import { getSettings } from '@/utils/appSettings';
 import * as Speech from 'expo-speech';

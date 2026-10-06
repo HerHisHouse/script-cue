@@ -2,7 +2,6 @@ import { Audio } from 'expo-av';
 import * as FileSystem from 'expo-file-system/legacy';
 import { serverAuthHeaders } from './serverAuth';
 import { RENDER_SERVER_URL } from './serverUrl';
-import { generateElevenLabsAudio } from './elevenLabsClient';
 
 // ============================================
 // TIPOS
@@ -176,19 +175,13 @@ export async function getElevenLabsVoices(forceRefresh = false): Promise<VoiceOp
     return elevenLabsVoicesPromise;
   }
 
-  const apiKey = process.env.EXPO_PUBLIC_ELEVENLABS_API_KEY;
-  if (!apiKey) {
-    console.warn('No ElevenLabs API key configured');
-    return [];
-  }
-
   elevenLabsVoicesPromise = (async () => {
     try {
       const collectionId = process.env.EXPO_PUBLIC_ELEVENLABS_COLLECTION_ID || 'Cy4MgTzrGqXsWuRKrXaQ';
-      let response = await fetch('https://api.elevenlabs.io/v1/voices', {
-        headers: {
-          'xi-api-key': apiKey.trim(),
-        },
+      // A través del servidor: la clave de ElevenLabs ya no está en la app.
+      if (!RENDER_SERVER_URL) throw new Error('RENDER_SERVER_URL no configurado');
+      let response = await fetch(`${RENDER_SERVER_URL}/api/elevenlabs/voices${forceRefresh ? '?refresh=1' : ''}`, {
+        headers: await serverAuthHeaders(),
       });
 
       if (!response.ok) {
