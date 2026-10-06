@@ -70,6 +70,7 @@ const supabase = createClient(
 const requireUser = require('./auth').createRequireUser(supabase);
 const sceneAnalysis = require('./sceneAnalysis');
 const inworldTts = require('./inworldTts');
+const elevenLabsTts = require('./elevenLabsTts');
 const { recordServerError } = require('./errorReports');
 const betaLimits = require('./betaLimits');
 // Costes aproximados por proveedor (en euros)
@@ -78,7 +79,10 @@ const API_COSTS = {
   openai_tts_hd:     0.000030, // por carácter (0.030€/1000 chars)
   openai_analysis:   0.000005, // por token
   openai_audio:      0.000100, // por segundo de audio procesado
-  elevenlabs:        0.000003, // por carácter (0.003€/1000 chars)
+  // eleven_v3 / multilingual v2 ronda 0,08 $ por 1.000 caracteres en la API
+  // (comparativas de 2026; ajustar si el plan contratado da otro precio). Antes
+  // estaba en 0,003 €/1000, unas 25 veces por debajo.
+  elevenlabs:        0.00007,  // por carácter (estimado)
   azure:             0.000004, // por carácter (0.004€/1000 chars)
   inworld_tts:       0.000023, // por carácter (TTS-2 bajo demanda, ~25 $ por millón)
   system:            0,        // voces del sistema, gratis
@@ -2744,6 +2748,56 @@ app.post('/tts-inworld', requireUser, async (req, res) => {
 });
 
 
+// Voces "Expresiva" (ElevenLabs), ver elevenLabsTts.js: { text, voiceId } →
+// audio/mpeg. El texto ya trae las etiquetas de emoción que pone la app.
+app.post('/tts-elevenlabs', requireUser, async (req, res) => {
+    const { text, voiceId } = req.body;
+    const userId = req.user ? req.user.id : req.body.userId; // el token manda sobre lo que diga el cuerpo
+    if (!text || !voiceId || !userId) {
+        return res.status(400).json({ error: 'Missing required fields: text, voiceId, userId' });
+    }
+    try {
+        const audioBuffer = await elevenLabsTts.synthesizeElevenLabsMp3({
+            text,
+            voiceId,
+            apiKey: (process.env.ELEVENLABS_API_KEY || '').trim(),
+        });
+        await logApiUsage({
+            userId,
+            provider: 'elevenlabs',
+            characters: text.length,
+            scriptId: req.body.scriptId || null,
+            mode: req.body.mode || 'studio',
+        });
+        console.log(`[ElevenLabs TTS] ✅ ${audioBuffer.length} bytes, voz ${voiceId}, modelo ${elevenLabsTts.ELEVENLABS_TTS_MODEL}`);
+        res.set('Content-Type', 'audio/mpeg');
+        res.set('Content-Length', audioBuffer.length);
+        res.send(audioBuffer);
+    } catch (error) {
+        console.error('[ElevenLabs TTS] Error:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Lista de voces de ElevenLabs para el selector (la app ya no tiene la clave).
+// Se guarda 10 minutos en memoria: cambia poco y el selector la pide a menudo.
+let elevenLabsVoicesCache = null;
+let elevenLabsVoicesCacheTime = 0;
+app.get('/api/elevenlabs/voices', requireUser, async (req, res) => {
+    try {
+        const fresh = req.query.refresh === '1';
+        if (!fresh && elevenLabsVoicesCache && Date.now() - elevenLabsVoicesCacheTime < 10 * 60 * 1000) {
+            return res.json(elevenLabsVoicesCache);
+        }
+        elevenLabsVoicesCache = await elevenLabsTts.listElevenLabsVoices({ apiKey: (process.env.ELEVENLABS_API_KEY || '').trim() });
+        elevenLabsVoicesCacheTime = Date.now();
+        res.json(elevenLabsVoicesCache);
+    } catch (error) {
+        console.error('[ElevenLabs voices] Error:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
 let azureVoicesCache = null;
 let azureVoicesCacheTime = 0;
 
@@ -2842,7 +2896,7 @@ app.get('/api/tts/preview/:provider/:voiceId', requireUser, async (req, res) => 
             });
         } else if (provider === 'elevenlabs') {
             const textToSpeak = "Hola, esta es una muestra de mi voz en Scriptquiu. Espero que te guste.";
-            const elevenKey = (process.env.ELEVENLABS_API_KEY || process.env.EXPO_PUBLIC_ELEVENLABS_API_KEY || '').trim();
+            const elevenKey = (process.env.ELEVENLABS_API_KEY || '').trim();
             const response = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${voiceId}?output_format=mp3_44100_128`, {
                 method: 'POST',
                 headers: {
@@ -2859,7 +2913,7 @@ app.get('/api/tts/preview/:provider/:voiceId', requireUser, async (req, res) => 
             audioBuffer = Buffer.from(buffer);
 
             await logApiUsage({
-              userId: req.query.userId || req.body?.userId || null,
+              userId: req.user ? req.user.id : null,
               provider: 'elevenlabs',
               characters: textToSpeak.length,
               mode: 'preview',
