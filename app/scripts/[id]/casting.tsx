@@ -1053,9 +1053,12 @@ export default function CastingModeScreen() {
           // Use line.id as cache key (stable regardless of action cards)
           if (newCache.has(line.id)) continue;
 
-          // Use cleanText (without stage directions) for TTS
-          const text = line.cleanText;
-          if (!text) continue;
+          // El texto con acotaciones, igual que en Estudio, Memoria y Coche: el
+          // adaptador de cada voz ya las quita de lo que se lee y saca de ellas la
+          // emoción. Con cleanText la clave de caché no coincidía con la del resto
+          // de modos (se volvía a generar y pagar el audio) y se perdía la emoción.
+          if (!line.cleanText) continue;
+          const text = line.text;
 
           const characterName = line.characterName.toUpperCase();
 
@@ -1242,7 +1245,8 @@ export default function CastingModeScreen() {
       }
 
       // 4. Intentar obtener del cache en disco (Supabase Storage / FileSystem) o generar
-      const text = line.cleanText || line.text;
+      // Texto con acotaciones: misma clave de caché y misma emoción que en el resto de modos.
+      const text = line.text;
 
       const effectiveProvider = normalizeVoiceProvider(provider);
       const effectiveVoiceId = voiceId;
