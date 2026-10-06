@@ -682,6 +682,9 @@ export default function CastingModeScreen() {
   // Una sola transición por presentación: con resultados parciales la frase
   // llega en varios eventos seguidos.
   const wideShotTriggeredRef = useRef(false);
+  // Modo de audio de iOS a restaurar al terminar una grabación sin auriculares
+  // (ver disableIosVoiceProcessing).
+  const audioModeToRestoreRef = useRef<ReturnType<typeof ExpoSpeechRecognitionModule.getAudioSessionCategoryAndOptionsIOS> | null>(null);
   // Sube en cada arranque y en cada parada: si la grabación se para mientras
   // start() aún espera permisos o idiomas, ese arranque ya no abre el micrófono.
   const voiceSessionRef = useRef(0);
@@ -1882,6 +1885,7 @@ export default function CastingModeScreen() {
       const started = await cameraRef.current.startRecording();
       if (!started) releaseLensLock();
       if (started) {
+        if (!userSelectedHeadphones) disableIosVoiceProcessing();
         setIsRecording(true);
         setRecordingTime(0);
         recordingTimeRef.current = 0;
@@ -1933,7 +1937,37 @@ export default function CastingModeScreen() {
     }
   }
 
+  // iOS, grabando SIN auriculares: la sesión de audio que deja vision-camera
+  // (modo videoRecording) aplica el procesado de voz de iOS cuando suena la IA
+  // por el altavoz y, a partir de ahí, la voz del actor quedaba unos 25 dB más
+  // baja (medido en tomas reales). En modo measurement no hay procesado: la voz
+  // se graba con el mismo nivel antes y después de la IA. La IA se cuela en el
+  // micrófono, pero el servidor silencia esa pista durante cada réplica.
+  // setCategoryIOS es del paquete de reconocimiento de voz, que ya está en la app.
+  function disableIosVoiceProcessing() {
+    if (Platform.OS !== 'ios') return;
+    try {
+      const current = ExpoSpeechRecognitionModule.getAudioSessionCategoryAndOptionsIOS();
+      audioModeToRestoreRef.current = current;
+      ExpoSpeechRecognitionModule.setCategoryIOS({ category: current.category, categoryOptions: current.categoryOptions, mode: 'measurement' });
+    } catch (e) {
+      console.warn('[Casting] No se pudo quitar el procesado de voz de iOS:', e);
+    }
+  }
+
+  function restoreAudioMode() {
+    const previous = audioModeToRestoreRef.current;
+    if (!previous) return;
+    audioModeToRestoreRef.current = null;
+    try {
+      ExpoSpeechRecognitionModule.setCategoryIOS({ category: previous.category, categoryOptions: previous.categoryOptions, mode: previous.mode });
+    } catch (e) {
+      console.warn('[Casting] No se pudo restaurar el modo de audio:', e);
+    }
+  }
+
   async function cancelCountdown() {
+    restoreAudioMode();
     countdownCancelledRef.current = true;
     if (cameraRef.current) {
       (cameraRef.current as any)._cancelRecording = true;
@@ -1946,6 +1980,7 @@ export default function CastingModeScreen() {
   }
 
   async function stopRecording() {
+    restoreAudioMode();
     if (!cameraRef.current) return;
 
     // Recuperar si había auriculares en la última grabación
@@ -2066,6 +2101,7 @@ export default function CastingModeScreen() {
 
   // Cancelar grabación sin procesar
   function cancelRecording() {
+    restoreAudioMode();
     if (cameraRef.current && isRecording) {
       countdownCancelledRef.current = true;
       (cameraRef.current as any)._cancelRecording = true;
