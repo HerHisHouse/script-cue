@@ -51,8 +51,8 @@ interface CharacterConfig {
   gender: 'male' | 'female' | 'neutral'; // Mantenemos para compatibilidad
   color: string;
   voiceId?: string; // ID de la voz seleccionada
-  voiceProvider?: 'openai' | 'elevenlabs' | 'azure' | 'hume' | 'inworld' | 'system'; // Incluye 'azure'
-  provider?: 'openai' | 'elevenlabs' | 'azure' | 'hume' | 'inworld' | 'system';
+  voiceProvider?: 'openai' | 'elevenlabs' | 'azure' | 'inworld' | 'system'; // Incluye 'azure'
+  provider?: 'openai' | 'elevenlabs' | 'azure' | 'inworld' | 'system';
   systemVoiceId?: string;
 }
 
@@ -1039,7 +1039,7 @@ export default function ImportScriptScreen() {
                       <Text style={[styles.label, { color: onBg, marginTop: 12 }]}>Voz del personaje</Text>
                       <VoiceSelector
                         selectedVoiceId={char.voiceId || char.systemVoiceId}
-                        provider={(char.voiceProvider || char.provider || 'system') as 'openai' | 'elevenlabs' | 'azure' | 'hume' | 'inworld' | 'system'}
+                        provider={(char.voiceProvider || char.provider || 'system') as 'openai' | 'elevenlabs' | 'azure' | 'inworld' | 'system'}
                         characterName={char.name}
                         onVoiceSelect={(voiceId, provider) => {
                           if (provider === 'system') {

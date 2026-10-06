@@ -6,7 +6,7 @@ import { describe, it, expect, jest, beforeEach } from '@jest/globals';
  * igualmente la fila en tts_cache apuntando a un archivo que nunca llegó a existir. La siguiente
  * reproducción de esa línea encontraba la fila (mismo hash), fallaba al descargar el archivo
  * inexistente, lo trataba como caché vacío y volvía a generar el audio de pago — para siempre, con
- * cualquier proveedor (Hume/Azure/ElevenLabs), sin ningún aviso salvo mirando el panel del proveedor.
+ * cualquier proveedor (Inworld/Azure/ElevenLabs), sin ningún aviso salvo mirando el panel del proveedor.
  */
 
 jest.mock('expo-file-system/legacy', () => ({

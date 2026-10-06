@@ -35,8 +35,8 @@ describe('mapCharacterRowsToConfig', () => {
 
     it('usa el ajuste local solo cuando la BD no tiene ninguna voz guardada para ese personaje', () => {
         const rows = [row({ name: 'MARTA', voice_provider: null })];
-        const perMap = { MARTA: { provider: 'hume', systemVoiceId: 'nunca-se-usa-para-hume' } };
-        expect(mapCharacterRowsToConfig(rows, perMap, '')[0].provider).toBe('hume');
+        const perMap = { MARTA: { provider: 'inworld', systemVoiceId: 'nunca-se-usa-para-inworld' } };
+        expect(mapCharacterRowsToConfig(rows, perMap, '')[0].provider).toBe('inworld');
     });
 
     it('normaliza un voice_provider heredado ("openai") a la voz del sistema', () => {

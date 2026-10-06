@@ -5,25 +5,25 @@ const before = (entries: [string, { provider: string | null; voiceId: string | n
 
 describe('hasVoiceChanges', () => {
     it('false si nada cambió (mismo proveedor y voz)', () => {
-        const b = before([['JUAN', { provider: 'hume', voiceId: 'kora' }]]);
-        const after = [{ name: 'JUAN', isMyCharacter: false, provider: 'hume', voiceId: 'kora' }];
+        const b = before([['JUAN', { provider: 'inworld', voiceId: 'Marta' }]]);
+        const after = [{ name: 'JUAN', isMyCharacter: false, provider: 'inworld', voiceId: 'Marta' }];
         expect(hasVoiceChanges(b, after)).toBe(false);
     });
 
     it('true si cambia el proveedor', () => {
-        const b = before([['JUAN', { provider: 'hume', voiceId: 'kora' }]]);
+        const b = before([['JUAN', { provider: 'inworld', voiceId: 'Marta' }]]);
         const after = [{ name: 'JUAN', isMyCharacter: false, provider: 'elevenlabs', voiceId: 'kora' }];
         expect(hasVoiceChanges(b, after)).toBe(true);
     });
 
     it('true si cambia la voz dentro del mismo proveedor', () => {
-        const b = before([['JUAN', { provider: 'hume', voiceId: 'kora' }]]);
-        const after = [{ name: 'JUAN', isMyCharacter: false, provider: 'hume', voiceId: 'otra-voz' }];
+        const b = before([['JUAN', { provider: 'inworld', voiceId: 'Marta' }]]);
+        const after = [{ name: 'JUAN', isMyCharacter: false, provider: 'inworld', voiceId: 'otra-voz' }];
         expect(hasVoiceChanges(b, after)).toBe(true);
     });
 
     it('ignora al personaje del usuario aunque "cambie" de proveedor', () => {
-        const b = before([['JUAN', { provider: 'hume', voiceId: 'kora' }]]);
+        const b = before([['JUAN', { provider: 'inworld', voiceId: 'Marta' }]]);
         const after = [{ name: 'JUAN', isMyCharacter: true, provider: 'elevenlabs', voiceId: 'otra' }];
         expect(hasVoiceChanges(b, after)).toBe(false);
     });
@@ -41,13 +41,13 @@ describe('hasVoiceChanges', () => {
     });
 
     it('false si solo cambian datos no relacionados con la voz (p.ej. no aparece en la lista "after")', () => {
-        const b = before([['JUAN', { provider: 'hume', voiceId: 'kora' }]]);
+        const b = before([['JUAN', { provider: 'inworld', voiceId: 'Marta' }]]);
         expect(hasVoiceChanges(b, [])).toBe(false);
     });
 
     it('compara por nombre en mayúsculas, sin importar el que llegue en "after"', () => {
-        const b = before([['JUAN', { provider: 'hume', voiceId: 'kora' }]]);
-        const after = [{ name: 'juan', isMyCharacter: false, provider: 'hume', voiceId: 'kora' }];
+        const b = before([['JUAN', { provider: 'inworld', voiceId: 'Marta' }]]);
+        const after = [{ name: 'juan', isMyCharacter: false, provider: 'inworld', voiceId: 'Marta' }];
         expect(hasVoiceChanges(b, after)).toBe(false);
     });
 

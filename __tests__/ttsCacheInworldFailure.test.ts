@@ -1,11 +1,11 @@
 import { describe, it, expect, jest, beforeEach } from '@jest/globals';
 
 /**
- * Reproduce el bug real: si /tts-hume falla, generateAndCacheAudio NO debe generar el audio con
- * ElevenLabs (gasto de pago con una voz distinta a la elegida, sin avisar) ni escribir una fila de
- * caché — la fila que escribía antes (provider reasignado a 'elevenlabs' pero con el voice_id de
- * Hume) nunca volvía a poder encontrarse por ningún lookup futuro, así que cada reproducción de esa
- * línea repetía la generación de pago para siempre.
+ * Bug real (visto con Hume, el anterior proveedor de voces "Natural"): si el endpoint de la voz
+ * falla, generateAndCacheAudio NO debe generar el audio con ElevenLabs (gasto de pago con una voz
+ * distinta a la elegida, sin avisar) ni escribir una fila de caché — esa fila (provider reasignado a
+ * 'elevenlabs' pero con el voice_id de la otra voz) nunca volvía a poder encontrarse, así que cada
+ * reproducción de esa línea repetía la generación de pago para siempre. Ahora con /tts-inworld.
  */
 
 jest.mock('expo-file-system/legacy', () => ({
@@ -51,12 +51,12 @@ beforeEach(() => {
     jest.spyOn(console, 'log').mockImplementation(() => {});
 });
 
-describe('generateAndCacheAudio con provider "hume"', () => {
-    it('si /tts-hume responde con error, no llama a ElevenLabs ni escribe caché, y devuelve null', async () => {
+describe('generateAndCacheAudio con provider "inworld"', () => {
+    it('si /tts-inworld responde con error, no llama a ElevenLabs ni escribe caché, y devuelve null', async () => {
         global.fetch = jest.fn(async () => ({ ok: false, status: 401, text: async () => 'Unauthorized' })) as any;
 
         const result = await generateAndCacheAudio(
-            'script-1', 'line-1', 'JUAN', 'Hola', { provider: 'hume', voiceId: 'Kora' }, 'user-1'
+            'script-1', 'line-1', 'JUAN', 'Hola', { provider: 'inworld', voiceId: 'Marta' }, 'user-1'
         );
 
         expect(result).toBeNull();
@@ -64,11 +64,11 @@ describe('generateAndCacheAudio con provider "hume"', () => {
         expect(upsert).not.toHaveBeenCalled();
     });
 
-    it('si la petición a /tts-hume lanza una excepción de red, tampoco cae a ElevenLabs', async () => {
+    it('si la petición a /tts-inworld lanza una excepción de red, tampoco cae a ElevenLabs', async () => {
         global.fetch = jest.fn(async () => { throw new Error('network down'); }) as any;
 
         const result = await generateAndCacheAudio(
-            'script-1', 'line-1', 'JUAN', 'Hola', { provider: 'hume', voiceId: 'Kora' }, 'user-1'
+            'script-1', 'line-1', 'JUAN', 'Hola', { provider: 'inworld', voiceId: 'Marta' }, 'user-1'
         );
 
         expect(result).toBeNull();

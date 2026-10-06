@@ -22,7 +22,7 @@ interface TTSCacheEntry {
 }
 
 interface VoiceConfig {
-    provider: 'openai' | 'elevenlabs' | 'azure' | 'system' | 'hume' | 'inworld';
+    provider: 'openai' | 'elevenlabs' | 'azure' | 'system' | 'inworld';
     voiceId?: string; // OpenAI voice, ElevenLabs voice ID, or Azure voice name
 }
 
@@ -293,7 +293,7 @@ export async function generateAndCacheAudio(
             arrayBuffer = await response.arrayBuffer();
         } else if (provider === 'inworld') {
             // Voces "Natural" (Inworld) a través del servidor, que guarda la clave
-            // y registra el coste. Mismo contrato que /tts-hume.
+            // y registra el coste.
             const renderUrl = RENDER_SERVER_URL;
             if (!renderUrl) {
                 console.warn('[Inworld TTS] RENDER_SERVER_URL no configurado');
@@ -312,54 +312,15 @@ export async function generateAndCacheAudio(
                 });
                 if (!response.ok) {
                     console.error(`[Inworld TTS] Error ${response.status}:`, await response.text());
-                    return null; // Sin pasar a otro proveedor de pago: ver la nota del bloque de Hume.
+                    return null; // Sin pasar a otro proveedor de pago: ver la nota de abajo.
                 }
                 arrayBuffer = await response.arrayBuffer();
             } catch (error) {
+                // NO caer a ElevenLabs si falla: generaría audio de pago con una voz distinta a la
+                // elegida sin avisar, y la fila de caché (calculada para este proveedor y esta voz)
+                // nunca podría volver a encontrarse, así que cada reproducción repetiría la
+                // generación de pago. Se devuelve null: quien llama ya sabe usar la voz del sistema.
                 console.error('[Inworld TTS] Excepción al llamar al servidor:', error);
-                return null;
-            }
-        } else if (provider === 'hume') {
-            const renderUrl = RENDER_SERVER_URL;
-            if (!renderUrl) {
-                console.warn('[Hume TTS] RENDER_SERVER_URL not configured, falling back to ElevenLabs');
-                return null;
-            }
-            
-            // Usamos la voz seleccionada de Hume, o Kora por defecto
-            let humeVoiceName = voiceId || 'Kora';
-            
-            const humeBody = { 
-                text: (providerInput as any).text,
-                description: (providerInput as any).description,
-                voiceId: humeVoiceName, 
-                userId 
-            };
-            
-            console.log(`[Hume TTS] Enviando a Render /tts-hume...`, humeBody);
-
-            try {
-                const response = await fetch(`${renderUrl}/tts-hume`, {
-                    method: 'POST',
-                    headers: { ...(await serverAuthHeaders()), 'Content-Type': 'application/json' },
-                    body: JSON.stringify(humeBody),
-                });
-
-                if (!response.ok) {
-                    const errText = await response.text();
-                    console.error(`[Hume TTS] Falló la API de Hume (Status ${response.status}):`, errText);
-                    return null; // Igual que Azure: no seguir generando con otro proveedor de pago (ver nota abajo).
-                }
-                arrayBuffer = await response.arrayBuffer();
-            } catch (error) {
-                // NO caer a ElevenLabs aquí: hacerlo generaba audio de pago con una voz distinta a la
-                // elegida (voz fija "21m00Tcm4TlvDq8ikWAM", ni siquiera la del personaje) sin avisar, y
-                // el hash/caché de esta línea se calculó para provider='hume' — al guardar la fila de
-                // caché con provider reasignado a 'elevenlabs' pero el voice_id de Hume, esa fila nunca
-                // podía volver a encontrarse (ni por 'hume'+voiceId de Hume, ni por 'elevenlabs'+ese
-                // voice_id), así que CADA reproducción de la línea repetía la generación de pago para
-                // siempre. Si Hume falla, se devuelve null: quien llama ya sabe usar voz del sistema.
-                console.error('[Hume TTS] Excepción al llamar a Hume. Sin fallback automático a otro proveedor de pago.', error);
                 return null;
             }
         } else if (provider === 'elevenlabs') {
@@ -377,7 +338,7 @@ export async function generateAndCacheAudio(
             // No escribir NUNCA una fila de caché que apunte a un archivo que no llegó a subirse: si
             // se escribiera, toda reproducción futura de esta línea encontraría la fila (mismo hash),
             // fallaría al descargar el archivo inexistente, lo trataría como caché vacío y volvería a
-            // generar el audio de pago — para siempre, con cualquier proveedor (Hume/Azure/ElevenLabs),
+            // generar el audio de pago — para siempre, con cualquier proveedor (Inworld/Azure/ElevenLabs),
             // sin ningún aviso salvo mirando el panel de uso del proveedor. El audio ya generado en esta
             // llamada sí se sirve (más abajo), solo se omite guardarlo para la próxima vez.
             console.error(`[TTS] ❌ La subida a Storage falló para ${lineId} (${provider}); no se guarda en caché (se regenerará la próxima vez).`);

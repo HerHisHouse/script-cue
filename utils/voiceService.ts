@@ -8,7 +8,7 @@ import { generateElevenLabsAudio } from './elevenLabsClient';
 // TIPOS
 // ============================================
 
-export type VoiceProvider = 'openai' | 'elevenlabs' | 'azure' | 'system' | 'hume' | 'inworld';
+export type VoiceProvider = 'openai' | 'elevenlabs' | 'azure' | 'system' | 'inworld';
 
 export const VOICE_PROVIDERS_CONFIG = [
   { 
@@ -99,58 +99,6 @@ export const OPENAI_VOICES: VoiceOption[] = [
     provider: 'openai',
     description: 'Voz femenina suave y clara',
     gender: 'female',
-  },
-];
-
-// ============================================
-// VOCES DE HUME (Lista estática de base)
-// ============================================
-
-export const HUME_VOICES: VoiceOption[] = [
-  {
-    id: 'e8dcf0c3-0edc-4360-9d72-acdafceff6d2',
-    name: 'Jhairo',
-    provider: 'hume',
-    description: 'Voz en castellano (El narrador urbano)',
-    gender: 'male',
-    language: 'es',
-    country: 'ES',
-  },
-  {
-    id: 'b1d54472-b83c-47c3-a146-5285b1f95bf7',
-    name: 'Estela',
-    provider: 'hume',
-    description: 'Voz en castellano (La voz del mar)',
-    gender: 'female',
-    language: 'es',
-    country: 'ES',
-  },
-  {
-    id: 'Kora',
-    name: 'Kora',
-    provider: 'hume',
-    description: 'Voz femenina expresiva',
-    gender: 'female',
-    language: 'en',
-    country: 'US',
-  },
-  {
-    id: 'Colton Rivers',
-    name: 'Colton Rivers',
-    provider: 'hume',
-    description: 'Voz masculina conversacional',
-    gender: 'male',
-    language: 'en',
-    country: 'US',
-  },
-  {
-    id: 'Imani Carter',
-    name: 'Imani Carter',
-    provider: 'hume',
-    description: 'Voz femenina suave',
-    gender: 'female',
-    language: 'en',
-    country: 'US',
   },
 ];
 
@@ -359,7 +307,7 @@ export async function playVoicePreview(voice: VoiceOption): Promise<void> {
     const sampleText = 'Hola, esta es una muestra de mi voz en Scriptquiu. Espero que te guste.';
     const tempPath = `${FileSystem.cacheDirectory}voice_preview_${Date.now()}.mp3`;
 
-    if (voice.provider === 'elevenlabs' || voice.provider === 'azure' || voice.provider === 'openai' || voice.provider === 'hume' || voice.provider === 'inworld') {
+    if (voice.provider === 'elevenlabs' || voice.provider === 'azure' || voice.provider === 'openai' || voice.provider === 'inworld') {
       const renderUrl = RENDER_SERVER_URL;
       if (!renderUrl) {
         throw new Error(`RENDER_SERVER_URL no configurado para preview de ${voice.provider}`);
@@ -455,7 +403,6 @@ export async function getAllVoices(forceRefresh = false): Promise<{
   openai: VoiceOption[];
   elevenlabs: VoiceOption[];
   azure: VoiceOption[];
-  hume: VoiceOption[];
   inworld: VoiceOption[];
 }> {
   const elevenLabsVoices = await getElevenLabsVoices(forceRefresh);
@@ -465,7 +412,6 @@ export async function getAllVoices(forceRefresh = false): Promise<{
     openai: OPENAI_VOICES,
     elevenlabs: elevenLabsVoices,
     azure: azureVoices,
-    hume: HUME_VOICES,
     inworld: INWORLD_VOICES,
   };
 }
@@ -487,10 +433,6 @@ export async function getVoiceById(voiceId: string): Promise<VoiceOption | null>
   const elevenLabsVoices = await getElevenLabsVoices();
   const elevenLabsVoice = elevenLabsVoices.find(v => v.id === voiceId);
   if (elevenLabsVoice) return elevenLabsVoice;
-
-  // Luego en Hume
-  const humeVoice = HUME_VOICES.find(v => v.id === voiceId);
-  if (humeVoice) return humeVoice;
 
   // Luego en Inworld ("Natural")
   const inworldVoice = INWORLD_VOICES.find(v => v.id === voiceId);

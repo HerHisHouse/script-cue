@@ -138,7 +138,7 @@ async function setupIosLockScreen(
 }
 
 type CarModePhase = 'idle' | 'playing_ai' | 'listening_user' | 'processing_command' | 'auto_advancing';
-type VoiceProviderType = 'openai' | 'elevenlabs' | 'azure' | 'system' | 'hume' | 'inworld';
+type VoiceProviderType = 'openai' | 'elevenlabs' | 'azure' | 'system' | 'inworld';
 
 interface CharacterVoiceConfig {
   characterName: string;
@@ -462,7 +462,7 @@ export default function CarModeScreen() {
       });
     };
 
-    if (effectiveProvider === 'elevenlabs' || effectiveProvider === 'azure' || effectiveProvider === 'hume' || effectiveProvider === 'inworld') {
+    if (effectiveProvider === 'elevenlabs' || effectiveProvider === 'azure' || effectiveProvider === 'inworld') {
       try {
         if (mySequence !== sequenceRef.current) return;
 
@@ -866,10 +866,6 @@ export default function CarModeScreen() {
           await playVoicePreview(voice);
           setTimeout(() => setPlayingVoiceId(null), 5000);
         }
-      } else if (provider === 'hume') {
-        const voice = { id: voiceId, name: voiceId, provider: 'hume' } as any;
-        await playVoicePreview(voice);
-        setTimeout(() => setPlayingVoiceId(null), 5000);
       } else if (provider === 'inworld') {
         const voice = INWORLD_VOICES.find(v => v.id === voiceId);
         if (voice) {

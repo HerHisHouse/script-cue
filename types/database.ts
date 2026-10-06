@@ -53,7 +53,7 @@ export interface Character {
   voice_gender: VoiceGender | null;
   color: string | null;
   voice_id: string | null; // ID de la voz seleccionada (ej: alloy, nova, echo)
-  voice_provider: 'openai' | 'elevenlabs' | 'system' | 'azure' | 'hume' | 'inworld' | null; // Proveedor de la voz
+  voice_provider: 'openai' | 'elevenlabs' | 'system' | 'azure' | 'hume' | 'inworld' | null; // Proveedor de la voz ('openai' y 'hume' ya no existen: se tratan como voz del sistema)
   // Omitimos campos que aún no hemos añadido a la DB para evitar errores
   // voice_preset: VoicePreset;
   // line_count: number;

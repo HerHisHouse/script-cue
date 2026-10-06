@@ -6,11 +6,11 @@ describe('normalizeVoiceProvider', () => {
         expect(DEFAULT_VOICE_PROVIDER).toBe('system');
     });
 
-    it.each(['elevenlabs', 'azure', 'hume', 'inworld', 'system'])('conserva %s', (p) => {
+    it.each(['elevenlabs', 'azure', 'inworld', 'system'])('conserva %s', (p) => {
         expect(normalizeVoiceProvider(p)).toBe(p);
     });
 
-    it.each([['openai'], ['google'], ['algo-raro'], [''], [null], [undefined]])(
+    it.each([['openai'], ['google'], ['hume'], ['algo-raro'], [''], [null], [undefined]])(
         'convierte %p en la voz del sistema',
         (p) => {
             expect(normalizeVoiceProvider(p as string | null | undefined)).toBe('system');

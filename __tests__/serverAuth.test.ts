@@ -8,7 +8,7 @@ function setup(mode: string | undefined, getUser: any) {
     let clock = 1_000;
     const middleware = createRequireUser(supabase, { getMode: () => mode, cacheMs: 60_000, now: () => clock });
     const run = async (authorization?: string) => {
-        const req: any = { method: 'POST', path: '/tts-hume', headers: authorization ? { authorization } : {} };
+        const req: any = { method: 'POST', path: '/tts-inworld', headers: authorization ? { authorization } : {} };
         const res: any = { statusCode: 200, body: undefined };
         res.status = (c: number) => { res.statusCode = c; return res; };
         res.json = (b: any) => { res.body = b; return res; };

@@ -38,7 +38,7 @@ export interface MappedCharacterConfig {
  *    usaba "Voz del personaje" — antes se leía del ajuste local en AsyncStorage
  *    (characterVoicesByScript), que muestra "Estándar" en cuanto ese ajuste no existe en este
  *    dispositivo (reinstalación, storage limpiado, u otro dispositivo), aunque la voz guardada de
- *    verdad fuera Hume o ElevenLabs.
+ *    verdad fuera Inworld o ElevenLabs.
  *
  * `perMap` (el ajuste local) solo se usa como respaldo cuando la BD no tiene voz guardada para ese
  * personaje todavía.
