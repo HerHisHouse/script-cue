@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import {
   View,
   Text,
@@ -355,6 +355,16 @@ export default function CastingModeScreen() {
   const [script, setScript] = useState<Script | null>(null);
   const [characters, setCharacters] = useState<Character[]>([]);
   const [dialogueLines, setDialogueLines] = useState<DialogueLine[]>([]);
+  // Selftape en guiones de varias escenas: qué escenas se graban (una o varias seguidas,
+  // entre las incluidas en "Revisar guion"). Se pregunta después de calidad/auriculares.
+  const [scriptScenes, setScriptScenes] = useState<{ id: string; heading: string | null; scene_number: number }[]>([]);
+  const [selectedSceneIds, setSelectedSceneIds] = useState<Set<string>>(new Set());
+  const [scenesChosen, setScenesChosen] = useState(false);
+  // Voces: Selftape no genera; solo usa las preparadas en "Revisar guion". Las réplicas sin
+  // voz se avisan antes de grabar (prepararlas o usar la voz del sistema).
+  const [missingVoiceLines, setMissingVoiceLines] = useState<DialogueLine[]>([]);
+  const voiceCheckRef = useRef<Promise<DialogueLine[]> | null>(null);
+  const [preparingVoices, setPreparingVoices] = useState<{ done: number; total: number } | null>(null);
   const [currentIndex, setCurrentIndex] = useState(0);
 
   // TTS & Playback State
@@ -921,10 +931,12 @@ export default function CastingModeScreen() {
     try {
       if (!id) return;
 
-      const [{ data: scriptData }, { data: charData }] = await Promise.all([
+      const [{ data: scriptData }, { data: charData }, { data: sceneData }] = await Promise.all([
         supabase.from('scripts').select('*').eq('id', id).single(),
         supabase.from('characters').select('*').eq('script_id', id),
+        supabase.from('scenes').select('id, heading, scene_number, order_index').eq('script_id', id).eq('included', true).order('order_index', { ascending: true }),
       ]);
+      setScriptScenes(sceneData || []);
 
       if (scriptData) {
         setScript(scriptData);
@@ -984,9 +996,40 @@ export default function CastingModeScreen() {
     }
   }
 
+  // Escenas con réplicas (en orden del guion), con quién habla y la primera línea para reconocerlas.
+  const pickableScenes = useMemo(() => {
+    const info: Record<string, { speakers: string[]; preview: string }> = {};
+    for (const line of dialogueLines) {
+      if (!line.sceneId || line.isAction) continue;
+      const entry = info[line.sceneId] || (info[line.sceneId] = { speakers: [], preview: '' });
+      const name = line.characterName.trim().toUpperCase();
+      if (!entry.speakers.includes(name)) entry.speakers.push(name);
+      if (!entry.preview) entry.preview = `${name}: ${line.cleanText || line.text}`;
+    }
+    return scriptScenes.filter(scene => info[scene.id]).map(scene => ({ ...scene, ...info[scene.id] }));
+  }, [scriptScenes, dialogueLines]);
+  const hasMultipleScenes = pickableScenes.length > 1;
+  const allScenesSelected = selectedSceneIds.size === pickableScenes.length;
+  const sceneLabel = (scene: { scene_number: number; heading: string | null }) =>
+    `Escena ${scene.scene_number}${scene.heading ? ` · ${scene.heading}` : ''}`;
+  const chosenScenesLabel = (() => {
+    const chosen = pickableScenes.filter(scene => selectedSceneIds.has(scene.id));
+    if (chosen.length === 0 || allScenesSelected) return 'Todas las escenas';
+    if (chosen.length === 1) return sceneLabel(chosen[0]);
+    return `Escenas ${chosen.map(scene => scene.scene_number).join(', ')}`;
+  })();
+
+  // Líneas que se graban: las de las escenas elegidas (en el orden del guion) o todo el guion.
+  const sceneLines = useMemo(
+    () => (hasMultipleScenes && scenesChosen && selectedSceneIds.size > 0 && !allScenesSelected
+      ? dialogueLines.filter(line => selectedSceneIds.has(line.sceneId))
+      : dialogueLines),
+    [dialogueLines, hasMultipleScenes, scenesChosen, selectedSceneIds, allScenesSelected],
+  );
+
   // Build configured lines with action cards when dialogueLines or config changes
   useEffect(() => {
-    if (dialogueLines.length === 0) return;
+    if (sceneLines.length === 0) return;
 
     const buildConfiguredLines = () => {
       const result: Array<DialogueLine | ActionCard> = [];
@@ -996,7 +1039,7 @@ export default function CastingModeScreen() {
         result.push(action);
       }
 
-      for (const line of dialogueLines) {
+      for (const line of sceneLines) {
         // Add the dialogue line with any timing adjustments
         const timingAdjustment = sceneConfig?.lineTimings.find(lt => lt.lineId === line.id)?.timingAdjustment || 0;
         result.push({
@@ -1015,7 +1058,7 @@ export default function CastingModeScreen() {
     };
 
     buildConfiguredLines();
-  }, [dialogueLines, sceneConfig]);
+  }, [sceneLines, sceneConfig]);
 
   // Update volume in real-time
   useEffect(() => {
@@ -1035,21 +1078,21 @@ export default function CastingModeScreen() {
 
   // Generate Audio using TTS Cache
   async function generateAudioForScript() {
-    if (dialogueLines.length === 0 || !user) return;
+    if (sceneLines.length === 0 || !user) return;
 
     // Filter lines that need audio (AI lines)
-    const aiLines = dialogueLines.filter((line) => !line.isUserCharacter);
+    const aiLines = sceneLines.filter((line) => !line.isUserCharacter);
     if (aiLines.length === 0) return;
 
     // Check if we have enough cached audio to start immediately
     // We'll run the full check in background
 
     // Start background loading
-    (async () => {
+    voiceCheckRef.current = (async () => {
+      const missing: DialogueLine[] = [];
       try {
         console.log('🎙️ Checking TTS audio cache in background...');
         const newCache = new Map(ttsCacheRef.current);
-        let missingCount = 0;
 
         for (let i = 0; i < aiLines.length; i++) {
           const line = aiLines[i];
@@ -1094,7 +1137,7 @@ export default function CastingModeScreen() {
           console.log(`[Cache Debug] Provider: ${effectiveProvider}, VoiceId: ${voiceId}`);
           console.log(`[Cache Debug] Text: "${text.substring(0, 20)}..."`);
 
-          // Obtener de caché o generar en background
+          // Solo de la caché: las voces se preparan en "Revisar guion", aquí no se generan.
           const localPath = await generateAndCacheAudio(
             id as string,
             line.id,
@@ -1102,15 +1145,16 @@ export default function CastingModeScreen() {
             text,
             { provider: effectiveProvider, voiceId: voiceId || undefined },
             user.id,
-            (line as any).voiceDirection
+            (line as any).voiceDirection,
+            { cacheOnly: true }
           );
 
           if (localPath) {
             console.log(`[Cache Debug] ✅ Audio ready for line ${line.orderIndex}`);
             newCache.set(line.id, localPath);
           } else {
-            console.log(`[Cache Debug] ❌ Audio failed for line ${line.orderIndex}`);
-            missingCount++;
+            console.log(`[Cache Debug] ❌ Sin voz preparada para la línea ${line.orderIndex}`);
+            missing.push(line);
           }
         }
 
@@ -1119,23 +1163,28 @@ export default function CastingModeScreen() {
           setTtsCache(new Map(newCache));
         }
 
-        console.log(`✅ Cache check complete. Missing: ${missingCount}`);
+        console.log(`✅ Cache check complete. Missing: ${missing.length}`);
       } catch (e) {
         console.error('Background TTS check error:', e);
       }
+      setMissingVoiceLines(missing);
+      return missing;
     })();
   }
 
   // Load script data
   useEffect(() => {
-    if (dialogueLines.length > 0 && Object.keys(perCharacterVoices).length >= 0) {
+    // En guiones de varias escenas se espera a que se elija una: así solo se
+    // generan las voces de lo que se va a grabar.
+    if (hasMultipleScenes && !scenesChosen) return;
+    if (sceneLines.length > 0 && Object.keys(perCharacterVoices).length >= 0) {
       // Wait for settings to load? perCharacterVoices starts empty.
       // We can add a small delay or check if settings loaded.
       // For now, let's trigger it. If perCharacterVoices is empty, it defaults to OpenAI.
       // Ideally we should wait for loadSettings to finish.
       generateAudioForScript();
     }
-  }, [dialogueLines, perCharacterVoices]);
+  }, [sceneLines, perCharacterVoices, hasMultipleScenes, scenesChosen]);
 
   // Helper: determina proveedor y voiceId para una línea dado el personaje
   function resolveVoiceConfig(line: DialogueLine): { provider: string; voiceId: string | null } {
@@ -1277,7 +1326,8 @@ export default function CastingModeScreen() {
           text,
           { provider: effectiveProvider, voiceId: effectiveVoiceId || undefined },
           user.id,
-          (line as any).voiceDirection
+          (line as any).voiceDirection,
+          { cacheOnly: true }
         );
       }
 
@@ -1439,10 +1489,58 @@ export default function CastingModeScreen() {
 
   // Start script recording
   async function startScriptCasting() {
+    // Réplicas sin voz preparada (p.ej. se cambió la emoción o la voz después de Revisar guion):
+    // se avisa antes de grabar en vez de generar (y pagar) a escondidas durante la toma.
+    const missing = (await voiceCheckRef.current?.catch(() => null)) ?? missingVoiceLines;
+    if (missing.length > 0) {
+      showCastingAlert(
+        'Faltan voces por preparar',
+        `${missing.length === 1 ? '1 réplica' : `${missing.length} réplicas`} de lo que vas a grabar no ${missing.length === 1 ? 'tiene' : 'tienen'} su voz preparada (por ejemplo, porque cambiaste la emoción o la voz). Puedes prepararlas ahora o grabar con la voz del sistema en esas réplicas.`,
+        [
+          { text: 'Usar voz del sistema', onPress: () => beginScriptRecording() },
+          { text: 'Preparar voces', onPress: () => { prepareMissingVoices(missing); } },
+        ],
+      );
+      return;
+    }
+    beginScriptRecording();
+  }
 
+  function beginScriptRecording() {
     setCastingMode('recording');
     setCastingType('script');
     setCurrentIndex(0);
+  }
+
+  async function prepareMissingVoices(missing: DialogueLine[]) {
+    if (!user) return;
+    setPreparingVoices({ done: 0, total: missing.length });
+    const nextCache = new Map(ttsCacheRef.current);
+    const stillMissing: DialogueLine[] = [];
+    for (let i = 0; i < missing.length; i++) {
+      const line = missing[i];
+      const { provider, voiceId } = resolveVoiceConfig(line);
+      const uri = await generateAndCacheAudio(
+        id as string, line.id, line.characterName, line.text,
+        { provider: normalizeVoiceProvider(provider), voiceId: voiceId || undefined },
+        user.id, (line as any).voiceDirection,
+      ).catch(() => null);
+      if (uri) nextCache.set(line.id, uri); else stillMissing.push(line);
+      setPreparingVoices({ done: i + 1, total: missing.length });
+    }
+    ttsCacheRef.current = nextCache;
+    setTtsCache(new Map(nextCache));
+    setMissingVoiceLines(stillMissing);
+    voiceCheckRef.current = Promise.resolve(stillMissing);
+    setPreparingVoices(null);
+    if (stillMissing.length > 0) {
+      showCastingAlert('No se pudieron preparar todas', `${stillMissing.length} réplicas se oirán con la voz del sistema. Comprueba tu conexión si quieres reintentarlo.`, [
+        { text: 'Reintentar', onPress: () => { prepareMissingVoices(stillMissing); } },
+        { text: 'Grabar así', onPress: () => beginScriptRecording() },
+      ]);
+      return;
+    }
+    beginScriptRecording();
   }
 
   // Start free teleprompter recording
@@ -2511,7 +2609,7 @@ export default function CastingModeScreen() {
             <TouchableOpacity
               activeOpacity={0.85}
               style={[styles.castingCardShadow, getCardShadow(isDark)]}
-              onPress={() => { setQualityApplied(false); setCastingMode('script_config'); }}
+              onPress={() => { setQualityApplied(false); setSelectedSceneIds(new Set()); setScenesChosen(false); setCastingMode('script_config'); }}
             >
               <View style={[styles.castingCardClip, { borderColor: glassBorder }]}>
                 <GlassCardSurface tint={isDark ? 'dark' : 'light'} style={[styles.castingCard, { backgroundColor: glassBg }]}>
@@ -2634,7 +2732,11 @@ export default function CastingModeScreen() {
           <View style={{ flex: 1 }}>
           <View style={styles.configHeader}>
             <TouchableOpacity
-              onPress={() => router.replace(`/scripts/${id}`)}
+              onPress={() => {
+                // Desde el editor de una escena se vuelve a la lista de escenas.
+                if (hasMultipleScenes && scenesChosen) { setScenesChosen(false); return; }
+                router.replace(`/scripts/${id}`);
+              }}
               style={[
                 styles.configBackBtn,
                 { width: rp(44), height: rp(44), borderRadius: rp(22), alignItems: 'center', justifyContent: 'center', backgroundColor: glassBg, borderColor: glassBorder, borderWidth: 1 },
@@ -2644,7 +2746,9 @@ export default function CastingModeScreen() {
             </TouchableOpacity>
             <View style={styles.configTitleContainer}>
               <Clapperboard color={activeAccent} size={rp(24)} />
-              <Text style={[styles.configTitle, { color: fg }]}>Configurar Escena</Text>
+              <Text style={[styles.configTitle, { color: fg }]}>
+                {hasMultipleScenes && !scenesChosen ? 'Elige las escenas' : 'Configurar Escena'}
+              </Text>
             </View>
             <TouchableOpacity
               onPress={() => showCastingAlert('Añadir acción', '"Añadir acción" sirve para configurar el tiempo que requieran las acciones por guion antes de decir una frase.')}
@@ -2653,6 +2757,81 @@ export default function CastingModeScreen() {
               <Info color={activeAccent} size={rp(24)} />
             </TouchableOpacity>
           </View>
+
+          {hasMultipleScenes && !scenesChosen ? (
+          /* Guion de varias escenas: elegir qué se graba (una o varias seguidas) antes de configurarlo. */
+          <>
+          <ScrollView style={styles.configList} contentContainerStyle={{ paddingBottom: rp(120) }}>
+            <Text style={[styles.scenePickerSubtitle, { color: fgSecondary }]}>
+              Elige las escenas que quieres grabar. Si eliges varias, se graban seguidas en el orden del guion.
+            </Text>
+            {[{ id: 'all' as const }, ...pickableScenes].map(option => {
+              const scene = option.id === 'all' ? null : (option as typeof pickableScenes[number]);
+              const checked = scene ? selectedSceneIds.has(scene.id) : allScenesSelected;
+              return (
+                <TouchableOpacity
+                  key={option.id}
+                  activeOpacity={0.85}
+                  style={[styles.scenePickerShadow, getCardShadow(isDark)]}
+                  onPress={() => setSelectedSceneIds(prev => {
+                    if (!scene) return allScenesSelected ? new Set() : new Set(pickableScenes.map(sc => sc.id));
+                    const next = new Set(prev);
+                    if (next.has(scene.id)) next.delete(scene.id); else next.add(scene.id);
+                    return next;
+                  })}
+                >
+                  <View style={[styles.scenePickerClip, { borderColor: checked ? colors.primary : glassBorder }]}>
+                    <GlassCardSurface tint={isDark ? 'dark' : 'light'} style={[styles.scenePickerCard, { backgroundColor: glassBg }]}>
+                      <View style={[styles.scenePickerCheck, { borderColor: checked ? colors.primary : fgSecondary, backgroundColor: checked ? colors.primary : 'transparent' }]}>
+                        {checked && <Text style={{ color: '#FFFFFF', fontSize: rf(13), fontWeight: '800' }}>✓</Text>}
+                      </View>
+                      <View style={{ flex: 1 }}>
+                        <Text style={[styles.scenePickerTitle, { color: fg }]} numberOfLines={2}>
+                          {scene ? sceneLabel(scene) : 'Todas las escenas'}
+                        </Text>
+                        {scene ? (
+                          <>
+                            <Text style={[styles.scenePickerMeta, { color: activeAccent }]} numberOfLines={1}>
+                              {scene.speakers.join(' · ')}
+                            </Text>
+                            <Text style={[styles.scenePickerPreview, { color: fgSecondary }]} numberOfLines={2}>
+                              {scene.preview}
+                            </Text>
+                          </>
+                        ) : (
+                          <Text style={[styles.scenePickerPreview, { color: fgSecondary }]}>
+                            El guion completo, de principio a fin
+                          </Text>
+                        )}
+                      </View>
+                    </GlassCardSurface>
+                  </View>
+                </TouchableOpacity>
+              );
+            })}
+          </ScrollView>
+          <View style={[styles.configFooter, { paddingBottom: Math.max(insets.bottom, rp(16)) }]}>
+            <TouchableOpacity
+              onPress={() => setScenesChosen(true)}
+              disabled={selectedSceneIds.size === 0}
+              style={[styles.startRecordingBtn, primaryButtonBg, selectedSceneIds.size === 0 && { opacity: 0.5 }]}
+            >
+              <Text style={styles.startRecordingText}>
+                {selectedSceneIds.size === 0
+                  ? 'Elige al menos una escena'
+                  : allScenesSelected ? 'Continuar con todas' : `Continuar con ${selectedSceneIds.size === 1 ? '1 escena' : `${selectedSceneIds.size} escenas`}`}
+              </Text>
+              {selectedSceneIds.size > 0 && <ChevronRight size={rp(20)} color="#fff" />}
+            </TouchableOpacity>
+          </View>
+          </>
+          ) : (
+          <>
+          {hasMultipleScenes && (
+            <Text style={[styles.scenePickerCurrent, { color: fgSecondary }]} numberOfLines={1}>
+              {chosenScenesLabel}
+            </Text>
+          )}
 
           {/* Lines List */}
           <ScrollView style={styles.configList} contentContainerStyle={{ paddingBottom: rp(100) }}>
@@ -2861,13 +3040,25 @@ export default function CastingModeScreen() {
           <View style={[styles.configFooter, { paddingBottom: Math.max(insets.bottom, rp(16)) }]}>
             <TouchableOpacity
               onPress={startScriptCasting}
+              disabled={!!preparingVoices}
               style={[styles.startRecordingBtn, primaryButtonBg]}
             >
-              <Video size={rp(20)} color="#fff" />
-              <Text style={styles.startRecordingText}>Empezar a Grabar</Text>
-              <ChevronRight size={rp(20)} color="#fff" />
+              {preparingVoices ? (
+                <>
+                  <ActivityIndicator color="#fff" />
+                  <Text style={styles.startRecordingText}>Preparando voces {preparingVoices.done}/{preparingVoices.total}…</Text>
+                </>
+              ) : (
+                <>
+                  <Video size={rp(20)} color="#fff" />
+                  <Text style={styles.startRecordingText}>Empezar a Grabar</Text>
+                  <ChevronRight size={rp(20)} color="#fff" />
+                </>
+              )}
             </TouchableOpacity>
           </View>
+          </>
+          )}
           </View>
         </SafeAreaView>
         </ImageBackground>
@@ -4611,6 +4802,15 @@ const styles = StyleSheet.create({
     fontSize: rf(13),
     lineHeight: rf(18),
   },
+  scenePickerSubtitle: { fontSize: rf(14), textAlign: 'center', lineHeight: 20, marginTop: rp(4), marginBottom: rp(16), paddingHorizontal: rp(8) },
+  scenePickerCurrent: { fontSize: rf(13), fontWeight: '600', textAlign: 'center', marginBottom: rp(8), paddingHorizontal: rp(24) },
+  scenePickerShadow: { borderRadius: rp(16), marginBottom: rp(12) },
+  scenePickerClip: { borderRadius: rp(16), borderWidth: 1, overflow: 'hidden' },
+  scenePickerCard: { flexDirection: 'row', alignItems: 'center', gap: rp(12), padding: rp(16) },
+  scenePickerCheck: { width: rp(22), height: rp(22), borderRadius: rp(6), borderWidth: 2, alignItems: 'center', justifyContent: 'center' },
+  scenePickerTitle: { fontSize: rf(16), fontWeight: '700' },
+  scenePickerMeta: { fontSize: rf(12), fontWeight: '600', marginTop: 4, letterSpacing: 0.3 },
+  scenePickerPreview: { fontSize: rf(13), marginTop: 6, lineHeight: 18 },
   configList: {
     flex: 1,
     paddingHorizontal: rp(16),

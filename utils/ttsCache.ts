@@ -213,7 +213,8 @@ export async function generateAndCacheAudio(
     text: string,
     voiceConfig: VoiceConfig,
     userId: string,
-    savedDirection?: any
+    savedDirection?: any,
+    options: { cacheOnly?: boolean } = {}
 ): Promise<string | null> {
     try {
         console.log(`[TTS] Starting generation for ${lineId} (${characterName})`);
@@ -257,6 +258,11 @@ export async function generateAndCacheAudio(
         }
         const shared = await adoptSharedCachedAudio({ textHash, provider, voiceId, emotion, scriptId, lineId, characterName });
         if (shared) return shared;
+        // Selftape solo usa voces ya preparadas en "Revisar guion": no genera (ni paga) nada.
+        if (options.cacheOnly) {
+            console.log(`[TTS] Cache MISS (solo caché) → ${lineId} sin voz preparada`);
+            return null;
+        }
         console.log(`[TTS] ⚡ Cache MISS → generando audio NUEVO para ${characterName} (${provider}, ${emotion})`);
 
         console.log(`🎙️ Generating NEW audio for ${characterName} (${provider})...`);
@@ -392,9 +398,10 @@ export async function preGenerateScriptAudio(
             .from('lines')
             .select(`
                 *,
-                scenes!inner(script_id)
+                scenes!inner(script_id, included)
             `)
-            .eq('scenes.script_id', scriptId);
+            .eq('scenes.script_id', scriptId)
+            .eq('scenes.included', true); // solo las escenas incluidas en "Revisar guion"
 
         if (error || !lines) {
             console.error('Error loading lines:', error);
