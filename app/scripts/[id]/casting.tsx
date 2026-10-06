@@ -264,10 +264,20 @@ export default function CastingModeScreen() {
   const [zoomStops, setZoomStops] = useState<ZoomStop[]>([{ label: '1x', zoomValue: 1, isNeutral: true }]);
   const [minZoomState, setMinZoomState] = useState(1);
   const [maxZoomState, setMaxZoomState] = useState(1);
+  // iOS: al cambiar de cámara se pide arrancar la nueva en su lente principal
+  // (la parada "1x"). En la trasera la escala de zoom empieza en la ultra
+  // angular, así que conservar el zoom 1 de la frontal la abría en 0.5x.
+  const resetZoomToNeutralRef = useRef(false);
   const handleZoomInfo = useCallback((info: { stops: ZoomStop[]; minZoom: number; maxZoom: number }) => {
     setZoomStops(info.stops);
     setMinZoomState(info.minZoom);
     setMaxZoomState(info.maxZoom);
+    if (resetZoomToNeutralRef.current) {
+      resetZoomToNeutralRef.current = false;
+      const neutral = getNeutralZoomValue(info.stops);
+      setZoom(neutral);
+      zoomAnimValue.setValue(neutral);
+    }
   }, []);
 
   // Fase M6 (Android, portado de B5 en LAB): sin cámara virtual, el zoom de
@@ -2427,6 +2437,11 @@ export default function CastingModeScreen() {
 
   function toggleCamera() {
     setFacing(current => (current === 'back' ? 'front' : 'back'));
+    if (!isAndroid) {
+      // La lente principal (1x) se fija cuando VisionCameraView informa de las
+      // paradas de la nueva cámara (handleZoomInfo).
+      resetZoomToNeutralRef.current = true;
+    }
     if (isAndroid) {
       // La frontal no tiene ultra angular: se arranca en 1x (lente principal)
       // en ambas direcciones para no heredar un 0.5x imposible.
