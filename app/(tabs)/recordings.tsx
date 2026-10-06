@@ -469,7 +469,13 @@ export default function RecordingsScreen() {
       Alert.alert('Error', 'No se pudo copiar la grabación. Verifica tu conexión o intenta de nuevo.');
     }
   };
-  const defaultGridCols = windowWidth >= 1200 ? 5 : windowWidth >= 800 ? 4 : 3;
+  // En móviles la cuadrícula va fija a 2 columnas (como en Guiones): con más, las
+  // tarjetas se estrechaban tanto que el ⋮ se montaba sobre el icono. En tablets
+  // (lado corto ≥ 600 dp, el criterio habitual de Android e iOS) se mantiene el
+  // pellizco para cambiar entre 2 y 5 columnas.
+  const isTablet = Math.min(windowWidth, Dimensions.get('window').height) >= 600;
+  const maxGridCols = isTablet ? 5 : 2;
+  const defaultGridCols = isTablet ? (windowWidth >= 1200 ? 5 : windowWidth >= 800 ? 4 : 3) : 2;
   const [gridColumns, setGridColumns] = useState(defaultGridCols);
   const pinchRef = useRef(null);
   const videoRef = useRef<Video>(null);
@@ -3208,7 +3214,7 @@ export default function RecordingsScreen() {
         ) : (
           <PinchGestureHandler
             ref={pinchRef}
-            enabled={viewMode === 'grid'}
+            enabled={viewMode === 'grid' && isTablet}
             onHandlerStateChange={(e) => {
               if (e.nativeEvent.state === State.ACTIVE || e.nativeEvent.state === State.END) {
                 const scale = e.nativeEvent.scale;
@@ -3217,7 +3223,7 @@ export default function RecordingsScreen() {
                   setGridColumns((prev) => Math.max(2, prev - 1));
                 } else if (scale < 0.95) {
                   // zoom out => more columns
-                  setGridColumns((prev) => Math.min(5, prev + 1));
+                  setGridColumns((prev) => Math.min(maxGridCols, prev + 1));
                 }
               }
             }}
