@@ -69,6 +69,7 @@ const supabase = createClient(
 
 const requireUser = require('./auth').createRequireUser(supabase);
 const sceneAnalysis = require('./sceneAnalysis');
+const inworldTts = require('./inworldTts');
 const { recordServerError } = require('./errorReports');
 const betaLimits = require('./betaLimits');
 // Costes aproximados por proveedor (en euros)
@@ -80,6 +81,7 @@ const API_COSTS = {
   elevenlabs:        0.000003, // por carácter (0.003€/1000 chars)
   azure:             0.000004, // por carácter (0.004€/1000 chars)
   hume:              0.000003, // (estimado)
+  inworld_tts:       0.000023, // por carácter (TTS-2 bajo demanda, ~25 $ por millón)
   system:            0,        // voces del sistema, gratis
 };
 
@@ -2799,6 +2801,64 @@ app.post('/tts-hume', requireUser, async (req, res) => {
         console.error('[Hume TTS] Error:', error);
         // Devolver todo el stack o message
         res.status(500).json({ error: error.message, details: error.toString() });
+    }
+});
+
+// Voces "Natural" con Inworld TTS (sustituye a Hume, ver inworldTts.js). Mismo
+// contrato que /tts-hume: { text, description, voiceId } → audio/mpeg. En
+// description va la etiqueta de emoción de la app ("crying", "[whispering]"…).
+app.post('/tts-inworld', requireUser, async (req, res) => {
+    const { text, description, voiceId } = req.body;
+    const userId = req.user ? req.user.id : req.body.userId; // el token manda sobre lo que diga el cuerpo
+    if (!text || !userId) {
+        return res.status(400).json({ error: 'Missing required fields: text, userId' });
+    }
+
+    try {
+        let audioBuffer = await inworldTts.synthesizeInworldMp3({
+            text,
+            description,
+            voice: voiceId,
+            apiKey: (process.env.INWORLD_API_KEY || '').trim(),
+        });
+
+        // MP3 44,1 kHz, el mismo formato que el resto de voces (expo-av).
+        try {
+            audioBuffer = await new Promise((resolve, reject) => {
+                const { PassThrough } = require('stream');
+                const inputStream = new PassThrough();
+                inputStream.end(audioBuffer);
+                const chunks = [];
+                const outputStream = new PassThrough();
+                outputStream.on('data', (chunk) => chunks.push(chunk));
+                outputStream.on('end', () => resolve(Buffer.concat(chunks)));
+                outputStream.on('error', reject);
+                ffmpeg(inputStream)
+                    .audioCodec('libmp3lame')
+                    .audioFrequency(44100)
+                    .format('mp3')
+                    .on('error', (err) => reject(err))
+                    .pipe(outputStream);
+            });
+        } catch (ffmpegErr) {
+            console.error('[Inworld TTS] No se pudo normalizar el audio, se envía tal cual:', ffmpegErr);
+        }
+
+        await logApiUsage({
+            userId,
+            provider: 'inworld_tts',
+            characters: text.length,
+            scriptId: req.body.scriptId || null,
+            mode: req.body.mode || 'studio',
+        });
+
+        console.log(`[Inworld TTS] ✅ ${audioBuffer.length} bytes, voz ${voiceId || inworldTts.DEFAULT_VOICE}, modelo ${inworldTts.INWORLD_TTS_MODEL}`);
+        res.set('Content-Type', 'audio/mpeg');
+        res.set('Content-Length', audioBuffer.length);
+        res.send(audioBuffer);
+    } catch (error) {
+        console.error('[Inworld TTS] Error:', error);
+        res.status(500).json({ error: error.message });
     }
 });
 
