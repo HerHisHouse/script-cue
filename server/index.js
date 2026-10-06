@@ -795,10 +795,19 @@ async function mixAudioTracks(jobId, tempDir, userAudioFile, mixedAudioFile, lin
 
     const filterParts = [];
 
+    // Sin auriculares la IA suena por el altavoz y se cuela en el micrófono: la
+    // pista del actor se silencia durante cada réplica. El margen tiene que cubrir
+    // el retardo de la reproducción en el móvil (con 0,08 s se oía repetida la
+    // última sílaba de la IA). Se silencia ANTES de medir, para que la ganancia
+    // de la voz no la decida el volumen de la IA colada.
+    const userMuteExpression = hasHeadphones ? null : audioLevels.aiMuteExpression(aiSegments);
+
     // Voz del actor normalizada con ganancia fija (dos pasadas, ver audioLevels.js):
     // en una sola pasada el ruido del principio de la toma subía hasta el nivel
     // de una voz hasta la primera frase.
-    const userPrefix = hasHeadphones ? 'highpass=f=80' : 'highpass=f=100,afftdn=nf=-25';
+    const userPrefix = hasHeadphones
+        ? 'highpass=f=80'
+        : `highpass=f=100,afftdn=nf=-25${userMuteExpression ? `,volume='${userMuteExpression}':eval=frame` : ''}`;
     const userMeasured = await audioLevels.measureLoudness(ffmpeg, userAudioFile, userPrefix);
     console.log(`[Job ${jobId}] Voz del actor medida:`, JSON.stringify(userMeasured));
     const userFilter = audioLevels.userTrackFilter(userPrefix, userMeasured);
@@ -824,17 +833,7 @@ async function mixAudioTracks(jobId, tempDir, userAudioFile, mixedAudioFile, lin
             `alimiter=limit=0.95:attack=2:release=50[outa]`
         );
     } else {
-        filterParts.push(`[0:a]${userFilter}[user_normalized]`);
-        let volumeExpression = '1';
-        if (aiSegments.length > 0) {
-            const conditions = aiSegments.map(segment => {
-                const start = Math.max(0, (segment.startTime - 0.08)).toFixed(3);
-                const end = (segment.startTime + segment.duration + 0.08).toFixed(3);
-                return `between(t,${start},${end})`;
-            });
-            volumeExpression = `if(gte(${conditions.join('+')},1),0,1)`;
-        }
-        filterParts.push(`[user_normalized]volume='${volumeExpression}':eval=frame[user_controlled]`);
+        filterParts.push(`[0:a]${userFilter}[user_controlled]`);
         aiSegments.forEach((segment, idx) => {
             const delayMs = Math.round(segment.startTime * 1000);
             const duration = segment.duration || 3;

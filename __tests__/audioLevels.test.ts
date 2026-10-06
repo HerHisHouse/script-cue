@@ -37,3 +37,16 @@ describe('userTrackFilter', () => {
     expect(userTrackFilter('highpass=f=80', null)).toBe('highpass=f=80,loudnorm=I=-16:TP=-1.5:LRA=20');
   });
 });
+
+describe('aiMuteExpression', () => {
+  /* eslint-disable @typescript-eslint/no-require-imports */
+  const { aiMuteExpression } = require('../server/audioLevels');
+  /* eslint-enable @typescript-eslint/no-require-imports */
+  it('silencia cada réplica con 0,15 s antes y 0,4 s después (cubre la cola de la IA)', () => {
+    expect(aiMuteExpression([{ startTime: 9.6, duration: 3.9 }, { startTime: 0.1, duration: 2 }]))
+      .toBe('if(gte(between(t,9.450,13.900)+between(t,0.000,2.500),1),0,1)');
+  });
+  it('sin réplicas no hay nada que silenciar', () => {
+    expect(aiMuteExpression([])).toBeNull();
+  });
+});

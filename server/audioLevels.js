@@ -64,4 +64,20 @@ function measureLoudness(ffmpeg, file, prefix, target = USER_TARGET) {
   });
 }
 
-module.exports = { USER_TARGET, parseLoudnormJson, userTrackFilter, measureLoudness };
+// Márgenes del silenciado de la voz del actor alrededor de cada réplica de la IA
+// cuando no hay auriculares (la IA suena por el altavoz y se cuela en el micro).
+const AI_MUTE_BEFORE_S = 0.15;
+const AI_MUTE_AFTER_S = 0.4;
+
+/** Expresión de volume (ffmpeg) que vale 0 durante cada réplica de la IA y 1 el resto. */
+function aiMuteExpression(aiSegments) {
+  if (!aiSegments || aiSegments.length === 0) return null;
+  const conditions = aiSegments.map((segment) => {
+    const start = Math.max(0, segment.startTime - AI_MUTE_BEFORE_S).toFixed(3);
+    const end = (segment.startTime + (segment.duration || 3) + AI_MUTE_AFTER_S).toFixed(3);
+    return `between(t,${start},${end})`;
+  });
+  return `if(gte(${conditions.join('+')},1),0,1)`;
+}
+
+module.exports = { USER_TARGET, AI_MUTE_BEFORE_S, AI_MUTE_AFTER_S, parseLoudnormJson, userTrackFilter, measureLoudness, aiMuteExpression };
