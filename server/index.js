@@ -80,7 +80,6 @@ const API_COSTS = {
   openai_audio:      0.000100, // por segundo de audio procesado
   elevenlabs:        0.000003, // por carácter (0.003€/1000 chars)
   azure:             0.000004, // por carácter (0.004€/1000 chars)
-  hume:              0.000003, // (estimado)
   inworld_tts:       0.000023, // por carácter (TTS-2 bajo demanda, ~25 $ por millón)
   system:            0,        // voces del sistema, gratis
 };
@@ -2686,126 +2685,8 @@ app.post('/tts-azure', requireUser, async (req, res) => {
     }
 });
 
-// Endpoint: pre-generar o generar audio con Hume AI (Octave 1)
-const { HumeClient } = require('hume');
-
-app.get('/hume-voices', requireUser, async (req, res) => {
-    try {
-        const fetch = require('node-fetch');
-        const page = req.query.page || '0';
-        const customRes = await fetch('https://api.hume.ai/v0/tts/voices?provider=CUSTOM_VOICE&page_number=' + page, {
-            headers: { 'X-Hume-Api-Key': process.env.HUME_API_KEY || '' }
-        });
-        const humeRes = await fetch('https://api.hume.ai/v0/tts/voices?provider=HUME_AI&page_number=' + page, {
-            headers: { 'X-Hume-Api-Key': process.env.HUME_API_KEY || '' }
-        });
-        res.json({
-            custom: await customRes.json(),
-            hume: await humeRes.json()
-        });
-    } catch (e) {
-        res.status(500).json({ error: e.message });
-    }
-});
-
-app.post('/tts-hume', requireUser, async (req, res) => {
-    const { text, description, voiceId, userId: bodyUserId } = req.body;
-    const userId = req.user ? req.user.id : bodyUserId; // el token manda sobre lo que diga el cuerpo
-    if (!text || !userId) {
-        return res.status(400).json({ error: 'Missing required fields: text, userId' });
-    }
-
-    try {
-        const humeApiKey = process.env.HUME_API_KEY || '';
-        
-        if (!humeApiKey) {
-            throw new Error('HUME_API_KEY no configurada');
-        }
-
-        const hume = new HumeClient({ apiKey: humeApiKey });
-        
-        const voiceName = voiceId || 'Kora'; 
-        // Determinar si voiceName es un UUID
-        const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(voiceName);
-        
-        const voiceConfig = isUUID 
-            ? { id: voiceName, provider: 'HUME_AI' } 
-            : { name: voiceName, provider: 'HUME_AI' };
-
-        console.log(`[Hume TTS] Generating audio for voice: ${voiceName}, description: ${description}`);
-        console.log(`[Hume TTS] Sending voiceConfig:`, JSON.stringify(voiceConfig, null, 2));
-
-        const requestBody = {
-            utterances: [{
-                text,
-                description: description || undefined,
-                voice: voiceConfig
-            }]
-        };
-        console.log(`[Hume TTS] Sending Request:`, JSON.stringify(requestBody, null, 2));
-
-        const response = await hume.tts.synthesizeJson(requestBody);
-        
-        console.log(`[Hume TTS] Raw Response Keys:`, Object.keys(response));
-        if (response.warnings && response.warnings.length > 0) {
-            console.log(`[Hume TTS] WARNINGS:`, JSON.stringify(response.warnings, null, 2));
-        }
-
-        const audioBase64 = response.generations?.[0]?.audio;
-        if (!audioBase64) {
-            throw new Error('No audio in Hume response: ' + JSON.stringify(response));
-        }
-
-        let audioBuffer = Buffer.from(audioBase64, 'base64');
-        
-        // Estandarizar audio para evitar errores de reproducción en React Native (expo-av)
-        try {
-            audioBuffer = await new Promise((resolve, reject) => {
-                const { PassThrough } = require('stream');
-                const inputStream = new PassThrough();
-                inputStream.end(audioBuffer);
-
-                const chunks = [];
-                const outputStream = new PassThrough();
-                outputStream.on('data', chunk => chunks.push(chunk));
-                outputStream.on('end', () => resolve(Buffer.concat(chunks)));
-                outputStream.on('error', reject);
-
-                ffmpeg(inputStream)
-                    .audioCodec('libmp3lame')
-                    .audioFrequency(44100)
-                    .format('mp3')
-                    .on('error', err => reject(err))
-                    .pipe(outputStream);
-            });
-            console.log('[Hume TTS] 🔄 Audio standardized with ffmpeg');
-        } catch (ffmpegErr) {
-            console.error('[Hume TTS] Failed to standardize audio, sending raw:', ffmpegErr);
-        }
-
-        await logApiUsage({
-            userId: req.body.userId,
-            provider: 'hume', 
-            characters: text.length,
-            scriptId: req.body.scriptId || null,
-            mode: req.body.mode || 'studio',
-        });
-
-        console.log(`[Hume TTS] ✅ Returning ${audioBuffer.length} bytes for voice ${voiceName}`);
-
-        res.set('Content-Type', 'audio/mpeg');
-        res.set('Content-Length', audioBuffer.length);
-        res.send(audioBuffer);
-
-    } catch (error) {
-        console.error('[Hume TTS] Error:', error);
-        // Devolver todo el stack o message
-        res.status(500).json({ error: error.message, details: error.toString() });
-    }
-});
-
-// Voces "Natural" con Inworld TTS (sustituye a Hume, ver inworldTts.js). Mismo
-// contrato que /tts-hume: { text, description, voiceId } → audio/mpeg. En
+// Voces "Natural" con Inworld TTS (ver inworldTts.js):
+// { text, description, voiceId } → audio/mpeg. En
 // description va la etiqueta de emoción de la app ("crying", "[whispering]"…).
 app.post('/tts-inworld', requireUser, async (req, res) => {
     const { text, description, voiceId } = req.body;
@@ -3005,74 +2886,6 @@ app.get('/api/tts/preview/:provider/:voiceId', requireUser, async (req, res) => 
             await logApiUsage({
               userId: req.query.userId || req.body?.userId || null,
               provider: 'openai_tts',
-              characters: textToSpeak.length,
-              mode: 'preview',
-            });
-        } else if (provider === 'hume') {
-            const textToSpeak = "Hola, esta es una muestra de mi voz en Scriptquiu. Espero que te guste.";
-            const { HumeClient } = require('hume');
-            const humeApiKey = process.env.HUME_API_KEY || '';
-            if (!humeApiKey) throw new Error('HUME_API_KEY no configurada');
-
-            const hume = new HumeClient({ apiKey: humeApiKey });
-            const voiceName = voiceId || 'Kora'; 
-            const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(voiceName);
-            const voiceConfig = isUUID 
-                ? { id: voiceName, provider: 'HUME_AI' } 
-                : { name: voiceName, provider: 'HUME_AI' };
-
-            console.log(`[Hume Preview] Generating audio for voice: ${voiceName}`);
-            console.log(`[Hume Preview] Sending voiceConfig:`, JSON.stringify(voiceConfig, null, 2));
-
-            const requestBody = {
-                utterances: [{
-                    text: textToSpeak,
-                    description: undefined,
-                    voice: voiceConfig
-                }]
-            };
-            console.log(`[Hume Preview] Sending Request:`, JSON.stringify(requestBody, null, 2));
-
-            const response = await hume.tts.synthesizeJson(requestBody);
-            console.log(`[Hume Preview] Raw Response Keys:`, Object.keys(response));
-            if (response.warnings && response.warnings.length > 0) {
-                console.log(`[Hume Preview] WARNINGS:`, JSON.stringify(response.warnings, null, 2));
-            }
-
-            const audioBase64 = response.generations?.[0]?.audio;
-            if (!audioBase64) throw new Error('No audio in Hume response: ' + JSON.stringify(response));
-
-            let rawBuffer = Buffer.from(audioBase64, 'base64');
-            
-            // Estandarizar audio para evitar errores de reproducción en React Native (expo-av)
-            try {
-                audioBuffer = await new Promise((resolve, reject) => {
-                    const { PassThrough } = require('stream');
-                    const inputStream = new PassThrough();
-                    inputStream.end(rawBuffer);
-
-                    const chunks = [];
-                    const outputStream = new PassThrough();
-                    outputStream.on('data', chunk => chunks.push(chunk));
-                    outputStream.on('end', () => resolve(Buffer.concat(chunks)));
-                    outputStream.on('error', reject);
-
-                    ffmpeg(inputStream)
-                        .audioCodec('libmp3lame')
-                        .audioFrequency(44100)
-                        .format('mp3')
-                        .on('error', err => reject(err))
-                        .pipe(outputStream);
-                });
-                console.log('[Hume TTS Preview] 🔄 Audio standardized with ffmpeg');
-            } catch (ffmpegErr) {
-                console.error('[Hume TTS Preview] Failed to standardize audio, sending raw:', ffmpegErr);
-                audioBuffer = rawBuffer;
-            }
-
-            await logApiUsage({
-              userId: req.query.userId || req.body?.userId || null,
-              provider: 'hume',
               characters: textToSpeak.length,
               mode: 'preview',
             });
