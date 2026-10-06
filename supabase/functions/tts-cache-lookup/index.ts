@@ -127,7 +127,7 @@ Deno.serve(async (req: Request) => {
         storage_path: targetPath,
         text_hash: textHash,
         file_size_bytes: candidate.file_size_bytes,
-      }, { onConflict: "line_id,provider,voice_id" });
+      }, { onConflict: "line_id,provider,voice_id,text_hash" });
       if (upsertError) {
         // Sin fila el cliente no volvería a encontrar la copia: se quita para no dejar huérfanos.
         await bucket.remove([targetPath]);

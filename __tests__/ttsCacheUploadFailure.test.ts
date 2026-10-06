@@ -62,6 +62,6 @@ describe('generateAndCacheAudio cuando la subida a Storage falla', () => {
 
         expect(generateElevenLabsAudio).toHaveBeenCalledTimes(1); // el audio sí se generó (se pagó)
         expect(upsert).not.toHaveBeenCalled(); // pero no se guarda una fila "fantasma"
-        expect(result).toBe('/cache/tts_line-1_elevenlabs_neutral.mp3'); // se sirve igualmente esta vez
+        expect(result).toBe('/cache/tts_line-1_elevenlabs_neutral_hash.mp3'); // se sirve igualmente esta vez
     });
 });

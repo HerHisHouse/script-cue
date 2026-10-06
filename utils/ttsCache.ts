@@ -160,7 +160,10 @@ async function downloadCachedAudio(storagePath: string, lineId: string, provider
         const base64 = await base64Promise;
 
         // Save to local file system
-        const localPath = `${FileSystem.cacheDirectory}tts_${lineId}_${provider}.mp3`;
+        // Un archivo local por audio de la caché (no por línea): dos versiones del texto
+        // de una misma línea no se sobrescriben.
+        const storageName = storagePath.split('/').pop()?.replace(/\.mp3$/, '') || `${lineId}_${provider}`;
+        const localPath = `${FileSystem.cacheDirectory}tts_${storageName}.mp3`;
         await FileSystem.writeAsStringAsync(localPath, base64, {
             encoding: FileSystem.EncodingType.Base64,
         });
@@ -331,7 +334,9 @@ export async function generateAndCacheAudio(
         if (!arrayBuffer) throw new Error('Generation failed');
 
         // 6. Almacenamiento y Registro
-        const storagePath = `${userId}/${scriptId}/${lineId}_${provider}_${emotion}.mp3`;
+        // Con el hash en el nombre, dos versiones del texto de la misma línea (p.ej. de dos
+        // versiones de la app) no se pisan el audio: hay una fila de tts_cache por texto.
+        const storagePath = `${userId}/${scriptId}/${lineId}_${provider}_${emotion}_${textHash.slice(0, 12)}.mp3`;
         const uploaded = await uploadAudioToStorage(storagePath, arrayBuffer, userId);
 
         if (!uploaded) {
@@ -352,14 +357,14 @@ export async function generateAndCacheAudio(
                 storage_path: storagePath,
                 text_hash: textHash,
                 file_size_bytes: arrayBuffer.byteLength,
-            }, { onConflict: 'line_id,provider,voice_id' });
+            }, { onConflict: 'line_id,provider,voice_id,text_hash' });
 
             if (upsertError) {
                 console.error(`[TTS] ❌ No se pudo guardar la entrada de caché para ${lineId} (${provider}):`, upsertError);
             }
         }
 
-        const localPath = `${FileSystem.cacheDirectory}tts_${lineId}_${provider}_${emotion}.mp3`;
+        const localPath = `${FileSystem.cacheDirectory}tts_${lineId}_${provider}_${emotion}_${textHash.slice(0, 12)}.mp3`;
         await FileSystem.writeAsStringAsync(localPath, arrayBufferToBase64(arrayBuffer), { encoding: FileSystem.EncodingType.Base64 });
 
         console.log('✅ Success: Generated and cached audio.');
