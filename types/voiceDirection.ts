@@ -38,6 +38,12 @@ export type VoiceDirection = {
   speed?: number;       // 0.5 → 2.0, default 1.0
   stylePrompt?: string; // texto libre adicional
   detectedFrom?: string; // "(susurrando)" original, para UI futura
+  /**
+   * Voces Expresiva (ElevenLabs v4): la réplica con etiquetas en español donde cambia la
+   * interpretación, p.ej. "(riendo) ¡Qué dices! (con tristeza) No te vayas." Ver
+   * utils/tts/expressiveTags.ts. Con marcado, emotion queda en 'neutral'.
+   */
+  markup?: string;
 };
 
 export type ScriptLineWithDirection = {

@@ -6,7 +6,9 @@
  * /api/elevenlabs/voices (index.js).
  */
 
-const ELEVENLABS_TTS_MODEL = process.env.ELEVENLABS_TTS_MODEL || 'eleven_v3';
+// eleven_v4 (oct. 2026): mismo precio por carácter que v3 e interpreta las etiquetas con más
+// matiz. Los audios ya generados con v3 siguen en la caché (la clave no incluye el modelo).
+const ELEVENLABS_TTS_MODEL = process.env.ELEVENLABS_TTS_MODEL || 'eleven_v4';
 // Mismos ajustes que usaba la app (utils/elevenLabsClient.ts) para no cambiar cómo suenan.
 const VOICE_SETTINGS = { stability: 0.5, similarity_boost: 0.75 };
 
