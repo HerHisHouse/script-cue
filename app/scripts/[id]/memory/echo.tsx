@@ -289,7 +289,8 @@ export default function EchoModeScreen() {
                     line.text,
                     { provider, voiceId: voiceId || undefined },
                     user.id,
-                    line.voiceDirection
+                    line.voiceDirection,
+                    { cacheOnly: true } // Memoria nunca genera: caché o voz del sistema
                 );
             }
 
@@ -312,7 +313,7 @@ export default function EchoModeScreen() {
                 });
             } else {
                 // Fallback a System TTS
-                Speech.speak(line.text, {
+                Speech.speak(line.cleanText || line.text, {
                     language: 'es-ES',
                     onDone: () => {
                         setIsSpeaking(false);
@@ -323,7 +324,7 @@ export default function EchoModeScreen() {
         } catch (error) {
             console.error('Error playing AI line:', error);
             // Fallback final
-            Speech.speak(line.text, {
+            Speech.speak(line.cleanText || line.text, {
                 language: 'es-ES',
                 onDone: () => {
                     setIsSpeaking(false);

@@ -241,7 +241,8 @@ export default function MemoryModeScreen() {
              currentLine.text,
              { provider, voiceId: voiceId || undefined },
              user.id,
-             currentLine.voiceDirection
+             currentLine.voiceDirection,
+             { cacheOnly: true } // Memoria nunca genera: caché o voz del sistema
          );
       }
 
