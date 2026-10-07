@@ -76,6 +76,7 @@ import Constants from 'expo-constants';
 import { createTTSService } from '@/utils/tts';
 import { getSettings } from '@/utils/appSettings';
 import { setAudioModeForPlayback, enableRecordingMode } from '@/utils/audioMode';
+import { nextSpokenLineIsUser } from '@/utils/studioTurns';
 import { invalidateCacheForLine, generateAndCacheAudio } from '@/utils/ttsCache';
 import DraggableFlatList, { ScaleDecorator, RenderItemParams, ShadowDecorator, OpacityDecorator, useOnCellActiveAnimation } from 'react-native-draggable-flatlist';
 import * as Haptics from 'expo-haptics';
@@ -149,6 +150,7 @@ export default function StudioV2Screen() {
     // Refs
     const recordingRef = useRef<Audio.Recording | null>(null);
     const preInitRecordingRef = useRef<Audio.Recording | null>(null);
+    const preInitCancelledRef = useRef(false);
     const preInitReadyRef = useRef(false);
     const preInitInProgressRef = useRef(false);
     const silenceTimerRef = useRef<NodeJS.Timeout | null>(null);
@@ -592,6 +594,13 @@ export default function StudioV2Screen() {
         // Capture current sequence ID to detect if this operation becomes stale
         const mySequence = ++audioSequenceRef.current;
 
+        // El micro se prepara al acabar la réplica solo si lo siguiente es el turno del usuario.
+        // Antes se preparaba siempre: si seguía otra réplica, el paso a modo reproducción de iOS
+        // dejaba esa grabación muerta y, al llegar el turno, se grababa silencio.
+        const userTurnNext = nextSpokenLineIsUser(activeLines, currentIndex, loopEnabled);
+        const preInitIfUserNext = () => { if (userTurnNext) preInitMicrophone(); };
+        await discardPreInitMicrophone();
+
         try {
             setIsSpeaking(true);
             await cleanupSound();
@@ -645,7 +654,7 @@ export default function StudioV2Screen() {
                         language: selectedVoice?.language || 'es-ES',
                         voice: selectedVoice?.identifier,
                         onDone: () => { 
-                            preInitMicrophone();
+                            preInitIfUserNext();
                             setTimeout(() => {
                                 setIsSpeaking(false); 
                                 setTimeout(handleNext, 800); 
@@ -679,7 +688,7 @@ export default function StudioV2Screen() {
                     Speech.speak(line.cleanText, {
                         language: 'es-ES',
                         onDone: () => {
-                            preInitMicrophone();
+                            preInitIfUserNext();
                             setTimeout(() => {
                                 setIsSpeaking(false);
                                 setTimeout(handleNext, 800);
@@ -744,7 +753,7 @@ export default function StudioV2Screen() {
                     if (!status.isLoaded) return;
 
                     if (status.didJustFinish) {
-                        preInitMicrophone(); // fire and forget
+                        preInitIfUserNext(); // fire and forget
                         setTimeout(() => {
                             // Only proceed if this sequence is still valid
                             if (mySequence === audioSequenceRef.current) {
@@ -763,7 +772,7 @@ export default function StudioV2Screen() {
                 Speech.speak(line.cleanText, {
                     language: 'es-ES',
                     onDone: () => {
-                        preInitMicrophone();
+                        preInitIfUserNext();
                         setTimeout(() => {
                             if (mySequence === audioSequenceRef.current) {
                                 setIsSpeaking(false);
@@ -799,6 +808,23 @@ export default function StudioV2Screen() {
         setIsListening(false);
     }
 
+    // Descarta un micro preparado que ya no sirve (va a sonar la IA y iOS pasa a modo
+    // reproducción). Si se está preparando ahora mismo, se descarta en cuanto termine.
+    async function discardPreInitMicrophone() {
+        if (preInitInProgressRef.current) {
+            preInitCancelledRef.current = true;
+            return;
+        }
+        const stale = preInitRecordingRef.current;
+        preInitRecordingRef.current = null;
+        preInitReadyRef.current = false;
+        if (stale) {
+            const uri = stale.getURI();
+            await stale.stopAndUnloadAsync().catch(() => {});
+            if (uri) FileSystem.deleteAsync(uri, { idempotent: true }).catch(() => {});
+        }
+    }
+
     async function preInitMicrophone() {
         // No hacer nada si ya hay una pre-init pendiente
         if (preInitRecordingRef.current || preInitReadyRef.current || preInitInProgressRef.current) return;
@@ -806,6 +832,7 @@ export default function StudioV2Screen() {
         if (processingRef.current || isListening) return;
 
         preInitInProgressRef.current = true;
+        preInitCancelledRef.current = false;
         try {
             console.log('[Studio] Pre-init micrófono (post-audio)...');
 
@@ -822,6 +849,13 @@ export default function StudioV2Screen() {
                 // Sin callback todavía — lo añadimos en startListening
             );
 
+            if (preInitCancelledRef.current) {
+                // Mientras se preparaba empezó otra réplica de la IA: ya no sirve.
+                const uri = recording.getURI();
+                await recording.stopAndUnloadAsync().catch(() => {});
+                if (uri) FileSystem.deleteAsync(uri, { idempotent: true }).catch(() => {});
+                return;
+            }
             preInitRecordingRef.current = recording;
             preInitReadyRef.current = true;
             console.log('[Studio] ✅ Micrófono pre-inicializado');
