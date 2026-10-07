@@ -88,3 +88,20 @@ export function scenesLabel(scenes: PickableScene[], sceneIds: string[] | null):
   if (chosen.length === 1) return `Escena ${chosen[0].sceneNumber}${chosen[0].heading ? ` · ${chosen[0].heading}` : ''}`;
   return `Escenas ${chosen.map((scene) => scene.sceneNumber).join(', ')}`;
 }
+
+/**
+ * Posiciones de `items` donde empieza una escena (índice → número de escena), para dibujar el
+ * separador "Escena X". Vacío si solo hay una escena. Los elementos sin escena (tarjetas de
+ * acción añadidas a mano) no cuentan como cambio.
+ */
+export function sceneStartIndexes(items: ({ sceneId?: string; sceneNumber?: number } | object)[]): Map<number, number> {
+  const starts = new Map<number, number>();
+  let previous: string | undefined;
+  items.forEach((item, index) => {
+    const { sceneId, sceneNumber } = item as { sceneId?: string; sceneNumber?: number };
+    if (!sceneId) return;
+    if (sceneId !== previous && sceneNumber !== undefined) starts.set(index, sceneNumber);
+    previous = sceneId;
+  });
+  return starts.size > 1 ? starts : new Map();
+}

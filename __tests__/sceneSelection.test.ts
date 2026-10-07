@@ -71,3 +71,18 @@ describe('scenesFromLines / filterLinesByScenes / scenesLabel', () => {
     expect(scenesLabel(scenes, null)).toBe('Todas las escenas');
   });
 });
+
+describe('sceneStartIndexes', () => {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const { sceneStartIndexes } = require('../utils/sceneSelection');
+  it('marca el inicio de cada escena, ignorando las tarjetas de acción sin escena', () => {
+    const items = [
+      { sceneId: 'C', sceneNumber: 3 }, { sceneId: 'C', sceneNumber: 3 }, { id: 'accion-manual' },
+      { sceneId: 'D', sceneNumber: 4 }, { sceneId: 'D', sceneNumber: 4 },
+    ];
+    expect([...sceneStartIndexes(items).entries()]).toEqual([[0, 3], [3, 4]]);
+  });
+  it('con una sola escena no hay separadores', () => {
+    expect(sceneStartIndexes([{ sceneId: 'C', sceneNumber: 3 }, { sceneId: 'C', sceneNumber: 3 }]).size).toBe(0);
+  });
+});

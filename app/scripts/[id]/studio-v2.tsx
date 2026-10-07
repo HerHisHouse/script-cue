@@ -34,7 +34,8 @@ import { loadDialogueLines } from '@/utils/loadDialogueLines';
 import { planInsertAfter, sortLinesInScriptOrder } from '@/utils/lineOrdering';
 import { bracketsToParentheses, calculateSimilarity } from '@/utils/stringUtils';
 import { persistVisibleLineOrder } from '@/utils/persistLineOrder';
-import { scenesFromLines, filterLinesByScenes, scenesLabel, PickableScene } from '@/utils/sceneSelection';
+import { scenesFromLines, filterLinesByScenes, scenesLabel, sceneStartIndexes, PickableScene } from '@/utils/sceneSelection';
+import { SceneDivider } from '@/components/SceneDivider';
 import { ScenePicker } from '@/components/ScenePicker';
 import {
     ArrowLeft,
@@ -147,6 +148,8 @@ export default function StudioV2Screen() {
         () => showActions ? dialogueLines : dialogueLines.filter(l => !l.isAction),
         [showActions, dialogueLines]
     );
+    // Dónde empieza cada escena (solo si se practican varias): separador "Escena X".
+    const sceneStarts = React.useMemo(() => sceneStartIndexes(activeLines), [activeLines]);
 
     // TTS State
     const [ttsProvider, setTtsProvider] = useState<'openai' | 'elevenlabs' | 'google' | 'system'>('system');
@@ -2890,6 +2893,9 @@ export default function StudioV2Screen() {
                         >
                             {currentLine && (
                                 <View style={styles.cardContainer}>
+                                    {sceneStarts.has(currentIndex) && (
+                                        <SceneDivider sceneNumber={sceneStarts.get(currentIndex)!} color={onBg2} style={{ marginTop: 0, marginBottom: rp(14) }} />
+                                    )}
                                     {/* Current Card - special style for action cards */}
                                     {/* Envoltorio solo para la sombra (getShadowStyle, boxShadow en Android): el
                                         LinearGradient es el que rellena/recorta (overflow:hidden), igual que en
@@ -2963,8 +2969,11 @@ export default function StudioV2Screen() {
 
                                     {/* Next Cards */}
                                     {activeLines.slice(currentIndex + 1).map((line, index) => (
+                                        <React.Fragment key={`${line.id}-${index}`}>
+                                        {sceneStarts.has(currentIndex + 1 + index) && (
+                                            <SceneDivider sceneNumber={sceneStarts.get(currentIndex + 1 + index)!} color={onBg2} style={{ marginTop: rp(18), marginBottom: 0 }} />
+                                        )}
                                         <View
-                                            key={`${line.id}-${index}`}
                                             style={[
                                                 { borderRadius: rp(20), width: '100%' },
                                                 getShadowStyle({ offsetY: rp(4), blur: rp(12), opacity: 0.1 }),
@@ -3007,6 +3016,7 @@ export default function StudioV2Screen() {
                                             </View>
                                         </LinearGradient>
                                         </View>
+                                        </React.Fragment>
                                     ))}
                                 </View>
                             )}
