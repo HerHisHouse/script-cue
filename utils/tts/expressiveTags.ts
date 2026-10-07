@@ -171,3 +171,13 @@ export function removeTagNear(text: string, cursor: number): { text: string; cur
   if (!target) return { text, cursor };
   return { text: text.slice(0, target.start) + text.slice(target.end), cursor: target.start };
 }
+
+/** Etiquetas del catálogo que ya aparecen en el texto (para marcarlas en la lista). */
+export function usedTagLabels(text: string): Set<string> {
+  const used = new Set<string>();
+  for (const [, inner] of text.matchAll(/\(([^)]+)\)/g)) {
+    const tag = TAG_BY_LABEL.get(normalize(inner));
+    if (tag) used.add(LABEL_BY_TAG.get(tag)!);
+  }
+  return used;
+}

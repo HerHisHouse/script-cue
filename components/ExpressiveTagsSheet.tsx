@@ -5,7 +5,7 @@ import { X, Info, Delete, Save } from 'lucide-react-native';
 import { ModalGlassFill } from '@/components/ModalGlassFill';
 import { rf, rp } from '@/utils/responsive';
 import {
-  EXPRESSIVE_TAG_CATEGORIES, EXPRESSIVE_TAGS_EXAMPLE, insertTag, removeTagNear, stripTags,
+  EXPRESSIVE_TAG_CATEGORIES, EXPRESSIVE_TAGS_EXAMPLE, insertTag, removeTagNear, stripTags, usedTagLabels,
 } from '@/utils/tts/expressiveTags';
 
 export interface ExpressiveTagsSheetColors {
@@ -47,6 +47,8 @@ export function ExpressiveTagsSheet({ visible, characterName, initialText, onCan
   }, [visible, initialText]);
 
   const hasTags = stripTags(text) !== text.replace(/\s+/g, ' ').trim();
+  // Etiquetas ya puestas en la réplica: se marcan en color en la lista.
+  const usedLabels = usedTagLabels(text);
 
   const addTag = (label: string) => {
     const next = insertTag(text, selection.start, label);
@@ -67,8 +69,11 @@ export function ExpressiveTagsSheet({ visible, characterName, initialText, onCan
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onCancel}
       supportedOrientations={['portrait', 'landscape', 'landscape-left', 'landscape-right']}>
-      <Pressable style={styles.overlay} onPress={onCancel}>
-        <Pressable onPress={(e) => e.stopPropagation()} style={styles.sheet}>
+      {/* El fondo que cierra va DETRÁS de la hoja, no envolviéndola: un Pressable alrededor se
+          queda con el gesto y las listas de dentro no hacen scroll. */}
+      <View style={styles.overlay}>
+        <Pressable style={StyleSheet.absoluteFill} onPress={onCancel} accessibilityLabel="Cerrar" />
+        <View style={styles.sheet}>
           <ModalGlassFill isDark={isDark} intensity={isDark ? 55 : 75} />
           <View style={[StyleSheet.absoluteFill, { backgroundColor: isDark ? 'rgba(124,106,247,0.40)' : 'rgba(235,230,245,0.40)' }]} />
           <SafeAreaView edges={{ bottom: 'additive' }} style={styles.inner}>
@@ -112,12 +117,20 @@ export function ExpressiveTagsSheet({ visible, characterName, initialText, onCan
                 <View key={category.key} style={{ marginBottom: rp(14) }}>
                   <Text style={[styles.categoryTitle, { color: colors.onBg2 }]}>{category.title}</Text>
                   <View style={styles.chipsWrap}>
-                    {category.tags.map((t) => (
-                      <TouchableOpacity key={t.label} onPress={() => addTag(t.label)}
-                        style={[styles.chip, { borderColor: colors.cardBorder, backgroundColor: colors.fieldBg }]}>
-                        <Text style={[styles.chipText, { color: colors.onBg }]}>{t.label}</Text>
-                      </TouchableOpacity>
-                    ))}
+                    {category.tags.map((t) => {
+                      const used = usedLabels.has(t.label);
+                      return (
+                        <TouchableOpacity key={t.label} onPress={() => addTag(t.label)}
+                          accessibilityState={{ selected: used }}
+                          style={[styles.chip, used
+                            ? { borderColor: colors.primary, backgroundColor: `${colors.primary}40` }
+                            : { borderColor: colors.cardBorder, backgroundColor: colors.fieldBg }]}>
+                          <Text style={[styles.chipText, { color: colors.onBg, fontWeight: used ? '700' : '400' }]}>
+                            {used ? '✓ ' : ''}{t.label}
+                          </Text>
+                        </TouchableOpacity>
+                      );
+                    })}
                   </View>
                 </View>
               ))}
@@ -137,11 +150,11 @@ export function ExpressiveTagsSheet({ visible, characterName, initialText, onCan
           </SafeAreaView>
 
           {showInfo && (
-            <Pressable style={styles.infoOverlay} onPress={() => setShowInfo(false)}>
-              <Pressable onPress={(e) => e.stopPropagation()}
-                style={[styles.infoCard, { backgroundColor: isDark ? '#2a2447' : '#FFFFFF', borderColor: colors.cardBorder }]}>
+            <View style={styles.infoOverlay}>
+              <Pressable style={StyleSheet.absoluteFill} onPress={() => setShowInfo(false)} />
+              <View style={[styles.infoCard, { backgroundColor: isDark ? '#2a2447' : '#FFFFFF', borderColor: colors.cardBorder }]}>
                 <Text style={[styles.infoTitle, { color: colors.onBg }]}>Cómo funcionan las emociones</Text>
-                <ScrollView style={{ maxHeight: rp(360) }}>
+                <ScrollView style={{ maxHeight: rp(360) }} showsVerticalScrollIndicator>
                   <Text style={[styles.infoText, { color: colors.onBg }]}>
                     Coloca el cursor donde quieras que cambie la interpretación y toca una etiqueta: se añade entre paréntesis en ese punto.
                   </Text>
@@ -160,11 +173,11 @@ export function ExpressiveTagsSheet({ visible, characterName, initialText, onCan
                 <TouchableOpacity onPress={() => setShowInfo(false)} style={[styles.infoBtn, { backgroundColor: colors.primary }]}>
                   <Text style={{ color: '#FFFFFF', fontWeight: '700' }}>Entendido</Text>
                 </TouchableOpacity>
-              </Pressable>
-            </Pressable>
+              </View>
+            </View>
           )}
-        </Pressable>
-      </Pressable>
+        </View>
+      </View>
     </Modal>
   );
 }
