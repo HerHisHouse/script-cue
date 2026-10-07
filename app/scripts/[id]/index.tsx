@@ -174,7 +174,9 @@ export default function ScriptDetailScreen() {
         voiceName = (v?.name as string) || voiceId;
       } else if (provider === 'elevenlabs') {
         const v = elevenLabsVoices.find(v => v.id === voiceId);
-        if (v) voiceName = v.name;
+        // ElevenLabs trae la descripción pegada al nombre ("Lydia - The perfect voice for…"):
+        // en el Resumen solo el nombre; el selector de voces la sigue mostrando entera.
+        if (v) voiceName = v.name.split(' - ')[0].trim() || v.name;
       } else if (provider === 'openai') {
         const v = OPENAI_VOICES.find(v => v.id === voiceId);
         if (v) voiceName = v.name;
