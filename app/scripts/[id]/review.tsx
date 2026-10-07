@@ -32,6 +32,9 @@ import { CoachTour, CoachTourRect, CoachTourStepContent } from '@/components/Coa
 import { WebView } from 'react-native-webview';
 import { AndroidPdfViewer } from '@/components/AndroidPdfViewer';
 import { ModalGlassFill } from '@/components/ModalGlassFill';
+import { ExpressiveTagsSheet } from '@/components/ExpressiveTagsSheet';
+import { initialMarkup, isMarkupCurrent, stripTags } from '@/utils/tts/expressiveTags';
+import { canUseExpressiveTags } from '@/utils/plan';
 
 const REVIEW_TOUR_KEY = 'hideReviewTourV1';
 
@@ -111,6 +114,8 @@ export default function ReviewScreen() {
 
   // Emotion selector modal
   const [emotionModalVisible, setEmotionModalVisible] = useState(false);
+  // Voces Expresiva (ElevenLabs v4): etiquetas dentro de la réplica, con su propia hoja.
+  const [tagsLine, setTagsLine] = useState<DialogueLine | null>(null);
   const [activeEmotionLineId, setActiveEmotionLineId] = useState<string | null>(null);
 
   const EMOTIONS = [
@@ -144,7 +149,8 @@ export default function ReviewScreen() {
     { label: 'Suspirando', value: 'sighing' },
     { label: 'Susurrando', value: 'whispering' },
     { label: 'Tierno/a', value: 'tender' },
-    { label: 'Travieso/a', value: 'mischievous' }
+    { label: 'Travieso/a', value: 'mischievous' },
+    { label: 'Triste', value: 'sad' }
   ];
 
   const translateEmotion = (val: string) => EMOTIONS.find(e => e.value === val)?.label || 'Neutral';
@@ -169,6 +175,17 @@ export default function ReviewScreen() {
     const lineId = activeEmotionLineId;
     const updatePayload = emotionVal === 'neutral' ? null : { emotion: emotionVal, intensity: 0.8 };
     setPendingChanges(prev => ({ ...prev, [lineId]: { ...prev[lineId], voice_direction: updatePayload } }));
+  };
+
+  // Etiquetas de la réplica (voz Expresiva). Pendiente hasta "Confirmar", como la emoción.
+  const handleTagsSave = (markup: string) => {
+    if (!tagsLine) return;
+    const lineId = tagsLine.id;
+    const hasTags = stripTags(markup) !== markup.replace(/\s+/g, ' ').trim();
+    const direction = hasTags ? { emotion: 'neutral' as const, intensity: 0.5, markup } : null;
+    setLines(prev => prev.map(l => (l.id === lineId ? { ...l, voiceDirection: direction } : l)));
+    setPendingChanges(prev => ({ ...prev, [lineId]: { ...prev[lineId], voice_direction: direction } }));
+    setTagsLine(null);
   };
   // ── Tour interactivo (coach marks) ──────────────────────────────────────────
   const [tourVisible, setTourVisible] = useState(false);
@@ -395,15 +412,26 @@ export default function ReviewScreen() {
       // Pendiente hasta "Confirmar": entonces se guarda y se genera la voz del texto nuevo
       // (la caché es por texto, la versión anterior no hace falta borrarla).
       const lineId = editingLine.id;
+      // Con etiquetas de voz Expresiva y el texto cambiado, las etiquetas ya no encajan: se quitan.
+      const dropMarkup = !!editingLine.voiceDirection?.markup && stripTags(editText) !== stripTags(editingLine.text);
       setPendingChanges(prev => ({
         ...prev,
-        [lineId]: { ...prev[lineId], content: bracketsToParentheses(editText), character_name: charName },
+        [lineId]: {
+          ...prev[lineId],
+          content: bracketsToParentheses(editText),
+          character_name: charName,
+          ...(dropMarkup ? { voice_direction: null } : {}),
+        },
       }));
+      if (dropMarkup) {
+        Alert.alert('Emociones quitadas', 'Has cambiado el texto de la réplica, así que sus emociones ya no encajan. Vuelve a ponerlas desde "Configurar emociones".');
+      }
 
       setLines(prev => prev.map(l =>
         l.id === editingLine.id
           ? {
               ...l,
+              ...(dropMarkup ? { voiceDirection: null } : {}),
               text: editText,
               cleanText: editText.replace(/\([^)]*\)/g, '').trim(),
               characterName: charName,
@@ -745,6 +773,10 @@ export default function ReviewScreen() {
             const charColor = item.isAction ? colors.primary : (item.isUserCharacter ? '#10B981' : (item.color || colors.primary));
             const charData = characters.find(c => c.name.toLowerCase().trim() === item.characterName.toLowerCase().trim());
             const hasEmotionSelector = supportsEmotionSelector(charData?.voice_provider);
+            // Expresiva (ElevenLabs v4): varias etiquetas por réplica en vez de una emoción.
+            const isExpressiveVoice = charData?.voice_provider === 'elevenlabs';
+            const tagMarkup = item.voiceDirection?.markup;
+            const tagCount = tagMarkup && isMarkupCurrent(tagMarkup, item.text) ? (tagMarkup.match(/\([^)]*\)/g) || []).length : 0;
             const sceneStart = multiScene && !isActive && (index === 0 || visibleLines[index - 1]?.sceneId !== item.sceneId)
               ? sceneById.get(item.sceneId)
               : undefined;
@@ -778,10 +810,61 @@ export default function ReviewScreen() {
                         {pendingChanges[item.id] ? 'sin confirmar · ' : ''}#{index + 1}
                       </Text>
                     </View>
-                    <Text style={[s.dialogueText, { color: onBg }]}>{item.text}</Text>
+                    {(() => {
+                      // Voz Expresiva con etiquetas: se ve la réplica con ellas, resaltadas.
+                      const markup = item.voiceDirection?.markup;
+                      if (markup && isMarkupCurrent(markup, item.text)) {
+                        return (
+                          <Text style={[s.dialogueText, { color: onBg }]}>
+                            {(markup as string).split(/(\([^)]*\))/g).map((part: string, i: number) => (
+                              /^\(.*\)$/.test(part)
+                                ? <Text key={`${i}-${part}`} style={{ color: charColor, fontStyle: 'italic', fontWeight: '600' }}>{part}</Text>
+                                : <Text key={`${i}-${part}`}>{part}</Text>
+                            ))}
+                          </Text>
+                        );
+                      }
+                      return (
+                        <>
+                          <Text style={[s.dialogueText, { color: onBg }]}>{item.text}</Text>
+                          {!!markup && (
+                            <Text style={[s.emotionLabel, { color: '#F59E0B', marginTop: 4 }]}>
+                              El texto cambió y sus emociones ya no encajan: vuelve a ponerlas.
+                            </Text>
+                          )}
+                        </>
+                      );
+                    })()}
 
                     <View style={s.cardFooterRow}>
-                      {!item.isAction && !item.isUserCharacter && hasEmotionSelector ? (
+                      {!item.isAction && !item.isUserCharacter && isExpressiveVoice ? (
+                        <View style={{ alignItems: 'flex-start' }}>
+                          <Text style={[s.emotionLabel, { color: onBg2 }]}>Configurar emociones</Text>
+                          <TouchableOpacity
+                            ref={index === emotionTourIndex ? emotionButtonRef : undefined}
+                            style={{ flexDirection: 'row', alignItems: 'center' }}
+                            onPress={() => {
+                              if (!canUseExpressiveTags()) {
+                                Alert.alert('Voces Expresiva', 'Las emociones por frase están disponibles en el plan superior.');
+                                return;
+                              }
+                              setTagsLine(item);
+                            }}
+                          >
+                            <Text style={{ marginRight: 6 }}>🎭</Text>
+                            <View style={{
+                                backgroundColor: tagCount > 0 ? charColor + '30' : neutralChipBg,
+                                paddingHorizontal: rp(8),
+                                paddingVertical: rp(4),
+                                borderRadius: rp(12),
+                            }}>
+                              <Text style={{ fontSize: rf(12), color: onBg, fontWeight: tagCount > 0 ? '600' : '400' }}>
+                                {tagCount === 0 ? 'Sin emociones' : tagCount === 1 ? '1 emoción' : `${tagCount} emociones`} ▸
+                              </Text>
+                            </View>
+                          </TouchableOpacity>
+                        </View>
+                      ) : !item.isAction && !item.isUserCharacter && hasEmotionSelector ? (
                         <View style={{ alignItems: 'flex-start' }}>
                           <Text style={[s.emotionLabel, { color: onBg2 }]}>Configurar emoción</Text>
                           <TouchableOpacity
@@ -953,6 +1036,16 @@ export default function ReviewScreen() {
             </Pressable>
           </KeyboardAvoidingView>
         </Modal>
+
+        <ExpressiveTagsSheet
+          visible={!!tagsLine}
+          characterName={tagsLine?.characterName || ''}
+          initialText={tagsLine ? initialMarkup(tagsLine.text, tagsLine.voiceDirection) : ''}
+          onCancel={() => setTagsLine(null)}
+          onSave={handleTagsSave}
+          isDark={isDark}
+          colors={{ onBg, onBg2, fieldBg, fieldBorder, cardBorder, primary: colors.primary, accent: accentOnGlass }}
+        />
 
         {/* ── Emotion Selector Modal ── */}
         <Modal
