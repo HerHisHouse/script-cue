@@ -26,6 +26,7 @@ export async function loadDialogueLines(
                     script_id,
                     order_index,
                     scene_number,
+                    heading,
                     included
                 )
             `)
@@ -74,6 +75,8 @@ export async function loadDialogueLines(
                 orderIndex: index,
                 sceneId: line.scenes.id,
                 sceneIncluded: line.scenes.included !== false,
+                sceneNumber: line.scenes.scene_number,
+                sceneHeading: line.scenes.heading || null,
                 isAction,
                 voiceDirection: line.voice_direction,
             };

@@ -17,7 +17,7 @@ import {
     ImageBackground,
 } from 'react-native';
 import { useDialogMaxHeight, dialogScrollStyle } from '@/hooks/useDialogMaxHeight';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { BlurView } from 'expo-blur';
 import { ANDROID_BLUR_METHOD } from '@/utils/blur';
 import { getShadowStyle } from '@/utils/cardShadow';
@@ -33,7 +33,10 @@ import { DialogueLine } from '@/utils/dialogueParser';
 import { loadDialogueLines } from '@/utils/loadDialogueLines';
 import { planInsertAfter, sortLinesInScriptOrder } from '@/utils/lineOrdering';
 import { bracketsToParentheses, calculateSimilarity } from '@/utils/stringUtils';
-import { persistLineOrder } from '@/utils/persistLineOrder';
+import { persistVisibleLineOrder } from '@/utils/persistLineOrder';
+import { scenesFromLines, filterLinesByScenes, scenesLabel, sceneStartIndexes, PickableScene } from '@/utils/sceneSelection';
+import { SceneDivider } from '@/components/SceneDivider';
+import { ScenePicker } from '@/components/ScenePicker';
 import {
     ArrowLeft,
     Mic,
@@ -61,6 +64,7 @@ import {
     MessageSquare,
     ArrowUpDown,
     Clapperboard,
+    Layers,
 } from 'lucide-react-native';
 import { Audio, InterruptionModeIOS, InterruptionModeAndroid } from 'expo-av';
 import * as Speech from 'expo-speech';
@@ -127,6 +131,13 @@ export default function StudioV2Screen() {
     const [loopEnabled, setLoopEnabled] = useState(false);
     const [hideUserLines, setHideUserLines] = useState(false);
     const [showMenu, setShowMenu] = useState(false);
+    // Escenas: en guiones de varias (incluidas en Revisar guion) se elige cuáles estudiar.
+    // La elección se recuerda por guion (la comparte Coche) y se cambia desde el menú.
+    const insets = useSafeAreaInsets();
+    const [pickableScenes, setPickableScenes] = useState<PickableScene[]>([]);
+    const [pickerSelection, setPickerSelection] = useState<Set<string>>(new Set());
+    const [showScenePicker, setShowScenePicker] = useState(false);
+    const chosenSceneIdsRef = useRef<string[] | null | undefined>(undefined); // undefined = aún sin preguntar
     const [literalMode, setLiteralMode] = useState(false);
     const [showStageDirections, setShowStageDirections] = useState(false); // Show parenthetical stage directions
     const [showActions, setShowActions] = useState(false); // Show action/description lines from script
@@ -137,6 +148,8 @@ export default function StudioV2Screen() {
         () => showActions ? dialogueLines : dialogueLines.filter(l => !l.isAction),
         [showActions, dialogueLines]
     );
+    // Dónde empieza cada escena (solo si se practican varias): separador "Escena X".
+    const sceneStarts = React.useMemo(() => sceneStartIndexes(activeLines), [activeLines]);
 
     // TTS State
     const [ttsProvider, setTtsProvider] = useState<'openai' | 'elevenlabs' | 'google' | 'system'>('system');
@@ -206,8 +219,9 @@ export default function StudioV2Screen() {
         try {
             console.log('Syncing new order to Supabase...');
 
-            // Solo order_index: no se reescribe `content` (ver persistLineOrder.ts)
-            await persistLineOrder(newLines.map(line => line.id));
+            // Solo order_index (ver persistLineOrder.ts). Con escenas filtradas, el resto del
+            // guion se queda pegado a sus vecinas en vez de descolocarse.
+            await persistVisibleLineOrder(id as string, newLines.map(line => line.id));
             console.log('Order synced successfully');
 
             // Also reorder dialogue pairs in script_html to reflect the new order in the text editor
@@ -485,7 +499,18 @@ export default function StudioV2Screen() {
             setScriptTitle(script?.title || 'Guion');
 
             // Load dialogue lines using helper function
-            const lines = await loadDialogueLines(id as string);
+            const allLines = await loadDialogueLines(id as string);
+            const scenes = scenesFromLines(allLines);
+            setPickableScenes(scenes);
+            if (chosenSceneIdsRef.current === undefined && scenes.length > 1) {
+                // Primera carga de un guion de varias escenas: preguntar, con la última elección marcada.
+                const saved = await AsyncStorage.getItem(`sceneSelection:${id}`).catch(() => null);
+                const savedIds = (saved ? JSON.parse(saved) as string[] : []).filter(sid => scenes.some(sc => sc.id === sid));
+                setPickerSelection(new Set(savedIds.length ? savedIds : scenes.map(sc => sc.id)));
+                chosenSceneIdsRef.current = null;
+                setShowScenePicker(true);
+            }
+            const lines = filterLinesByScenes(allLines, chosenSceneIdsRef.current ?? null, scenes.length);
             setDialogueLines(lines);
 
             // Load characters for adding new lines
@@ -1609,6 +1634,22 @@ export default function StudioV2Screen() {
         setIsSpeaking(false);
     }
 
+    async function applySceneSelection() {
+        const chosen = [...pickerSelection];
+        chosenSceneIdsRef.current = chosen;
+        AsyncStorage.setItem(`sceneSelection:${id}`, JSON.stringify(chosen)).catch(() => {});
+        setShowScenePicker(false);
+        setCurrentIndex(0);
+        await loadData();
+    }
+
+    function openScenePicker() {
+        audioSequenceRef.current++;
+        stopPlaying();
+        setPickerSelection(new Set(chosenSceneIdsRef.current?.length ? chosenSceneIdsRef.current : pickableScenes.map(sc => sc.id)));
+        setShowScenePicker(true);
+    }
+
 
 
     function handleRestart() {
@@ -2158,6 +2199,38 @@ export default function StudioV2Screen() {
         return <>{parts}</>;
     };
 
+    if (showScenePicker) {
+        return (
+            <ImageBackground source={studioBg()} resizeMode="cover" style={styles.container}>
+                <SafeAreaView style={[styles.container, { backgroundColor: 'transparent' }]} edges={['top', 'left', 'right']}>
+                    <Stack.Screen options={{ headerShown: false }} />
+                    <View style={[styles.header, { backgroundColor: 'transparent', borderBottomWidth: 0 }]}>
+                        <TouchableOpacity
+                            onPress={() => (chosenSceneIdsRef.current ? setShowScenePicker(false) : router.back())}
+                            style={[styles.backButton, glassHeaderBtn]}
+                        >
+                            <ArrowLeft size={20} color={isDark ? onBg : '#FFFFFF'} />
+                        </TouchableOpacity>
+                        <View style={styles.headerCenter}>
+                            <Text style={[styles.headerTitle, { color: onBg }]} numberOfLines={1}>Elige las escenas</Text>
+                            <Text style={[styles.headerSubtitle, { color: onBg2 }]} numberOfLines={1}>{scriptTitle}</Text>
+                        </View>
+                        <View style={{ width: 40 }} />
+                    </View>
+                    <ScenePicker
+                        scenes={pickableScenes}
+                        selectedIds={pickerSelection}
+                        onChange={setPickerSelection}
+                        onContinue={applySceneSelection}
+                        colors={{ fg: onBg, fgSecondary: onBg2, cardBg, cardBorder, accent: isDark ? '#FFFFFF' : colors.primary, primary: colors.primary }}
+                        intro="Elige las escenas que quieres estudiar. Si eliges varias, se practican seguidas en el orden del guion."
+                        bottomInset={insets.bottom}
+                    />
+                </SafeAreaView>
+            </ImageBackground>
+        );
+    }
+
     return (
         <ImageBackground source={studioBg()} resizeMode="cover" style={styles.container}>
         <GestureHandlerRootView style={{ flex: 1 }}>
@@ -2177,7 +2250,9 @@ export default function StudioV2Screen() {
                                 Modo Estudio
                             </Text>
                             <Text style={[styles.headerSubtitle, { color: onBg2 }]} numberOfLines={1}>
-                                {scriptTitle}
+                                {pickableScenes.length > 1 && chosenSceneIdsRef.current?.length && chosenSceneIdsRef.current.length < pickableScenes.length
+                                    ? `${scriptTitle} · ${scenesLabel(pickableScenes, chosenSceneIdsRef.current)}`
+                                    : scriptTitle}
                             </Text>
                             {/* Mode badges row - below script title */}
                             {(literalMode || showStageDirections || showActions) && (
@@ -2291,6 +2366,17 @@ export default function StudioV2Screen() {
                                 handleEditScript();
                             }}
                         />
+
+                        {pickableScenes.length > 1 && !isRecording && (
+                            <BottomSheetOption
+                                label="Elegir escenas"
+                                Icon={Layers}
+                                onPress={() => {
+                                    setShowMenu(false);
+                                    setTimeout(openScenePicker, 350);
+                                }}
+                            />
+                        )}
 
                         <BottomSheetOption
                             label="Editar orden tarjetas"
@@ -2807,6 +2893,9 @@ export default function StudioV2Screen() {
                         >
                             {currentLine && (
                                 <View style={styles.cardContainer}>
+                                    {sceneStarts.has(currentIndex) && (
+                                        <SceneDivider sceneNumber={sceneStarts.get(currentIndex)!} color={onBg2} style={{ marginTop: 0, marginBottom: rp(14) }} />
+                                    )}
                                     {/* Current Card - special style for action cards */}
                                     {/* Envoltorio solo para la sombra (getShadowStyle, boxShadow en Android): el
                                         LinearGradient es el que rellena/recorta (overflow:hidden), igual que en
@@ -2880,8 +2969,11 @@ export default function StudioV2Screen() {
 
                                     {/* Next Cards */}
                                     {activeLines.slice(currentIndex + 1).map((line, index) => (
+                                        <React.Fragment key={`${line.id}-${index}`}>
+                                        {sceneStarts.has(currentIndex + 1 + index) && (
+                                            <SceneDivider sceneNumber={sceneStarts.get(currentIndex + 1 + index)!} color={onBg2} style={{ marginTop: rp(18), marginBottom: 0 }} />
+                                        )}
                                         <View
-                                            key={`${line.id}-${index}`}
                                             style={[
                                                 { borderRadius: rp(20), width: '100%' },
                                                 getShadowStyle({ offsetY: rp(4), blur: rp(12), opacity: 0.1 }),
@@ -2924,6 +3016,7 @@ export default function StudioV2Screen() {
                                             </View>
                                         </LinearGradient>
                                         </View>
+                                        </React.Fragment>
                                     ))}
                                 </View>
                             )}

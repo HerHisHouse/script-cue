@@ -17,7 +17,9 @@ import {
   Pressable,
   FlatList,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
+import { scenesFromLines, filterLinesByScenes, scenesLabel, PickableScene } from '@/utils/sceneSelection';
+import { ScenePicker } from '@/components/ScenePicker';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { useTheme } from '@/contexts/ThemeContext';
 import { useAuth } from '@/contexts/AuthContext';
@@ -28,7 +30,7 @@ import { RENDER_SERVER_URL } from '@/utils/serverUrl';
 import { DialogueLine } from '@/utils/dialogueParser';
 import { loadDialogueLines } from '@/utils/loadDialogueLines';
 import { calculateLineDuration } from '@/utils/sceneConfig';
-import { X, Settings, Mic, Play, SkipForward, SkipBack, Repeat, RotateCcw, Pause, ChevronDown, Volume2, Info, Car, MessageSquare, MoreVertical, Download, ChevronRight } from 'lucide-react-native';
+import { X, Settings, Mic, Play, SkipForward, SkipBack, Repeat, RotateCcw, Pause, ChevronDown, Volume2, Info, Car, MessageSquare, MoreVertical, Download, ChevronRight, Layers } from 'lucide-react-native';
 import { Audio } from 'expo-av';
 import * as Speech from 'expo-speech';
 import { rf, rp } from '@/utils/responsive';
@@ -165,6 +167,14 @@ export default function CarModeScreen() {
 
   // Configuration screen state
   const [showConfig, setShowConfig] = useState(true);
+  // Escenas: en guiones de varias (incluidas en Revisar guion) se elige cuáles escuchar antes
+  // de asignar voces. La elección se recuerda por guion (la comparte Estudio).
+  const insets = useSafeAreaInsets();
+  const fullScriptLinesRef = useRef<DialogueLine[]>([]);
+  const [pickableScenes, setPickableScenes] = useState<PickableScene[]>([]);
+  const [pickerSelection, setPickerSelection] = useState<Set<string>>(new Set());
+  const [showScenePicker, setShowScenePicker] = useState(false);
+  const [chosenSceneIds, setChosenSceneIds] = useState<string[] | null>(null);
   const [isPreparingAudio, setIsPreparingAudio] = useState(false);
   const [preparingProgress, setPreparingProgress] = useState(0);
   const [characterVoiceConfigs, setCharacterVoiceConfigs] = useState<CharacterVoiceConfig[]>([]);
@@ -195,6 +205,11 @@ export default function CarModeScreen() {
   const [readActions, setReadActions] = useState(false); // Enable action lines reading
   const [allScriptLines, setAllScriptLines] = useState<DialogueLine[]>([]); // All lines including actions
   const [showActionsInfo, setShowActionsInfo] = useState(false); // Info tooltip for actions toggle
+  // Personajes de las escenas elegidas: "Asignar voces" solo muestra esos.
+  const chosenCharacterNames = React.useMemo(
+    () => new Set(allScriptLines.map(line => line.characterName.toUpperCase())),
+    [allScriptLines],
+  );
 
   // Update dialogueLines when readActions changes
   useEffect(() => {
@@ -251,7 +266,20 @@ export default function CarModeScreen() {
       try {
         setLoading(true);
         console.log('[Car Mode] Loading dialogue lines for script:', id);
-        const allLines = await loadDialogueLines(id as string);
+        const fullLines = await loadDialogueLines(id as string);
+        fullScriptLinesRef.current = fullLines;
+        const scenes = scenesFromLines(fullLines);
+        setPickableScenes(scenes);
+        let initialSceneIds: string[] | null = null;
+        if (scenes.length > 1) {
+          // Preguntar qué escenas, con la última elección marcada (o todas).
+          const saved = await AsyncStorage.getItem(`sceneSelection:${id}`).catch(() => null);
+          const savedIds = (saved ? JSON.parse(saved) as string[] : []).filter(sid => scenes.some(sc => sc.id === sid));
+          setPickerSelection(new Set(savedIds.length ? savedIds : scenes.map(sc => sc.id)));
+          setShowScenePicker(true);
+          initialSceneIds = savedIds.length ? savedIds : null;
+        }
+        const allLines = filterLinesByScenes(fullLines, initialSceneIds, scenes.length);
         setAllScriptLines(allLines);
         // Filter action lines depending on readActions state
         const lines = readActions 
@@ -1291,12 +1319,58 @@ export default function CarModeScreen() {
     </View>
   );
 
+  const applySceneSelection = () => {
+    const chosen = [...pickerSelection];
+    setChosenSceneIds(chosen);
+    AsyncStorage.setItem(`sceneSelection:${id}`, JSON.stringify(chosen)).catch(() => {});
+    setAllScriptLines(filterLinesByScenes(fullScriptLinesRef.current, chosen, pickableScenes.length));
+    setCurrentIndex(0);
+    setShowScenePicker(false);
+    setShowConfig(true);
+  };
+
+  const openScenePicker = async () => {
+    setIsActive(false);
+    await cleanupAllAudio();
+    setPickerSelection(new Set(chosenSceneIds?.length ? chosenSceneIds : pickableScenes.map(sc => sc.id)));
+    setShowScenePicker(true);
+  };
+
   const handleExit = async () => {
     if (TrackPlayer) {
       await TrackPlayer.reset().catch(() => {});
     }
     router.back();
   };
+
+  // Elegir escenas (guiones de varias escenas)
+  if (showScenePicker) {
+    return (
+      <SafeAreaView style={{ flex: 1, backgroundColor: '#0a0a0a' }} edges={['top', 'left', 'right']}>
+        <Stack.Screen options={{ headerShown: false }} />
+        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 16, paddingVertical: 12 }}>
+          <TouchableOpacity
+            onPress={() => (chosenSceneIds ? setShowScenePicker(false) : handleExit())}
+            style={{ flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: 'rgba(180, 30, 30, 0.85)', paddingHorizontal: 14, paddingVertical: 8, borderRadius: 20 }}
+          >
+            <X size={14} color="white" />
+            <Text style={{ color: 'white', fontSize: 13, fontWeight: '600' }}>{chosenSceneIds ? 'Cerrar' : 'Salir'}</Text>
+          </TouchableOpacity>
+          <Text style={{ color: 'white', fontSize: 16, fontWeight: '700' }}>Elige las escenas</Text>
+          <View style={{ width: 70 }} />
+        </View>
+        <ScenePicker
+          scenes={pickableScenes}
+          selectedIds={pickerSelection}
+          onChange={setPickerSelection}
+          onContinue={applySceneSelection}
+          colors={{ fg: '#FFFFFF', fgSecondary: 'rgba(255,255,255,0.6)', cardBg: 'rgba(255,255,255,0.06)', cardBorder: 'rgba(255,255,255,0.12)', accent: '#FFFFFF', primary: colors.primary }}
+          intro="Elige las escenas que quieres escuchar. Si eliges varias, suenan seguidas en el orden del guion."
+          bottomInset={insets.bottom}
+        />
+      </SafeAreaView>
+    );
+  }
 
   // Configuration Screen
   if (showConfig) {
@@ -1396,7 +1470,7 @@ export default function CarModeScreen() {
         </View>
 
         <ScrollView style={{ flex: 1 }}>
-          {characterVoiceConfigs.map((config, index) => {
+          {characterVoiceConfigs.filter(config => chosenCharacterNames.has(config.characterName.toUpperCase())).map((config) => {
             const isAction = config.characterName === 'ACCIÓN';
             const title = isAction ? 'Acciones de escena' : config.characterName;
             
@@ -1871,6 +1945,21 @@ export default function CarModeScreen() {
           textColor="white"
           borderColor="rgba(255,255,255,0.06)"
         />
+
+        {pickableScenes.length > 1 && (
+          <BottomSheetOption
+            label="Elegir escenas"
+            onPress={() => {
+              setShowMenu(false);
+              setTimeout(() => { openScenePicker(); }, 350);
+            }}
+            textColor="white"
+            Icon={Layers}
+            iconColor="rgba(255,255,255,0.3)"
+            infoTitle="Escenas"
+            infoText={`Ahora: ${scenesLabel(pickableScenes, chosenSceneIds)}.`}
+          />
+        )}
 
         <BottomSheetOption
           label="Asignar voces"

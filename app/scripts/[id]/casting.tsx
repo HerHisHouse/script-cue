@@ -59,6 +59,8 @@ import {
 import { ExpoSpeechRecognitionModule, useSpeechRecognitionEvent } from 'expo-speech-recognition';
 import { matchesActivationPhrase } from '@/utils/voiceActivation';
 import { trackVideoUpload } from '@/utils/pendingVideoJobs';
+import { sceneStartIndexes } from '@/utils/sceneSelection';
+import { SceneDivider } from '@/components/SceneDivider';
 import { FontAwesome5 } from '@expo/vector-icons';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/utils/supabase';
@@ -806,6 +808,8 @@ export default function CastingModeScreen() {
   // Scene Configuration State
   const [sceneConfig, setSceneConfig] = useState<SceneConfig | null>(null);
   const [configuredLines, setConfiguredLines] = useState<Array<DialogueLine | ActionCard>>([]);
+  // Dónde empieza cada escena al grabar varias seguidas: separador "Escena X" en el teleprompter.
+  const sceneStarts = useMemo(() => sceneStartIndexes(configuredLines), [configuredLines]);
   const [newActionText, setNewActionText] = useState('');
   const [addingActionAfterLineId, setAddingActionAfterLineId] = useState<string | null>(null);
 
@@ -3303,6 +3307,10 @@ export default function CastingModeScreen() {
 
                       const line = item as DialogueLine;
                       return renderBand(
+                        <>
+                        {sceneStarts.has(currentIndex) && (
+                          <SceneDivider sceneNumber={sceneStarts.get(currentIndex)!} color="#FFFFFF" textStyle={teleprompterTextShadow} style={{ marginBottom: rp(16) }} />
+                        )}
                         <View style={[{ alignItems: 'center', maxWidth: '100%' }, characterShadeStyle(line.color)]}>
                           <Text style={[styles.guionCharName, { color: line.color }, teleprompterTextShadow]}>
                             {line.characterName}{line.isUserCharacter ? '  ·  TÚ' : '  ·  ScriptCue'}
@@ -3320,6 +3328,7 @@ export default function CastingModeScreen() {
                             </Text>
                           )}
                         </View>
+                        </>
                       );
                     })()
                   ) : (
@@ -3345,22 +3354,32 @@ export default function CastingModeScreen() {
                         if (isActive) opacity = 1;
                         else if (Math.abs(index - currentIndex) <= 1) opacity = 0.6;
 
+                        // Separador "Escena X" al empezar cada escena (si se graban varias).
+                        const sceneDivider = sceneStarts.has(index) ? (
+                          <SceneDivider sceneNumber={sceneStarts.get(index)!} color="#FFFFFF" textStyle={teleprompterTextShadow} style={{ marginTop: rp(16), marginBottom: rp(4) }} />
+                        ) : null;
+
                         if (isAction) {
-                          if (!showActions) return null;
+                          if (!showActions) return sceneDivider;
                           const text = isManualAction ? (item as ActionCard).text : (item as DialogueLine).text;
                           const duration = isManualAction ? (item as ActionCard).duration : getLineDuration(item as DialogueLine);
                           const displayDuration = isActive && actionTimeLeft !== null ? actionTimeLeft : duration;
                           return (
+                            <>
+                            {sceneDivider}
                             <View style={[styles.teleprompterLineRow, { opacity }]}>
                               <Text style={[styles.teleprompterActionInlineText, { fontSize: rf(17) * teleprompterFontScale, lineHeight: rf(24) * teleprompterFontScale }, teleprompterTextShadow]}>
                                 [Acción: {text} · {displayDuration}s]
                               </Text>
                             </View>
+                            </>
                           );
                         }
 
                         const line = item as DialogueLine;
                         return (
+                          <>
+                          {sceneDivider}
                           <TouchableOpacity onPress={() => setCurrentIndex(index)} style={[styles.teleprompterLineRow, { opacity }]}>
                             {/* La capa va en este contenedor interior (no en la fila, que ocupa todo el ancho) para ajustarse al texto */}
                             <View style={[{ alignItems: 'center', maxWidth: '100%' }, characterShadeStyle(line.color)]}>
@@ -3378,6 +3397,7 @@ export default function CastingModeScreen() {
                               )}
                             </View>
                           </TouchableOpacity>
+                          </>
                         );
                       }}
                       onScrollToIndexFailed={info => {

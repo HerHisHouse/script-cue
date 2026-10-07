@@ -1,4 +1,6 @@
 import { supabase } from '@/utils/supabase';
+import { loadDialogueLines } from '@/utils/loadDialogueLines';
+import { mergeVisibleOrder } from '@/utils/sceneSelection';
 
 const CHUNK_SIZE = 20;
 
@@ -18,4 +20,16 @@ export async function persistLineOrder(orderedLineIds: string[]): Promise<void> 
         const failed = results.find((r) => r.error);
         if (failed?.error) throw failed.error;
     }
+}
+
+/**
+ * Guarda el orden de las líneas que se ven (p.ej. Estudio con escenas filtradas) sin descolocar
+ * el resto del guion: las líneas que no se ven (escenas no incluidas o no elegidas) siguen
+ * pegadas a la línea que tenían delante (mergeVisibleOrder) y se renumera el guion entero.
+ */
+export async function persistVisibleLineOrder(scriptId: string, visibleLineIds: string[]): Promise<void> {
+    const all = await loadDialogueLines(scriptId, { includeExcludedScenes: true });
+    const visible = visibleLineIds.map((id) => ({ id }));
+    const merged = mergeVisibleOrder(all.map((line) => ({ id: line.id })), visible);
+    await persistLineOrder(merged.map((line) => line.id));
 }
