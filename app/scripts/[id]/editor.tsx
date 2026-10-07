@@ -14,6 +14,7 @@ import * as FileSystem from 'expo-file-system/legacy';
 import Slider from '@react-native-community/slider';
 import { useTheme } from '@/contexts/ThemeContext';
 import { supabase } from '@/utils/supabase';
+import { prepareVoicesForLines } from '@/utils/prepareVoices';
 import { getShadowStyle } from '@/utils/cardShadow';
 import { rf, rp } from '@/utils/responsive';
 import ViewAndMarkOverlay from './components/ViewAndMarkOverlay';
@@ -313,6 +314,8 @@ export default function ScriptEditorScreen() {
     // State
     const [loading, setLoading] = useState(true);
     const [saving, setSaving] = useState(false);
+    // Al guardar se preparan las voces de las réplicas de la IA nuevas o cambiadas.
+    const [voiceProgress, setVoiceProgress] = useState<{ done: number; total: number } | null>(null);
     const [mode, setMode] = useState<'view' | 'edit'>('view');
     const [initialHtml, setInitialHtml] = useState(''); // Only for initial load
     const [scriptTitle, setScriptTitle] = useState('');
@@ -973,11 +976,16 @@ export default function ScriptEditorScreen() {
             // Estado actual en BD, para saber qué escenas/líneas hay que borrar
             const { data: existingScenes } = await supabase
                 .from('scenes')
-                .select('id, lines(id)')
+                .select('id, lines(id, content, character_name)')
                 .eq('script_id', id);
 
             const existingSceneIds = new Set((existingScenes || []).map((s: any) => s.id));
             const existingLineIds = new Set((existingScenes || []).flatMap((s: any) => (s.lines || []).map((l: any) => l.id)));
+            // Texto y personaje de antes, para saber qué réplicas necesitan voz nueva.
+            const previousLines = new Map<string, { content: string; character_name: string }>(
+                (existingScenes || []).flatMap((s: any) => (s.lines || []).map((l: any) => [l.id, l]))
+            );
+            const linesNeedingVoice: string[] = [];
             const seenSceneIds = new Set<string>();
             const seenLineIds = new Set<string>();
 
@@ -1025,6 +1033,10 @@ export default function ScriptEditorScreen() {
 
                     if (line.id && existingLineIds.has(line.id)) {
                         seenLineIds.add(line.id);
+                        const before = previousLines.get(line.id);
+                        if (!before || before.content !== line.content || before.character_name !== line.characterName) {
+                            linesNeedingVoice.push(line.id);
+                        }
                         await supabase.from('lines').update({
                             scene_id: sceneId,
                             character_name: line.characterName,
@@ -1044,6 +1056,7 @@ export default function ScriptEditorScreen() {
                         }).select().single();
                         if (error) throw error;
                         seenLineIds.add(newLine.id);
+                        linesNeedingVoice.push(newLine.id);
                     }
                 }
             }
@@ -1063,7 +1076,22 @@ export default function ScriptEditorScreen() {
             if (scriptError) throw scriptError;
             if (titleText) setScriptTitle(titleText);
 
-            Alert.alert('Guardado', 'Guion actualizado correctamente.');
+            // Voces de las réplicas nuevas o cambiadas (solo de escenas incluidas y de la IA),
+            // para que Memoria y Selftape —que no generan— no se encuentren huecos.
+            let voicesNote = '';
+            const { data: authData } = await supabase.auth.getUser();
+            if (linesNeedingVoice.length > 0 && authData.user) {
+                const { failed } = await prepareVoicesForLines(
+                    id as string, linesNeedingVoice, authData.user.id,
+                    (done, total) => setVoiceProgress(total > 0 ? { done, total } : null),
+                ).catch(() => ({ failed: linesNeedingVoice.length }));
+                setVoiceProgress(null);
+                if (failed > 0) {
+                    voicesNote = ` No se pudieron preparar ${failed === 1 ? 'la voz de 1 réplica' : `las voces de ${failed} réplicas`}: se generarán cuando las reproduzcas en Estudio o Coche.`;
+                }
+            }
+
+            Alert.alert('Guardado', `Guion actualizado correctamente.${voicesNote}`);
             router.back();
 
         } catch (error: any) {
@@ -1071,6 +1099,7 @@ export default function ScriptEditorScreen() {
             Alert.alert('Error', 'No se pudo guardar el guion: ' + error.message);
         } finally {
             setSaving(false);
+            setVoiceProgress(null);
         }
     }
 
@@ -2348,7 +2377,12 @@ export default function ScriptEditorScreen() {
 
                 <TouchableOpacity onPress={handleSave} style={[styles.saveButton, primaryButtonBg]} disabled={saving}>
                     {saving ? (
-                        <ActivityIndicator size="small" color="#FFFFFF" />
+                        <>
+                            <ActivityIndicator size="small" color="#FFFFFF" />
+                            {voiceProgress && (
+                                <Text style={styles.saveText}>Voces {voiceProgress.done}/{voiceProgress.total}</Text>
+                            )}
+                        </>
                     ) : (
                         <>
                             <Save size={18} color="#FFFFFF" />

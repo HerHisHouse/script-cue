@@ -6,7 +6,7 @@ import {
 } from 'react-native';
 import { useDialogMaxHeight, dialogScrollStyle } from '@/hooks/useDialogMaxHeight';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useRouter, useLocalSearchParams } from 'expo-router';
+import { useRouter, useLocalSearchParams, useNavigation } from 'expo-router';
 import { Stack } from 'expo-router';
 import { BlurView } from 'expo-blur';
 import { ANDROID_BLUR_METHOD } from '@/utils/blur';
@@ -19,7 +19,7 @@ import { loadDialogueLines } from '@/utils/loadDialogueLines';
 import { persistLineOrder } from '@/utils/persistLineOrder';
 import { mergeVisibleOrder, insertAfter, scenesWithLines } from '@/utils/sceneSelection';
 import { bracketsToParentheses } from '@/utils/stringUtils';
-import { generateAndCacheAudio, invalidateCacheForLine } from '@/utils/ttsCache';
+import { generateAndCacheAudio } from '@/utils/ttsCache';
 import { getCardShadow } from '@/utils/cardShadow';
 import { rf, rp } from '@/utils/responsive';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -85,6 +85,14 @@ export default function ReviewScreen() {
   const [scenes, setScenes] = useState<{ id: string; scene_number: number; heading: string | null; included: boolean }[]>([]);
   const [selectedSceneIds, setSelectedSceneIds] = useState<Set<string>>(new Set());
   const [step, setStep] = useState<'scenes' | 'lines'>('lines');
+  // Cambios que afectan a la voz (emoción y texto) pendientes de "Confirmar": no se guardan
+  // ni se toca la caché hasta entonces, para que salir sin confirmar no deje réplicas sin voz.
+  const [pendingChanges, setPendingChanges] = useState<Record<string, { voice_direction?: any; content?: string; character_name?: string }>>({});
+  const hasPendingChanges = Object.keys(pendingChanges).length > 0;
+  const [showDiscardDialog, setShowDiscardDialog] = useState(false);
+  const allowLeaveRef = useRef(false);
+  const pendingLeaveActionRef = useRef<any>(null);
+  const navigation = useNavigation();
   const [loading, setLoading] = useState(true);
   const [isConfirming, setIsConfirming] = useState(false);
   const [confirmProgress, setConfirmProgress] = useState(0);
@@ -157,16 +165,10 @@ export default function ReviewScreen() {
 
     setEmotionModalVisible(false);
 
-    // Update DB silently
+    // Pendiente hasta "Confirmar" (ver pendingChanges).
+    const lineId = activeEmotionLineId;
     const updatePayload = emotionVal === 'neutral' ? null : { emotion: emotionVal, intensity: 0.8 };
-    try {
-      await supabase.from('lines').update({ voice_direction: updatePayload }).eq('id', activeEmotionLineId);
-      // Invalidar caché TTS para que se regenere con la nueva emoción
-      await invalidateCacheForLine(activeEmotionLineId);
-      console.log(`[Review] 🗑️ Caché TTS invalidada para línea ${activeEmotionLineId} (nueva emoción: ${emotionVal})`);
-    } catch (e) {
-      console.error('Error updating voice_direction:', e);
-    }
+    setPendingChanges(prev => ({ ...prev, [lineId]: { ...prev[lineId], voice_direction: updatePayload } }));
   };
   // ── Tour interactivo (coach marks) ──────────────────────────────────────────
   const [tourVisible, setTourVisible] = useState(false);
@@ -390,19 +392,13 @@ export default function ReviewScreen() {
       const charName = editSelectedChar ? editSelectedChar.name : 'ACCIÓN';
       const charId = editSelectedChar ? editSelectedChar.id : 'action-card';
 
-      const { error } = await supabase
-        .from('lines').update({
-          content: bracketsToParentheses(editText),
-          character_name: charName
-        }).eq('id', editingLine.id);
-      if (error) throw error;
-
-      // El texto cambió: invalidar el audio TTS cacheado para esta línea, si no
-      // quedaría una fila con el hash antiguo que nunca se refresca (ver migración
-      // 20260906120000_add_tts_cache_update_policy.sql para la causa raíz completa).
-      if (editText !== editingLine.text) {
-        await invalidateCacheForLine(editingLine.id);
-      }
+      // Pendiente hasta "Confirmar": entonces se guarda y se genera la voz del texto nuevo
+      // (la caché es por texto, la versión anterior no hace falta borrarla).
+      const lineId = editingLine.id;
+      setPendingChanges(prev => ({
+        ...prev,
+        [lineId]: { ...prev[lineId], content: bracketsToParentheses(editText), character_name: charName },
+      }));
 
       setLines(prev => prev.map(l =>
         l.id === editingLine.id
@@ -492,6 +488,13 @@ export default function ReviewScreen() {
     if (!user) return;
     setIsConfirming(true);
     try {
+      // Cambios pendientes (emoción y texto) a la base de datos.
+      for (const [lineId, changes] of Object.entries(pendingChanges)) {
+        const { error } = await supabase.from('lines').update(changes).eq('id', lineId);
+        if (error) throw error;
+      }
+      setPendingChanges({});
+
       // Primero las escenas: si falla, no se marca el guion como revisado ni se generan voces.
       if (multiScene) {
         const included = scenes.filter(sc => selectedSceneIds.has(sc.id)).map(sc => sc.id);
@@ -525,6 +528,7 @@ export default function ReviewScreen() {
           console.warn(`[Review] TTS failed for line ${line.id}:`, e);
         }
       }
+      allowLeaveRef.current = true;
       router.replace(`/scripts/${id}` as any);
     } catch (e) {
       console.error('[Review] Confirm error:', e);
@@ -559,6 +563,26 @@ export default function ReviewScreen() {
     } finally {
       setPdfViewerLoading(false);
     }
+  };
+
+  // ── Salir con cambios sin confirmar ───────────────────────────────────────
+  // Cubre la flecha, el gesto de volver de iOS y el botón atrás de Android.
+  useEffect(() => {
+    const unsubscribe = navigation.addListener('beforeRemove', (event: any) => {
+      if (allowLeaveRef.current || !hasPendingChanges) return;
+      event.preventDefault();
+      pendingLeaveActionRef.current = event.data.action;
+      setShowDiscardDialog(true);
+    });
+    return unsubscribe;
+  }, [navigation, hasPendingChanges]);
+
+  const discardAndLeave = () => {
+    setShowDiscardDialog(false);
+    allowLeaveRef.current = true;
+    const action = pendingLeaveActionRef.current;
+    pendingLeaveActionRef.current = null;
+    if (action) navigation.dispatch(action); else router.back();
   };
 
   // ── Paso de escenas (guiones de varias escenas) ───────────────────────────
@@ -750,7 +774,9 @@ export default function ReviewScreen() {
                           </Text>
                         )}
                       </Text>
-                      <Text style={[s.lineNum, { color: onBg2 }]}>#{index + 1}</Text>
+                      <Text style={[s.lineNum, { color: onBg2 }]}>
+                        {pendingChanges[item.id] ? 'sin confirmar · ' : ''}#{index + 1}
+                      </Text>
                     </View>
                     <Text style={[s.dialogueText, { color: onBg }]}>{item.text}</Text>
 
@@ -1094,6 +1120,16 @@ export default function ReviewScreen() {
           </View>
         </Modal>
 
+        <ConfirmDialog
+          visible={showDiscardDialog}
+          title="Cambios sin confirmar"
+          message="Has cambiado emociones o textos que aún no se han guardado. Si sales ahora se descartan y las voces se quedan como estaban."
+          cancelText="Seguir revisando"
+          confirmText="Salir sin guardar"
+          destructive
+          onCancel={() => { setShowDiscardDialog(false); pendingLeaveActionRef.current = null; }}
+          onConfirm={discardAndLeave}
+        />
         <ConfirmDialog
           visible={showConfirmDialog}
           title="Confirmar guion"
