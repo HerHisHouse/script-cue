@@ -36,14 +36,39 @@ function isContactOnly(text) {
     return rest.replace(/[\s.,;:()\-–—]/g, '').length === 0;
 }
 
+/** Palabras de un texto, sin tildes ni mayúsculas ni puntuación; une "pala-\nbra" partida en dos líneas. */
+function wordsOf(text) {
+    return stripAccents(String(text ?? '').replace(/-\s*\n\s*/g, '').toLowerCase())
+        .split(/[^a-z0-9ñ]+/)
+        .filter(Boolean);
+}
+
+/** Parte de las palabras de `text` que aparecen en el PDF (1 = todas). Sin palabras, 1. */
+function sourceCoverage(text, sourceWords) {
+    const words = wordsOf(text);
+    if (words.length === 0) return 1;
+    return words.filter((w) => sourceWords.has(w)).length / words.length;
+}
+
+// Por debajo de esto, una acción no está en el PDF: la IA se la ha inventado. Las acciones
+// reales salen copiadas (cobertura ~1); la tolerancia cubre saltos de línea y guiones raros.
+const MIN_ACTION_COVERAGE = 0.8;
+
 /**
  * Cleans what the parser (OpenAI or the local fallback) returns, so both paths obey the same
  * rules: character names without (cont'd)/(V.O.) modifiers, nothing empty, and no cover-page
  * contact data (emails, URLs) turned into a "character".
- * Returns { scenes, dropped } where dropped counts removed entries (for logging).
+ * With `sourceText` (the PDF text the parser read) it also drops ACTION entries that are not in
+ * the PDF: GPT sometimes invents an action before every dialogue in scripts that have none, and
+ * those ended up in the user's script. Dialogues are never dropped (losing a real line is worse);
+ * a dialogue that does not match is only counted in `suspicious` for the logs.
+ * Returns { scenes, dropped, invented, suspicious }.
  */
-function sanitizeParsedScript(parsed) {
+function sanitizeParsedScript(parsed, { sourceText } = {}) {
     let dropped = 0;
+    let invented = 0;
+    let suspicious = 0;
+    const sourceWords = sourceText ? new Set(wordsOf(sourceText)) : null;
     const scenes = (parsed?.scenes || []).map((scene) => {
         const content = [];
         for (const item of scene.content || []) {
@@ -53,11 +78,19 @@ function sanitizeParsedScript(parsed) {
                 dropped++;
                 continue;
             }
+            if (sourceWords && sourceCoverage(text, sourceWords) < MIN_ACTION_COVERAGE) {
+                if (characterName === ACTION) {
+                    invented++;
+                    dropped++;
+                    continue;
+                }
+                suspicious++;
+            }
             content.push({ ...item, characterName, text });
         }
         return { ...scene, content };
     });
-    return { scenes, dropped };
+    return { scenes, dropped, invented, suspicious };
 }
 
-module.exports = { normalizeCharacterName, sanitizeParsedScript };
+module.exports = { normalizeCharacterName, sanitizeParsedScript, sourceCoverage, wordsOf };

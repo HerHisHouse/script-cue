@@ -73,3 +73,12 @@ describe('ElevenLabsAdapter con marcado', () => {
     expect(adapter.buildInput(line('Hola.', { emotion: 'angry', intensity: 0.8 }))).toBe('[angry] Hola.');
   });
 });
+
+describe('usedTagLabels', () => {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const { usedTagLabels } = require('../utils/tts/expressiveTags');
+  it('devuelve las etiquetas del catálogo que hay en el texto (sin importar tildes) y no las acotaciones', () => {
+    expect([...usedTagLabels('(Riendo) Hola. (con decepcion) Vale. (mirando a Luis) Ven. (riendo) Ja.')].sort())
+      .toEqual(['con decepción', 'riendo']);
+  });
+});
