@@ -384,9 +384,10 @@ module.exports = {
           parserUsed = 'fallback-regex';
         }
 
-        const sanitized = sanitizeParsedScript(parsed);
+        // Con el texto del PDF se descartan las acciones que la IA se haya inventado.
+        const sanitized = sanitizeParsedScript(parsed, { sourceText: layoutText || text });
         parsed = { scenes: sanitized.scenes };
-        console.log(`Parsed with ${parserUsed}: ${parsed.scenes.length} scenes, ${sanitized.dropped} entries dropped by the sanitizer`);
+        console.log(`Parsed with ${parserUsed}: ${parsed.scenes.length} scenes, ${sanitized.dropped} entries dropped by the sanitizer (${sanitized.invented} invented actions, ${sanitized.suspicious} dialogues not matching the PDF)`);
 
         await supabase.from('scenes').delete().eq('script_id', scriptId);
 

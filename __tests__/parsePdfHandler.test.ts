@@ -55,9 +55,12 @@ async function runParse(body: any) {
     return { inserted, response };
 }
 
+// El texto del PDF contiene lo que devuelve la IA simulada: el filtro descarta las acciones que no estén en él.
+const PDF_TEXT = "alejandro@1ksportsgroup.com\nEXT. CALLE - DÍA\nDomingo, día de partido.\n          JUAN\n     ¡Venga va!\n          JUAN (cont'd)\n     (amenazante) ¿El qué?";
+
 describe('POST /api/parse-pdf (OpenAI y Supabase simulados)', () => {
     it('guarda las líneas limpias: JUAN unificado, ACCIÓN y sin el contacto de la portada', async () => {
-        const { inserted, response } = await runParse({ scriptId: 's1', text: 'EXT. CALLE - DÍA\nTexto.', preserveFormatting: true });
+        const { inserted, response } = await runParse({ scriptId: 's1', text: PDF_TEXT, preserveFormatting: true });
         expect(response.success).toBe(true);
         expect(response.parser).toBe('openai');
         const lines = inserted.lines[0].map((l: any) => [l.character_name, l.content]);
@@ -69,7 +72,7 @@ describe('POST /api/parse-pdf (OpenAI y Supabase simulados)', () => {
     });
 
     it('registra el gasto en columnas que existen en api_usage y a nombre del dueño del guion', async () => {
-        const { inserted } = await runParse({ scriptId: 's1', text: 'EXT. CALLE - DÍA\nTexto.', preserveFormatting: true });
+        const { inserted } = await runParse({ scriptId: 's1', text: PDF_TEXT, preserveFormatting: true });
         expect(inserted.api_usage).toHaveLength(1);
         const row = inserted.api_usage[0];
         expect(Object.keys(row).every((k) => API_USAGE_COLUMNS.includes(k))).toBe(true);
