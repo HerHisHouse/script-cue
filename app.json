@@ -4,7 +4,7 @@
     "slug": "script-cue",
     "version": "1.0.0",
     "orientation": "default",
-    "icon": "./assets/images/icon.png",
+    "icon": "./assets/images/icon-light.png",
     "scheme": "scriptcue",
     "userInterfaceStyle": "automatic",
     "splash": {
@@ -34,7 +34,12 @@
       },
       "bundleIdentifier": "es.scriptcue.app",
       "buildNumber": "42",
-      "appleTeamId": "M8875PN8LF"
+      "appleTeamId": "M8875PN8LF",
+      "icon": {
+        "light": "./assets/images/icon-light.png",
+        "dark": "./assets/images/icon-dark.png",
+        "tinted": "./assets/images/icon-tinted.png"
+      }
     },
     "web": {
       "bundler": "metro",
@@ -81,8 +86,8 @@
     "android": {
       "package": "es.scriptcue.app",
       "adaptiveIcon": {
-        "foregroundImage": "./assets/images/logo-android-morado.png",
-        "monochromeImage": "./assets/images/logo-android-morado.png",
+        "foregroundImage": "./assets/images/android-icon-foreground.png",
+        "monochromeImage": "./assets/images/android-icon-monochrome.png",
         "backgroundColor": "#FFFFFF"
       },
       "permissions": [
