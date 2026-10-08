@@ -15,6 +15,7 @@ import * as Speech from 'expo-speech';
 import * as ScreenOrientation from 'expo-screen-orientation';
 import * as ImagePicker from 'expo-image-picker';
 import { supabase } from '@/utils/supabase';
+import { base64ToBytes } from '@/utils/base64';
 import { rf, rp } from '@/utils/responsive';
 
 const SOCIAL_LINKS = [
@@ -199,7 +200,8 @@ export default function SettingsScreen() {
         mediaTypes: ImagePicker.MediaTypeOptions.Images,
         allowsEditing: true,
         aspect: [1, 1],
-        quality: 0.7,
+        quality: 0.7, // < 1: el selector la recomprime siempre a JPEG (también las HEIC del iPhone)
+        base64: true,
       });
 
       if (result.canceled || !result.assets?.[0]) return;
@@ -210,20 +212,15 @@ export default function SettingsScreen() {
 
       setUploadingAvatar(true);
       try {
-        // Build file path: avatars/{userId}/avatar.jpg
-        const ext = asset.uri.split('.').pop() ?? 'jpg';
-        const filePath = `${userId}/avatar.${ext}`;
-
-        // Fetch the image as blob
-        const response = await fetch(asset.uri);
-        const blob = await response.blob();
-        const arrayBuffer = await new Response(blob).arrayBuffer();
-
-        // Upload to Supabase Storage
+        // Siempre JPEG (ver quality arriba). Antes se subía blob → Response → ArrayBuffer,
+        // que en React Native no es fiable, con el tipo que dijera el selector: Storage
+        // respondía "Invalid Content-Type header" y la foto no se guardaba.
+        if (!asset.base64) throw new Error('No se pudo leer la imagen.');
+        const filePath = `${userId}/avatar.jpg`;
         const { error: uploadError } = await supabase.storage
           .from('avatars')
-          .upload(filePath, arrayBuffer, {
-            contentType: asset.mimeType ?? 'image/jpeg',
+          .upload(filePath, base64ToBytes(asset.base64), {
+            contentType: 'image/jpeg',
             upsert: true,
           });
 
