@@ -1632,3 +1632,44 @@ section {
     font-weight: 600;
     margin: 0 !important;
 }
+
+/* Insignias oficiales de App Store y Google Play (aún sin publicar: "Próximamente") */
+.store-badges {
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 20px;
+    padding-top: 12px; /* sitio para "Próximamente" */
+}
+
+.store-badge {
+    position: relative;
+    display: inline-block;
+    line-height: 0;
+    transition: transform 0.2s ease, opacity 0.2s ease;
+}
+
+.store-badge img {
+    height: 50px;
+    width: auto;
+}
+
+.store-badge:hover {
+    transform: translateY(-2px);
+    opacity: 0.9;
+}
+
+.store-soon {
+    position: absolute;
+    top: -18px;
+    right: -8px;
+    padding: 4px 8px;
+    border-radius: 999px;
+    background: linear-gradient(135deg, #a78bfa, #c084fc);
+    color: #ffffff;
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    line-height: 1;
+    text-transform: uppercase;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.35);
+}
