@@ -24,9 +24,10 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
     detectSessionInUrl: false,
   },
   global: {
+    // Sin Content-Type/Accept globales: supabase-js ya los pone en cada petición. Forzar
+    // 'application/json' aquí se sumaba al tipo de los archivos subidos a Storage
+    // ("application/json, image/jpeg") y Storage los rechazaba: "Invalid Content-Type header".
     headers: {
-      'Content-Type': 'application/json',
-      'Accept': 'application/json',
       'X-Client-Info': 'supabase-js-react-native',
     },
     fetch: (url, options = {}) => {
