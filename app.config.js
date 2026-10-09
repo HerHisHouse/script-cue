@@ -20,7 +20,11 @@ export default ({ config }) => {
     ...config,
     name: "ScriptCue",
     slug: "script-cue",
-    scheme: "myapp",
+    // "scriptcue" es el que usan la web ("Abrir ScriptCue" en cuenta verificada y contraseña
+    // restablecida) y el retorno del inicio de sesión con Google (scriptcue://auth/callback).
+    // Antes solo estaba "myapp" y esos enlaces no abrían la app. Se mantiene "myapp" por
+    // compatibilidad (enlaces de desarrollo).
+    scheme: ["scriptcue", "myapp"],
     plugins: [
       ...(config.plugins || []),
     ],
