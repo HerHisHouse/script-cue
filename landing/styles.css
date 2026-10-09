@@ -1324,6 +1324,12 @@ section {
         margin-bottom: 40px;
     }
 
+    /* En móvil el contenido ocupa más que la pantalla: deja sitio abajo para
+       "Descubre más" (va fijo al fondo del bloque) y que no tape los botones. */
+    .hero {
+        padding-bottom: 150px;
+    }
+
     .mockup-main {
         transform: none;
     }
