@@ -28,12 +28,14 @@ const C = {
   title: '#1a1530',
   text: '#4a4763',
   muted: '#7d7a96',
+  brand: '#613369', // morado de la marca: logo y "ScriptCue"
   primary: '#7c6af7',
   primaryDark: '#5b47d6',
   tile: '#f7f5ff',
   pill: '#efebff',
 };
-const LOGO_URL = 'https://yucsroyorgebeuvcsmib.supabase.co/storage/v1/object/public/Public/Logo_Morado.png';
+// Logo en el morado de la marca (#613369). Nombre nuevo para no servir una versión cacheada.
+const LOGO_URL = 'https://yucsroyorgebeuvcsmib.supabase.co/storage/v1/object/public/Public/Logo_ScriptCue_613369.png';
 
 const MODES: [string, string, string][] = [
   ['🎭', 'Modo Estudio', 'Ensaya tus escenas con ScriptCue dándote la réplica con voces realistas.'],
@@ -127,7 +129,7 @@ export function renderWelcomeEmail(variant: WelcomeVariant, greeting = '¡Hola! 
       <table role="presentation" border="0" cellpadding="0" cellspacing="0" align="center" style="margin:0 auto 18px;">
         <tr><td bgcolor="${C.pill}" style="background-color:${C.pill};border-radius:20px;padding:5px 16px;font-family:${FONT};font-size:10px;font-weight:700;letter-spacing:2px;text-transform:uppercase;color:${C.primaryDark};">${eyebrow}</td></tr>
       </table>
-      <h1 class="title" style="font-family:${FONT};font-size:30px;font-weight:800;line-height:1.25;letter-spacing:-0.6px;color:${C.title};margin:0 0 10px;">Te doy la bienvenida a <span style="color:${C.primary};">ScriptCue</span></h1>
+      <h1 class="title" style="font-family:${FONT};font-size:30px;font-weight:800;line-height:1.25;letter-spacing:-0.6px;color:${C.title};margin:0 0 10px;">Te doy la bienvenida a <span style="color:${C.brand};">ScriptCue</span></h1>
       <p style="font-family:${FONT};font-size:15px;line-height:1.6;color:${C.muted};margin:0;">La réplica que siempre necesitaste, disponible 24/7</p>
     </td></tr>
 
