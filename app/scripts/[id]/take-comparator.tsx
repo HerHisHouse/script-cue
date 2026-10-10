@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { ModalSafeAreaView } from '@/components/ModalSafeAreaView';
 import {
   View, Text, StyleSheet, TouchableOpacity, FlatList,
   ActivityIndicator, TextInput, Modal, ImageBackground, ScrollView,
@@ -801,7 +802,7 @@ export default function TakeComparatorScreen() {
       {/* Modal de reproducción */}
       {playingTakeId && videoUri && (
         <Modal visible animationType="slide" supportedOrientations={['portrait', 'landscape', 'landscape-left', 'landscape-right']}>
-          <SafeAreaView style={{ flex: 1, backgroundColor: 'black' }} edges={['top', 'left', 'right']}>
+          <ModalSafeAreaView style={{ flex: 1, backgroundColor: 'black' }} edges={['top', 'left', 'right']}>
             <TouchableOpacity
               onPress={() => {
                 setPlayingTakeId(null);
@@ -824,7 +825,7 @@ export default function TakeComparatorScreen() {
                 setVideoUri(null);
               }}
             />
-          </SafeAreaView>
+          </ModalSafeAreaView>
         </Modal>
       )}
 

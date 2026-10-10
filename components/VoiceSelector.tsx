@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
+import { ModalSafeAreaView } from '@/components/ModalSafeAreaView';
 import {
     View,
     Text,
@@ -10,7 +11,6 @@ import {
     TextInput,
     ImageBackground
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
 import { Volume2, VolumeX, Check, ChevronDown, X, Heart, Search, RefreshCw } from 'lucide-react-native';
 import { useTheme } from '@/contexts/ThemeContext';
 import { GlassCard } from '@/components/GlassCard';
@@ -524,7 +524,7 @@ export function VoiceSelector({
                     resizeMode="cover"
                     style={styles.fullScreenModal}
                 >
-                <SafeAreaView style={[styles.fullScreenModal, { backgroundColor: 'transparent' }]}>
+                <ModalSafeAreaView style={[styles.fullScreenModal, { backgroundColor: 'transparent' }]}>
                     <View style={styles.modalHeader}>
                         <View style={{ flex: 1, paddingRight: 10 }}>
                             <Text style={[styles.modalTitle, { color: onBg }]} numberOfLines={1}>{getProviderTitle()}</Text>
@@ -598,7 +598,7 @@ export function VoiceSelector({
                             </>
                         )}
                     </ScrollView>
-                </SafeAreaView>
+                </ModalSafeAreaView>
                 </ImageBackground>
             </Modal>
         </>
