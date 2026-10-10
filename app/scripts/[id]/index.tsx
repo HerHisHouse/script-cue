@@ -23,7 +23,7 @@ import { getSettings, setSettings } from '@/utils/appSettings';
 import * as Speech from 'expo-speech';
 import { FixedFooter, FixedFooterSpacer } from '@/components/FixedFooter';
 import { rf, rp } from '@/utils/responsive';
-import { OPENAI_VOICES, getElevenLabsVoices, getAzureVoices, INWORLD_VOICES } from '@/utils/voiceService';
+import { OPENAI_VOICES, getElevenLabsVoices, getStoredElevenLabsVoices, getAzureVoices, INWORLD_VOICES } from '@/utils/voiceService';
 
 export default function ScriptDetailScreen() {
   const router = useRouter();
@@ -121,8 +121,11 @@ export default function ScriptDetailScreen() {
     })();
     (async () => {
       try {
+        // Primero la lista guardada en el móvil (instantánea) y luego la del servidor.
+        const stored = await getStoredElevenLabsVoices();
+        if (stored.length) setElevenLabsVoices(stored);
         const voices = await getElevenLabsVoices();
-        setElevenLabsVoices(voices || []);
+        if (voices?.length) setElevenLabsVoices(voices);
       } catch { }
     })();
     (async () => {
@@ -176,7 +179,8 @@ export default function ScriptDetailScreen() {
         const v = elevenLabsVoices.find(v => v.id === voiceId);
         // ElevenLabs trae la descripción pegada al nombre ("Lydia - The perfect voice for…"):
         // en el Resumen solo el nombre; el selector de voces la sigue mostrando entera.
-        if (v) voiceName = v.name.split(' - ')[0].trim() || v.name;
+        // Sin la lista todavía, solo "Expresiva": nunca el identificador (un código largo).
+        voiceName = v ? (v.name.split(' - ')[0].trim() || v.name) : '';
       } else if (provider === 'openai') {
         const v = OPENAI_VOICES.find(v => v.id === voiceId);
         if (v) voiceName = v.name;

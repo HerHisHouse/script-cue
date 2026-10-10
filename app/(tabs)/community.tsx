@@ -1,4 +1,5 @@
 import React, { useEffect, useState, useRef } from 'react';
+import { ModalSafeAreaView } from '@/components/ModalSafeAreaView';
 import {
   View,
   Text,
@@ -440,7 +441,7 @@ export default function CommunityScreen() {
               resizeMode="cover"
               style={{ flex: 1 }}
             >
-              <SafeAreaView style={{ flex: 1, backgroundColor: 'transparent' }} edges={['top', 'left', 'right']}>
+              <ModalSafeAreaView style={{ flex: 1, backgroundColor: 'transparent' }} edges={['top', 'left', 'right']}>
                 <View style={{ paddingHorizontal: 16, paddingTop: 16, paddingBottom: 12, flexDirection: 'row', alignItems: 'center' }}>
                   <GlassCard
                     isDark={isDark}
@@ -499,7 +500,7 @@ export default function CommunityScreen() {
                     }}
                   />
                 </GlassCard>
-              </SafeAreaView>
+              </ModalSafeAreaView>
             </ImageBackground>
           </Modal>
 

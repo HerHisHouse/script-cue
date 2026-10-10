@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
+import { ModalSafeAreaView } from '@/components/ModalSafeAreaView';
 import {
   View, Text, StyleSheet, TouchableOpacity, Alert,
   TextInput, Modal, ScrollView, ActivityIndicator,
@@ -1241,7 +1242,7 @@ export default function ReviewScreen() {
           onRequestClose={() => setShowPdfViewer(false)}
           supportedOrientations={['portrait', 'landscape', 'landscape-left', 'landscape-right']}
         >
-          <SafeAreaView style={{ flex: 1, backgroundColor: '#1a1625' }} edges={['top', 'left', 'right']}>
+          <ModalSafeAreaView style={{ flex: 1, backgroundColor: '#1a1625' }} edges={['top', 'left', 'right']}>
             <View style={[s.header, { backgroundColor: 'transparent', borderBottomWidth: 0 }]}>
               <TouchableOpacity
                 onPress={() => { setShowPdfViewer(false); setPdfSignedUrl(null); }}
@@ -1283,7 +1284,7 @@ export default function ReviewScreen() {
                 }}
               />
             )}
-          </SafeAreaView>
+          </ModalSafeAreaView>
         </Modal>
 
       </SafeAreaView>
