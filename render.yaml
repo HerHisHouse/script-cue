@@ -1,13 +1,30 @@
+# Servidor de la app en Render: script-cue-api (https://script-cue-api.onrender.com).
+# Docker con el Dockerfile de la raíz (incluye poppler para leer los PDF). La app toma su
+# dirección de utils/serverUrl.ts (EXPO_PUBLIC_RENDER_SERVER_URL). El servicio antiguo
+# script-cue-merge-server ya no se usa (suspendido el 2026-10-10).
+# Los valores de las claves se ponen en el panel de Render (sync: false), nunca aquí.
 services:
   - type: web
-    name: script-cue-merge-server
-    env: node
-    buildCommand: cd server && npm install
-    startCommand: node server/index.js
+    name: script-cue-api
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    healthCheckPath: /health
     envVars:
       - key: SUPABASE_URL
         sync: false
       - key: SUPABASE_SERVICE_KEY
         sync: false
+      - key: AUTH_MODE
+        sync: false
       - key: OPENAI_API_KEY
+        sync: false
+      - key: ANTHROPIC_API_KEY
+        sync: false
+      - key: ELEVENLABS_API_KEY
+        sync: false
+      - key: INWORLD_API_KEY
+        sync: false
+      - key: AZURE_TTS_KEY
+        sync: false
+      - key: AZURE_TTS_REGION
         sync: false
