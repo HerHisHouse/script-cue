@@ -76,6 +76,11 @@ try {
   console.log('[Car Mode] TrackPlayer not available, lock screen controls disabled');
 }
 
+// Portada de la pantalla bloqueada (la misma que el reproductor de Grabaciones). Hay que
+// pasarla también al actualizar título/artista: iOS sustituye todos los datos y, sin ella,
+// la portada se quedaba vacía desde la segunda línea.
+const CAR_ARTWORK = require('../../../assets/images/icon.png');
+
 // We no longer use a global setupCarModeTrackPlayer because we need access
 // to the latest component state via refs to pause/play expo-av audio.
 
@@ -92,6 +97,7 @@ async function updateCarModeMetadata(
         title: characterName,
         artist: scriptTitle || 'Script Cue',
         album: 'Modo Coche',
+        artwork: CAR_ARTWORK,
       });
     }
   } catch (e) {
@@ -114,7 +120,7 @@ async function setupIosLockScreen(
       title: characterName,
       artist: scriptTitle || 'Script Cue',
       album: 'Modo Coche',
-      artwork: require('../../../assets/images/icon.png'),
+      artwork: CAR_ARTWORK,
     };
     if (queue.length === 0) {
       await TrackPlayer.add([track]);
@@ -124,6 +130,7 @@ async function setupIosLockScreen(
           title: characterName,
           artist: scriptTitle || 'Script Cue',
           album: 'Modo Coche',
+          artwork: CAR_ARTWORK,
         });
       } else {
         await TrackPlayer.remove([0]);
@@ -683,8 +690,19 @@ export default function CarModeScreen() {
       // iOS: expo-av, must destroy the sound
       sequenceRef.current++; // Invalidate pending callbacks
       await cleanupAllAudio();
+      // El silencio en bucle que mantiene el reproductor en la pantalla bloqueada también se
+      // pausa: antes seguía sonando (0:01 repitiéndose) hasta salir de Coche. Pausado, iOS deja
+      // el reproductor con ▶ y al pulsarlo llega RemotePlay → handleResume.
+      if (TrackPlayer) TrackPlayer.pause().catch(() => {});
     }
   };
+
+  // iOS: si Coche no está reproduciendo (pausa, fin de la escena sin bucle, vuelta a la
+  // configuración), el silencio de la pantalla bloqueada no debe seguir sonando.
+  useEffect(() => {
+    if (Platform.OS !== 'ios' || !TrackPlayer) return;
+    if (!isActive || isPaused) TrackPlayer.pause().catch(() => {});
+  }, [isActive, isPaused]);
 
   const handleResume = async () => {
     setIsPaused(false);
