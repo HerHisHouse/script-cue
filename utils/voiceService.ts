@@ -2,6 +2,7 @@ import { Audio } from 'expo-av';
 import * as FileSystem from 'expo-file-system/legacy';
 import { serverAuthHeaders } from './serverAuth';
 import { RENDER_SERVER_URL } from './serverUrl';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 // ============================================
 // TIPOS
@@ -254,6 +255,9 @@ export async function getElevenLabsVoices(forceRefresh = false): Promise<VoiceOp
       console.log(`[ElevenLabs] Loaded ${allVoices.length} voices: ${myVoices.length} personal, ${publicVoices.length} public`);
       
       cachedElevenLabsVoices = allVoices;
+      if (allVoices.length > 0) {
+        AsyncStorage.setItem(ELEVENLABS_VOICES_STORAGE_KEY, JSON.stringify(allVoices)).catch(() => {});
+      }
       return allVoices;
     } catch (error) {
       console.error('Error fetching ElevenLabs voices:', error);
@@ -264,6 +268,23 @@ export async function getElevenLabsVoices(forceRefresh = false): Promise<VoiceOp
   })();
 
   return elevenLabsVoicesPromise;
+}
+
+// La última lista de voces de ElevenLabs que se descargó, guardada en el móvil: al abrir la
+// app, el Resumen enseña el nombre de la voz al instante mientras llega la lista nueva (antes
+// mostraba su identificador, un código largo, unos segundos).
+const ELEVENLABS_VOICES_STORAGE_KEY = 'elevenLabsVoicesCache:v1';
+
+/** Voces de ElevenLabs guardadas en el móvil (o en memoria), sin ir al servidor. */
+export async function getStoredElevenLabsVoices(): Promise<VoiceOption[]> {
+  if (cachedElevenLabsVoices) return cachedElevenLabsVoices;
+  try {
+    const raw = await AsyncStorage.getItem(ELEVENLABS_VOICES_STORAGE_KEY);
+    const parsed = raw ? JSON.parse(raw) : null;
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
 }
 
 /**
