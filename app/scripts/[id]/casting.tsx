@@ -4067,7 +4067,7 @@ export default function CastingModeScreen() {
                         Sí
                       </Text>
                       <Text style={[styles.qualityOptionDesc, { color: fgSecondary }]}>
-                        Ideal si en la escena habláis a la vez
+                        Ideal si en la escena tienes que hablar a la vez que la réplica
                       </Text>
                       {hasHeadphones === true && (
                         <Text style={{ color: activeAccent, fontSize: rf(16), marginTop: rp(4) }}>✓</Text>
@@ -4089,7 +4089,7 @@ export default function CastingModeScreen() {
                       <Text style={[styles.qualityOptionDesc, { color: fgSecondary }]}>
                         {/* Sin auriculares el servidor silencia la voz del actor mientras suena la
                             réplica (para que no se oiga dos veces): mejor no solaparse. */}
-                        Usa el altavoz del móvil y deja terminar cada réplica antes de hablar
+                        Hay que esperar que la réplica termine para poder hablar
                       </Text>
                       {hasHeadphones === false && (
                         <Text style={{ color: activeAccent, fontSize: rf(16), marginTop: rp(4) }}>✓</Text>
