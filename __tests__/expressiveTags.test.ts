@@ -8,6 +8,7 @@ describe('markupToElevenLabs', () => {
     expect(markupToElevenLabs('(Riendo) ¡Qué dices! (con tristeza) No te vayas. (en tono juguetón) Ven.'))
       .toBe('[laughs] ¡Qué dices! [sad] No te vayas. [playful] Ven.');
     expect(markupToElevenLabs('(con decepcion) Vale. (mirando a Luis) Hola.')).toBe('[let down] Vale. [mirando a Luis] Hola.');
+    expect(markupToElevenLabs('(con enfado) ¡Fuera! (en tono neutro) Mañana hablamos.')).toBe('[angry] ¡Fuera! [neutral] Mañana hablamos.');
   });
 });
 

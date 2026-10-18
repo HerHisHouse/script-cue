@@ -159,7 +159,7 @@ export function ExpressiveTagsSheet({ visible, characterName, initialText, onCan
                     Coloca el cursor donde quieras que cambie la interpretación y toca una etiqueta: se añade entre paréntesis en ese punto.
                   </Text>
                   <Text style={[styles.infoText, { color: colors.onBg }]}>
-                    Cada etiqueta afecta a todo lo que viene después, hasta la siguiente etiqueta. Puedes poner tantas como quieras en una misma réplica.
+                    Cada etiqueta afecta a todo lo que viene después, hasta la siguiente etiqueta. Puedes poner tantas como quieras en una misma réplica. Para que el resto vuelva a sonar sin emoción, pon «en tono neutro».
                   </Text>
                   <Text style={[styles.infoLabel, { color: colors.onBg2 }]}>Ejemplo</Text>
                   <Text style={[styles.infoExample, { color: colors.onBg, borderColor: colors.cardBorder }]}>{EXPRESSIVE_TAGS_EXAMPLE}</Text>
