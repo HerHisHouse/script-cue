@@ -1428,6 +1428,30 @@ app.post('/compress-video', requireUser, upload.fields([
     });
 });
 
+/**
+ * Subtítulos de Presentación para quemarlos en el móvil: la app manda solo el audio (~1 MB/min)
+ * y el tamaño del vídeo, y recibe los subtítulos ya cronometrados y partidos en líneas, con las
+ * mismas reglas que el quemado del servidor (server/subtitleCues.js).
+ */
+app.post('/transcribe-words', requireUser, upload.fields([{ name: 'audio', maxCount: 1 }]), async (req, res) => {
+  const audioFile = req.files?.audio?.[0];
+  if (!audioFile) return res.status(400).json({ error: 'Falta el audio' });
+  try {
+    const { words, segments } = await transcribeWords(audioFile.path, req.body.userId || null);
+    const width = Number(req.body.width) || 1080;
+    const height = Number(req.body.height) || 1920;
+    const cues = subtitleCues.buildCues(words, segments, { maxCharsPerLine: width > height ? 42 : 32 });
+    console.log(`[Subtitles] /transcribe-words: ${words.length} palabras → ${cues.length} subtítulos (${width}×${height})`);
+    res.json({ cues });
+  } catch (err) {
+    console.error('[Subtitles] /transcribe-words error:', err.message);
+    const reference = await recordServerError(supabase, { userId: req.user?.id || req.body.userId || null, mode: 'subtitles', error: err }).catch(() => null);
+    res.status(500).json({ error: `No se pudieron generar los subtítulos${reference ? ` [${reference}]` : ''}`, reference });
+  } finally {
+    fs.promises.unlink(audioFile.path).catch(() => {});
+  }
+});
+
 async function processTeleprompterInBackground(jobId, files, body) {
   const tempDir = path.join(__dirname, 'temp', `teleprompter_${Date.now()}`);
   fs.mkdirSync(tempDir, { recursive: true });
