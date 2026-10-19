@@ -29,7 +29,7 @@ export const EXPRESSIVE_TAG_CATEGORIES: ExpressiveTagCategory[] = [
     title: 'Emoción',
     tags: [
       // Para volver a una lectura sin emoción después de otra etiqueta (cada una dura hasta la siguiente).
-      { label: 'en tono neutro', tag: 'neutral' },
+      { label: 'en tono neutro', tag: 'calm, neutral delivery' },
       { label: 'con tristeza', tag: 'sad' },
       { label: 'con enfado', tag: 'angry' },
       { label: 'con entusiasmo', tag: 'excited' },
