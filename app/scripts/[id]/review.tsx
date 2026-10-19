@@ -1045,7 +1045,8 @@ export default function ReviewScreen() {
           onCancel={() => setTagsLine(null)}
           onSave={handleTagsSave}
           isDark={isDark}
-          colors={{ onBg, onBg2, fieldBg, fieldBorder, cardBorder, primary: colors.primary, accent: accentOnGlass }}
+          colors={{ onBg, onBg2, fieldBg, fieldBorder, cardBorder, primary: colors.primary, accent: accentOnGlass,
+            tagText: tagsLine?.isUserCharacter ? '#10B981' : (tagsLine?.color || colors.primary) }}
         />
 
         {/* ── Emotion Selector Modal ── */}
