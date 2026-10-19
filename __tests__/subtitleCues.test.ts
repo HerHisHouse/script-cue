@@ -67,10 +67,10 @@ describe('splitLines', () => {
 });
 
 describe('buildAss', () => {
-  it('estilo B (franja semitransparente) proporcional al tamaño del vídeo', () => {
+  it('estilo B (una sola franja semitransparente, sin bandas al solaparse) proporcional al tamaño del vídeo', () => {
     const ass = buildAss([{ start: 1, end: 2.5, lines: ['Hola,', '¿qué tal?'] }], { width: 1080, height: 1920 });
     expect(ass).toContain('PlayResX: 1080');
-    expect(ass).toMatch(/Style: Default,DejaVu Sans,50,.*,3,\d+,0,2,/);
+    expect(ass).toMatch(/Style: Default,DejaVu Sans,50,&H00FFFFFF,&H00FFFFFF,&HFF000000,&H66000000,.*,4,\d+,0,2,/);
     expect(ass).toContain('Dialogue: 0,0:00:01.00,0:00:02.50,Default,,0,0,0,,Hola,\\N¿qué tal?');
   });
 });

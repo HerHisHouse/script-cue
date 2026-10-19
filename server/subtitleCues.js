@@ -157,7 +157,7 @@ const escapeAss = (text) => text.replace(/\\/g, '\\\\').replace(/\{/g, '(').repl
 
 /**
  * Archivo .ass con el tamaño en proporción al vídeo (igual en 720p que en 4K): letra de ~4,6 %
- * del lado corto, franja negra al 40 % de transparencia por línea y margen inferior del 9 % del
+ * del lado corto, una sola franja negra al 40 % de transparencia y margen inferior del 9 % del
  * alto para no tapar la barbilla ni los botones de Instagram/TikTok.
  */
 function buildAss(cues, { width, height }) {
@@ -166,7 +166,10 @@ function buildAss(cues, { width, height }) {
   const boxPadding = Math.max(2, Math.round(fontSize * 0.28));
   const marginV = Math.round(height * 0.09);
   const marginH = Math.round(width * 0.06);
-  // Colores ASS: &HAABBGGRR, AA = transparencia (00 opaco). Con BorderStyle=3 la franja usa OutlineColour.
+  // Colores ASS: &HAABBGGRR, AA = transparencia (00 opaco).
+  // BorderStyle=4 (libass): UNA franja para todo el subtítulo, con BackColour y Outline como
+  // margen. Con BorderStyle=3 cada línea llevaba su franja y, al ser semitransparentes, donde se
+  // tocaban salía una banda más oscura. OutlineColour transparente: sin halo en las letras.
   const header = [
     '[Script Info]',
     'ScriptType: v4.00+',
@@ -177,7 +180,7 @@ function buildAss(cues, { width, height }) {
     '',
     '[V4+ Styles]',
     'Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding',
-    `Style: Default,DejaVu Sans,${fontSize},&H00FFFFFF,&H00FFFFFF,&H66000000,&H66000000,1,0,0,0,100,100,0,0,3,${boxPadding},0,2,${marginH},${marginH},${marginV},1`,
+    `Style: Default,DejaVu Sans,${fontSize},&H00FFFFFF,&H00FFFFFF,&HFF000000,&H66000000,1,0,0,0,100,100,0,0,4,${boxPadding},0,2,${marginH},${marginH},${marginV},1`,
     '',
     '[Events]',
     'Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text',
