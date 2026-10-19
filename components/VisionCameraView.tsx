@@ -8,6 +8,7 @@ import {
   useMicrophonePermission,
   useVideoOutput,
   CommonResolutions,
+  getAllCameraDevices,
 } from 'react-native-vision-camera';
 import type { CameraRef, Recorder } from 'react-native-vision-camera';
 import { rf } from '../utils/responsive';
@@ -22,7 +23,7 @@ import {
 interface VisionCameraProps {
   facing: 'front' | 'back';
   zoom: number;
-  videoQuality?: 'high' | 'medium' | 'low';
+  videoQuality?: 'uhd' | 'high' | 'medium' | 'low';
   isActive?: boolean;
   /**
    * Solo iOS (Fase M1): esta llamada es la ÚNICA vía por la que casting.tsx
@@ -50,6 +51,8 @@ interface VisionCameraProps {
 
 function getVisionResolution(quality: string | undefined) {
   switch (quality) {
+    case 'uhd':
+      return CommonResolutions.UHD_16_9;
     case 'high':
       return CommonResolutions.FHD_16_9;
     case 'low':
@@ -57,6 +60,21 @@ function getVisionResolution(quality: string | undefined) {
     case 'medium':
     default:
       return CommonResolutions.HD_16_9;
+  }
+}
+
+/**
+ * ¿Alguna cámara de ese lado graba vídeo en 4K? Para enseñar o no la opción 4K en el menú de
+ * calidad de Presentación, antes de montar la cámara (por eso no es un hook). Si la lista aún
+ * no está cargada, devuelve false y la opción simplemente no aparece.
+ */
+export function deviceSupports4K(facing: 'front' | 'back'): boolean {
+  try {
+    return getAllCameraDevices()
+      .filter((d) => d.position === facing)
+      .some((d) => d.getSupportedResolutions('video').some((r) => Math.max(r.width, r.height) >= 3840));
+  } catch {
+    return false;
   }
 }
 

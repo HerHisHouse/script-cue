@@ -59,6 +59,7 @@ import {
 import { ExpoSpeechRecognitionModule, useSpeechRecognitionEvent } from 'expo-speech-recognition';
 import { matchesActivationPhrase } from '@/utils/voiceActivation';
 import { trackVideoUpload } from '@/utils/pendingVideoJobs';
+import { getFreeDiskBytes, keepVideoOnDevice, minutesOf4KLeft, saveVideoToPhotos } from '@/utils/presentationVideo';
 import { sceneStartIndexes } from '@/utils/sceneSelection';
 import { SceneDivider } from '@/components/SceneDivider';
 import { FontAwesome5 } from '@expo/vector-icons';
@@ -210,6 +211,8 @@ export default function CastingModeScreen() {
   // Camera Component Loader
   const cameraRef = useRef<any>(null);
   const CameraComponent = useRef<React.ComponentType<any> | null>(null);
+  // Módulo de la cámara cargada, para preguntar si graba en 4K (deviceSupports4K) antes de montarla.
+  const cameraModuleRef = useRef<any>(null);
   const [isCameraLoaded, setIsCameraLoaded] = useState(false);
   const isExpoGo = Constants.executionEnvironment === 'storeClient';
 
@@ -237,6 +240,7 @@ export default function CastingModeScreen() {
 
         if (component) {
           CameraComponent.current = component.default || component;
+          cameraModuleRef.current = component;
           setIsCameraLoaded(true);
         } else {
           console.error("Camera component module is undefined. Check paths.");
@@ -467,7 +471,8 @@ export default function CastingModeScreen() {
   // Grabando, detrás de los botones solo hay cámara (negro); el resto sigue el tema.
   useAndroidNavStripColor(castingMode === 'recording' ? '#000000' : null);
   const [castingType, setCastingType] = useState<'script' | 'free' | null>(null);
-  type VideoQuality = 'high' | 'medium' | 'low';
+  // 'uhd' (4K) solo en Presentación y solo si la cámara lo admite: no sale del móvil.
+  type VideoQuality = 'uhd' | 'high' | 'medium' | 'low';
   const [videoQuality, setVideoQuality] = useState<VideoQuality>('medium');
   const [showQualityModal, setShowQualityModal] = useState(false);
   const [qualityApplied, setQualityApplied] = useState(false);
@@ -480,6 +485,37 @@ export default function CastingModeScreen() {
       setShowQualityModal(true);
     }
   }, [castingMode, qualityApplied]);
+
+  const [supports4K, setSupports4K] = useState(false);
+  useEffect(() => {
+    if (!showQualityModal) return;
+    setSupports4K(castingMode === 'free_input' && !!cameraModuleRef.current?.deviceSupports4K?.(facing));
+    // facing se lee al abrir el menú; no hace falta recalcular si cambia con el menú cerrado.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [showQualityModal, castingMode]);
+  // Selftape no tiene 4K: si venía elegido de Presentación, se queda en 1080p.
+  useEffect(() => {
+    if (castingMode === 'script_config' && videoQuality === 'uhd') setVideoQuality('high');
+  }, [castingMode, videoQuality]);
+
+  async function selectVideoQuality(quality: VideoQuality) {
+    setVideoQuality(quality);
+    setIsQualityDropdownOpen(false);
+    if (quality !== 'uhd') return;
+    // Los subtítulos se queman en el servidor y el vídeo 4K no sale del móvil.
+    setAddSubtitles(false);
+    const free = await getFreeDiskBytes();
+    if (free == null) return;
+    const minutes = minutesOf4KLeft(free);
+    if (minutes < 10) {
+      showCastingAlert(
+        'Poco espacio libre',
+        minutes === 0
+          ? 'No queda espacio suficiente para grabar en 4K. Libera espacio o elige otra calidad.'
+          : `El 4K ocupa unos 170 MB por minuto: en este móvil caben unos ${minutes} min. Libera espacio o elige otra calidad si la presentación es más larga.`,
+      );
+    }
+  }
   // Voice recognition speech event handlers (assigned inside startListening)
   const onSpeechStartRef = useRef<(() => void) | null>(null);
   const onSpeechEndRef = useRef<(() => void) | null>(null);
@@ -2144,23 +2180,51 @@ export default function CastingModeScreen() {
 
       const teleSettings = await getSettings();
 
-      // 1. Local-only mode
-      if (teleSettings.useLocalOnly) {
-        console.log('[Teleprompter] Local-only mode — skipping upload');
+      const goToRecordings = () => router.replace('/(tabs)/recordings');
+      // Guarda en Fotos y luego va a Grabaciones (avisando si no se pudo).
+      const saveToPhotosThenGo = async (videoUri: string) => {
+        const result = await saveVideoToPhotos(videoUri);
+        if (result === 'saved') {
+          showCastingAlert('Guardado en Fotos', 'El vídeo ya está en tu galería.', [{ text: 'Ver Grabaciones', onPress: goToRecordings }]);
+        } else {
+          showCastingAlert(
+            'No se pudo guardar en Fotos',
+            result === 'denied'
+              ? 'ScriptCue no tiene permiso para añadir vídeos a Fotos. Puedes darlo en Ajustes del móvil.'
+              : result === 'unavailable'
+                ? 'Esta versión de la app aún no puede guardar en Fotos. Puedes hacerlo desde Grabaciones con Compartir.'
+                : 'Inténtalo más tarde desde Grabaciones con Compartir.',
+            [{ text: 'Ver Grabaciones', onPress: goToRecordings }],
+          );
+        }
+      };
+
+      // 1. Se queda en el móvil: modo "solo local" o 4K (demasiado grande para subirlo, y
+      // Railway lo comprimiría).
+      if (teleSettings.useLocalOnly || videoQuality === 'uhd') {
+        console.log('[Teleprompter] Vídeo local — sin subida', { quality: videoQuality });
+        const saved = await keepVideoOnDevice(uri);
         await supabase.from('recordings').insert({
           user_id: user?.id,
           script_id: null,
           project_id: null,
-          title: `Presentación - ${new Date().toLocaleDateString('es-ES')}`,
-          audio_url: uri,  // local file:// URI → shows 📱 Local
+          title: `Presentación${videoQuality === 'uhd' ? ' 4K' : ''} - ${new Date().toLocaleDateString('es-ES')}`,
+          audio_url: saved.uri,  // file:// local → se muestra como 📱 Local
           type: 'video',
           duration_seconds: recordingTimeRef.current,
-          file_size_bytes: 0,
+          file_size_bytes: saved.sizeBytes,
         });
         setIsProcessing(false);
-        showCastingAlert('¡Video guardado!', 'Tu grabación está guardada en este dispositivo (📱 Local).', [
-          { text: 'Ver Grabaciones', onPress: () => router.replace('/(tabs)/recordings') }
-        ]);
+        if (videoQuality === 'uhd' || videoQuality === 'high') {
+          showCastingAlert('¡Vídeo guardado!', 'Está en Grabaciones (📱 solo en este móvil). ¿Quieres guardar también una copia en Fotos?', [
+            { text: 'Ahora no', onPress: goToRecordings },
+            { text: 'Guardar en Fotos', onPress: () => saveToPhotosThenGo(saved.uri) },
+          ]);
+        } else {
+          showCastingAlert('¡Vídeo guardado!', 'Tu grabación está guardada en este dispositivo (📱 Local).', [
+            { text: 'Ver Grabaciones', onPress: goToRecordings }
+          ]);
+        }
         return;
       }
 
@@ -2169,6 +2233,8 @@ export default function CastingModeScreen() {
       const formData = new FormData();
       formData.append('userId', user?.id || '');
       formData.append('addSubtitles', addSubtitles ? 'true' : 'false');
+      // El servidor respeta la calidad elegida (antes todo lo que pasaba de 45 MB acababa en 720p).
+      formData.append('quality', videoQuality);
       formData.append('video', {
         uri: uri,
         name: 'video.mp4',
@@ -2206,7 +2272,21 @@ export default function CastingModeScreen() {
 
       setProcessingProgress(100);
       setIsProcessing(false);
-      router.replace('/(tabs)/recordings');
+      if (videoQuality === 'high') {
+        // El original en 1080p sigue en el móvil hasta que se cierre la app: se ofrece guardarlo.
+        showCastingAlert(
+          'Vídeo enviado',
+          addSubtitles
+            ? 'Se está procesando y aparecerá en Grabaciones. ¿Quieres guardar también el original en Fotos? (sin subtítulos)'
+            : 'Se está procesando y aparecerá en Grabaciones. ¿Quieres guardar también el original en Fotos?',
+          [
+            { text: 'Ahora no', onPress: goToRecordings },
+            { text: 'Guardar en Fotos', onPress: () => saveToPhotosThenGo(uri) },
+          ],
+        );
+      } else {
+        goToRecordings();
+      }
 
     } catch (e: any) {
       console.error(e);
@@ -3982,7 +4062,7 @@ export default function CastingModeScreen() {
                   onPress={() => setIsQualityDropdownOpen(!isQualityDropdownOpen)}
                 >
                   <Text style={[styles.qualityOptionLabel, { color: fg }]}>
-                    {videoQuality === 'high' ? 'Alta (1080p)' : videoQuality === 'medium' ? 'Media (720p)' : 'Baja (480p)'}
+                    {videoQuality === 'uhd' ? '4K (2160p)' : videoQuality === 'high' ? 'Alta (1080p)' : videoQuality === 'medium' ? 'Media (720p)' : 'Baja (480p)'}
                   </Text>
                   <Text style={{ color: activeAccent, fontSize: rp(16) }}>{isQualityDropdownOpen ? '▲' : '▼'}</Text>
                 </TouchableOpacity>
@@ -3990,6 +4070,12 @@ export default function CastingModeScreen() {
                 {isQualityDropdownOpen && (
                   <View style={{ marginTop: rp(8), gap: rp(8) }}>
                     {[
+                      ...(supports4K && castingMode === 'free_input' ? [{
+                        value: 'uhd',
+                        label: '4K',
+                        desc: '2160p — Se guarda solo en este móvil',
+                        size: '~170MB/min'
+                      }] : []),
                       {
                         value: 'high',
                         label: 'Alta',
@@ -4018,10 +4104,7 @@ export default function CastingModeScreen() {
                           { borderColor: glassBorder, backgroundColor: chipInactiveBg },
                           isSelected && { borderColor: colors.primary, backgroundColor: chipActiveBg },
                         ]}
-                        onPress={() => {
-                          setVideoQuality(option.value as any);
-                          setIsQualityDropdownOpen(false);
-                        }}
+                        onPress={() => selectVideoQuality(option.value as VideoQuality)}
                       >
                         <View style={{ flex: 1 }}>
                           <Text style={[styles.qualityOptionLabel, { color: isSelected ? fg : fgSecondary }]}>
@@ -4114,18 +4197,23 @@ export default function CastingModeScreen() {
                     style={[
                       styles.qualityOption,
                       { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: rp(12), borderColor: glassBorder, backgroundColor: chipInactiveBg },
+                      videoQuality === 'uhd' && { opacity: 0.5 },
                     ]}
                     onPress={() => setAddSubtitles(!addSubtitles)}
+                    disabled={videoQuality === 'uhd'}
                     activeOpacity={0.8}
                   >
                     <View style={{ flex: 1, marginRight: rp(12) }}>
                       <Text style={[styles.qualityOptionLabel, { color: fg }]}>Añadir subtítulos</Text>
                       <Text style={[styles.qualityOptionDesc, { color: fgSecondary }]}>
-                        Útil para revisar diálogo o accesibilidad
+                        {videoQuality === 'uhd'
+                          ? 'Aún no disponible en 4K: el vídeo no sale de tu móvil'
+                          : 'Útil para revisar diálogo o accesibilidad'}
                       </Text>
                     </View>
                     <Switch
-                      value={addSubtitles}
+                      value={addSubtitles && videoQuality !== 'uhd'}
+                      disabled={videoQuality === 'uhd'}
                       onValueChange={setAddSubtitles}
                       trackColor={{ false: isDark ? '#374151' : '#9CA3AF', true: colors.primary }}
                       thumbColor={Platform.OS === 'android' ? '#FFFFFF' : undefined}

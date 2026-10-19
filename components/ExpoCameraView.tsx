@@ -6,7 +6,7 @@ import { rf } from '../utils/responsive';
 interface ExpoCameraProps {
     facing: 'front' | 'back';
     zoom: number;
-    videoQuality?: 'high' | 'medium' | 'low';
+    videoQuality?: 'uhd' | 'high' | 'medium' | 'low';
 }
 
 const ExpoCameraView = forwardRef((props: ExpoCameraProps, ref) => {
@@ -14,6 +14,7 @@ const ExpoCameraView = forwardRef((props: ExpoCameraProps, ref) => {
 
     const getExpoQuality = (quality: string | undefined) => {
         switch (quality) {
+            case 'uhd':    return '2160p';
             case 'high':   return '1080p';
             case 'medium': return '720p';
             case 'low':    return '480p';

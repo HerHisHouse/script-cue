@@ -47,7 +47,11 @@ export async function getDeviceFileUri(audioUrl: string | null | undefined): Pro
   const url = (audioUrl || '').trim();
   if (!url) return null;
   if (isDevicePath(url)) {
-    return (await fileExists(url)) ? url : null;
+    if (await fileExists(url)) return url;
+    // En iOS la carpeta de la app cambia al actualizarla o reinstalarla y la ruta guardada deja
+    // de valer, pero el archivo sigue en documentDirectory con el mismo nombre.
+    const moved = (FileSystem.documentDirectory ?? '') + (url.split('/').pop() ?? '');
+    return url !== moved && (await fileExists(moved)) ? moved : null;
   }
   const copy = getOfflineCopyUri(url);
   return (await fileExists(copy)) ? copy : null;
