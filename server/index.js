@@ -73,6 +73,7 @@ const inworldTts = require('./inworldTts');
 const elevenLabsTts = require('./elevenLabsTts');
 const audioLevels = require('./audioLevels');
 const aiAlignment = require('./aiAlignment');
+const videoQuality = require('./videoQuality');
 const { recordServerError } = require('./errorReports');
 const betaLimits = require('./betaLimits');
 // Costes aproximados por proveedor (en euros)
@@ -1471,88 +1472,78 @@ async function processTeleprompterInBackground(jobId, files, body) {
     const videoInfo = await getInfo(videoFile);
     const videoDuration = videoInfo.duration || 0;
     const videoCodec = videoInfo.streams?.[0]?.codec || 'h264';
-    const isHEVC = videoCodec === 'hevc';
 
     console.log(`[Job ${jobId}] Codec: ${videoCodec}, Duración: ${videoDuration}s`);
 
-    // Compresión inteligente (igual que casting)
-    const needsCompression = videoSizeMB > 45;
-
-    if (!needsCompression) {
-      console.log(`[Job ${jobId}] Sin compresión, copiando directo...`);
-      fs.copyFileSync(videoFile, outputFile);
-    } else {
-      const crf = isHEVC ? '23' : '28';
-      const minAcceptableMB = (videoDuration / 60) * 20;
-
-      console.log(`[Job ${jobId}] Comprimiendo con CRF ${crf}...`);
-
-      const runFfmpeg = (crfValue) => new Promise((resolve, reject) => {
-        ffmpeg()
-          .input(videoFile)
-          .outputOptions([
-            '-c:v libx264',
-            `-crf ${crfValue}`,
-            '-preset ultrafast',
-            '-vf', 'scale=-2:720',
-            '-pix_fmt', 'yuv420p',
-            '-threads 1',
-            '-c:a aac',
-            '-b:a 128k',
-            '-movflags +faststart',
-            `-t ${videoDuration}`,
-          ])
-          .output(outputFile)
-          .on('end', resolve)
-          .on('error', reject)
-          .run();
-      });
-
-      await runFfmpeg(crf);
-      let finalSizeMB = fs.statSync(outputFile).size / (1024 * 1024);
-      console.log(`[Job ${jobId}] Tamaño tras compresión: ${finalSizeMB.toFixed(1)}MB`);
-
-      if (finalSizeMB < minAcceptableMB) {
-        console.log(`[Job ${jobId}] ⚠️ Reintentando con CRF 18...`);
-        await runFfmpeg('18');
-        finalSizeMB = fs.statSync(outputFile).size / (1024 * 1024);
-        console.log(`[Job ${jobId}] Tamaño tras reintento: ${finalSizeMB.toFixed(1)}MB`);
-      }
-    }
-
-    // ── Quemar subtítulos (si está activado) ─────────────────────────────────
+    // ── Subtítulos (si están activados): se transcriben del original ─────────
+    let srtPath = null;
     if (body.addSubtitles === 'true') {
       console.log(`[Job ${jobId}] Generando subtítulos (modo Presentación)...`);
       try {
-        console.log(`[Job ${jobId}] [Subtitles] Tamaño ANTES de quemar subtítulos: ${fs.statSync(outputFile).size} bytes`);
         const subtitleEntries = await generateSubtitlesForFreeMode(videoFile, body.userId);
-
         if (subtitleEntries.length > 0) {
-          const srtPath = path.join(tempDir, 'subtitles.srt');
+          srtPath = path.join(tempDir, 'subtitles.srt');
           generateSrtFile(subtitleEntries, srtPath);
-
-          const videoWithSubtitlesPath = path.join(tempDir, 'video_subtitled.mp4');
-          await burnSubtitlesIntoVideo(outputFile, srtPath, videoWithSubtitlesPath);
-
-          const subtitledSize = fs.existsSync(videoWithSubtitlesPath) ? fs.statSync(videoWithSubtitlesPath).size : 0;
-          console.log(`[Job ${jobId}] [Subtitles] Tamaño del archivo subtitulado generado: ${subtitledSize} bytes`);
-
-          if (subtitledSize > 0) {
-            try { fs.unlinkSync(outputFile); } catch {}
-            fs.renameSync(videoWithSubtitlesPath, outputFile);
-
-            console.log(`[Job ${jobId}] [Subtitles] Tamaño DESPUÉS del reemplazo (outputFile final): ${fs.statSync(outputFile).size} bytes`);
-            console.log(`[Job ${jobId}] ✅ Subtítulos incrustados (${subtitleEntries.length} entradas)`);
-          } else {
-            console.error(`[Job ${jobId}] ❌ Subtítulos: videoWithSubtitlesPath no se generó correctamente.`);
-          }
         } else {
           console.log(`[Job ${jobId}] ⚠️ Subtítulos: sin entradas válidas, se omite el quemado`);
         }
       } catch (subtitleErr) {
-        console.error(`[Job ${jobId}] [Subtitles] Error en el paso de subtítulos:`, subtitleErr.message);
         // El error en subtítulos no rompe el job — el vídeo sin subtítulos sigue siendo válido
+        console.error(`[Job ${jobId}] [Subtitles] Error transcribiendo:`, subtitleErr.message);
       }
+    }
+
+    // ── Una sola codificación (si hace falta) con la calidad elegida ─────────
+    // Se recodifica si no cabe en Supabase (>45 MB) o si hay que quemar subtítulos. Se mantiene
+    // la calidad elegida en la app (lado corto) y se limita la tasa de bits para que quepa.
+    const shortSide = videoQuality.targetShortSide(body.quality);
+    const needsEncode = videoSizeMB > 45 || !!srtPath;
+
+    const encode = (withSubtitles) => new Promise((resolve, reject) => {
+      const filters = [videoQuality.scaleFilter(shortSide)];
+      if (withSubtitles) {
+        const subtitleStyle =
+          "FontName=DejaVuSans,FontSize=13,PrimaryColour=&H00FFFFFF&," +
+          "OutlineColour=&H00000000&,BorderStyle=1,Outline=2,Shadow=0," +
+          "Alignment=2,MarginV=40";
+        filters.push(`subtitles='${srtPath.replace(/:/g, '\\:')}':force_style='${subtitleStyle}'`);
+      }
+      const maxKbps = videoQuality.maxVideoKbps(videoDuration, body.quality);
+      ffmpeg()
+        .input(videoFile)
+        .outputOptions([
+          '-vf', filters.join(','),
+          '-c:v libx264',
+          '-crf 23',
+          '-maxrate', `${maxKbps}k`,
+          '-bufsize', `${maxKbps * 2}k`,
+          '-preset veryfast',
+          '-pix_fmt', 'yuv420p',
+          '-threads 1',
+          '-c:a aac',
+          '-b:a 128k',
+          '-movflags +faststart',
+        ])
+        .output(outputFile)
+        .on('end', resolve)
+        .on('error', reject)
+        .run();
+    });
+
+    if (!needsEncode) {
+      console.log(`[Job ${jobId}] Sin recodificar, copiando directo...`);
+      fs.copyFileSync(videoFile, outputFile);
+    } else {
+      console.log(`[Job ${jobId}] Recodificando (calidad ${body.quality || 'medium'}, lado corto ${shortSide}px${srtPath ? ', con subtítulos' : ''})...`);
+      try {
+        await encode(!!srtPath);
+      } catch (encodeErr) {
+        if (!srtPath) throw encodeErr;
+        // Si falla el quemado, se entrega el vídeo sin subtítulos.
+        console.error(`[Job ${jobId}] [Subtitles] Error quemando, se repite sin subtítulos:`, encodeErr.message);
+        await encode(false);
+      }
+      console.log(`[Job ${jobId}] Tamaño final: ${(fs.statSync(outputFile).size / (1024 * 1024)).toFixed(1)}MB`);
     }
 
     // Subir a Supabase
