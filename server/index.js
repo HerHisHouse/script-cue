@@ -74,6 +74,7 @@ const elevenLabsTts = require('./elevenLabsTts');
 const audioLevels = require('./audioLevels');
 const aiAlignment = require('./aiAlignment');
 const videoQuality = require('./videoQuality');
+const subtitleCues = require('./subtitleCues');
 const { recordServerError } = require('./errorReports');
 const betaLimits = require('./betaLimits');
 // Costes aproximados por proveedor (en euros)
@@ -620,60 +621,46 @@ async function generateSubtitlesForCasting(jobId, lineTimings, userAudioFile, us
  * Genera entradas de subtítulos para el modo Presentación:
  * transcripción completa del audio con timestamps por segmento (verbose_json).
  */
-async function generateSubtitlesForFreeMode(videoFilePath, userId = null) {
+/**
+ * Transcribe el audio de una Presentación con la hora de cada palabra (Whisper,
+ * timestamp_granularities word + segment). Las palabras dan el tiempo exacto; los segmentos, la
+ * puntuación y las frases inventadas sobre silencio (ver server/subtitleCues.js).
+ */
+async function transcribeWords(videoFilePath, userId = null) {
   const FormData = require('form-data');
   const tempAudioPath = path.join(path.dirname(videoFilePath), `temp_free_audio_${Date.now()}.mp3`);
 
   try {
-    // 1. Extraer audio del vídeo a un MP3 mono liviano (evita límite de 25MB de Whisper y MIME types inválidos como video/mp4)
+    // Audio mono ligero (límite de 25 MB de Whisper y sin MIME de vídeo).
     await new Promise((resolve, reject) => {
       ffmpeg(videoFilePath)
         .toFormat('mp3')
         .audioBitrate('128k')
-        .audioChannels(1) // Mono
+        .audioChannels(1)
         .on('end', resolve)
         .on('error', reject)
         .save(tempAudioPath);
     });
 
     const form = new FormData();
-    form.append('file', fs.createReadStream(tempAudioPath), {
-      filename: 'audio.mp3',
-      contentType: 'audio/mpeg',
-    });
-
+    form.append('file', fs.createReadStream(tempAudioPath), { filename: 'audio.mp3', contentType: 'audio/mpeg' });
     form.append('model', 'whisper-1');
     form.append('language', 'es');
-    form.append('response_format', 'verbose_json'); // incluye timestamps por segmento
+    form.append('response_format', 'verbose_json');
+    form.append('timestamp_granularities[]', 'word');
+    form.append('timestamp_granularities[]', 'segment');
 
     const response = await fetch('https://api.openai.com/v1/audio/transcriptions', {
       method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${process.env.OPENAI_API_KEY}`,
-        ...form.getHeaders(),
-      },
+      headers: { 'Authorization': `Bearer ${process.env.OPENAI_API_KEY}`, ...form.getHeaders() },
       body: form,
     });
-
     const data = await response.json();
     if (!response.ok) throw new Error(data.error?.message || 'Error en Whisper (Presentación)');
 
-    // Registrar uso
-    await logApiUsage({
-      userId,
-      provider: 'openai_analysis',
-      tokens: 0,
-      durationSeconds: 0,
-      mode: 'subtitles',
-    });
+    await logApiUsage({ userId, provider: 'openai_analysis', tokens: 0, durationSeconds: 0, mode: 'subtitles' });
 
-    // data.segments contiene start/end/text de cada fragmento detectado
-    return (data.segments || []).map(seg => ({
-      start: seg.start,
-      end: seg.end,
-      text: (seg.text || '').trim(),
-    })).filter(seg => seg.text.length > 0);
-
+    return { words: data.words || [], segments: data.segments || [] };
   } finally {
     try { if (fs.existsSync(tempAudioPath)) fs.unlinkSync(tempAudioPath); } catch {}
   }
@@ -1464,7 +1451,8 @@ async function processTeleprompterInBackground(jobId, files, body) {
           streams: meta.streams.map(s => ({
             codec: s.codec_name,
             type: s.codec_type
-          }))
+          })),
+          display: videoQuality.displaySize(meta.streams.find(s => s.codec_type === 'video')),
         });
       });
     });
@@ -1480,10 +1468,15 @@ async function processTeleprompterInBackground(jobId, files, body) {
     if (body.addSubtitles === 'true') {
       console.log(`[Job ${jobId}] Generando subtítulos (modo Presentación)...`);
       try {
-        const subtitleEntries = await generateSubtitlesForFreeMode(videoFile, body.userId);
-        if (subtitleEntries.length > 0) {
-          srtPath = path.join(tempDir, 'subtitles.srt');
-          generateSrtFile(subtitleEntries, srtPath);
+        const { words, segments } = await transcribeWords(videoFile, body.userId);
+        const display = videoInfo.display || { width: 1080, height: 1920 };
+        const cues = subtitleCues.buildCues(words, segments, {
+          maxCharsPerLine: display.width > display.height ? 42 : 32,
+        });
+        console.log(`[Job ${jobId}] [Subtitles] ${words.length} palabras → ${cues.length} subtítulos (${display.width}×${display.height})`);
+        if (cues.length > 0) {
+          srtPath = path.join(tempDir, 'subtitles.ass');
+          fs.writeFileSync(srtPath, subtitleCues.buildAss(cues, display), 'utf-8');
         } else {
           console.log(`[Job ${jobId}] ⚠️ Subtítulos: sin entradas válidas, se omite el quemado`);
         }
@@ -1502,11 +1495,8 @@ async function processTeleprompterInBackground(jobId, files, body) {
     const encode = (withSubtitles) => new Promise((resolve, reject) => {
       const filters = [videoQuality.scaleFilter(shortSide)];
       if (withSubtitles) {
-        const subtitleStyle =
-          "FontName=DejaVuSans,FontSize=13,PrimaryColour=&H00FFFFFF&," +
-          "OutlineColour=&H00000000&,BorderStyle=1,Outline=2,Shadow=0," +
-          "Alignment=2,MarginV=40";
-        filters.push(`subtitles='${srtPath.replace(/:/g, '\\:')}':force_style='${subtitleStyle}'`);
+        // El estilo va dentro del .ass (server/subtitleCues.js).
+        filters.push(`subtitles='${srtPath.replace(/:/g, '\\:')}'`);
       }
       const maxKbps = videoQuality.maxVideoKbps(videoDuration, body.quality);
       ffmpeg()
