@@ -2191,7 +2191,9 @@ export default function CastingModeScreen() {
             'No se pudo guardar en Fotos',
             result === 'denied'
               ? 'ScriptCue no tiene permiso para añadir vídeos a Fotos. Puedes darlo en Ajustes del móvil.'
-              : 'Inténtalo más tarde desde Grabaciones con Compartir.',
+              : result === 'unavailable'
+                ? 'Esta versión de la app aún no puede guardar en Fotos. Puedes hacerlo desde Grabaciones con Compartir.'
+                : 'Inténtalo más tarde desde Grabaciones con Compartir.',
             [{ text: 'Ver Grabaciones', onPress: goToRecordings }],
           );
         }
