@@ -27,6 +27,9 @@ export default ({ config }) => {
     scheme: ["scriptcue", "myapp"],
     plugins: [
       ...(config.plugins || []),
+      // "Guardar en Fotos" de las Presentaciones (4K y 1080p). Los textos de permiso de iOS ya
+      // están en app.json (ios.infoPlist), el plugin los respeta.
+      ["expo-media-library", { granularPermissions: ["video"] }],
     ],
     ios: {
       ...(config.ios || {}),
