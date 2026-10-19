@@ -16,7 +16,22 @@ export interface ExpressiveTagsSheetColors {
   cardBorder: string;
   primary: string;
   accent: string;
+  /** Color de las etiquetas dentro del texto (el del personaje, como en las tarjetas). */
+  tagText: string;
 }
+
+// En oscuro el color del personaje (morados, azules…) se pierde sobre el fondo morado de la
+// hoja: se aclara mezclándolo con blanco. Si no es un hex de 6 dígitos, se usa tal cual.
+function lighten(hex: string, amount: number): string {
+  const m = /^#([0-9a-f]{6})$/i.exec(hex);
+  if (!m) return hex;
+  const n = parseInt(m[1], 16);
+  const mix = (c: number) => Math.round(c + (255 - c) * amount).toString(16).padStart(2, '0');
+  return `#${mix((n >> 16) & 255)}${mix((n >> 8) & 255)}${mix(n & 255)}`;
+}
+
+// Mismo morado que el botón "+" de Mis guiones en oscuro: el primary al 25 % casi no se veía.
+const USED_CHIP_DARK = { borderColor: 'rgba(255,255,255,0.5)', backgroundColor: 'rgba(124,106,247,0.80)' };
 
 interface Props {
   visible: boolean;
@@ -49,6 +64,7 @@ export function ExpressiveTagsSheet({ visible, characterName, initialText, onCan
   const hasTags = stripTags(text) !== text.replace(/\s+/g, ' ').trim();
   // Etiquetas ya puestas en la réplica: se marcan en color en la lista.
   const usedLabels = usedTagLabels(text);
+  const tagColor = isDark ? lighten(colors.tagText, 0.45) : colors.tagText;
 
   const addTag = (label: string) => {
     const next = insertTag(text, selection.start, label);
@@ -92,7 +108,6 @@ export function ExpressiveTagsSheet({ visible, characterName, initialText, onCan
 
             <TextInput
               style={[styles.input, { color: colors.onBg, borderColor: colors.fieldBorder, backgroundColor: colors.fieldBg }]}
-              value={text}
               onChangeText={setText}
               selection={selection}
               onSelectionChange={(e) => setSelection(e.nativeEvent.selection)}
@@ -100,7 +115,14 @@ export function ExpressiveTagsSheet({ visible, characterName, initialText, onCan
               multiline
               textAlignVertical="top"
               scrollEnabled
-            />
+            >
+              {/* Las etiquetas en color, como en las tarjetas de Revisar guion, para distinguirlas del diálogo. */}
+              {text.split(/(\([^)]*\))/g).map((part, i) => (
+                /^\(.*\)$/.test(part)
+                  ? <Text key={`${i}-${part}`} style={{ color: tagColor, fontStyle: 'italic', fontWeight: '600' }}>{part}</Text>
+                  : <Text key={`${i}-${part}`}>{part}</Text>
+              ))}
+            </TextInput>
             <View style={styles.editRow}>
               <Text style={[styles.hint, { color: colors.onBg2 }]}>Toca el texto para colocar el cursor</Text>
               <TouchableOpacity onPress={removeTag} disabled={!hasTags} style={[styles.smallBtn, { opacity: hasTags ? 1 : 0.4 }]}>
@@ -123,9 +145,9 @@ export function ExpressiveTagsSheet({ visible, characterName, initialText, onCan
                         <TouchableOpacity key={t.label} onPress={() => addTag(t.label)}
                           accessibilityState={{ selected: used }}
                           style={[styles.chip, used
-                            ? { borderColor: colors.primary, backgroundColor: `${colors.primary}40` }
+                            ? (isDark ? USED_CHIP_DARK : { borderColor: colors.primary, backgroundColor: `${colors.primary}40` })
                             : { borderColor: colors.cardBorder, backgroundColor: colors.fieldBg }]}>
-                          <Text style={[styles.chipText, { color: colors.onBg, fontWeight: used ? '700' : '400' }]}>
+                          <Text style={[styles.chipText, { color: used && isDark ? '#FFFFFF' : colors.onBg, fontWeight: used ? '700' : '400' }]}>
                             {used ? '✓ ' : ''}{t.label}
                           </Text>
                         </TouchableOpacity>
@@ -159,7 +181,7 @@ export function ExpressiveTagsSheet({ visible, characterName, initialText, onCan
                     Coloca el cursor donde quieras que cambie la interpretación y toca una etiqueta: se añade entre paréntesis en ese punto.
                   </Text>
                   <Text style={[styles.infoText, { color: colors.onBg }]}>
-                    Cada etiqueta afecta a todo lo que viene después, hasta la siguiente etiqueta. Puedes poner tantas como quieras en una misma réplica.
+                    Cada etiqueta afecta a todo lo que viene después, hasta la siguiente etiqueta. Puedes poner tantas como quieras en una misma réplica. Para que el resto vuelva a sonar sin emoción, pon «en tono neutro».
                   </Text>
                   <Text style={[styles.infoLabel, { color: colors.onBg2 }]}>Ejemplo</Text>
                   <Text style={[styles.infoExample, { color: colors.onBg, borderColor: colors.cardBorder }]}>{EXPRESSIVE_TAGS_EXAMPLE}</Text>
