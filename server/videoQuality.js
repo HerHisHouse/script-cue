@@ -39,4 +39,17 @@ function maxVideoKbps(durationSeconds, quality, { maxMB = 46, audioKbps = 128 } 
   return Math.min(ceiling, Math.max(600, Math.floor(totalKbps - audioKbps)));
 }
 
-module.exports = { targetShortSide, scaleFilter, maxVideoKbps };
+/**
+ * Tamaño con el que se ve el vídeo (los de iPhone suelen ir codificados en horizontal con una
+ * rotación de 90°). `stream` es el de vídeo de ffprobe.
+ */
+function displaySize(stream) {
+  if (!stream || !stream.width || !stream.height) return null;
+  const sideRotation = (stream.side_data_list || []).find((d) => d.rotation != null)?.rotation;
+  const rotation = Math.abs(Number(sideRotation ?? stream.tags?.rotate ?? 0)) % 180;
+  return rotation === 90
+    ? { width: stream.height, height: stream.width }
+    : { width: stream.width, height: stream.height };
+}
+
+module.exports = { targetShortSide, scaleFilter, maxVideoKbps, displaySize };
