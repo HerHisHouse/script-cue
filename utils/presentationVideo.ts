@@ -1,5 +1,4 @@
 import * as FileSystem from 'expo-file-system/legacy';
-import * as MediaLibrary from 'expo-media-library';
 
 /**
  * Vídeos de Presentación que se quedan en el móvil (4K siempre, y cualquier calidad con
@@ -40,6 +39,10 @@ export type SaveToPhotosResult = 'saved' | 'denied' | 'error';
 
 export async function saveVideoToPhotos(uri: string): Promise<SaveToPhotosResult> {
   try {
+    // Se carga al usarlo: si la build no trae el módulo nativo, falla solo "Guardar en Fotos"
+    // y no toda la pantalla de Casting al importarla.
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const MediaLibrary = require('expo-media-library') as typeof import('expo-media-library');
     // Solo permiso para añadir (no para ver la galería).
     const permission = await MediaLibrary.requestPermissionsAsync(true, ['video']);
     if (!permission.granted) return 'denied';
