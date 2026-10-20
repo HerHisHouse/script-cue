@@ -60,7 +60,9 @@ import { ExpoSpeechRecognitionModule, useSpeechRecognitionEvent } from 'expo-spe
 import { matchesActivationPhrase } from '@/utils/voiceActivation';
 import { trackVideoUpload } from '@/utils/pendingVideoJobs';
 import { getFreeDiskBytes, keepVideoOnDevice, minutesOf4KLeft, saveVideoToPhotos } from '@/utils/presentationVideo';
-import { burnSubtitlesOnDevice, isSubtitleBurnerAvailable, transcribeForSubtitles } from '@/utils/localSubtitles';
+import { burnSubtitlesOnDevice, isSubtitleBurnerAvailable, transcribeForSubtitles, type SubtitleCue } from '@/utils/localSubtitles';
+import { SubtitleReviewModal } from '@/components/SubtitleReviewModal';
+import { maxCharsPerLineFor } from '@/utils/subtitleText';
 import { sceneStartIndexes } from '@/utils/sceneSelection';
 import { SceneDivider } from '@/components/SceneDivider';
 import { FontAwesome5 } from '@expo/vector-icons';
@@ -873,6 +875,20 @@ export default function CastingModeScreen() {
   const [processingProgress, setProcessingProgress] = useState(0);
   // Presentación con subtítulos en el móvil: qué paso se está haciendo (null = el texto de siempre).
   const [processingStage, setProcessingStage] = useState<string | null>(null);
+  // Revisión de subtítulos antes de quemarlos (fase 2c): el guardado espera a que el usuario
+  // confirme (subtítulos corregidos) o los descarte (null).
+  const [subtitleReview, setSubtitleReview] = useState<{ videoUri: string; cues: SubtitleCue[]; maxCharsPerLine: number } | null>(null);
+  const subtitleReviewResolver = useRef<((cues: SubtitleCue[] | null) => void) | null>(null);
+  const reviewSubtitles = (videoUri: string, cues: SubtitleCue[], maxCharsPerLine: number) =>
+    new Promise<SubtitleCue[] | null>((resolve) => {
+      subtitleReviewResolver.current = resolve;
+      setSubtitleReview({ videoUri, cues, maxCharsPerLine });
+    });
+  const finishSubtitleReview = (cues: SubtitleCue[] | null) => {
+    setSubtitleReview(null);
+    subtitleReviewResolver.current?.(cues);
+    subtitleReviewResolver.current = null;
+  };
 
   // Comparador de tomas (Fase 1): id de sesión de tomas locales pendientes de comparar
   const currentTakeSessionRef = useRef<string | null>(null);
@@ -2212,16 +2228,27 @@ export default function CastingModeScreen() {
       let videoUri = uri;
       let subtitlesBurned = false;
       let subtitlesFailed = false;
+      let noSpeechForSubtitles = false;
       if (addSubtitles && isSubtitleBurnerAvailable()) {
         try {
           setProcessingStage('Generando subtítulos…');
           setProcessingProgress(15);
-          const cues = await transcribeForSubtitles(uri, user?.id);
-          if (cues.length > 0) {
+          const transcribed = await transcribeForSubtitles(uri, user?.id);
+          noSpeechForSubtitles = transcribed.cues.length === 0;
+          // El usuario los revisa y corrige antes de quemarlos; null = guardar sin subtítulos.
+          const reviewed = transcribed.cues.length > 0
+            ? await reviewSubtitles(
+              uri.startsWith('/') ? `file://${uri}` : uri,
+              transcribed.cues,
+              maxCharsPerLineFor(transcribed.width || 1080, transcribed.height || 1920),
+            )
+            : [];
+          if (reviewed && reviewed.length > 0) {
             setProcessingStage('Añadiendo subtítulos al vídeo…');
             setProcessingProgress(30);
-            videoUri = await burnSubtitlesOnDevice(uri, cues, (p) => setProcessingProgress(30 + Math.round(p * 65)));
+            videoUri = await burnSubtitlesOnDevice(uri, reviewed, (p) => setProcessingProgress(30 + Math.round(p * 65)));
           }
+          // Hechos (o descartados a propósito): el servidor no debe quemarlos.
           subtitlesBurned = true;
         } catch (subtitleError) {
           console.warn('[Teleprompter] Subtítulos en el móvil fallaron:', subtitleError);
@@ -2232,7 +2259,9 @@ export default function CastingModeScreen() {
       }
       const subtitlesNote = subtitlesFailed && (staysOnDevice || !isSubtitleBurnerAvailable())
         ? '\n\nNo se pudieron añadir los subtítulos; se ha guardado sin ellos.'
-        : '';
+        : noSpeechForSubtitles
+          ? '\n\nNo se ha detectado voz, así que se ha guardado sin subtítulos.'
+          : '';
 
       // 1. Se queda en el móvil: modo "solo local" o 4K (demasiado grande para subirlo, y
       // Railway lo comprimiría).
@@ -4037,6 +4066,18 @@ export default function CastingModeScreen() {
             </View>
 
           </SafeAreaView>
+
+          {subtitleReview && (
+            <SubtitleReviewModal
+              visible
+              videoUri={subtitleReview.videoUri}
+              cues={subtitleReview.cues}
+              maxCharsPerLine={subtitleReview.maxCharsPerLine}
+              primaryColor={colors.primary}
+              onConfirm={(cues) => finishSubtitleReview(cues)}
+              onSkip={() => finishSubtitleReview(null)}
+            />
+          )}
 
           {/* Processing Modal */}
           {isProcessing && (

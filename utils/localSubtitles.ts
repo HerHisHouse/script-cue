@@ -22,7 +22,14 @@ import { toFileUri } from '@/utils/presentationVideo';
 export { isSubtitleBurnerAvailable };
 export type { SubtitleCue };
 
-export async function transcribeForSubtitles(videoUri: string, userId?: string): Promise<SubtitleCue[]> {
+export interface TranscribedSubtitles {
+  cues: SubtitleCue[];
+  /** Tamaño con el que se ve el vídeo (0 si no se pudo leer). */
+  width: number;
+  height: number;
+}
+
+export async function transcribeForSubtitles(videoUri: string, userId?: string): Promise<TranscribedSubtitles> {
   const audioUri = `${FileSystem.cacheDirectory}sub_audio_${Date.now()}.m4a`;
   try {
     const audio = await extractAudio(toFileUri(videoUri), audioUri);
@@ -43,7 +50,7 @@ export async function transcribeForSubtitles(videoUri: string, userId?: string):
       });
       const data = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(data.error || `Error ${response.status} al generar los subtítulos`);
-      return Array.isArray(data.cues) ? data.cues : [];
+      return { cues: Array.isArray(data.cues) ? data.cues : [], width: audio.width, height: audio.height };
     } finally {
       clearTimeout(timeout);
     }
