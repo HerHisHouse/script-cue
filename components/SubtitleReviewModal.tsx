@@ -36,6 +36,14 @@ export function SubtitleReviewModal({ visible, videoUri, cues, maxCharsPerLine, 
   const [keyboardVisible, setKeyboardVisible] = useState(false);
   const videoRef = useRef<Video>(null);
   const listRef = useRef<FlatList<SubtitleCue>>(null);
+  const [listHeight, setListHeight] = useState(0);
+  // Tarjeta tocada o en edición: se coloca la primera, justo debajo del vídeo, para que el
+  // teclado no la tape (también la última, gracias al hueco al final de la lista).
+  const selectedIndexRef = useRef<number | null>(null);
+  const scrollToCard = (index: number) => {
+    selectedIndexRef.current = index;
+    listRef.current?.scrollToIndex({ index, viewPosition: 0, animated: true });
+  };
   // Al tocar un subtítulo solo se reproduce ese tramo: se pausa al llegar a su final.
   const stopAtRef = useRef<number | null>(null);
   const finishedRef = useRef(false);
@@ -72,9 +80,16 @@ export function SubtitleReviewModal({ visible, videoUri, cues, maxCharsPerLine, 
 
   useEffect(() => {
     const show = Keyboard.addListener(Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow', () => setKeyboardVisible(true));
+    // Con el teclado ya fuera la lista es más baja: se vuelve a colocar la tarjeta arriba.
+    const shown = Keyboard.addListener('keyboardDidShow', () => {
+      if (selectedIndexRef.current != null) {
+        listRef.current?.scrollToIndex({ index: selectedIndexRef.current, viewPosition: 0, animated: true });
+      }
+    });
     const hide = Keyboard.addListener(Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide', () => setKeyboardVisible(false));
     return () => {
       show.remove();
+      shown.remove();
       hide.remove();
       if (hideTimer.current) clearTimeout(hideTimer.current);
     };
@@ -207,14 +222,20 @@ export function SubtitleReviewModal({ visible, videoUri, cues, maxCharsPerLine, 
             data={cues}
             keyExtractor={(cue) => `${cue.start}-${cue.end}`}
             style={{ flex: 1 }}
-            contentContainerStyle={{ padding: rp(16), paddingBottom: rp(24), gap: rp(10) }}
+            contentContainerStyle={{ padding: rp(16), paddingBottom: Math.max(rp(24), listHeight - rp(110)), gap: rp(10) }}
+            onLayout={(e) => setListHeight(e.nativeEvent.layout.height)}
+            onScrollToIndexFailed={({ index, averageItemLength }) => {
+              // Tarjeta aún sin medir (listas largas): se acerca y se reintenta.
+              listRef.current?.scrollToOffset({ offset: averageItemLength * index, animated: false });
+              setTimeout(() => listRef.current?.scrollToIndex({ index, viewPosition: 0, animated: true }), 120);
+            }}
             keyboardShouldPersistTaps="handled"
             keyboardDismissMode="on-drag"
             renderItem={({ item, index }) => {
               const isRemoved = removed.has(index);
               const isActive = index === activeIndex;
               return (
-                <TouchableOpacity activeOpacity={0.85} onPress={() => playCue(item)}
+                <TouchableOpacity activeOpacity={0.85} onPress={() => { scrollToCard(index); playCue(item); }}
                   style={[styles.cue, isActive && { borderColor: primaryColor }, isRemoved && { opacity: 0.4 }]}>
                   <View style={styles.cueHeader}>
                     <Text style={[styles.cueTime, isActive && { color: '#FFFFFF' }]}>
@@ -231,7 +252,7 @@ export function SubtitleReviewModal({ visible, videoUri, cues, maxCharsPerLine, 
                     editable={!isRemoved}
                     multiline
                     maxLength={maxLength}
-                    onFocus={() => playCue(item)}
+                    onFocus={() => { scrollToCard(index); playCue(item); }}
                     // El texto se reparte solo en líneas: Intro no hace salto, cierra el teclado.
                     returnKeyType="done"
                     submitBehavior="blurAndSubmit"
