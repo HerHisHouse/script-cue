@@ -1,0 +1,8 @@
+{
+  "name": "subtitle-burner",
+  "version": "1.0.0",
+  "description": "Quema subtítulos en un vídeo en el propio móvil (AVFoundation / Media3) y extrae su audio.",
+  "main": "index.ts",
+  "license": "UNLICENSED",
+  "private": true
+}

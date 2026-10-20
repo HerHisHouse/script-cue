@@ -60,6 +60,7 @@ import { ExpoSpeechRecognitionModule, useSpeechRecognitionEvent } from 'expo-spe
 import { matchesActivationPhrase } from '@/utils/voiceActivation';
 import { trackVideoUpload } from '@/utils/pendingVideoJobs';
 import { getFreeDiskBytes, keepVideoOnDevice, minutesOf4KLeft, saveVideoToPhotos } from '@/utils/presentationVideo';
+import { burnSubtitlesOnDevice, isSubtitleBurnerAvailable, transcribeForSubtitles } from '@/utils/localSubtitles';
 import { sceneStartIndexes } from '@/utils/sceneSelection';
 import { SceneDivider } from '@/components/SceneDivider';
 import { FontAwesome5 } from '@expo/vector-icons';
@@ -487,6 +488,8 @@ export default function CastingModeScreen() {
   }, [castingMode, qualityApplied]);
 
   const [supports4K, setSupports4K] = useState(false);
+  // En 4K los subtítulos solo se pueden quemar en el móvil; sin el módulo nativo, no hay.
+  const subtitlesBlocked = videoQuality === 'uhd' && !isSubtitleBurnerAvailable();
   useEffect(() => {
     if (!showQualityModal) return;
     setSupports4K(castingMode === 'free_input' && !!cameraModuleRef.current?.deviceSupports4K?.(facing));
@@ -502,8 +505,8 @@ export default function CastingModeScreen() {
     setVideoQuality(quality);
     setIsQualityDropdownOpen(false);
     if (quality !== 'uhd') return;
-    // Los subtítulos se queman en el servidor y el vídeo 4K no sale del móvil.
-    setAddSubtitles(false);
+    // El 4K no sale del móvil: sus subtítulos solo se pueden quemar aquí (builds con el módulo nativo).
+    if (!isSubtitleBurnerAvailable()) setAddSubtitles(false);
     const free = await getFreeDiskBytes();
     if (free == null) return;
     const minutes = minutesOf4KLeft(free);
@@ -868,6 +871,8 @@ export default function CastingModeScreen() {
   const recordingStartTime = useRef<number>(0);
   const [isProcessing, setIsProcessing] = useState(false);
   const [processingProgress, setProcessingProgress] = useState(0);
+  // Presentación con subtítulos en el móvil: qué paso se está haciendo (null = el texto de siempre).
+  const [processingStage, setProcessingStage] = useState<string | null>(null);
 
   // Comparador de tomas (Fase 1): id de sesión de tomas locales pendientes de comparar
   const currentTakeSessionRef = useRef<string | null>(null);
@@ -2199,11 +2204,43 @@ export default function CastingModeScreen() {
         }
       };
 
+      const staysOnDevice = teleSettings.useLocalOnly || videoQuality === 'uhd';
+
+      // 0. Subtítulos quemados en el móvil (builds con el módulo nativo): solo sube el audio, se
+      // mantiene la resolución y vale para el 4K. Si falla, en la nube se queman en el servidor
+      // como antes; en local el vídeo se guarda sin ellos y se avisa.
+      let videoUri = uri;
+      let subtitlesBurned = false;
+      let subtitlesFailed = false;
+      if (addSubtitles && isSubtitleBurnerAvailable()) {
+        try {
+          setProcessingStage('Generando subtítulos…');
+          setProcessingProgress(15);
+          const cues = await transcribeForSubtitles(uri, user?.id);
+          if (cues.length > 0) {
+            setProcessingStage('Añadiendo subtítulos al vídeo…');
+            setProcessingProgress(30);
+            videoUri = await burnSubtitlesOnDevice(uri, cues, (p) => setProcessingProgress(30 + Math.round(p * 65)));
+          }
+          subtitlesBurned = true;
+        } catch (subtitleError) {
+          console.warn('[Teleprompter] Subtítulos en el móvil fallaron:', subtitleError);
+          subtitlesFailed = true;
+        } finally {
+          setProcessingStage(null);
+        }
+      }
+      const subtitlesNote = subtitlesFailed && (staysOnDevice || !isSubtitleBurnerAvailable())
+        ? '\n\nNo se pudieron añadir los subtítulos; se ha guardado sin ellos.'
+        : '';
+
       // 1. Se queda en el móvil: modo "solo local" o 4K (demasiado grande para subirlo, y
       // Railway lo comprimiría).
-      if (teleSettings.useLocalOnly || videoQuality === 'uhd') {
-        console.log('[Teleprompter] Vídeo local — sin subida', { quality: videoQuality });
-        const saved = await keepVideoOnDevice(uri);
+      if (staysOnDevice) {
+        console.log('[Teleprompter] Vídeo local — sin subida', { quality: videoQuality, subtitlesBurned });
+        const saved = await keepVideoOnDevice(videoUri);
+        // El original sin subtítulos ya no hace falta (en 4K ocupa mucho).
+        if (videoUri !== uri) FileSystem.deleteAsync(uri.startsWith('/') ? `file://${uri}` : uri, { idempotent: true }).catch(() => {});
         await supabase.from('recordings').insert({
           user_id: user?.id,
           script_id: null,
@@ -2216,12 +2253,12 @@ export default function CastingModeScreen() {
         });
         setIsProcessing(false);
         if (videoQuality === 'uhd' || videoQuality === 'high') {
-          showCastingAlert('¡Vídeo guardado!', 'Está en Grabaciones (📱 solo en este móvil). ¿Quieres guardar también una copia en Fotos?', [
+          showCastingAlert('¡Vídeo guardado!', `Está en Grabaciones (📱 solo en este móvil). ¿Quieres guardar también una copia en Fotos?${subtitlesNote}`, [
             { text: 'Ahora no', onPress: goToRecordings },
             { text: 'Guardar en Fotos', onPress: () => saveToPhotosThenGo(saved.uri) },
           ]);
         } else {
-          showCastingAlert('¡Vídeo guardado!', 'Tu grabación está guardada en este dispositivo (📱 Local).', [
+          showCastingAlert('¡Vídeo guardado!', `Tu grabación está guardada en este dispositivo (📱 Local).${subtitlesNote}`, [
             { text: 'Ver Grabaciones', onPress: goToRecordings }
           ]);
         }
@@ -2232,11 +2269,12 @@ export default function CastingModeScreen() {
       console.log('[Teleprompter] Sending video to Railway for background processing...');
       const formData = new FormData();
       formData.append('userId', user?.id || '');
-      formData.append('addSubtitles', addSubtitles ? 'true' : 'false');
+      // Si ya se quemaron en el móvil, el servidor solo comprime; si fallaron, los quema él.
+      formData.append('addSubtitles', addSubtitles && !subtitlesBurned ? 'true' : 'false');
       // El servidor respeta la calidad elegida (antes todo lo que pasaba de 45 MB acababa en 720p).
       formData.append('quality', videoQuality);
       formData.append('video', {
-        uri: uri,
+        uri: videoUri,
         name: 'video.mp4',
         type: 'video/mp4',
       } as any);
@@ -2276,12 +2314,12 @@ export default function CastingModeScreen() {
         // El original en 1080p sigue en el móvil hasta que se cierre la app: se ofrece guardarlo.
         showCastingAlert(
           'Vídeo enviado',
-          addSubtitles
+          addSubtitles && !subtitlesBurned
             ? 'Se está procesando y aparecerá en Grabaciones. ¿Quieres guardar también el original en Fotos? (sin subtítulos)'
-            : 'Se está procesando y aparecerá en Grabaciones. ¿Quieres guardar también el original en Fotos?',
+            : 'Se está procesando y aparecerá en Grabaciones. ¿Quieres guardar también una copia en Fotos?',
           [
             { text: 'Ahora no', onPress: goToRecordings },
-            { text: 'Guardar en Fotos', onPress: () => saveToPhotosThenGo(uri) },
+            { text: 'Guardar en Fotos', onPress: () => saveToPhotosThenGo(videoUri) },
           ],
         );
       } else {
@@ -4006,10 +4044,13 @@ export default function CastingModeScreen() {
               <View style={styles.processingModal}>
                 <ActivityIndicator size="large" color="#3B82F6" />
                 <Text style={styles.processingTitle}>
-                  {castingType === 'free' 
-                    ? (addSubtitles ? 'Procesando vídeo' : 'Enviando vídeo...') 
+                  {castingType === 'free'
+                    ? (processingStage ?? (addSubtitles ? 'Procesando vídeo' : 'Enviando vídeo...'))
                     : 'Procesando tu casting...'}
                 </Text>
+                {castingType === 'free' && processingStage && (
+                  <Text style={styles.processingTitle}>{processingProgress}%</Text>
+                )}
                 <Text style={styles.processingText}>
                   {castingType === 'free'
                     ? (addSubtitles 
@@ -4197,23 +4238,23 @@ export default function CastingModeScreen() {
                     style={[
                       styles.qualityOption,
                       { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: rp(12), borderColor: glassBorder, backgroundColor: chipInactiveBg },
-                      videoQuality === 'uhd' && { opacity: 0.5 },
+                      subtitlesBlocked && { opacity: 0.5 },
                     ]}
                     onPress={() => setAddSubtitles(!addSubtitles)}
-                    disabled={videoQuality === 'uhd'}
+                    disabled={subtitlesBlocked}
                     activeOpacity={0.8}
                   >
                     <View style={{ flex: 1, marginRight: rp(12) }}>
                       <Text style={[styles.qualityOptionLabel, { color: fg }]}>Añadir subtítulos</Text>
                       <Text style={[styles.qualityOptionDesc, { color: fgSecondary }]}>
-                        {videoQuality === 'uhd'
+                        {subtitlesBlocked
                           ? 'Aún no disponible en 4K: el vídeo no sale de tu móvil'
                           : 'Útil para revisar diálogo o accesibilidad'}
                       </Text>
                     </View>
                     <Switch
-                      value={addSubtitles && videoQuality !== 'uhd'}
-                      disabled={videoQuality === 'uhd'}
+                      value={addSubtitles && !subtitlesBlocked}
+                      disabled={subtitlesBlocked}
                       onValueChange={setAddSubtitles}
                       trackColor={{ false: isDark ? '#374151' : '#9CA3AF', true: colors.primary }}
                       thumbColor={Platform.OS === 'android' ? '#FFFFFF' : undefined}
