@@ -1,9 +1,10 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
-  View, Text, TextInput, TouchableOpacity, Modal, StyleSheet, KeyboardAvoidingView, Platform, FlatList,
+  View, Text, TextInput, TouchableOpacity, Modal, StyleSheet, KeyboardAvoidingView, Platform, FlatList, Keyboard,
+  Pressable, Animated,
 } from 'react-native';
 import { Video, ResizeMode, type AVPlaybackStatus } from 'expo-av';
-import { Trash2, Check, RotateCcw } from 'lucide-react-native';
+import { Trash2, Check, RotateCcw, Play, Pause } from 'lucide-react-native';
 import { ModalSafeAreaView } from '@/components/ModalSafeAreaView';
 import { rf, rp } from '@/utils/responsive';
 import type { SubtitleCue } from '@/modules/subtitle-burner';
@@ -31,15 +32,53 @@ export function SubtitleReviewModal({ visible, videoUri, cues, maxCharsPerLine, 
   const [texts, setTexts] = useState<string[]>(() => cues.map(cueText));
   const [removed, setRemoved] = useState<Set<number>>(new Set());
   const [position, setPosition] = useState(0);
+  const [isPlaying, setIsPlaying] = useState(false);
+  const [keyboardVisible, setKeyboardVisible] = useState(false);
   const videoRef = useRef<Video>(null);
   const listRef = useRef<FlatList<SubtitleCue>>(null);
+  // Al tocar un subtítulo solo se reproduce ese tramo: se pausa al llegar a su final.
+  const stopAtRef = useRef<number | null>(null);
+  const finishedRef = useRef(false);
+
+  // Botón central de Play/Pausa: visible en pausa; reproduciendo se desvanece a los 2 s y vuelve
+  // a aparecer (con Pausa) al tocar el vídeo.
+  const controlsOpacity = useRef(new Animated.Value(1)).current;
+  // Oculto no recibe toques: el primer toque en el vídeo lo vuelve a enseñar, no pausa a ciegas.
+  const [controlsShown, setControlsShown] = useState(true);
+  const hideTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const showControls = (autoHide: boolean) => {
+    if (hideTimer.current) clearTimeout(hideTimer.current);
+    controlsOpacity.stopAnimation();
+    controlsOpacity.setValue(1);
+    setControlsShown(true);
+    if (autoHide) {
+      hideTimer.current = setTimeout(() => {
+        Animated.timing(controlsOpacity, { toValue: 0, duration: 400, useNativeDriver: true })
+          .start(({ finished }) => { if (finished) setControlsShown(false); });
+      }, 2000);
+    }
+  };
 
   useEffect(() => {
     if (!visible) return;
     setTexts(cues.map(cueText));
     setRemoved(new Set());
     setPosition(0);
+    setIsPlaying(false);
+    stopAtRef.current = null;
+    showControls(false);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [visible, cues]);
+
+  useEffect(() => {
+    const show = Keyboard.addListener(Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow', () => setKeyboardVisible(true));
+    const hide = Keyboard.addListener(Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide', () => setKeyboardVisible(false));
+    return () => {
+      show.remove();
+      hide.remove();
+      if (hideTimer.current) clearTimeout(hideTimer.current);
+    };
+  }, []);
 
   const activeIndex = useMemo(
     () => cues.findIndex((c, i) => !removed.has(i) && position >= c.start && position < c.end),
@@ -52,13 +91,45 @@ export function SubtitleReviewModal({ visible, videoUri, cues, maxCharsPerLine, 
   }, [activeIndex, cues, texts, maxCharsPerLine]);
 
   const onStatus = (status: AVPlaybackStatus) => {
-    if (status.isLoaded) setPosition(status.positionMillis / 1000);
+    if (!status.isLoaded) return;
+    const seconds = status.positionMillis / 1000;
+    setPosition(seconds);
+    if (status.isPlaying !== isPlaying) {
+      setIsPlaying(status.isPlaying);
+      if (!status.isPlaying) showControls(false);
+    }
+    finishedRef.current = !!status.didJustFinish || (finishedRef.current && !status.isPlaying);
+    if (stopAtRef.current != null && status.isPlaying && seconds >= stopAtRef.current) {
+      stopAtRef.current = null;
+      videoRef.current?.pauseAsync().catch(() => {});
+    }
   };
 
-  const seekTo = async (cue: SubtitleCue) => {
+  /** Reproduce solo el tramo de ese subtítulo. */
+  const playCue = async (cue: SubtitleCue) => {
+    stopAtRef.current = cue.end;
     try {
       await videoRef.current?.setPositionAsync(Math.max(0, cue.start * 1000));
       await videoRef.current?.playAsync();
+      showControls(true);
+    } catch {}
+  };
+
+  /** Botón central: reproduce todo seguido desde donde esté (o desde el principio si acabó). */
+  const togglePlay = async () => {
+    try {
+      if (isPlaying) {
+        await videoRef.current?.pauseAsync();
+        return;
+      }
+      stopAtRef.current = null;
+      if (finishedRef.current) {
+        finishedRef.current = false;
+        await videoRef.current?.replayAsync();
+      } else {
+        await videoRef.current?.playAsync();
+      }
+      showControls(true);
     } catch {}
   };
 
@@ -89,7 +160,14 @@ export function SubtitleReviewModal({ visible, videoUri, cues, maxCharsPerLine, 
       <ModalSafeAreaView style={styles.root}>
         <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
           <View style={styles.header}>
-            <Text style={styles.title}>Revisar subtítulos</Text>
+            <View style={styles.titleRow}>
+              <Text style={styles.title}>Revisar subtítulos</Text>
+              {keyboardVisible && (
+                <TouchableOpacity onPress={() => Keyboard.dismiss()} hitSlop={10} accessibilityLabel="Ocultar teclado">
+                  <Text style={styles.doneText}>Listo</Text>
+                </TouchableOpacity>
+              )}
+            </View>
             <Text style={styles.subtitle}>Corrige lo que no esté bien y toca un subtítulo para verlo en el vídeo.</Text>
           </View>
 
@@ -103,6 +181,8 @@ export function SubtitleReviewModal({ visible, videoUri, cues, maxCharsPerLine, 
               progressUpdateIntervalMillis={100}
               onPlaybackStatusUpdate={onStatus}
             />
+            {/* Tocar el vídeo enseña el botón (con Pausa si está reproduciendo). */}
+            <Pressable style={StyleSheet.absoluteFill} onPress={() => showControls(isPlaying)} />
             {preview && (
               <View style={styles.previewWrap} pointerEvents="none">
                 <View style={styles.previewBox}>
@@ -112,10 +192,14 @@ export function SubtitleReviewModal({ visible, videoUri, cues, maxCharsPerLine, 
                 </View>
               </View>
             )}
-            <TouchableOpacity style={styles.playBtn} onPress={() => videoRef.current?.replayAsync().catch(() => {})}
-              accessibilityLabel="Reproducir desde el principio">
-              <RotateCcw size={18} color="#FFFFFF" />
-            </TouchableOpacity>
+            <Animated.View style={[styles.playWrap, { opacity: controlsOpacity }]} pointerEvents={controlsShown ? 'box-none' : 'none'}>
+              <TouchableOpacity style={styles.playBtn} onPress={() => { showControls(!isPlaying); togglePlay(); }}
+                accessibilityLabel={isPlaying ? 'Pausar' : 'Reproducir'}>
+                {isPlaying
+                  ? <Pause size={26} color="#FFFFFF" fill="#FFFFFF" />
+                  : <Play size={26} color="#FFFFFF" fill="#FFFFFF" style={{ marginLeft: 3 }} />}
+              </TouchableOpacity>
+            </Animated.View>
           </View>
 
           <FlatList
@@ -125,11 +209,12 @@ export function SubtitleReviewModal({ visible, videoUri, cues, maxCharsPerLine, 
             style={{ flex: 1 }}
             contentContainerStyle={{ padding: rp(16), paddingBottom: rp(24), gap: rp(10) }}
             keyboardShouldPersistTaps="handled"
+            keyboardDismissMode="on-drag"
             renderItem={({ item, index }) => {
               const isRemoved = removed.has(index);
               const isActive = index === activeIndex;
               return (
-                <TouchableOpacity activeOpacity={0.85} onPress={() => seekTo(item)}
+                <TouchableOpacity activeOpacity={0.85} onPress={() => playCue(item)}
                   style={[styles.cue, isActive && { borderColor: primaryColor }, isRemoved && { opacity: 0.4 }]}>
                   <View style={styles.cueHeader}>
                     <Text style={[styles.cueTime, isActive && { color: '#FFFFFF' }]}>
@@ -146,7 +231,10 @@ export function SubtitleReviewModal({ visible, videoUri, cues, maxCharsPerLine, 
                     editable={!isRemoved}
                     multiline
                     maxLength={maxLength}
-                    onFocus={() => seekTo(item)}
+                    onFocus={() => playCue(item)}
+                    // El texto se reparte solo en líneas: Intro no hace salto, cierra el teclado.
+                    returnKeyType="done"
+                    submitBehavior="blurAndSubmit"
                     onChangeText={(value) => setTexts((prev) => prev.map((t, i) => (i === index ? value : t)))}
                   />
                 </TouchableOpacity>
@@ -154,6 +242,7 @@ export function SubtitleReviewModal({ visible, videoUri, cues, maxCharsPerLine, 
             }}
           />
 
+          {!keyboardVisible && (
           <View style={styles.footer}>
             <TouchableOpacity style={[styles.btn, styles.btnSecondary]} onPress={skip}>
               <Text style={styles.btnSecondaryText}>Guardar sin subtítulos</Text>
@@ -164,6 +253,7 @@ export function SubtitleReviewModal({ visible, videoUri, cues, maxCharsPerLine, 
               <Text style={styles.btnPrimaryText}> Añadir subtítulos</Text>
             </TouchableOpacity>
           </View>
+          )}
         </KeyboardAvoidingView>
       </ModalSafeAreaView>
     </Modal>
@@ -173,7 +263,9 @@ export function SubtitleReviewModal({ visible, videoUri, cues, maxCharsPerLine, 
 const styles = StyleSheet.create({
   root: { backgroundColor: '#0B0B10' },
   header: { paddingHorizontal: rp(16), paddingTop: rp(8), paddingBottom: rp(12) },
+  titleRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   title: { color: '#FFFFFF', fontSize: rf(20), fontWeight: '700' },
+  doneText: { color: '#C4A5E8', fontSize: rf(16), fontWeight: '700' },
   subtitle: { color: '#A1A1AA', fontSize: rf(13), marginTop: 4 },
   videoBox: { height: '34%', backgroundColor: '#000000' },
   previewWrap: { position: 'absolute', left: 0, right: 0, bottom: '9%', alignItems: 'center', paddingHorizontal: '6%' },
@@ -181,8 +273,9 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(0,0,0,0.6)', borderRadius: 3, paddingHorizontal: rp(8), paddingVertical: rp(3), alignItems: 'center',
   },
   previewText: { color: '#FFFFFF', fontSize: rf(13), fontWeight: '600', textAlign: 'center' },
+  playWrap: { ...StyleSheet.absoluteFillObject, alignItems: 'center', justifyContent: 'center' },
   playBtn: {
-    position: 'absolute', top: rp(10), right: rp(10), width: rp(36), height: rp(36), borderRadius: rp(18),
+    width: rp(60), height: rp(60), borderRadius: rp(30),
     backgroundColor: 'rgba(0,0,0,0.55)', alignItems: 'center', justifyContent: 'center',
   },
   cue: { borderWidth: 1.5, borderColor: '#2A2A35', backgroundColor: '#16161E', borderRadius: 12, padding: rp(12) },
