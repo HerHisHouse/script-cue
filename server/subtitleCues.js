@@ -7,8 +7,8 @@
  * la última, se corta en las pausas y en el final de frase, y tiene como máximo dos líneas
  * cortadas en un punto natural (reglas habituales de subtitulado profesional).
  *
- * Solo JavaScript sin dependencias: lo usa el servidor y, más adelante, la app (quemado en el
- * móvil) con las mismas reglas.
+ * Solo JavaScript sin dependencias: lo usa el servidor y la app (al corregir un subtítulo, el
+ * texto se vuelve a partir en líneas con splitLines).
  */
 
 const DEFAULTS = {
@@ -37,7 +37,8 @@ const HALLUCINATIONS = [
   /suscr[ií]bete/i,
 ];
 
-const bare = (w) => w.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^\p{L}\p{N}]/gu, '');
+// Sin tildes ni signos, para comparar. Sin \p{…}: este archivo también lo usa la app (Hermes).
+const bare = (w) => w.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]/g, '');
 const endsSentence = (w) => /[.?!…]["»”)]?$/.test(w);
 const endsClause = (w) => /[,;:]["»”)]?$/.test(w);
 
