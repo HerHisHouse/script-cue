@@ -3257,18 +3257,17 @@ export default function CastingModeScreen() {
           <SafeAreaView style={StyleSheet.absoluteFill} edges={['top', 'left', 'right']}>
             {/* Header Controls */}
             <View style={[styles.header, { zIndex: 50 }]}>
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
-                <TouchableOpacity onPress={() => {
-                  if (isRecording) {
-                    cancelRecording();
-                  } else {
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, minHeight: rp(44) }}>
+                {/* Grabando no hay flecha: solo se cancela con "Cancelar", para evitar toques sin querer */}
+                {!isRecording && (
+                  <TouchableOpacity onPress={() => {
                     setCastingMode('selection');
                     if (isPlaying) setIsPlaying(false);
-                  }
-                }} style={[styles.iconBtn, { borderColor: camChromeBorder }]}>
-                  <GlassBackdrop tint={camChromeTint} intensity={50} />
-                  <ArrowLeft color="white" size={rp(24)} />
-                </TouchableOpacity>
+                  }} style={[styles.iconBtn, { borderColor: camChromeBorder }]}>
+                    <GlassBackdrop tint={camChromeTint} intensity={50} />
+                    <ArrowLeft color="white" size={rp(24)} />
+                  </TouchableOpacity>
+                )}
                 {castingType === 'free' && !isRecording && (
                   <TouchableOpacity
                     onPress={() => { setCastingMode('free_input'); isPlaying && setIsPlaying(false); }}
