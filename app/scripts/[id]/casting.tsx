@@ -152,8 +152,8 @@ export default function CastingModeScreen() {
   const { colors, isDark } = useTheme();
   const { user } = useAuth();
   const insets = useSafeAreaInsets();
-  const { width: windowWidth, height: windowHeight } = useWindowDimensions();
-  const isLandscape = windowWidth > windowHeight;
+  // Se mantiene para volver a pintar la pantalla al girar el móvil.
+  useWindowDimensions();
 
   // Misma paleta "sobre imagen de fondo" que el resto de pantallas rediseñadas
   // (Modo Memoria, Editor, Modo Escena...).
@@ -2716,12 +2716,11 @@ export default function CastingModeScreen() {
   }
 
 
-  // Contador de la cabecera. En Selftape, como en la cámara del iPhone, solo se ve mientras se graba
-  // (en rojo y centrado) y en su lugar, sin grabar, están la lente, el cambio de cámara y el menú.
-  const selftapeRecording = castingType === 'script' && isRecording;
+  // Contador de la cabecera. Como en la cámara del iPhone, solo se ve mientras se graba (en rojo y
+  // centrado); sin grabar, en su lugar están la lente, el cambio de cámara y (en Selftape) el menú.
   const recordingTimer = (
-    <View style={[styles.timerBadge, { borderWidth: 1, borderColor: camChromeBorder }, selftapeRecording && { backgroundColor: '#EF4444', borderColor: '#EF4444' }]}>
-      <View style={[styles.dot, isRecording && styles.recordingDot, selftapeRecording && { backgroundColor: 'white' }]} />
+    <View style={[styles.timerBadge, { backgroundColor: '#EF4444' }]}>
+      <View style={[styles.dot, { backgroundColor: 'white' }]} />
       <Text style={styles.timerText}>{formatTime(recordingTime)}</Text>
     </View>
   );
@@ -3270,7 +3269,7 @@ export default function CastingModeScreen() {
                   <GlassBackdrop tint={camChromeTint} intensity={50} />
                   <ArrowLeft color="white" size={rp(24)} />
                 </TouchableOpacity>
-                {castingType === 'free' && (
+                {castingType === 'free' && !isRecording && (
                   <TouchableOpacity
                     onPress={() => { setCastingMode('free_input'); isPlaying && setIsPlaying(false); }}
                     style={{ paddingHorizontal: 12, paddingVertical: 6, borderRadius: 20, borderWidth: 1, borderColor: camChromeBorder, overflow: 'hidden' }}
@@ -3279,21 +3278,23 @@ export default function CastingModeScreen() {
                     <Text style={{ color: 'white', fontWeight: '600', fontSize: rf(14) }}>Editar T</Text>
                   </TouchableOpacity>
                 )}
-                {isRecording && isLandscape && (
-                  <TouchableOpacity onPress={cancelRecording} style={styles.cancelRecordingBtn}>
-                    <X size={rp(16)} color="#EF4444" />
-                    <Text style={styles.cancelRecordingText}>Cancelar</Text>
-                  </TouchableOpacity>
-                )}
               </View>
 
-              {castingType !== 'script' ? recordingTimer : isRecording && (
+              {isRecording && (
                 <View pointerEvents="none" style={{ position: 'absolute', top: 0, bottom: 0, left: 0, right: 0, alignItems: 'center', justifyContent: 'center' }}>
                   {recordingTimer}
                 </View>
               )}
 
-              <View style={[{ flexDirection: 'row', alignItems: 'center', gap: 8 }, selftapeRecording && { display: 'none' }]}>
+              {/* Grabando: en lugar de la lente, el cambio de cámara y el menú, solo Cancelar */}
+              {isRecording && (
+                <TouchableOpacity onPress={cancelRecording} style={styles.cancelRecordingBtn}>
+                  <X size={rp(16)} color="#EF4444" />
+                  <Text style={styles.cancelRecordingText}>Cancelar</Text>
+                </TouchableOpacity>
+              )}
+
+              <View style={[{ flexDirection: 'row', alignItems: 'center', gap: 8 }, isRecording && { display: 'none' }]}>
                 <View style={{ position: 'relative', zIndex: 100 }}>
                   <TouchableOpacity
                     onPress={() => setIsZoomMenuOpen(!isZoomMenuOpen)}
@@ -3628,19 +3629,6 @@ export default function CastingModeScreen() {
                   </ScrollView>
                 )}
               </Animated.View>
-            )}
-
-            {/* Botón de cancelar grabación (vertical: debajo del back button; horizontal: se muestra dentro del header) */}
-            {isRecording && !isLandscape && (
-              <View style={[styles.cancelRecordingContainer, { top: insets.top + rp(84) }]}>
-                <TouchableOpacity
-                  onPress={cancelRecording}
-                  style={styles.cancelRecordingBtn}
-                >
-                  <X size={rp(16)} color="#EF4444" />
-                  <Text style={styles.cancelRecordingText}>Cancelar</Text>
-                </TouchableOpacity>
-              </View>
             )}
 
             <View style={[styles.controlsContainer, { paddingBottom: insets.bottom + rp(12) }]} onLayout={(e) => setControlsHeight(e.nativeEvent.layout.height)}>
@@ -4840,11 +4828,6 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: '#6B7280',
     textAlign: 'center',
-  },
-  cancelRecordingContainer: {
-    position: 'absolute',
-    left: rp(16),
-    zIndex: 1000,
   },
   cancelRecordingBtn: {
     backgroundColor: 'rgba(0,0,0,0.8)',
