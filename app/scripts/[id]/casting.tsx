@@ -1935,6 +1935,15 @@ export default function CastingModeScreen() {
     }
   }
 
+  // Selftape: volver al principio de la escena tras ensayar (no durante la grabación).
+  function restartScene() {
+    if (isRecording) return;
+    setIsPlaying(false);
+    cleanupSound();
+    setActionTimeLeft(null);
+    setCurrentIndex(0);
+  }
+
   // 3. Recording Logic
   async function toggleRecording() {
     if (isRecording) {
@@ -3239,7 +3248,7 @@ export default function CastingModeScreen() {
           <SafeAreaView style={StyleSheet.absoluteFill} edges={['top', 'left', 'right']}>
             {/* Header Controls */}
             <View style={[styles.header, { zIndex: 50 }]}>
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+              <View style={[{ flexDirection: 'row', alignItems: 'center', gap: 12 }, castingType === 'script' && { flex: 1 }]}>
                 <TouchableOpacity onPress={() => {
                   if (isRecording) {
                     cancelRecording();
@@ -3273,7 +3282,7 @@ export default function CastingModeScreen() {
                 <Text style={styles.timerText}>{formatTime(recordingTime)}</Text>
               </View>
 
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+              <View style={[{ flexDirection: 'row', alignItems: 'center', gap: 8 }, castingType === 'script' && { flex: 1, justifyContent: 'flex-end' }]}>
                 <View style={{ position: 'relative', zIndex: 100 }}>
                   <TouchableOpacity
                     onPress={() => setIsZoomMenuOpen(!isZoomMenuOpen)}
@@ -3309,6 +3318,13 @@ export default function CastingModeScreen() {
                   <GlassBackdrop tint={camChromeTint} intensity={50} />
                   <SwitchCamera color="white" size={rp(24)} />
                 </TouchableOpacity>
+                {/* Selftape: el menú sube aquí y abajo queda el botón de reiniciar la escena */}
+                {castingType === 'script' && (
+                  <TouchableOpacity onPress={() => setShowMenu(!showMenu)} style={[styles.iconBtn, { borderColor: camChromeBorder }]}>
+                    <GlassBackdrop tint={camChromeTint} intensity={50} />
+                    <MoreVertical color="white" size={rp(24)} />
+                  </TouchableOpacity>
+                )}
               </View>
             </View>
 
@@ -3664,13 +3680,17 @@ export default function CastingModeScreen() {
                   </TouchableOpacity>
                 )}
 
-                {/* Menu */}
+                {/* Selftape: reiniciar la escena · Presentación: menú */}
                 <TouchableOpacity
-                  onPress={() => setShowMenu(!showMenu)}
-                  style={[styles.controlBtn, { width: rp(48), height: rp(48), borderRadius: rp(24), alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: camChromeBorder, overflow: 'hidden' }]}
+                  onPress={castingType === 'script' ? restartScene : () => setShowMenu(!showMenu)}
+                  disabled={castingType === 'script' && isRecording}
+                  accessibilityLabel={castingType === 'script' ? 'Reiniciar escena' : 'Configuración'}
+                  style={[styles.controlBtn, { width: rp(48), height: rp(48), borderRadius: rp(24), alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: camChromeBorder, overflow: 'hidden' }, castingType === 'script' && isRecording && { opacity: 0.35 }]}
                 >
                   <GlassBackdrop tint={camChromeTint} intensity={50} />
-                  <MoreVertical color="white" size={rp(24)} />
+                  {castingType === 'script'
+                    ? <RotateCcw color="white" size={rp(22)} />
+                    : <MoreVertical color="white" size={rp(24)} />}
                 </TouchableOpacity>
               </View>
 
