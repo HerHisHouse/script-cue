@@ -2716,11 +2716,12 @@ export default function CastingModeScreen() {
   }
 
 
-  // Contador de la cabecera: centrado en Presentación; en Selftape va junto a la flecha porque a la
-  // derecha están la lente, el cambio de cámara y el menú.
+  // Contador de la cabecera. En Selftape, como en la cámara del iPhone, solo se ve mientras se graba
+  // (en rojo y centrado) y en su lugar, sin grabar, están la lente, el cambio de cámara y el menú.
+  const selftapeRecording = castingType === 'script' && isRecording;
   const recordingTimer = (
-    <View style={[styles.timerBadge, { borderWidth: 1, borderColor: camChromeBorder }]}>
-      <View style={[styles.dot, isRecording && styles.recordingDot]} />
+    <View style={[styles.timerBadge, { borderWidth: 1, borderColor: camChromeBorder }, selftapeRecording && { backgroundColor: '#EF4444', borderColor: '#EF4444' }]}>
+      <View style={[styles.dot, isRecording && styles.recordingDot, selftapeRecording && { backgroundColor: 'white' }]} />
       <Text style={styles.timerText}>{formatTime(recordingTime)}</Text>
     </View>
   );
@@ -3269,7 +3270,6 @@ export default function CastingModeScreen() {
                   <GlassBackdrop tint={camChromeTint} intensity={50} />
                   <ArrowLeft color="white" size={rp(24)} />
                 </TouchableOpacity>
-                {castingType === 'script' && recordingTimer}
                 {castingType === 'free' && (
                   <TouchableOpacity
                     onPress={() => { setCastingMode('free_input'); isPlaying && setIsPlaying(false); }}
@@ -3287,9 +3287,13 @@ export default function CastingModeScreen() {
                 )}
               </View>
 
-              {castingType !== 'script' && recordingTimer}
+              {castingType !== 'script' ? recordingTimer : isRecording && (
+                <View pointerEvents="none" style={{ position: 'absolute', top: 0, bottom: 0, left: 0, right: 0, alignItems: 'center', justifyContent: 'center' }}>
+                  {recordingTimer}
+                </View>
+              )}
 
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+              <View style={[{ flexDirection: 'row', alignItems: 'center', gap: 8 }, selftapeRecording && { display: 'none' }]}>
                 <View style={{ position: 'relative', zIndex: 100 }}>
                   <TouchableOpacity
                     onPress={() => setIsZoomMenuOpen(!isZoomMenuOpen)}
